@@ -34,11 +34,14 @@ import org.json.JSONObject;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.ref.WeakReference;
+import java.util.AbstractList;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 import io.github.libxposed.api.XposedInterface;
@@ -63,6 +66,10 @@ public final class LockscreenLyricsModule extends XposedModule {
     private static final String HOOK_ID_LYRICS_RECYCLER = "oplus-word-lyrics-recycler";
     private static final String HOOK_ID_SYSTEMUI_LOG_I = "oplus-lyric-ui-mode-log-i";
     private static final String HOOK_ID_SYSTEMUI_LOG_PRINTLN = "oplus-lyric-ui-mode-log-println";
+    private static final String HOOK_ID_RUS_DEAL_END_TAG = "oplus-media-rus-deal-end-tag";
+    private static final String HOOK_ID_RUS_SAVE_LIST_TO_SP = "oplus-media-rus-save-list";
+    private static final String HOOK_ID_RUS_GET_WHITE_LIST = "oplus-media-rus-get-white-list";
+    private static final String OPLUS_MEDIA_RUS_TAG_WHITELIST = "whitelist";
     private static final long LYRIC_CACHE_MAX_AGE_MS = 5 * 60 * 1000L;
     private static final long OPLUS_TAIL_SPACER_DELAY_MS = 8_000L;
     private static final long SCREEN_TIMEOUT_USER_ACTIVITY_INTERVAL_MS = 8_000L;
@@ -93,6 +100,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     private volatile String lastSystemUiSongName = "";
     private volatile String lastSystemUiArtistName = "";
     private volatile boolean systemUiHasOfficialLyric;
+    private volatile boolean oplusMediaWhitelistHooksInstalled;
     private volatile boolean screenTimeoutReceiverRegistered;
     private volatile boolean systemUiLyricModeEnabled;
     private volatile boolean systemUiLyricModeKeepAwakeActive;
@@ -152,7 +160,9 @@ public final class LockscreenLyricsModule extends XposedModule {
     public void onPackageReady(PackageReadyParam param) {
         String packageName = param.getPackageName();
         if (SYSTEMUI_PACKAGE.equals(packageName)) {
-            installSystemUiWordLyricHooks(param.getClassLoader());
+            ClassLoader classLoader = param.getClassLoader();
+            installOplusMediaWhitelistBypassHooks(classLoader);
+            installSystemUiWordLyricHooks(classLoader);
             return;
         }
 
@@ -206,6 +216,100 @@ public final class LockscreenLyricsModule extends XposedModule {
             }
         }
         return "";
+    }
+
+    private void installOplusMediaWhitelistBypassHooks(ClassLoader classLoader) {
+        if (oplusMediaWhitelistHooksInstalled) {
+            return;
+        }
+        synchronized (this) {
+            if (oplusMediaWhitelistHooksInstalled) {
+                return;
+            }
+            try {
+                Class<?> rusManagerClass =
+                        classLoader.loadClass("com.oplus.systemui.media.seedling.rus.OplusMediaRusUpdateManager");
+
+                Method dealEndTag = rusManagerClass.getDeclaredMethod(
+                        "dealEndTag",
+                        String.class,
+                        Set.class,
+                        Set.class,
+                        List.class,
+                        List.class,
+                        Map.class,
+                        Map.class,
+                        Map.class,
+                        Map.class,
+                        Map.class
+                );
+                dealEndTag.setAccessible(true);
+                hook(dealEndTag)
+                        .setId(HOOK_ID_RUS_DEAL_END_TAG)
+                        .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                        .intercept(this::onOplusMediaRusDealEndTag);
+
+                Method saveListToSp = rusManagerClass.getDeclaredMethod(
+                        "saveListToSP",
+                        Context.class,
+                        Set.class,
+                        Set.class,
+                        Map.class,
+                        Map.class,
+                        Map.class,
+                        Map.class,
+                        Map.class
+                );
+                saveListToSp.setAccessible(true);
+                hook(saveListToSp)
+                        .setId(HOOK_ID_RUS_SAVE_LIST_TO_SP)
+                        .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                        .intercept(this::onOplusMediaRusSaveListToSp);
+
+                Method getRusWhiteList = rusManagerClass.getDeclaredMethod("getRusWhiteList");
+                getRusWhiteList.setAccessible(true);
+                hook(getRusWhiteList)
+                        .setId(HOOK_ID_RUS_GET_WHITE_LIST)
+                        .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                        .intercept(this::onOplusMediaRusGetWhiteList);
+
+                oplusMediaWhitelistHooksInstalled = true;
+                info("Hooked OPlus media RUS whitelist bypass");
+            } catch (Throwable t) {
+                error("Failed to hook OPlus media RUS whitelist bypass", t);
+            }
+        }
+    }
+
+    private Object onOplusMediaRusDealEndTag(XposedInterface.Chain chain) throws Throwable {
+        Object tag = chain.getArg(0);
+        if (OPLUS_MEDIA_RUS_TAG_WHITELIST.equals(tag)) {
+            info("Ignored OPlus media RUS whitelist update");
+            return null;
+        }
+        return chain.proceed();
+    }
+
+    private Object onOplusMediaRusSaveListToSp(XposedInterface.Chain chain) throws Throwable {
+        List<Object> args = chain.getArgs();
+        if (args.size() < 2 || !(args.get(1) instanceof Set)) {
+            return chain.proceed();
+        }
+
+        Object[] patchedArgs = args.toArray(new Object[0]);
+        patchedArgs[1] = Collections.emptySet();
+        return chain.proceed(patchedArgs);
+    }
+
+    private Object onOplusMediaRusGetWhiteList(XposedInterface.Chain chain) throws Throwable {
+        Object result = chain.proceed();
+        if (result instanceof OplusMediaWhitelistBypassList) {
+            return result;
+        }
+        if (result instanceof List) {
+            return new OplusMediaWhitelistBypassList((List<?>) result);
+        }
+        return result;
     }
 
     private void installSystemUiWordLyricHooks(ClassLoader classLoader) {
@@ -3526,6 +3630,55 @@ public final class LockscreenLyricsModule extends XposedModule {
             }
         }
 
+    }
+
+    private static final class OplusMediaWhitelistBypassList extends AbstractList<String> {
+        private final List<?> delegate;
+
+        OplusMediaWhitelistBypassList(List<?> delegate) {
+            this.delegate = delegate == null ? Collections.emptyList() : delegate;
+        }
+
+        @Override
+        public String get(int index) {
+            if (delegate.isEmpty() && index == 0) {
+                return "*";
+            }
+            Object value = delegate.get(index);
+            return value == null ? null : value.toString();
+        }
+
+        @Override
+        public int size() {
+            return delegate.isEmpty() ? 1 : delegate.size();
+        }
+
+        @Override
+        public boolean isEmpty() {
+            return false;
+        }
+
+        @Override
+        public boolean contains(Object object) {
+            if (object instanceof String && !TextUtils.isEmpty((String) object)) {
+                return true;
+            }
+            return delegate.contains(object);
+        }
+
+        @Override
+        public int indexOf(Object object) {
+            int index = delegate.indexOf(object);
+            if (index >= 0) {
+                return index;
+            }
+            return contains(object) ? 0 : -1;
+        }
+
+        @Override
+        public String toString() {
+            return delegate + " + whitelistBypass";
+        }
     }
 
     private static final class CachedLyric {
