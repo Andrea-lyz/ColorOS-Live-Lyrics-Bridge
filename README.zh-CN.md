@@ -118,9 +118,16 @@ app\build\outputs\apk\debug\app-debug.apk
 ## GitHub Actions
 
 - `Build Debug APK`：当 `main` 分支源码更新或发起 Pull Request 时自动构建，生成的 debug APK 会作为 workflow artifact 上传。
-- `Release APK`：在 Actions 页面手动触发。输入类似 `v0.18.32` 的 tag 后，工作流会构建可安装的 debug 签名 APK，并创建 GitHub Release。
+- `Release APK`：在 Actions 页面手动触发。输入类似 `v0.18.32` 的 tag 后，工作流会构建 release 签名 APK，并创建 GitHub Release。
 
-手动发布工作流目前使用 debug 签名，因为公开仓库中没有保存私人 release keystore。若要分发正式签名版本，需要另行配置私有签名密钥工作流。
+手动发布工作流需要这些仓库 secrets：
+
+- `SIGNING_KEY`：keystore 文件内容的 base64 编码。
+- `KEY_STORE_PASSWORD`：keystore 密码。
+- `KEY_ALIAS`：签名 key alias。
+- `KEY_PASSWORD`：签名 key 密码。
+
+发布产物会命名为 `ColorOS-Live-Lyrics-Bridge-<tag>.apk`。
 
 使用默认 Salt Player 适配器测试：
 

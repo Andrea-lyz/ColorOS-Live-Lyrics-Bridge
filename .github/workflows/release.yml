@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   release:
-    name: Build and publish release
+    name: Build and publish signed release
     runs-on: ubuntu-latest
 
     steps:
@@ -41,14 +41,37 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
-      - name: Build debug APK
-        run: ./gradlew :app:assembleDebug
+      - name: Decode signing key
+        shell: bash
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          for secret in SIGNING_KEY KEY_STORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!secret}" ]; then
+              echo "::error title=Missing signing secret::$secret is not configured."
+              exit 1
+            fi
+          done
+
+          mkdir -p "$RUNNER_TEMP/keystore"
+          printf '%s' "$SIGNING_KEY" | base64 --decode > "$RUNNER_TEMP/keystore/release.jks"
+
+      - name: Build signed release APK
+        env:
+          SIGNING_STORE_FILE: ${{ runner.temp }}/keystore/release.jks
+          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew :app:assembleRelease
 
       - name: Prepare release artifact
         run: |
           mkdir -p release-artifacts
-          cp app/build/outputs/apk/debug/app-debug.apk \
-            "release-artifacts/ColorOS-Live-Lyrics-Bridge-${{ inputs.tag }}-debug.apk"
+          cp app/build/outputs/apk/release/app-release.apk \
+            "release-artifacts/ColorOS-Live-Lyrics-Bridge-${{ inputs.tag }}.apk"
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
