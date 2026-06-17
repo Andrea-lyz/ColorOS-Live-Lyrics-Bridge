@@ -1,0 +1,21 @@
+# Gradle / Android build outputs
+.gradle/
+build/
+**/build/
+
+# Local machine configuration
+local.properties
+
+# IDE files
+.idea/
+*.iml
+
+# Local debugging and iteration artifacts
+.codex-backups/
+backups/
+_anchors/
+_debug_frames/
+
+# OS files
+.DS_Store
+Thumbs.db
