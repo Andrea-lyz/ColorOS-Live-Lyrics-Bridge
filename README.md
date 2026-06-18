@@ -10,7 +10,7 @@ Languages: [English](README.md) | [简体中文](README.zh-CN.md)
 
 An LSPosed/libxposed API 102 module that bridges timed lyrics from supported Android music players into the ColorOS/OPlus lock-screen lyric pipeline.
 
-The module currently ships with a default Salt Player adapter and SystemUI renderer hooks. Salt is now just one `PlayerAdapter`, not the identity of the project.
+The module currently ships a Salt Player compatibility adapter plus SystemUI renderer hooks. Other players should integrate by publishing the `lyricInfo` contract themselves.
 
 ## What It Hooks
 
@@ -20,7 +20,7 @@ Player process:
 android.media.session.MediaSession#setMetadata(android.media.MediaMetadata)
 ```
 
-When a supported player submits metadata without `MediaMetadata["lyricInfo"]`, the module injects an OPlus-compatible payload:
+For compatibility adapters such as Salt Player, when the player submits metadata without `MediaMetadata["lyricInfo"]`, the module can inject an OPlus-compatible payload from the captured timed lyric source. Self-integrating players should publish the same payload themselves.
 
 ```json
 {
@@ -36,9 +36,11 @@ SystemUI process:
 
 - Reads `lyricInfo` from OPlus media data.
 - Builds a word-level timeline from `rawLyric` when available.
+- Merges timed translation lines from the original `lyricInfo` into the word-level model.
 - Draws inside the official lock-screen lyric `TextView.onDraw(Canvas)` path.
 - Keeps fixed-height lyric items, centers short lyrics, uses a moving two-line window for long main lyrics, and keeps the active plus next line clear while farther lines remain softened.
-- Keeps the screen from timing out while a supported player's lock-screen lyric UI is actively visible.
+- Dynamically recognizes player-provided `lyricInfo` without a hard-coded package name.
+- Keeps the screen from timing out while the recognized provider's lock-screen lyric UI is actively visible.
 
 ## Screen Timeout Keep-Awake
 
@@ -63,7 +65,7 @@ hasLyric=false
 
 It holds a `SCREEN_DIM_WAKE_LOCK` only when all of these are true:
 
-- The current package is in `PLAYER_ADAPTERS`.
+- The current package is either a built-in compatibility adapter or the active provider of a valid `lyricInfo` payload.
 - OPlus lyric UI mode is active.
 - Playback is playing.
 - There is lyric evidence, such as a parsed word lyric model, official lyric metadata, or a recently visible official lyric view.
@@ -71,19 +73,27 @@ It holds a `SCREEN_DIM_WAKE_LOCK` only when all of these are true:
 
 While active, the module also pulses `PowerManager.userActivity(...)` about every 8 seconds so the system treats the lock-screen lyric view as user-visible activity. The wake lock is released on screen off, user present/unlock, playback stop, missing lyrics, unsupported package, or any condition change.
 
-For new player adapters, screen-timeout support is usually automatic once the player package is added to both `scope.list` and `PLAYER_ADAPTERS`. If OPlus changes the `PluginSeedling--Template` log format for a device/ROM, the keep-awake detection may need a small SystemUI-side update.
+Self-integrating players are recognized from the current media session and do not need to be added to `scope.list` or `PLAYER_ADAPTERS`. If OPlus changes the `PluginSeedling--Template` log format for a device/ROM, the keep-awake detection may need a small SystemUI-side update.
 
-## Player Adapters
+## Player-provided lyricInfo
 
-Supported players are declared in `LockscreenLyricsModule.PLAYER_ADAPTERS`.
+This is the preferred integration for players such as Halcyon that already own timed lyrics. Publish a valid `lyricInfo` JSON string in the active media session; the module dynamically binds that session in SystemUI. A timed `lyric` field enables native line-level lyrics, while optional `rawLyric` enables this module's word-level renderer.
 
-The default adapter is:
+See the [player integration contract](docs/PLAYER_INTEGRATION.md). No module APK dependency, package-name registration, or LSPosed player scope is required.
+
+## Compatibility Adapters
+
+Compatibility adapters hook legacy players whose native metadata does not expose complete lyric timing through the `lyricInfo` contract.
+
+Built-in compatibility adapters are:
 
 ```java
 new SaltPlayerAdapter()
 ```
 
-To add another player:
+Prefer the player-provided `lyricInfo` contract for new players. Add a `PlayerAdapter` only for compatibility cases where the player cannot publish `lyricInfo` itself.
+
+To add another compatibility adapter:
 
 1. Add the package name to `src/main/resources/META-INF/xposed/scope.list`.
 2. Implement a new `PlayerAdapter` next to `SaltPlayerAdapter`.
@@ -91,7 +101,7 @@ To add another player:
 4. Add the adapter to `PLAYER_ADAPTERS`.
 5. Keep `com.android.systemui` in `scope.list`; it is required for lock-screen rendering and screen-timeout keep-awake.
 
-If a player already writes a valid OPlus `lyricInfo` metadata field by itself, the metadata hook leaves it untouched.
+If a player already writes a valid OPlus `lyricInfo` metadata field by itself, a source hook is normally unnecessary. The module recognizes it through the external contract.
 
 ## Why API 102
 

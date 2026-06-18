@@ -6,7 +6,7 @@ val releaseStoreFilePath = providers.environmentVariable("SIGNING_STORE_FILE").o
 val releaseStorePassword = providers.environmentVariable("KEY_STORE_PASSWORD").orNull
 val releaseKeyAlias = providers.environmentVariable("KEY_ALIAS").orNull
 val releaseKeyPassword = providers.environmentVariable("KEY_PASSWORD").orNull
-val defaultVersionName = "0.18.32"
+val defaultVersionName = "0.19.1"
 val releaseVersionName = providers.gradleProperty("releaseTag")
     .orElse(providers.environmentVariable("RELEASE_TAG"))
     .map { tag ->
@@ -38,7 +38,7 @@ android {
         applicationId = "io.github.andrealtb.lockscreenlyrics"
         minSdk = 26
         targetSdk = 35
-        versionCode = 54
+        versionCode = 56
         versionName = releaseVersionName.get()
     }
 

@@ -10,7 +10,7 @@
 
 一个基于 LSPosed/libxposed API 102 的模块，用来把受支持音乐播放器的时间轴歌词桥接到 ColorOS/OPlus 锁屏歌词管线。
 
-当前项目内置 Salt Player 适配器和 SystemUI 渲染 hook。Salt Player 只是默认适配器之一，不再是项目本身的专属身份。
+当前项目保留 Salt Player 兼容适配器和 SystemUI 渲染 hook；其他播放器优先通过 `lyricInfo` 接入协议主动适配。
 
 ## 功能概览
 
@@ -20,7 +20,7 @@
 android.media.session.MediaSession#setMetadata(android.media.MediaMetadata)
 ```
 
-当受支持播放器提交的媒体元数据里没有 `MediaMetadata["lyricInfo"]` 时，模块会注入 OPlus 可识别的歌词 payload：
+对于 Salt Player 这类兼容适配器，当播放器提交的媒体元数据没有 `MediaMetadata["lyricInfo"]` 时，模块会根据抓取到的时间轴歌词注入 OPlus 可识别的 payload。主动接入的播放器应自行发布同样格式的 `lyricInfo`。
 
 ```json
 {
@@ -36,9 +36,11 @@ SystemUI 进程：
 
 - 从 OPlus 媒体数据中读取 `lyricInfo`。
 - 优先使用 `rawLyric` 构建逐字歌词时间轴。
+- 将原始 `lyricInfo` 中带时间戳的翻译行合并到逐字模型。
 - 在官方锁屏歌词 `TextView.onDraw(Canvas)` 路径内完成绘制。
 - 保持固定高度歌词 item、短句垂直居中、长主歌词使用随进度移动的两行窗口，并让当前句和下一句保持清晰显示。
-- 当受支持播放器的锁屏歌词 UI 正在显示时，阻止屏幕按系统超时时间自动熄灭。
+- 无需硬编码包名，动态识别主动提供 `lyricInfo` 的播放器。
+- 当已识别歌词提供者的锁屏歌词 UI 正在显示时，阻止屏幕按系统超时时间自动熄灭。
 
 ## 屏幕超时保活
 
@@ -63,7 +65,7 @@ hasLyric=false
 
 只有同时满足这些条件时，模块才会持有 `SCREEN_DIM_WAKE_LOCK`：
 
-- 当前包名存在于 `PLAYER_ADAPTERS`。
+- 当前包名属于内置兼容适配器，或者是有效 `lyricInfo` 的当前提供者。
 - OPlus 歌词 UI 模式处于激活状态。
 - 播放状态是正在播放。
 - 有歌词证据，例如已经解析出的逐字歌词模型、官方歌词元数据，或者最近可见的官方歌词视图。
@@ -71,19 +73,27 @@ hasLyric=false
 
 保活期间，模块还会大约每 8 秒调用一次 `PowerManager.userActivity(...)`，让系统把锁屏歌词视图视为仍在被观看。遇到息屏、用户解锁、播放停止、歌词消失、包名不受支持或其他条件变化时，会立即释放 wake lock。
 
-新增播放器适配时，屏幕超时保活通常不需要单独写适配代码；只要播放器包名同时加入 `scope.list` 和 `PLAYER_ADAPTERS` 即可。如果某个系统版本修改了 `PluginSeedling--Template` 日志格式，则可能需要更新 SystemUI 侧的识别逻辑。
+主动接入的播放器会从当前媒体会话中被动态识别，不需要加入 `scope.list` 或 `PLAYER_ADAPTERS`。如果某个系统版本修改了 `PluginSeedling--Template` 日志格式，则可能需要更新 SystemUI 侧的识别逻辑。
 
-## 播放器适配
+## 播放器主动接入 lyricInfo
 
-支持的播放器声明在 `LockscreenLyricsModule.PLAYER_ADAPTERS` 中。
+这是 Halcyon 这类已经拥有时间轴歌词的播放器应使用的方式：在当前媒体会话中发布合法的 `lyricInfo` JSON，模块会在 SystemUI 侧动态绑定该会话。带时间标签的 `lyric` 可使用 OPlus 原生逐行歌词；额外提供 `rawLyric` 后，会自动启用本模块的逐字绘制。
 
-默认适配器：
+完整字段定义、Media3 示例和生命周期要求见[播放器主动接入协议](docs/PLAYER_INTEGRATION.zh-CN.md)。播放器无需依赖模块 APK、登记包名或加入 LSPosed 播放器作用域。
+
+## 兼容适配器
+
+兼容适配器用于播放器原生元数据没有通过 `lyricInfo` 接入协议对外暴露完整歌词时间轴的情况。
+
+内置兼容适配器：
 
 ```java
 new SaltPlayerAdapter()
 ```
 
-新增播放器适配时，一般需要：
+新增播放器优先走主动发布 `lyricInfo` 的接入协议。只有播放器无法自行发布 `lyricInfo` 时，才建议新增 `PlayerAdapter` 做兼容桥接。
+
+新增兼容适配器时，一般需要：
 
 1. 将播放器包名加入 `src/main/resources/META-INF/xposed/scope.list`。
 2. 在 `SaltPlayerAdapter` 旁边新增一个 `PlayerAdapter` 实现。
@@ -91,7 +101,7 @@ new SaltPlayerAdapter()
 4. 将新的适配器加入 `PLAYER_ADAPTERS`。
 5. 保留 `scope.list` 中的 `com.android.systemui`；锁屏绘制和屏幕超时保活都依赖它。
 
-如果某个播放器本身已经写入合法的 OPlus `lyricInfo` 字段，模块不会覆盖它。
+如果播放器本身已经写入合法的 OPlus `lyricInfo`，通常无需新增歌词源 Hook；模块会通过外部协议自动识别。
 
 ## 为什么使用 API 102
 
@@ -133,7 +143,7 @@ app\build\outputs\apk\debug\app-debug.apk
 
 发布产物会命名为 `ColorOS-Live-Lyrics-Bridge-<tag>.apk`。
 
-使用默认 Salt Player 适配器测试：
+使用播放器适配器测试：
 
 ```powershell
 adb install -r app\build\outputs\apk\debug\app-debug.apk
@@ -173,7 +183,7 @@ LockscreenLyrics: Refreshed active lyric renderer at position=..., line=...
 
 ## 当前限制
 
-- 目前默认只内置 Salt Player 适配器。
+- 兼容适配器依赖播放器私有类和混淆成员；播放器大版本更新后可能需要同步更新 Hook。
 - OPlus SystemUI 的类名和字段属于厂商私有实现，系统版本更新后可能需要重新适配。
 - 屏幕超时保活依赖 OPlus 锁屏歌词 UI 日志和官方歌词视图状态；如果 ROM 修改了相关日志或 UI 路径，需要重新适配。
 - 锁屏歌词绘制依赖官方歌词视图存在；如果系统界面没有进入歌词 UI，模块不会强行创建新的歌词窗口。
