@@ -6,6 +6,23 @@ val releaseStoreFilePath = providers.environmentVariable("SIGNING_STORE_FILE").o
 val releaseStorePassword = providers.environmentVariable("KEY_STORE_PASSWORD").orNull
 val releaseKeyAlias = providers.environmentVariable("KEY_ALIAS").orNull
 val releaseKeyPassword = providers.environmentVariable("KEY_PASSWORD").orNull
+val defaultVersionName = "0.18.32"
+val releaseVersionName = providers.gradleProperty("releaseTag")
+    .orElse(providers.environmentVariable("RELEASE_TAG"))
+    .map { tag ->
+        val normalizedTag = tag.trim().removePrefix("refs/tags/")
+        val withoutLeadingV = if (
+            normalizedTag.length > 1 &&
+            (normalizedTag[0] == 'v' || normalizedTag[0] == 'V') &&
+            normalizedTag[1].isDigit()
+        ) {
+            normalizedTag.substring(1)
+        } else {
+            normalizedTag
+        }
+        withoutLeadingV.ifBlank { defaultVersionName }
+    }
+    .orElse(defaultVersionName)
 val hasReleaseSigningConfig = listOf(
     releaseStoreFilePath,
     releaseStorePassword,
@@ -22,7 +39,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = 54
-        versionName = "0.18.32"
+        versionName = releaseVersionName.get()
     }
 
     buildFeatures {

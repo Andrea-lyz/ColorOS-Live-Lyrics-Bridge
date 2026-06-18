@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag, for example v0.18.32"
+        description: "Release tag, for example v1.1.0. The APK versionName becomes 1.1.0."
         required: true
         type: string
       release_name:
@@ -65,6 +65,7 @@ jobs:
           KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          RELEASE_TAG: ${{ inputs.tag }}
         run: ./gradlew :app:assembleRelease
 
       - name: Prepare release artifact

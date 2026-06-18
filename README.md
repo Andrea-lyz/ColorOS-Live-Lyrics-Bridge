@@ -122,7 +122,7 @@ JDK 17 or 21 is recommended. Newer unsupported JDK versions may fail during the 
 ## GitHub Actions
 
 - `Build Debug APK`: runs on pushes to `main` and pull requests when project source or build files change. The generated debug APK is uploaded as a workflow artifact.
-- `Release APK`: manually triggered from the Actions page. Enter a tag such as `v0.18.32`; the workflow builds a release-signed APK and publishes it in a GitHub Release.
+- `Release APK`: manually triggered from the Actions page. Enter a tag such as `v1.1.0`; the workflow builds a release-signed APK, sets the APK `versionName` to `1.1.0`, and publishes it in a GitHub Release.
 
 The manual release workflow expects these repository secrets:
 

@@ -122,7 +122,7 @@ app\build\outputs\apk\debug\app-debug.apk
 ## GitHub Actions
 
 - `Build Debug APK`：当 `main` 分支源码更新或发起 Pull Request 时自动构建，生成的 debug APK 会作为 workflow artifact 上传。
-- `Release APK`：在 Actions 页面手动触发。输入类似 `v0.18.32` 的 tag 后，工作流会构建 release 签名 APK，并创建 GitHub Release。
+- `Release APK`：在 Actions 页面手动触发。输入类似 `v1.1.0` 的 tag 后，工作流会构建 release 签名 APK，把 APK `versionName` 设为 `1.1.0`，并创建 GitHub Release。
 
 手动发布工作流需要这些仓库 secrets：
 
