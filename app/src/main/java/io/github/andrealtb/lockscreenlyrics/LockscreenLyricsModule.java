@@ -3492,12 +3492,12 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private static final class OfficialLyricTextRenderer {
-        private static final int INACTIVE_COLOR = 0x82FFFFFF;
-        private static final int FOCUSED_INACTIVE_COLOR = 0xD8FFFFFF;
+        private static final int INACTIVE_COLOR = 0x70FFFFFF;
+        private static final int FOCUSED_INACTIVE_COLOR = 0x96FFFFFF;
         private static final int PLAYED_COLOR = 0xF0FFFFFF;
         private static final int ACTIVE_COLOR = 0xFFFFFFFF;
-        private static final int TRANSLATION_COLOR = 0x9CFFFFFF;
-        private static final int FOCUSED_TRANSLATION_COLOR = 0xC8FFFFFF;
+        private static final int TRANSLATION_COLOR = INACTIVE_COLOR;
+        private static final int FOCUSED_TRANSLATION_COLOR = FOCUSED_INACTIVE_COLOR;
         private static final int ACTIVE_BACKGROUND_COLOR = 0x24FFFFFF;
         private static final int PROGRESS_BACKGROUND_COLOR = 0x42FFFFFF;
         private static final int ACTIVE_GLOW_FILL_COLOR = 0x2EFFFFFF;
