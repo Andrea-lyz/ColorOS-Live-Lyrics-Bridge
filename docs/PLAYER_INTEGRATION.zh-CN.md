@@ -90,7 +90,3 @@ if (currentJson == lyricInfo) return
 因此推荐频率不是“每 3 秒一次”，而是通常每首歌 **1 次**，遇到确实丢失元数据的系统最多 **2 次**。播放进度变化、暂停/继续和普通通知刷新都不应触发 `lyricInfo` 重写。
 
 本模块的协议常量和校验规则位于 `LyricInfoContract.java`。播放器无需链接这个类，保持上述 JSON 与元数据键兼容即可。
-
-## Halcyon
-
-Halcyon 的 `58fad1a804f23a646d9203d20b86de60e025ce2d` 提交已经通过 Media3 extras 发布 `lyricInfo`，符合基础逐行接入。当前实现只提供 `lyric`；若 Halcyon 后续能输出逐字时间轴，只需在同一 JSON 中增加 `rawLyric`，无需再为本模块编写包名适配器。

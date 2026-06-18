@@ -77,7 +77,7 @@ hasLyric=false
 
 ## 播放器主动接入 lyricInfo
 
-这是 Halcyon 这类已经拥有时间轴歌词的播放器应使用的方式：在当前媒体会话中发布合法的 `lyricInfo` JSON，模块会在 SystemUI 侧动态绑定该会话。带时间标签的 `lyric` 可使用 OPlus 原生逐行歌词；额外提供 `rawLyric` 后，会自动启用本模块的逐字绘制。
+这是已经拥有时间轴歌词的播放器应使用的方式：在当前媒体会话中发布合法的 `lyricInfo` JSON，模块会在 SystemUI 侧动态绑定该会话。带时间标签的 `lyric` 可使用 OPlus 原生逐行歌词；额外提供 `rawLyric` 后，会自动启用本模块的逐字绘制。
 
 完整字段定义、Media3 示例和生命周期要求见[播放器主动接入协议](docs/PLAYER_INTEGRATION.zh-CN.md)。播放器无需依赖模块 APK、登记包名或加入 LSPosed 播放器作用域。
 
