@@ -79,6 +79,10 @@ Self-integrating players are recognized from the current media session and do no
 
 This is the preferred integration for players that already own timed lyrics. Publish a valid `lyricInfo` JSON string in the active media session; the module dynamically binds that session in SystemUI. A timed `lyric` field enables native line-level lyrics, while optional `rawLyric` enables this module's word-level renderer.
 
+Known self-integrating players:
+
+- [Halcyon](https://github.com/Kifranei/Halcyon) — `lyricInfo` integration completed.
+
 See the [player integration contract](docs/PLAYER_INTEGRATION.md). No module APK dependency, package-name registration, or LSPosed player scope is required.
 
 ## Compatibility Adapters
