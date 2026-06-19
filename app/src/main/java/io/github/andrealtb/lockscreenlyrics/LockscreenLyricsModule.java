@@ -7033,8 +7033,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             }
 
             if (singleLine
-                    || inactivePaint.measureText(text, textStart, textEnd) <= availableWidth
-                    || !textContainsSpace(text, textStart, textEnd)) {
+                    || inactivePaint.measureText(text, textStart, textEnd) <= availableWidth) {
                 addDrawLine(
                         textStart,
                         textEnd,
@@ -7105,6 +7104,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
 
         private int chooseWrapEnd(String text, int start, int end, float availableWidth) {
+            // 优先在空格处换行（适合英文）
             int bestEnd = -1;
             int index = start;
             while (index < end) {
@@ -7121,6 +7121,30 @@ public final class LockscreenLyricsModule extends XposedModule {
                     }
                 }
                 index = firstNonSpace(text, index, end);
+            }
+            if (bestEnd > start) {
+                return bestEnd;
+            }
+            // 无空格时，逐字符尝试换行（支持中文/日文等 CJK 文本）
+            return chooseWrapEndByChar(text, start, end, availableWidth);
+        }
+
+        /**
+         * 无空格时按字符边界换行，用于中文/日文等无空格分隔的文本。
+         * 向前搜索最接近末尾的可断行字符位置（优先在 CJK 字符后断开）。
+         */
+        private int chooseWrapEndByChar(String text, int start, int end, float availableWidth) {
+            int bestEnd = start;
+            int index = start;
+            while (index < end) {
+                int next = index + 1;
+                float width = inactivePaint.measureText(text, start, next);
+                if (width <= availableWidth) {
+                    bestEnd = next;
+                    index = next;
+                } else {
+                    break;
+                }
             }
             return bestEnd > start ? bestEnd : end;
         }
