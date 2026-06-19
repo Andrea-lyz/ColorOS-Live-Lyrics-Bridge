@@ -22,6 +22,23 @@ For Media3, place the JSON in `MediaItem.mediaMetadata.extras`. Prefer publishin
 
 Update the whole payload on each track transition, remove it when lyrics are disabled or unavailable, and keep `lyric` and `rawLyric` on the same time offset. `LyricInfoContract.java` is the canonical constants and validation reference; players do not need to link against it.
 
+## Optional translation action
+
+To expose the lock-screen translation toggle, publish this standard action as the first `PlaybackState` custom action:
+
+```kotlin
+private const val ACTION_TOGGLE_TRANSLATION =
+    "io.github.andrealtb.lockscreenlyrics.action.TOGGLE_TRANSLATION"
+
+val action = PlaybackState.CustomAction.Builder(
+    ACTION_TOGGLE_TRANSLATION,
+    "Lyric translation",
+    R.drawable.any_valid_media_icon // Android requires a non-zero resource ID
+).build()
+```
+
+The Android API requires a valid icon resource, but the player does not need to create a dedicated translation icon. The module first looks for `ic_translation` in the player package and otherwise uses its bundled Salt-style translation icon. Publish the action only while the current `lyricInfo` contains usable translations, and remove it on track changes or when translations are unavailable. The module enables the required OPlus custom-action slot, handles taps, and persists the toggle state. If the module is absent, Android may deliver the action to the player, which should safely ignore the no-op callback.
+
 ## Recommended publication timing
 
 Publish on state changes instead of using a repeating timer:

@@ -62,6 +62,23 @@ val metadata = android.media.MediaMetadata.Builder(originalMetadata)
 mediaSession.setMetadata(metadata)
 ```
 
+## 翻译按钮接入（可选）
+
+播放器可在 `PlaybackState` 的自定义动作列表中发布以下标准动作，让模块在 OPlus 锁屏歌词界面接管为翻译开关：
+
+```kotlin
+private const val ACTION_TOGGLE_TRANSLATION =
+    "io.github.andrealtb.lockscreenlyrics.action.TOGGLE_TRANSLATION"
+
+val action = PlaybackState.CustomAction.Builder(
+    ACTION_TOGGLE_TRANSLATION,
+    "歌词翻译",
+    R.drawable.any_valid_media_icon // Android API 要求非零资源 ID
+).build()
+```
+
+将该动作放在自定义动作列表首位。Android API 要求传入有效图标资源，但播放器无需专门制作翻译图标：模块会优先使用播放器包内名为 `ic_translation` 的资源，缺失时自动使用内置的 Salt 风格翻译图标。仅在当前 `lyricInfo` 含有可用翻译时发布；切歌或翻译不可用时移除。模块识别动作后会自动启用 OPlus 自定义动作槽位、接管点击事件并保存开关状态，播放器无需处理该动作回调。未安装模块时，该动作仍会由系统转发给播放器，因此播放器应安全地忽略未知或无操作回调。
+
 ## 生命周期要求
 
 1. 切歌后更新 `songName`、`artist`、`songId` 和歌词，不要沿用上一首歌的 JSON。
