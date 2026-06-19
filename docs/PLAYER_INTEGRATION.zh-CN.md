@@ -2,7 +2,7 @@
 
 已经能够生成时间轴歌词的播放器，不需要向本模块提交包名，也不需要依赖模块 APK。播放器只需在当前媒体会话的元数据中发布字符串字段 `lyricInfo`，模块会在 SystemUI 侧动态识别当前提供者。
 
-播放器本身不需要加入 LSPosed 作用域。`scope.list` 和 `PlayerAdapter` 只用于 Salt Player 这类尚未原生发布 `lyricInfo`、需要模块进入播放器进程抓取歌词的兼容适配。
+播放器本身不需要加入 LSPosed 作用域。`scope.list` 和 `PlayerAdapter` 只用于 Salt Player、ConePlayer 这类需要模块进入播放器进程抓取歌词的兼容适配。
 
 ## 数据格式
 
@@ -27,6 +27,16 @@
 - `rawLyric`：可选，逐字时间轴；提供后会启用本模块的逐字高亮、固定 item 高度、长句两行窗口和清晰度优化。
 
 只提供 `lyric` 也属于完整接入：OPlus 负责逐行显示，本模块仍可动态识别该播放器并处理白名单与屏幕超时逻辑。要获得逐字绘制效果，再增加 `rawLyric`。
+
+## 数据源优先级
+
+对于不在内置兼容适配器作用域内的播放器，合法的播放器 payload 会直接在 SystemUI 中使用。对于模块同时进入播放器进程的 Salt Player 或 ConePlayer，优先级为：
+
+1. 播放器主动提供的增强 payload：包含带时间轴的 `rawLyric` 或翻译数据。
+2. 模块兼容适配器抓取并确认属于当前歌曲的时间轴歌词。
+3. 播放器或 OPlus 官方只包含逐行歌词的简单 `lyricInfo`。
+
+因此，播放器未来只提供简单逐行 `lyricInfo` 时，它会安全地作为兜底；适配器取得逐字与翻译原始数据后仍可接管。模块接管时会重新构造 payload，不会混用简单官方 payload 中的字段。
 
 ## Media3 示例
 

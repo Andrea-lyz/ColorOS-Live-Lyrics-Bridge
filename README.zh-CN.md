@@ -10,7 +10,7 @@
 
 一个基于 LSPosed/libxposed API 102 的模块，用来把受支持音乐播放器的时间轴歌词桥接到 ColorOS/OPlus 锁屏歌词管线。
 
-当前项目保留 Salt Player 兼容适配器和 SystemUI 渲染 hook；其他播放器优先通过 `lyricInfo` 接入协议主动适配。
+当前项目内置基于 DexKit 的 Salt Player、ConePlayer 兼容适配器和 SystemUI 渲染 hook；其他播放器优先通过 `lyricInfo` 接入协议主动适配。
 
 ## 功能概览
 
@@ -20,7 +20,7 @@
 android.media.session.MediaSession#setMetadata(android.media.MediaMetadata)
 ```
 
-对于 Salt Player 这类兼容适配器，当播放器提交的媒体元数据没有 `MediaMetadata["lyricInfo"]` 时，模块会根据抓取到的时间轴歌词注入 OPlus 可识别的 payload。主动接入的播放器应自行发布同样格式的 `lyricInfo`。
+对于内置兼容适配器，模块成功抓取并确认属于当前歌曲的歌词后，会优先使用抓取数据生成完整 payload；播放器只提供的简单 `MediaMetadata["lyricInfo"]` 在此之前作为兜底。若播放器 payload 已包含 `rawLyric` 或带时间轴的翻译，则视为播放器主动增强接入并予以保留。其他主动接入的播放器应自行发布同样格式的 `lyricInfo`。
 
 ```json
 {
@@ -89,7 +89,11 @@ hasLyric=false
 
 ```java
 new SaltPlayerAdapter()
+new ConePlayerAdapter("ink.trantor.coneplayer")
+new ConePlayerAdapter("ink.trantor.coneplayer.gp")
 ```
+
+Salt 适配器已验证 Salt Player 12.0.0 正式版与 alpha07；ConePlayer 适配器已跨版本验证正式包 1.1.3 至 1.1.5，并包含 Google Play 包名作用域。
 
 新增播放器优先走主动发布 `lyricInfo` 的接入协议。只有播放器无法自行发布 `lyricInfo` 时，才建议新增 `PlayerAdapter` 做兼容桥接。
 
@@ -101,7 +105,7 @@ new SaltPlayerAdapter()
 4. 将新的适配器加入 `PLAYER_ADAPTERS`。
 5. 保留 `scope.list` 中的 `com.android.systemui`；锁屏绘制和屏幕超时保活都依赖它。
 
-如果播放器本身已经写入合法的 OPlus `lyricInfo`，通常无需新增歌词源 Hook；模块会通过外部协议自动识别。
+如果作用域外的播放器已经自行写入合法的 OPlus `lyricInfo`，通常无需新增歌词源 Hook；模块会通过外部协议自动识别。对于已有内置适配器的播放器，仅含逐行 `lyric` 的简单 payload 会作为兜底，适配器抓到当前歌曲的 `rawLyric` 后会接管。
 
 ## 为什么使用 API 102
 
@@ -148,6 +152,7 @@ app\build\outputs\apk\debug\app-debug.apk
 ```powershell
 adb install -r app\build\outputs\apk\debug\app-debug.apk
 adb shell am force-stop com.salt.music
+# 或：adb shell am force-stop ink.trantor.coneplayer
 ```
 
 在 LSPosed 中为目标播放器包名和系统界面启用模块，然后重启系统界面或重启设备。之后打开播放器开始播放歌曲，再锁屏查看效果。
@@ -163,7 +168,8 @@ adb logcat -v time | Select-String -Pattern "LockscreenLyrics|OplusMediaDataMana
 
 ```text
 LockscreenLyrics: Hooked MediaSession#setMetadata
-LockscreenLyrics: Hooked Salt Player lyric result constructors
+LockscreenLyrics: Hooked Salt Player lyric result constructors via DexKit: result=..., source=..., scroll=..., count=2
+LockscreenLyrics: Hooked ConePlayer lyric parser via DexKit: ...
 LockscreenLyrics: Hooked SystemUI official lyric TextView draw hooks
 LockscreenLyrics: Registered SystemUI screen timeout receiver
 LockscreenLyrics: Cached real timed lyric from LRC_FILE, rawChars=..., oplusChars=...
@@ -187,11 +193,11 @@ Copyright 2026 Andrea-lyz。本项目采用 [Apache License 2.0](LICENSE) 开源
 
 本项目使用 [Accompanist Lyrics Core](https://github.com/6xingyv/accompanist-lyrics-core) `0.4.5`（`com.mocharealm.accompanist:lyrics-core-jvm`）解析时间轴歌词，该项目由 [6xingyv](https://github.com/6xingyv) 维护，同样采用 [Apache License 2.0](https://github.com/6xingyv/accompanist-lyrics-core/blob/main/LICENSE)。
 
-Android、ColorOS、OPlus、LSPosed、Salt Player 及其他产品名称的商标权归各自权利人所有；本项目与这些权利人不存在隶属或官方背书关系。
+Android、ColorOS、OPlus、LSPosed、Salt Player、ConePlayer 及其他产品名称的商标权归各自权利人所有；本项目与这些权利人不存在隶属或官方背书关系。
 
 ## 当前限制
 
-- 兼容适配器依赖播放器私有类和混淆成员；播放器大版本更新后可能需要同步更新 Hook。
+- 兼容适配器使用 DexKit 根据稳定字符串与结构特征定位播放器私有实现；播放器大版本改变歌词架构后仍可能需要同步更新特征。
 - OPlus SystemUI 的类名和字段属于厂商私有实现，系统版本更新后可能需要重新适配。
 - 屏幕超时保活依赖 OPlus 锁屏歌词 UI 日志和官方歌词视图状态；如果 ROM 修改了相关日志或 UI 路径，需要重新适配。
 - 锁屏歌词绘制依赖官方歌词视图存在；如果系统界面没有进入歌词 UI，模块不会强行创建新的歌词窗口。

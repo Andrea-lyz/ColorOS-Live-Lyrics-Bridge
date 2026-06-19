@@ -10,7 +10,7 @@ Languages: [English](README.md) | [简体中文](README.zh-CN.md)
 
 An LSPosed/libxposed API 102 module that bridges timed lyrics from supported Android music players into the ColorOS/OPlus lock-screen lyric pipeline.
 
-The module currently ships a Salt Player compatibility adapter plus SystemUI renderer hooks. Other players should integrate by publishing the `lyricInfo` contract themselves.
+The module currently ships DexKit-based compatibility adapters for Salt Player and ConePlayer plus SystemUI renderer hooks. Other players should integrate by publishing the `lyricInfo` contract themselves.
 
 ## What It Hooks
 
@@ -20,7 +20,7 @@ Player process:
 android.media.session.MediaSession#setMetadata(android.media.MediaMetadata)
 ```
 
-For compatibility adapters such as Salt Player, when the player submits metadata without `MediaMetadata["lyricInfo"]`, the module can inject an OPlus-compatible payload from the captured timed lyric source. Self-integrating players should publish the same payload themselves.
+For built-in compatibility adapters, a valid lyric captured for the current track takes priority over a simple player-provided `MediaMetadata["lyricInfo"]` payload. The simple payload remains a fallback until capture succeeds. A player payload containing `rawLyric` or timed translation data is treated as an explicit enhanced integration and is kept. Self-integrating players should publish the same payload themselves.
 
 ```json
 {
@@ -89,7 +89,11 @@ Built-in compatibility adapters are:
 
 ```java
 new SaltPlayerAdapter()
+new ConePlayerAdapter("ink.trantor.coneplayer")
+new ConePlayerAdapter("ink.trantor.coneplayer.gp")
 ```
+
+The Salt adapter has been verified against Salt Player 12.0.0 official and alpha07 builds. The ConePlayer adapter has been verified across versions 1.1.3 through 1.1.5 for the formal package, with Google Play package scope included.
 
 Prefer the player-provided `lyricInfo` contract for new players. Add a `PlayerAdapter` only for compatibility cases where the player cannot publish `lyricInfo` itself.
 
@@ -101,7 +105,7 @@ To add another compatibility adapter:
 4. Add the adapter to `PLAYER_ADAPTERS`.
 5. Keep `com.android.systemui` in `scope.list`; it is required for lock-screen rendering and screen-timeout keep-awake.
 
-If a player already writes a valid OPlus `lyricInfo` metadata field by itself, a source hook is normally unnecessary. The module recognizes it through the external contract.
+If a player outside the built-in adapter scope already writes a valid OPlus `lyricInfo` metadata field by itself, a source hook is normally unnecessary. For a built-in adapter package, a line-only payload is a fallback; captured `rawLyric` replaces it once the adapter has data for the current track.
 
 ## Why API 102
 
@@ -143,11 +147,12 @@ The manual release workflow expects these repository secrets:
 
 The release APK is published as `ColorOS-Live-Lyrics-Bridge-<tag>.apk`.
 
-Install and test with the default Salt adapter:
+Install and test with a built-in adapter:
 
 ```powershell
 adb install -r app\build\outputs\apk\debug\app-debug.apk
 adb shell am force-stop com.salt.music
+# Or: adb shell am force-stop ink.trantor.coneplayer
 ```
 
 Enable the module in LSPosed for the target player package and System UI, then reboot or restart System UI. Restart the player, play a song, then lock the screen.
@@ -163,7 +168,8 @@ Expected module log:
 
 ```text
 LockscreenLyrics: Hooked MediaSession#setMetadata
-LockscreenLyrics: Hooked Salt Player lyric result constructors
+LockscreenLyrics: Hooked Salt Player lyric result constructors via DexKit: result=..., source=..., scroll=..., count=2
+LockscreenLyrics: Hooked ConePlayer lyric parser via DexKit: ...
 LockscreenLyrics: Hooked SystemUI official lyric TextView draw hooks
 LockscreenLyrics: Registered SystemUI screen timeout receiver
 LockscreenLyrics: Cached real timed lyric from LRC_FILE, rawChars=..., oplusChars=...
@@ -187,4 +193,4 @@ Copyright 2026 Andrea-lyz. This project is released under the [Apache License 2.
 
 This project uses [Accompanist Lyrics Core](https://github.com/6xingyv/accompanist-lyrics-core) `0.4.5` (`com.mocharealm.accompanist:lyrics-core-jvm`), maintained by [6xingyv](https://github.com/6xingyv), for timed-lyric parsing. Accompanist Lyrics Core is also distributed under the [Apache License 2.0](https://github.com/6xingyv/accompanist-lyrics-core/blob/main/LICENSE).
 
-Android, ColorOS, OPlus, LSPosed, Salt Player, and other product names are trademarks of their respective owners. This project is not affiliated with or endorsed by those owners.
+Android, ColorOS, OPlus, LSPosed, Salt Player, ConePlayer, and other product names are trademarks of their respective owners. This project is not affiliated with or endorsed by those owners.

@@ -18,6 +18,16 @@ Players that already own timed lyrics do not need an in-module `PlayerAdapter` o
 - A player that publishes only `lyric` still gets native OPlus line-level lyrics, dynamic provider recognition, whitelist bypass, and screen-timeout handling.
 - The player does not need to be added to the module's LSPosed scope.
 
+## Data-source priority
+
+For a player outside the built-in compatibility-adapter scope, a valid player-provided payload is consumed directly in SystemUI. For Salt Player or ConePlayer, where the module also runs inside the player process, the priority is:
+
+1. A player-provided enhanced payload containing timed `rawLyric` or timed translation data.
+2. A timed lyric captured by the module's compatibility adapter and verified for the current track.
+3. A simple player/OPlus `lyricInfo` payload containing only line-level lyrics.
+
+This means a future line-only native `lyricInfo` implementation remains a safe fallback, while the adapter can still provide word timing and translations. Once adapter data is available, the module builds a fresh payload instead of merging fields from the simple native payload.
+
 For Media3, place the JSON in `MediaItem.mediaMetadata.extras`. Prefer publishing the first current item with its complete `lyricInfo` already attached. For framework media sessions, use `android.media.MediaMetadata.Builder.putString("lyricInfo", json)` and call `MediaSession.setMetadata`.
 
 Update the whole payload on each track transition, remove it when lyrics are disabled or unavailable, and keep `lyric` and `rawLyric` on the same time offset. `LyricInfoContract.java` is the canonical constants and validation reference; players do not need to link against it.
