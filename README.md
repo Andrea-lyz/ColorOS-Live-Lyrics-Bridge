@@ -12,6 +12,14 @@ An LSPosed/libxposed API 102 module that bridges timed lyrics from supported And
 
 The module currently ships a Salt Player compatibility adapter plus SystemUI renderer hooks. Other players should integrate by publishing the `lyricInfo` contract themselves.
 
+## Highlights in v1.5.0
+
+- Uses Accompanist Lyrics Core behind a small adapter to parse more timed-lyric variants and preserve word timing plus same-timestamp translations.
+- Adds track-aware caching and normalized identity matching, including `[Explicit]` / `[Clean]` suffixes and Salt's lyric-before-metadata handoff.
+- Smooths lock-screen track changes without briefly exposing the official renderer, while keeping first immersive entry and delayed row binding reliable.
+- Improves the word-level renderer with active-word glow, focus transitions, bilingual layout, long-line windows, and persistent translation toggling from the media action area.
+- Tightens immersive-mode detection, screen keep-awake state, OPlus media policy integration, and view/cache cleanup.
+
 ## What It Hooks
 
 Player process:

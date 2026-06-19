@@ -18,7 +18,7 @@ Players that already own timed lyrics do not need an in-module `PlayerAdapter` o
 - A player that publishes only `lyric` still gets native OPlus line-level lyrics, dynamic provider recognition, whitelist bypass, and screen-timeout handling.
 - The player does not need to be added to the module's LSPosed scope.
 
-For Media3, place the JSON in `MediaItem.mediaMetadata.extras`, update the current item, and republish it after asynchronous lyrics load. For framework media sessions, use `android.media.MediaMetadata.Builder.putString("lyricInfo", json)` and call `MediaSession.setMetadata`.
+For Media3, place the JSON in `MediaItem.mediaMetadata.extras`. Prefer publishing the first current item with its complete `lyricInfo` already attached. For framework media sessions, use `android.media.MediaMetadata.Builder.putString("lyricInfo", json)` and call `MediaSession.setMetadata`.
 
 Update the whole payload on each track transition, remove it when lyrics are disabled or unavailable, and keep `lyric` and `rawLyric` on the same time offset. `LyricInfoContract.java` is the canonical constants and validation reference; players do not need to link against it.
 
@@ -26,13 +26,22 @@ Update the whole payload on each track transition, remove it when lyrics are dis
 
 Publish on state changes instead of using a repeating timer:
 
-1. Publish once when the media session is created or the feature is enabled, if current lyrics are ready.
+1. Publish once when the media session is created or the feature is enabled, if current lyrics are ready. The initial metadata, notification, and current `MediaItem` should all describe the same track and carry the same complete `lyricInfo`.
 2. Remove the previous payload as soon as a track transition begins.
-3. Publish the complete payload once when the new track's asynchronous lyric load finishes.
+3. Publish the complete payload once when the new track's asynchronous lyric load finishes. If playback has already started, update the latest current-item metadata and the session/notification metadata as one logical operation.
 4. If the session or current `MediaItem` is rebuilt, read its metadata first and republish only when `lyricInfo` is missing or differs from the target JSON.
-5. For Media3/OPlus builds with propagation races, an optional check about `800 ms` after the first publication may republish at most once, and only when the value is still missing. Do not continue periodic retries.
-6. Cancel pending retries and remove `lyricInfo` when the feature is disabled, lyrics are unavailable, or the queue becomes empty.
+5. Do not publish a lyric-free track metadata object and then patch only `extras` a few milliseconds later. OPlus may debounce that second update (`within debounce period, ignore`), leaving the first track at `hasLyric=false` until another track change. If lyrics are not ready at track creation, wait for the initial media update burst to settle before the one complete lyric update.
+6. For Media3/OPlus builds with propagation races, an optional check about `800 ms` after the first complete publication may republish at most once, and only when the value is still missing. Do not continue periodic retries.
+7. Cancel pending retries and remove `lyricInfo` when the feature is disabled, lyrics are unavailable, or the queue becomes empty.
 
 In normal operation this means **one publication per track**, or at most **two** on a system that demonstrably loses the first update. Playback position changes, pause/resume, and ordinary notification refreshes must not rewrite `lyricInfo`.
+
+### First-track checklist
+
+- Build `lyricInfo` from the same title, artist, and stable media ID used by the current media item.
+- Attach it before the first metadata/notification publication whenever lyrics are already available.
+- When lyrics arrive asynchronously, clone the latest metadata instead of an earlier snapshot, then replace the current item only once with the complete payload.
+- Do not rely on an immediate extras-only update to cross the OPlus media pipeline.
+- During integration testing, `hasLyric=false` after the player reports that it published `lyricInfo` usually means the update was debounced before SystemUI consumed it; it is not a lyric-format rejection by this module.
 
 See the [Chinese integration guide](PLAYER_INTEGRATION.zh-CN.md) for complete Media3 and framework examples.
