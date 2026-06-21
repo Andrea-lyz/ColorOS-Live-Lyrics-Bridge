@@ -42,6 +42,10 @@ final class SaltPlayerAdapter implements PlayerAdapter {
 
     @Override
     public void installLyricSourceHooks(LockscreenLyricsModule module, ClassLoader classLoader) {
+        // Some Salt Player builds do not publish the legacy desktop-lyric custom action.
+        // Inject the public translation action so SystemUI can always build the toggle.
+        module.installInjectedTranslationToggleActionHook(PACKAGE_NAME);
+
         try {
             ensureDexKitLoaded();
         } catch (Throwable t) {

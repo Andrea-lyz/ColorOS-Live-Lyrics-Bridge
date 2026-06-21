@@ -67,15 +67,15 @@ containerView.isShown=true
 hasLyric=false
 ```
 
-It holds a `SCREEN_DIM_WAKE_LOCK` only when all of these are true:
+It holds a 15-second `SCREEN_BRIGHT_WAKE_LOCK` lease only when all of these are true:
 
 - The current package is either a built-in compatibility adapter or the active provider of a valid `lyricInfo` payload.
 - OPlus lyric UI mode is active.
 - Playback is playing.
-- There is lyric evidence, such as a parsed word lyric model, official lyric metadata, or a recently visible official lyric view.
-- The screen is interactive and the user has not already unlocked the device.
+- There is lyric evidence from a recently visible official lyric view, with only a short grace window from fresh lyric metadata.
+- The screen is interactive and the keyguard is still showing.
 
-While active, the module also pulses `PowerManager.userActivity(...)` about every 8 seconds so the system treats the lock-screen lyric view as user-visible activity. The wake lock is released on screen off, user present/unlock, playback stop, missing lyrics, unsupported package, or any condition change.
+While active, the module renews the wake-lock lease and pulses `PowerManager.userActivity(...)` about every 8 seconds so the system treats the lock-screen lyric view as user-visible activity. The wake lock is released on screen off, true keyguard dismissal, playback stop, missing visible lyric evidence, unsupported package, or any condition change. `ACTION_USER_PRESENT` is followed by a short keyguard recheck so face unlock can keep the lock-screen lyric UI awake when the keyguard remains visible.
 
 Self-integrating players are recognized from the current media session and do not need to be added to `scope.list` or `PLAYER_ADAPTERS`. If OPlus changes the `PluginSeedling--Template` log format for a device/ROM, the keep-awake detection may need a small SystemUI-side update.
 
@@ -144,7 +144,7 @@ JDK 21 is required to compile the Lyrics Core dependency. The helper discovers i
 ## GitHub Actions
 
 - `Build Debug APK`: runs on pushes to `main` and pull requests when project source or build files change. The generated debug APK is uploaded as a workflow artifact.
-- `Release APK`: manually triggered after pushing a tag such as `v1.7.0`. The workflow checks out that tag, reads `docs/releases/<tag>.md`, builds a release-signed APK, sets the APK `versionName` from the tag, and publishes the GitHub Release.
+- `Release APK`: manually triggered after pushing a tag such as `v1.7.1`. The workflow checks out that tag, reads `docs/releases/<tag>.md`, builds a release-signed APK, sets the APK `versionName` from the tag, publishes the GitHub Release, and mirrors the release to the LSPosed module repository.
 
 The manual release workflow expects these repository secrets:
 
@@ -152,6 +152,7 @@ The manual release workflow expects these repository secrets:
 - `KEY_STORE_PASSWORD`: keystore password.
 - `KEY_ALIAS`: signing key alias.
 - `KEY_PASSWORD`: signing key password.
+- `LSP_REPO_TOKEN`: PAT with release write access to `Xposed-Modules-Repo/io.github.andrealtb.lockscreenlyrics`.
 
 The release APK is published as `ColorOS-Live-Lyrics-Bridge-<tag>.apk`.
 
@@ -184,7 +185,7 @@ LockscreenLyrics: Cached real timed lyric from LRC_FILE, rawChars=..., oplusChar
 LockscreenLyrics: Injected real LRC_FILE lyricInfo for title=...
 LockscreenLyrics: Cached SystemUI word lyric model, lines=...
 LockscreenLyrics: Lockscreen lyric UI keep-awake ON
-LockscreenLyrics: Acquired screen timeout wake lock without timeout
+LockscreenLyrics: Acquired bright screen timeout wake lock lease=15000ms
 LockscreenLyrics: Pulsed screen timeout user activity without changing lights
 LockscreenLyrics: Hooked LyricsRecyclerView#setCurrentLyric, methods=...
 LockscreenLyrics: LyricsRecyclerView current index=...

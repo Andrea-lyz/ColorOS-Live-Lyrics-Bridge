@@ -67,15 +67,15 @@ containerView.isShown=true
 hasLyric=false
 ```
 
-只有同时满足这些条件时，模块才会持有 `SCREEN_DIM_WAKE_LOCK`：
+只有同时满足这些条件时，模块才会持有 15 秒租约的 `SCREEN_BRIGHT_WAKE_LOCK`：
 
 - 当前包名属于内置兼容适配器，或者是有效 `lyricInfo` 的当前提供者。
 - OPlus 歌词 UI 模式处于激活状态。
 - 播放状态是正在播放。
-- 有歌词证据，例如已经解析出的逐字歌词模型、官方歌词元数据，或者最近可见的官方歌词视图。
-- 屏幕仍处于交互状态，并且用户还没有解锁进入桌面。
+- 有来自最近可见官方歌词视图的歌词证据；刚收到的歌词元数据只提供很短的过渡窗口。
+- 屏幕仍处于交互状态，并且 Keyguard 仍在显示。
 
-保活期间，模块还会大约每 8 秒调用一次 `PowerManager.userActivity(...)`，让系统把锁屏歌词视图视为仍在被观看。遇到息屏、用户解锁、播放停止、歌词消失、包名不受支持或其他条件变化时，会立即释放 wake lock。
+保活期间，模块会续租 wake lock，并大约每 8 秒调用一次 `PowerManager.userActivity(...)`，让系统把锁屏歌词视图视为仍在被观看。遇到息屏、真正离开 Keyguard、播放停止、可见歌词证据消失、包名不受支持或其他条件变化时，会立即释放 wake lock。收到 `ACTION_USER_PRESENT` 后会短暂延迟复核 Keyguard 状态，因此人脸识别成功但仍停留在锁屏歌词页时会恢复保活。
 
 主动接入的播放器会从当前媒体会话中被动态识别，不需要加入 `scope.list` 或 `PLAYER_ADAPTERS`。如果某个系统版本修改了 `PluginSeedling--Template` 日志格式，则可能需要更新 SystemUI 侧的识别逻辑。
 
@@ -144,7 +144,7 @@ APK 输出位置：
 ## GitHub Actions
 
 - `Build Debug APK`：当 `main` 分支源码更新或发起 Pull Request 时自动构建，生成的 debug APK 会作为 workflow artifact 上传。
-- `Release APK`：推送类似 `v1.7.0` 的 tag 后在 Actions 页面手动触发。工作流会检出该 tag、读取 `docs/releases/<tag>.md`、构建 release 签名 APK、从 tag 设置 `versionName`，并创建 GitHub Release。
+- `Release APK`：推送类似 `v1.7.1` 的 tag 后在 Actions 页面手动触发。工作流会检出该 tag、读取 `docs/releases/<tag>.md`、构建 release 签名 APK、从 tag 设置 `versionName`，创建 GitHub Release，并同步发布到 LSPosed 模块仓库。
 
 手动发布工作流需要这些仓库 secrets：
 
@@ -152,6 +152,7 @@ APK 输出位置：
 - `KEY_STORE_PASSWORD`：keystore 密码。
 - `KEY_ALIAS`：签名 key alias。
 - `KEY_PASSWORD`：签名 key 密码。
+- `LSP_REPO_TOKEN`：对 `Xposed-Modules-Repo/io.github.andrealtb.lockscreenlyrics` 具有 release 写入权限的 PAT。
 
 发布产物会命名为 `ColorOS-Live-Lyrics-Bridge-<tag>.apk`。
 
@@ -184,7 +185,7 @@ LockscreenLyrics: Cached real timed lyric from LRC_FILE, rawChars=..., oplusChar
 LockscreenLyrics: Injected real LRC_FILE lyricInfo for title=...
 LockscreenLyrics: Cached SystemUI word lyric model, lines=...
 LockscreenLyrics: Lockscreen lyric UI keep-awake ON
-LockscreenLyrics: Acquired screen timeout wake lock without timeout
+LockscreenLyrics: Acquired bright screen timeout wake lock lease=15000ms
 LockscreenLyrics: Pulsed screen timeout user activity without changing lights
 LockscreenLyrics: Hooked LyricsRecyclerView#setCurrentLyric, methods=...
 LockscreenLyrics: LyricsRecyclerView current index=...

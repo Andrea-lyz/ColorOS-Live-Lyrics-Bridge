@@ -84,3 +84,41 @@ jobs:
           body_path: docs/releases/${{ inputs.tag }}.md
           prerelease: ${{ inputs.prerelease }}
           files: release-artifacts/*.apk
+
+      - name: Sync release to LSPosed module repo
+        env:
+          GH_TOKEN: ${{ secrets.LSP_REPO_TOKEN }}
+          LSP_REPO: Xposed-Modules-Repo/io.github.andrealtb.lockscreenlyrics
+          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_NAME: ${{ inputs.release_name || inputs.tag }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error title=Missing LSP_REPO_TOKEN::Set a PAT with access to $LSP_REPO as the LSP_REPO_TOKEN repository secret."
+            exit 1
+          fi
+
+          notes_file="docs/releases/${RELEASE_TAG}.md"
+          if gh release view "$RELEASE_TAG" --repo "$LSP_REPO" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" \
+              --repo "$LSP_REPO" \
+              --title "$RELEASE_NAME" \
+              --notes-file "$notes_file" \
+              --prerelease="$PRERELEASE"
+            gh release upload "$RELEASE_TAG" release-artifacts/*.apk \
+              --repo "$LSP_REPO" \
+              --clobber
+          else
+            create_args=(
+              "$RELEASE_TAG"
+              release-artifacts/*.apk
+              --repo "$LSP_REPO"
+              --target main
+              --title "$RELEASE_NAME"
+              --notes-file "$notes_file"
+            )
+            if [ "$PRERELEASE" = "true" ]; then
+              create_args+=(--prerelease)
+            fi
+            gh release create "${create_args[@]}"
+          fi
