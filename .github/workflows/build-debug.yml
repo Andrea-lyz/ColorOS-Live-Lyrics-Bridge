@@ -12,7 +12,9 @@ on:
       - "settings.gradle.kts"
       - "gradle.properties"
       - "gradlew"
+      - ".github/lsposed/**"
       - ".github/workflows/build-debug.yml"
+      - "scripts/validate-lsposed-metadata.ps1"
   pull_request:
     paths:
       - "app/**"
@@ -22,7 +24,9 @@ on:
       - "settings.gradle.kts"
       - "gradle.properties"
       - "gradlew"
+      - ".github/lsposed/**"
       - ".github/workflows/build-debug.yml"
+      - "scripts/validate-lsposed-metadata.ps1"
 
 jobs:
   build:
@@ -44,6 +48,10 @@ jobs:
 
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
+
+      - name: Validate LSPosed repository metadata
+        shell: pwsh
+        run: ./scripts/validate-lsposed-metadata.ps1
 
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug

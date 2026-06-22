@@ -111,7 +111,7 @@ Salt 适配器已验证 Salt Player 12.0.0 正式版与 alpha07；ConePlayer 适
 2. 在 `SaltPlayerAdapter` 旁边新增一个 `PlayerAdapter` 实现。
 3. 在播放器进程中抓取真实时间轴歌词，并调用 `module.cacheTimedLyric(source, rawLyric)`。
 4. 将新的适配器加入 `PLAYER_ADAPTERS`。
-5. 保留 `scope.list` 中的 `com.android.systemui`；锁屏绘制和屏幕超时保活都依赖它。
+5. 保留 `scope.list` 中的 `system` 与 `com.android.systemui`；OPlus 历史播放器接入和 SystemUI 侧锁屏能力分别依赖它们。
 
 如果作用域外的播放器已经自行写入合法的 OPlus `lyricInfo`，通常无需新增歌词源 Hook；模块会通过外部协议自动识别。对于已有内置适配器的播放器，仅含逐行 `lyric` 的简单 payload 会作为兜底，适配器抓到当前歌曲的 `rawLyric` 后会接管。
 
@@ -123,6 +123,7 @@ Salt 适配器已验证 Salt Player 12.0.0 正式版与 alpha07；ConePlayer 适
 - 入口列表：`src/main/resources/META-INF/xposed/java_init.list`
 - 模块配置：`src/main/resources/META-INF/xposed/module.prop`
 - 静态作用域：`src/main/resources/META-INF/xposed/scope.list`
+- LSPosed 仓库元数据：`.github/lsposed/`
 - Hook 写法：`hook(method).setId(...).setExceptionMode(...).intercept(...)`
 
 `libxposed-api-stubs` 只作为编译期依赖，不会打包进 APK。它的作用是在不下载 `io.github.libxposed:api:102.0.0` 的情况下让项目完成编译；运行时由 LSPosed 提供真实 API 类。
@@ -144,7 +145,7 @@ APK 输出位置：
 ## GitHub Actions
 
 - `Build Debug APK`：当 `main` 分支源码更新或发起 Pull Request 时自动构建，生成的 debug APK 会作为 workflow artifact 上传。
-- `Release APK`：推送类似 `v1.8.0` 的 tag 后在 Actions 页面手动触发。工作流会检出该 tag、读取 `docs/releases/<tag>.md`、构建 release 签名 APK、从 tag 设置 `versionName`，创建 GitHub Release，并同步发布到 LSPosed 模块仓库。
+- `Release APK`：推送类似 `v1.8.0` 的 tag 后手动触发。工作流会校验 JSON 格式的 `SCOPE`，同步 README/SUMMARY/SOURCE_URL/SCOPE 到 LSPosed 仓库，构建签名 APK，并以 `80-1.8.0` 这类 `versionCode-versionName` 标签同步版本。
 
 手动发布工作流需要这些仓库 secrets：
 
@@ -152,7 +153,7 @@ APK 输出位置：
 - `KEY_STORE_PASSWORD`：keystore 密码。
 - `KEY_ALIAS`：签名 key alias。
 - `KEY_PASSWORD`：签名 key 密码。
-- `LSP_REPO_TOKEN`：对 `Xposed-Modules-Repo/io.github.andrealtb.lockscreenlyrics` 具有 release 写入权限的 PAT。
+- `LSP_REPO_TOKEN`：对 `Xposed-Modules-Repo/io.github.andrealtb.lockscreenlyrics` 具有仓库内容与 release 写入权限的 PAT。
 
 发布产物会命名为 `ColorOS-Live-Lyrics-Bridge-<tag>.apk`。
 
@@ -164,7 +165,7 @@ adb shell am force-stop com.salt.music
 # 或：adb shell am force-stop ink.trantor.coneplayer
 ```
 
-在 LSPosed 中为目标播放器包名和系统界面启用模块，然后重启系统界面或重启设备。之后打开播放器开始播放歌曲，再锁屏查看效果。
+在 LSPosed 中为目标播放器包名、`system` 与系统界面启用模块，然后重启设备。之后打开播放器开始播放歌曲，再锁屏查看效果。
 
 常用日志：
 

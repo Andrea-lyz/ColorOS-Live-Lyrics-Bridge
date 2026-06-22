@@ -43,6 +43,10 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
+      - name: Validate LSPosed repository metadata
+        shell: pwsh
+        run: ./scripts/validate-lsposed-metadata.ps1
+
       - name: Decode signing key
         shell: bash
         env:
@@ -85,6 +89,37 @@ jobs:
           prerelease: ${{ inputs.prerelease }}
           files: release-artifacts/*.apk
 
+      - name: Sync metadata to LSPosed module repo
+        env:
+          GH_TOKEN: ${{ secrets.LSP_REPO_TOKEN }}
+          LSP_REPO: Xposed-Modules-Repo/io.github.andrealtb.lockscreenlyrics
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error title=Missing LSP_REPO_TOKEN::Set a PAT with content and release write access to $LSP_REPO."
+            exit 1
+          fi
+
+          gh auth setup-git
+          target_dir="$RUNNER_TEMP/lsposed-module-repo"
+          gh repo clone "$LSP_REPO" "$target_dir" -- --depth 1
+          cp .github/lsposed/README.md "$target_dir/README.md"
+          cp .github/lsposed/SUMMARY "$target_dir/SUMMARY"
+          cp .github/lsposed/SOURCE_URL "$target_dir/SOURCE_URL"
+          cp .github/lsposed/SCOPE "$target_dir/SCOPE"
+
+          cd "$target_dir"
+          if [ -z "$(git status --porcelain -- README.md SUMMARY SOURCE_URL SCOPE)" ]; then
+            echo "LSPosed repository metadata is already up to date."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md SUMMARY SOURCE_URL SCOPE
+          git commit -m "Sync module metadata for ${RELEASE_TAG}"
+          git push origin HEAD:main
+
       - name: Sync release to LSPosed module repo
         env:
           GH_TOKEN: ${{ secrets.LSP_REPO_TOKEN }}
@@ -99,18 +134,22 @@ jobs:
           fi
 
           notes_file="docs/releases/${RELEASE_TAG}.md"
-          if gh release view "$RELEASE_TAG" --repo "$LSP_REPO" >/dev/null 2>&1; then
-            gh release edit "$RELEASE_TAG" \
+          version_code="$(jq -r '.elements[0].versionCode' app/build/outputs/apk/release/output-metadata.json)"
+          version_name="$(jq -r '.elements[0].versionName' app/build/outputs/apk/release/output-metadata.json)"
+          lsp_release_tag="${version_code}-${version_name}"
+
+          if gh release view "$lsp_release_tag" --repo "$LSP_REPO" >/dev/null 2>&1; then
+            gh release edit "$lsp_release_tag" \
               --repo "$LSP_REPO" \
               --title "$RELEASE_NAME" \
               --notes-file "$notes_file" \
               --prerelease="$PRERELEASE"
-            gh release upload "$RELEASE_TAG" release-artifacts/*.apk \
+            gh release upload "$lsp_release_tag" release-artifacts/*.apk \
               --repo "$LSP_REPO" \
               --clobber
           else
             create_args=(
-              "$RELEASE_TAG"
+              "$lsp_release_tag"
               release-artifacts/*.apk
               --repo "$LSP_REPO"
               --target main

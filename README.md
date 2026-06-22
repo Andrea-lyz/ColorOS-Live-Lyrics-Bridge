@@ -111,7 +111,7 @@ To add another compatibility adapter:
 2. Implement a new `PlayerAdapter` next to `SaltPlayerAdapter`.
 3. Capture that player's real timed lyric source and call `module.cacheTimedLyric(source, rawLyric)`.
 4. Add the adapter to `PLAYER_ADAPTERS`.
-5. Keep `com.android.systemui` in `scope.list`; it is required for lock-screen rendering and screen-timeout keep-awake.
+5. Keep both `system` and `com.android.systemui` in `scope.list`; they are required for OPlus media-history integration and SystemUI-side lock-screen behavior.
 
 If a player outside the built-in adapter scope already writes a valid OPlus `lyricInfo` metadata field by itself, a source hook is normally unnecessary. For a built-in adapter package, a line-only payload is a fallback; captured `rawLyric` replaces it once the adapter has data for the current track.
 
@@ -123,6 +123,7 @@ The local `../LSP_api` folder is libxposed API `102.0.0`. This project follows i
 - Entry list: `src/main/resources/META-INF/xposed/java_init.list`
 - Module config: `src/main/resources/META-INF/xposed/module.prop`
 - Static scope: `src/main/resources/META-INF/xposed/scope.list`
+- LSPosed repository metadata: `.github/lsposed/`
 - Hook API: `hook(method).setId(...).setExceptionMode(...).intercept(...)`
 
 `libxposed-api-stubs` is compile-only and is not packaged into the APK. It exists so the project can compile without downloading `io.github.libxposed:api:102.0.0`; LSPosed provides the real API classes at runtime.
@@ -144,7 +145,7 @@ JDK 21 is required to compile the Lyrics Core dependency. The helper discovers i
 ## GitHub Actions
 
 - `Build Debug APK`: runs on pushes to `main` and pull requests when project source or build files change. The generated debug APK is uploaded as a workflow artifact.
-- `Release APK`: manually triggered after pushing a tag such as `v1.8.0`. The workflow checks out that tag, reads `docs/releases/<tag>.md`, builds a release-signed APK, sets the APK `versionName` from the tag, publishes the GitHub Release, and mirrors the release to the LSPosed module repository.
+- `Release APK`: manually triggered after pushing a tag such as `v1.8.0`. The workflow validates the JSON `SCOPE`, syncs README/SUMMARY/SOURCE_URL/SCOPE to the LSPosed repository, builds a signed APK, publishes the source-repository release, and mirrors it with a `versionCode-versionName` tag such as `80-1.8.0`.
 
 The manual release workflow expects these repository secrets:
 
@@ -152,7 +153,7 @@ The manual release workflow expects these repository secrets:
 - `KEY_STORE_PASSWORD`: keystore password.
 - `KEY_ALIAS`: signing key alias.
 - `KEY_PASSWORD`: signing key password.
-- `LSP_REPO_TOKEN`: PAT with release write access to `Xposed-Modules-Repo/io.github.andrealtb.lockscreenlyrics`.
+- `LSP_REPO_TOKEN`: PAT with repository-content and release write access to `Xposed-Modules-Repo/io.github.andrealtb.lockscreenlyrics`.
 
 The release APK is published as `ColorOS-Live-Lyrics-Bridge-<tag>.apk`.
 
@@ -164,7 +165,7 @@ adb shell am force-stop com.salt.music
 # Or: adb shell am force-stop ink.trantor.coneplayer
 ```
 
-Enable the module in LSPosed for the target player package and System UI, then reboot or restart System UI. Restart the player, play a song, then lock the screen.
+Enable the module in LSPosed for the target player package, `system`, and System UI, then reboot the device. Restart the player, play a song, then lock the screen.
 
 Useful logs:
 
