@@ -174,6 +174,56 @@ public final class LyricSessionReducerTest {
     }
 
     @Test
+    public void specificHintDoesNotBindDifferentNoLyricTrack() {
+        LyricSessionReducer reducer = new LyricSessionReducer(300_000L, 24);
+        LyricSessionReducer.TrackSnapshot current =
+                new LyricSessionReducer.TrackSnapshot(
+                        "22 (Taylor's Version)",
+                        "Taylor Swift",
+                        230_954L,
+                        "");
+        reducer.observeTrack(
+                current,
+                LyricSessionReducer.ObservationKind.STABLE_METADATA,
+                1_000L);
+
+        LyricSessionReducer.TrackSnapshot hintedTrack =
+                new LyricSessionReducer.TrackSnapshot(
+                        "a thousand years",
+                        "Christina Perri",
+                        285_120L,
+                        "");
+        LyricSessionReducer.CaptureUpdate lyric = reducer.capture(
+                "EMBEDDED",
+                "[00:00]Heart beats fast",
+                "[00:00]a thousand years - Christina Perri\n[00:01]Heart beats fast",
+                hintedTrack.key,
+                1_100L,
+                LyricProviderCapabilities.PASSIVE_PARSER);
+        assertFalse(lyric.boundToCurrentTrack);
+
+        LyricSessionReducer.TrackSnapshot noLyricTrack =
+                new LyricSessionReducer.TrackSnapshot(
+                        "Strangers By Nature",
+                        "Adele",
+                        182_163L,
+                        "");
+        LyricSessionReducer.TrackUpdate noLyricUpdate = reducer.observeTrack(
+                noLyricTrack,
+                LyricSessionReducer.ObservationKind.STABLE_METADATA,
+                1_200L);
+        assertNull(noLyricUpdate.document);
+        assertNull(reducer.documentForTrack(noLyricTrack.key, 1_200L));
+
+        LyricSessionReducer.TrackUpdate hintedUpdate = reducer.observeTrack(
+                hintedTrack,
+                LyricSessionReducer.ObservationKind.STABLE_METADATA,
+                1_300L);
+        assertSame(lyric.document, hintedUpdate.document);
+        assertEquals(hintedTrack.key, hintedUpdate.document.boundTrackKey);
+    }
+
+    @Test
     public void advisoryHintDoesNotExposeUnboundDocumentThroughCache() {
         LyricSessionReducer reducer = new LyricSessionReducer(300_000L, 24);
         reducer.capture(
@@ -224,7 +274,7 @@ public final class LyricSessionReducerTest {
     }
 
     @Test
-    public void identicalLyricAfterCoalesceWindowCanBindNextTrack() {
+    public void unhintedReplayAfterCoalesceWindowKeepsCurrentBinding() {
         LyricSessionReducer reducer = new LyricSessionReducer(300_000L, 24);
         LyricSessionReducer.TrackSnapshot firstTrack =
                 new LyricSessionReducer.TrackSnapshot(
@@ -253,15 +303,15 @@ public final class LyricSessionReducerTest {
                 LyricProviderCapabilities.PASSIVE_PARSER);
         assertSame(first.document, constructorDuplicate.document);
 
-        LyricSessionReducer.CaptureUpdate nextLyric = reducer.capture(
+        LyricSessionReducer.CaptureUpdate replay = reducer.capture(
                 "EMBEDDED",
                 "[00:00]shared line",
                 "[00:00]shared line",
                 "",
                 1_600L,
                 LyricProviderCapabilities.PASSIVE_PARSER);
-        assertNotSame(first.document, nextLyric.document);
-        assertFalse(nextLyric.boundToCurrentTrack);
+        assertSame(first.document, replay.document);
+        assertTrue(replay.boundToCurrentTrack);
 
         LyricSessionReducer.TrackSnapshot nextTrack =
                 new LyricSessionReducer.TrackSnapshot(
@@ -269,6 +319,130 @@ public final class LyricSessionReducerTest {
                         "Artist",
                         244_278L,
                         "");
+        LyricSessionReducer.TrackUpdate update = reducer.observeTrack(
+                nextTrack,
+                LyricSessionReducer.ObservationKind.STABLE_METADATA,
+                1_700L);
+
+        assertNull(update.document);
+        assertNull(reducer.documentForTrack(nextTrack.key, 1_800L));
+        assertSame(first.document, reducer.documentForTrack(firstTrack.key, 1_800L));
+    }
+
+    @Test
+    public void knownUnhintedReplayDoesNotBindDifferentNoLyricTrack() {
+        LyricSessionReducer reducer = new LyricSessionReducer(300_000L, 24);
+        LyricSessionReducer.TrackSnapshot lyricTrack =
+                new LyricSessionReducer.TrackSnapshot(
+                        "World Song C",
+                        "Artist",
+                        244_278L,
+                        "");
+        reducer.observeTrack(
+                lyricTrack,
+                LyricSessionReducer.ObservationKind.STABLE_METADATA,
+                1_000L);
+        LyricSessionReducer.CaptureUpdate first = reducer.capture(
+                "EMBEDDED",
+                "[00:00]known c line",
+                "[00:00]known c line",
+                "",
+                1_100L,
+                LyricProviderCapabilities.PASSIVE_PARSER);
+        assertTrue(first.boundToCurrentTrack);
+
+        LyricSessionReducer.TrackSnapshot previousTrack =
+                new LyricSessionReducer.TrackSnapshot(
+                        "World Song A",
+                        "Artist",
+                        244_278L,
+                        "");
+        reducer.observeTrack(
+                previousTrack,
+                LyricSessionReducer.ObservationKind.STABLE_METADATA,
+                1_500L);
+        LyricSessionReducer.CaptureUpdate previous = reducer.capture(
+                "EMBEDDED",
+                "[00:00]known a line",
+                "[00:00]known a line",
+                "",
+                1_600L,
+                LyricProviderCapabilities.PASSIVE_PARSER);
+        assertTrue(previous.boundToCurrentTrack);
+
+        reducer.observeTrack(
+                previousTrack,
+                LyricSessionReducer.ObservationKind.STABLE_METADATA,
+                2_000L);
+        LyricSessionReducer.CaptureUpdate replay = reducer.capture(
+                "EMBEDDED",
+                "[00:00]known c line",
+                "[00:00]known c line",
+                "",
+                2_100L,
+                LyricProviderCapabilities.PASSIVE_PARSER);
+        assertFalse(replay.boundToCurrentTrack);
+
+        LyricSessionReducer.TrackSnapshot noLyricTrack =
+                new LyricSessionReducer.TrackSnapshot(
+                        "World Song B",
+                        "Artist",
+                        244_278L,
+                        "");
+        LyricSessionReducer.TrackUpdate noLyricUpdate = reducer.observeTrack(
+                noLyricTrack,
+                LyricSessionReducer.ObservationKind.STABLE_METADATA,
+                2_200L);
+        assertNull(noLyricUpdate.document);
+        assertNull(reducer.documentForTrack(noLyricTrack.key, 2_200L));
+
+        LyricSessionReducer.TrackUpdate lyricUpdate = reducer.observeTrack(
+                lyricTrack,
+                LyricSessionReducer.ObservationKind.STABLE_METADATA,
+                2_300L);
+        assertSame(replay.document, lyricUpdate.document);
+        assertEquals(lyricTrack.key, lyricUpdate.document.boundTrackKey);
+    }
+
+    @Test
+    public void taggedIdenticalLyricAfterCoalesceWindowCanBindNextTrack() {
+        LyricSessionReducer reducer = new LyricSessionReducer(300_000L, 24);
+        LyricSessionReducer.TrackSnapshot firstTrack =
+                new LyricSessionReducer.TrackSnapshot(
+                        "World Song A",
+                        "Artist",
+                        244_278L,
+                        "");
+        reducer.observeTrack(
+                firstTrack,
+                LyricSessionReducer.ObservationKind.STABLE_METADATA,
+                1_000L);
+
+        LyricSessionReducer.CaptureUpdate first = reducer.capture(
+                "EMBEDDED",
+                "[00:00]shared line",
+                "[00:00]shared line",
+                "",
+                1_100L,
+                LyricProviderCapabilities.PASSIVE_PARSER);
+        assertTrue(first.boundToCurrentTrack);
+
+        LyricSessionReducer.TrackSnapshot nextTrack =
+                new LyricSessionReducer.TrackSnapshot(
+                        "World Song B",
+                        "Artist",
+                        244_278L,
+                        "");
+        LyricSessionReducer.CaptureUpdate nextLyric = reducer.capture(
+                "EMBEDDED",
+                "[00:00]shared line",
+                "[ti:World Song B]\n[ar:Artist]\n[00:00]shared line",
+                nextTrack.key,
+                1_600L,
+                LyricProviderCapabilities.PASSIVE_PARSER);
+        assertNotSame(first.document, nextLyric.document);
+        assertFalse(nextLyric.boundToCurrentTrack);
+
         LyricSessionReducer.TrackUpdate update = reducer.observeTrack(
                 nextTrack,
                 LyricSessionReducer.ObservationKind.STABLE_METADATA,

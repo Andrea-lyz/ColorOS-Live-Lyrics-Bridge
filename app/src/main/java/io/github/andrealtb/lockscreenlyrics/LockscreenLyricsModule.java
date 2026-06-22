@@ -7,6 +7,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BlurMaskFilter;
 import android.graphics.Canvas;
@@ -24,6 +26,7 @@ import android.media.session.MediaController;
 import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
 import android.os.Build;
+import android.os.Binder;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -46,12 +49,12 @@ import java.util.AbstractList;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
 import io.github.libxposed.api.XposedInterface;
@@ -62,6 +65,10 @@ public final class LockscreenLyricsModule extends XposedModule {
     private static final String MODULE_PACKAGE = "io.github.andrealtb.lockscreenlyrics";
     private static final String SYSTEMUI_PACKAGE = "com.android.systemui";
     private static final String SALT_PLAYER_PACKAGE = "com.salt.music";
+    private static final String OPLUS_MEDIA_CONTROL_SERVICE_CLASS =
+            "com.android.server.media.OplusMediaControlService";
+    private static final String OPLUS_HISTORY_WHITELIST_METHOD =
+            "isInHistoryPlayInfoWhiteList";
     private static final String LYRICS_RECYCLER_VIEW_CLASS =
             "com.oplus.systemui.plugins.shared.template.component.media.view.LyricsRecyclerView";
     private static final String OPLUS_LYRIC_INFO_KEY = LyricInfoContract.METADATA_KEY;
@@ -93,6 +100,8 @@ public final class LockscreenLyricsModule extends XposedModule {
     private static final String HOOK_ID_UPDATE_PKG_ACTIONS_RULE = "oplus-media-update-pkg-actions-rule";
     private static final String HOOK_ID_TRANSLATION_TOGGLE_ACTION =
             "oplus-media-translation-toggle-action";
+    private static final String HOOK_ID_OPLUS_HISTORY_WHITELIST =
+            "oplus-media-history-whitelist-salt";
     private static final String OPLUS_MEDIA_RUS_TAG_WHITELIST = "whitelist";
     private static final String SALT_DESKTOP_LYRIC_ACTION = "com.salt.music.desktop_lyrics";
     private static final String TRANSLATION_TOGGLE_ACTION =
@@ -173,13 +182,24 @@ public final class LockscreenLyricsModule extends XposedModule {
     private volatile boolean systemUiHasOfficialLyric;
     private volatile SystemUiDexKitAdapter.Targets systemUiDexKitTargets;
     private volatile boolean oplusMediaPolicyHooksInstalled;
+    private volatile boolean oplusHistoryWhitelistHookInstalled;
+    private final Set<String> loggedOplusHistoryIntegrationPackages =
+            ConcurrentHashMap.newKeySet();
+    private final Set<String> loggedOplusHistoryManifestFailures =
+            ConcurrentHashMap.newKeySet();
     private volatile boolean translationToggleActionHookInstalled;
     private volatile boolean injectedTranslationToggleActionHookInstalled;
     private volatile boolean injectedTranslationToggleActionLogged;
     private volatile boolean injectedTranslationToggleActionFailureLogged;
     private volatile Object oplusMediaActionPrioritySelector;
+    private volatile Method oplusUpdatePkgActionsRuleMethod;
+    private volatile Object[] lastOplusPkgActionsRuleArgs;
     private final Set<String> translationToggleRule0Packages =
-            Collections.synchronizedSet(new LinkedHashSet<>());
+            ConcurrentHashMap.newKeySet();
+    private final Set<String> pendingTranslationToggleRule0Packages =
+            ConcurrentHashMap.newKeySet();
+    private final Set<String> refreshedTranslationToggleRule0Packages =
+            ConcurrentHashMap.newKeySet();
     private volatile boolean translationPreferenceLoaded;
     private volatile boolean lyricInfoTranslationEnabled = true;
     private volatile boolean screenTimeoutReceiverRegistered;
@@ -277,14 +297,21 @@ public final class LockscreenLyricsModule extends XposedModule {
     @Override
     public void onModuleLoaded(ModuleLoadedParam param) {
         String processName = param.getProcessName();
-        if (processName == null
-                || param.isSystemServer()
-                || !isSupportedProcess(processName)) {
+        if (param.isSystemServer()) {
+            info("Loaded in system_server, API " + getApiVersion());
+            return;
+        }
+        if (processName == null || !isSupportedProcess(processName)) {
             info("Skip process " + processName);
             detach();
             return;
         }
         info("Loaded in " + processName + ", API " + getApiVersion());
+    }
+
+    @Override
+    public void onSystemServerStarting(SystemServerStartingParam param) {
+        installOplusHistoryWhitelistHook(param.getClassLoader());
     }
 
     @Override
@@ -359,6 +386,97 @@ public final class LockscreenLyricsModule extends XposedModule {
 
     private static boolean isBuiltInPlayerPackage(String packageName) {
         return findPlayerAdapter(packageName) != null;
+    }
+
+    private void installOplusHistoryWhitelistHook(ClassLoader classLoader) {
+        if (oplusHistoryWhitelistHookInstalled) {
+            return;
+        }
+        synchronized (this) {
+            if (oplusHistoryWhitelistHookInstalled) {
+                return;
+            }
+            try {
+                Class<?> serviceClass = classLoader.loadClass(
+                        OPLUS_MEDIA_CONTROL_SERVICE_CLASS);
+                Method whitelistMethod = serviceClass.getDeclaredMethod(
+                        OPLUS_HISTORY_WHITELIST_METHOD,
+                        String.class);
+                whitelistMethod.setAccessible(true);
+                hook(whitelistMethod)
+                        .setId(HOOK_ID_OPLUS_HISTORY_WHITELIST)
+                        .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                        .intercept(this::onOplusHistoryWhitelistLookup);
+                oplusHistoryWhitelistHookInstalled = true;
+                info("Hooked OPlus media history integration");
+            } catch (ClassNotFoundException | NoSuchMethodException e) {
+                info("OPlus media history whitelist hook is unavailable on this system");
+            } catch (Throwable t) {
+                error("Failed to hook OPlus media history whitelist", t);
+            }
+        }
+    }
+
+    private Object onOplusHistoryWhitelistLookup(
+            XposedInterface.Chain chain) throws Throwable {
+        Object originalResult = chain.proceed();
+        boolean alreadyWhitelisted = Boolean.TRUE.equals(originalResult);
+        if (alreadyWhitelisted) {
+            return originalResult;
+        }
+        Object packageNameArg = chain.getArg(0);
+        if (!(packageNameArg instanceof String)
+                || TextUtils.isEmpty((String) packageNameArg)) {
+            return originalResult;
+        }
+
+        String packageName = (String) packageNameArg;
+        boolean builtInAdapter = isBuiltInPlayerPackage(packageName);
+        boolean manifestOptIn = !builtInAdapter
+                && isOplusHistoryIntegrationDeclared(
+                        chain.getThisObject(),
+                        packageName);
+        if (!LockscreenIntegrationPolicy.shouldEnableOplusHistoryIntegration(
+                false,
+                builtInAdapter,
+                manifestOptIn)) {
+            return originalResult;
+        }
+        if (loggedOplusHistoryIntegrationPackages.add(packageName)) {
+            info("Accepted " + packageName + " into OPlus media history"
+                    + (builtInAdapter ? " via built-in adapter" : " via manifest opt-in"));
+        }
+        return true;
+    }
+
+    private boolean isOplusHistoryIntegrationDeclared(
+            Object service,
+            String packageName) {
+        Object contextValue = readFieldValue(service, "mContext");
+        if (!(contextValue instanceof Context)) {
+            return false;
+        }
+
+        Context context = (Context) contextValue;
+        long identity = Binder.clearCallingIdentity();
+        try {
+            ApplicationInfo applicationInfo = context.getPackageManager()
+                    .getApplicationInfo(packageName, PackageManager.GET_META_DATA);
+            Bundle metadata = applicationInfo.metaData;
+            return metadata != null
+                    && metadata.getBoolean(
+                            LyricInfoContract.MANIFEST_METADATA_OPLUS_MEDIA_HISTORY,
+                            false);
+        } catch (PackageManager.NameNotFoundException ignored) {
+            return false;
+        } catch (Throwable t) {
+            if (loggedOplusHistoryManifestFailures.add(packageName)) {
+                error("Failed to read OPlus media history opt-in for " + packageName, t);
+            }
+            return false;
+        } finally {
+            Binder.restoreCallingIdentity(identity);
+        }
     }
 
     private boolean isCurrentLyricProviderPackage(String packageName) {
@@ -445,6 +563,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                         .setId(HOOK_ID_UPDATE_PKG_ACTIONS_RULE)
                         .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                         .intercept(this::onOplusMediaUpdatePkgActionsRule);
+                oplusUpdatePkgActionsRuleMethod = updatePkgActionsRule;
 
                 oplusMediaPolicyHooksInstalled = true;
                 info("Hooked OPlus media policy bypass");
@@ -486,7 +605,6 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private Object onOplusMediaGetLyricEntrance(XposedInterface.Chain chain) throws Throwable {
-        oplusMediaActionPrioritySelector = chain.getThisObject();
         Object result = chain.proceed();
         int original = result instanceof Number ? ((Number) result).intValue() : 0;
         if (original != 0) {
@@ -507,20 +625,18 @@ public final class LockscreenLyricsModule extends XposedModule {
             return chain.proceed();
         }
 
-        LinkedHashMap<Object, Object> actionPriority = new LinkedHashMap<>();
-        actionPriority.putAll((Map<?, ?>) args.get(0));
-        for (PlayerAdapter adapter : PLAYER_ADAPTERS) {
-            actionPriority.put(adapter.packageName(), "0");
-        }
-        synchronized (translationToggleRule0Packages) {
-            for (String packageName : translationToggleRule0Packages) {
-                actionPriority.put(packageName, "0");
-            }
-        }
+        ArrayList<String> knownTranslationPackages =
+                new ArrayList<>(translationToggleRule0Packages);
+        LinkedHashMap<Object, Object> actionPriority = copyActionPriorityWithRule0Packages(
+                (Map<?, ?>) args.get(0),
+                knownTranslationPackages);
 
         Object[] patchedArgs = args.toArray(new Object[0]);
         patchedArgs[0] = actionPriority;
-        return chain.proceed(patchedArgs);
+        lastOplusPkgActionsRuleArgs = patchedArgs.clone();
+        Object result = chain.proceed(patchedArgs);
+        markTranslationToggleRule0PackagesRefreshed(knownTranslationPackages);
+        return result;
     }
 
     private void installSystemUiTranslationToggleActionHook(
@@ -549,21 +665,122 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private Object onOplusMediaCreateActionsFromState(XposedInterface.Chain chain) throws Throwable {
+        Object packageNameArg = chain.getArg(0);
+        Object controllerArg = chain.getArg(2);
+        String packageName = packageNameArg instanceof String ? (String) packageNameArg : "";
+        boolean hasTranslationAction = !TextUtils.isEmpty(packageName)
+                && controllerHasTranslationAction(controllerArg);
+        if (hasTranslationAction) {
+            ensureTranslationToggleRule0(packageName);
+        }
+
         Object result = chain.proceed();
         try {
-            Object packageName = chain.getArg(0);
-            if (packageName instanceof String) {
+            if (!TextUtils.isEmpty(packageName)) {
                 rememberMediaControllerPlaybackState(
-                        (String) packageName,
-                        chain.getArg(2));
+                        packageName,
+                        controllerArg);
                 if (result != null) {
-                    replaceTranslationToggleAction((String) packageName, result);
+                    replaceTranslationToggleAction(packageName, result);
                 }
             }
         } catch (Throwable t) {
             error("Failed to configure lyric translation toggle action", t);
         }
         return result;
+    }
+
+    private static boolean controllerHasTranslationAction(Object controllerObject) {
+        if (!(controllerObject instanceof MediaController)) {
+            return false;
+        }
+        PlaybackState state = ((MediaController) controllerObject).getPlaybackState();
+        return hasCustomAction(state, TRANSLATION_TOGGLE_ACTION);
+    }
+
+    private void ensureTranslationToggleRule0(String packageName) {
+        if (TextUtils.isEmpty(packageName)
+                || isBuiltInPlayerPackage(packageName)) {
+            return;
+        }
+        translationToggleRule0Packages.add(packageName);
+        if (!refreshedTranslationToggleRule0Packages.contains(packageName)) {
+            pendingTranslationToggleRule0Packages.add(packageName);
+        }
+        refreshPendingTranslationToggleRule0Packages();
+    }
+
+    private void refreshPendingTranslationToggleRule0Packages() {
+        ArrayList<String> pendingPackages = new ArrayList<>();
+        for (String packageName : pendingTranslationToggleRule0Packages) {
+            if (refreshedTranslationToggleRule0Packages.contains(packageName)) {
+                pendingTranslationToggleRule0Packages.remove(packageName);
+            } else {
+                pendingPackages.add(packageName);
+            }
+        }
+        if (pendingPackages.isEmpty()) {
+            return;
+        }
+
+        Object selector = oplusMediaActionPrioritySelector;
+        Method updateMethod = oplusUpdatePkgActionsRuleMethod;
+        Object[] cachedArgs = lastOplusPkgActionsRuleArgs;
+        if (selector == null
+                || updateMethod == null
+                || cachedArgs == null) {
+            return;
+        }
+
+        try {
+            ArrayList<String> knownTranslationPackages = new ArrayList<>();
+            synchronized (selector) {
+                Object[] refreshArgs = cachedArgs.clone();
+                if (!(refreshArgs[0] instanceof Map)) {
+                    return;
+                }
+                knownTranslationPackages.addAll(translationToggleRule0Packages);
+                LinkedHashMap<Object, Object> actionPriority =
+                        copyActionPriorityWithRule0Packages(
+                                (Map<?, ?>) refreshArgs[0],
+                                knownTranslationPackages);
+                refreshArgs[0] = actionPriority;
+                updateMethod.invoke(selector, refreshArgs);
+                lastOplusPkgActionsRuleArgs = refreshArgs.clone();
+            }
+            markTranslationToggleRule0PackagesRefreshed(knownTranslationPackages);
+            info("Enabled OPlus Rule0 through updatePkgActionsRule for translation providers "
+                    + pendingPackages);
+        } catch (Throwable t) {
+            error("Failed to enable OPlus Rule0 through updatePkgActionsRule for "
+                    + pendingPackages, t);
+        }
+    }
+
+    private static LinkedHashMap<Object, Object> copyActionPriorityWithRule0Packages(
+            Map<?, ?> source,
+            Iterable<String> translationPackages) {
+        LinkedHashMap<Object, Object> actionPriority = new LinkedHashMap<>();
+        actionPriority.putAll(source);
+        for (PlayerAdapter adapter : PLAYER_ADAPTERS) {
+            actionPriority.put(adapter.packageName(), "0");
+        }
+        for (String packageName : translationPackages) {
+            if (!TextUtils.isEmpty(packageName)) {
+                actionPriority.put(packageName, "0");
+            }
+        }
+        return actionPriority;
+    }
+
+    private void markTranslationToggleRule0PackagesRefreshed(List<String> packageNames) {
+        for (String packageName : packageNames) {
+            if (TextUtils.isEmpty(packageName)) {
+                continue;
+            }
+            refreshedTranslationToggleRule0Packages.add(packageName);
+            pendingTranslationToggleRule0Packages.remove(packageName);
+        }
     }
 
     private void replaceTranslationToggleAction(
@@ -594,7 +811,6 @@ public final class LockscreenLyricsModule extends XposedModule {
             }
 
             if (integrationAction) {
-                ensureTranslationToggleRule0(packageName);
                 promoteTranslationToggleAction(mediaButtonEx, (List<?>) actions, mediaAction);
                 if (!replaceMediaActionIcon(mediaAction, packageName)) {
                     rememberCurrentMediaActionIcon(mediaAction);
@@ -616,10 +832,15 @@ public final class LockscreenLyricsModule extends XposedModule {
 
     private void promoteTranslationToggleAction(
             Object mediaButtonEx, List<?> actions, Object translationAction) {
-        ArrayList<Object> ordered = LockscreenIntegrationPolicy.promoteActionIdentity(
-                actions, translationAction);
-        if (ordered == null) {
+        if (actions.isEmpty() || actions.get(0) == translationAction) {
             return;
+        }
+        ArrayList<Object> ordered = new ArrayList<>(actions.size());
+        ordered.add(translationAction);
+        for (Object action : actions) {
+            if (action != translationAction) {
+                ordered.add(action);
+            }
         }
 
         tryInvokeOneArgByName(mediaButtonEx, "setRule0CustomActions", ordered);
@@ -629,7 +850,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 || ((List<?>) applied).get(0) != translationAction) {
             writeFieldValue(mediaButtonEx, "rule0CustomActions", ordered);
         }
-        info("Promoted lyricInfo translation toggle ahead of transport custom actions");
+        info("Promoted lyricInfo translation toggle within OPlus Rule0 custom actions");
     }
 
     private void rememberCurrentMediaActionIcon(Object mediaAction) {
@@ -637,88 +858,6 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (icon instanceof Drawable) {
             rememberTranslationIconFingerprint((Drawable) icon);
         }
-    }
-
-    private void ensureTranslationToggleRule0(String packageName) {
-        if (TextUtils.isEmpty(packageName)) {
-            return;
-        }
-        boolean newlyAdded = translationToggleRule0Packages.add(packageName);
-        Object selector = oplusMediaActionPrioritySelector;
-        if (selector == null) {
-            return;
-        }
-        try {
-            synchronized (selector) {
-                ClassLoader classLoader = selector.getClass().getClassLoader();
-                Class<?> rule0Class = Class.forName(
-                        "com.oplus.systemui.media.controls.pipeline."
-                                + "MediaActionPrioritySelectorImpl$ActionRule$Rule0",
-                        false,
-                        classLoader);
-                Field instanceField = rule0Class.getDeclaredField("INSTANCE");
-                instanceField.setAccessible(true);
-                Object rule0 = instanceField.get(null);
-                boolean changed = prependPackageActionRule(
-                        selector, "pkgRule", packageName, rule0);
-                changed |= prependPackageActionRule(
-                        selector, "pkgRuleQs", packageName, rule0);
-                changed |= rememberRule0Package(selector, packageName);
-                if (newlyAdded || changed) {
-                    info("Enabled OPlus Rule0 for translation action provider " + packageName);
-                }
-            }
-        } catch (Throwable t) {
-            if (newlyAdded) {
-                error("Failed to enable OPlus Rule0 for translation action provider "
-                        + packageName, t);
-            }
-        }
-    }
-
-    private static boolean prependPackageActionRule(
-            Object selector, String fieldName, String packageName, Object rule0) {
-        Object value = readFieldValue(selector, fieldName);
-        if (!(value instanceof Map)) {
-            return false;
-        }
-        Map<?, ?> currentMap = (Map<?, ?>) value;
-        Object currentRules = currentMap.get(packageName);
-        if (currentRules instanceof List
-                && !((List<?>) currentRules).isEmpty()
-                && rule0.equals(((List<?>) currentRules).get(0))) {
-            return false;
-        }
-
-        ArrayList<Object> rules = new ArrayList<>();
-        rules.add(rule0);
-        if (currentRules instanceof List) {
-            for (Object rule : (List<?>) currentRules) {
-                if (!rule0.equals(rule)) {
-                    rules.add(rule);
-                }
-            }
-        }
-        LinkedHashMap<Object, Object> updated = new LinkedHashMap<>();
-        updated.putAll(currentMap);
-        updated.put(packageName, rules);
-        writeFieldValue(selector, fieldName, updated);
-        return true;
-    }
-
-    private static boolean rememberRule0Package(Object selector, String packageName) {
-        Object value = readFieldValue(selector, "pkgWithRule0");
-        if (!(value instanceof List)) {
-            return false;
-        }
-        List<?> current = (List<?>) value;
-        if (current.contains(packageName)) {
-            return false;
-        }
-        ArrayList<Object> updated = new ArrayList<>(current);
-        updated.add(packageName);
-        writeFieldValue(selector, "pkgWithRule0", updated);
-        return true;
     }
 
     private static PlaybackState.CustomAction findPlaybackStateCustomAction(Object runnable) {
@@ -4234,6 +4373,8 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (hasCustomAction(original, TRANSLATION_TOGGLE_ACTION)) {
             return chain.proceed();
         }
+        List<PlaybackState.CustomAction> customActions = original.getCustomActions();
+        int originalCustomActionCount = customActions == null ? 0 : customActions.size();
 
         try {
             int iconResource = resolveTranslationActionPlaceholderIcon(original);
@@ -4243,15 +4384,14 @@ public final class LockscreenLyricsModule extends XposedModule {
                             TRANSLATION_ACTION_NAME,
                             iconResource)
                             .build();
-            PlaybackState patched = new PlaybackState.Builder(original)
-                    .addCustomAction(translationAction)
-                    .build();
+            PlaybackState patched =
+                    copyPlaybackStateAndAppendCustomAction(original, translationAction);
             Object[] patchedArgs = chain.getArgs().toArray(new Object[0]);
             patchedArgs[0] = patched;
             if (!injectedTranslationToggleActionLogged) {
                 injectedTranslationToggleActionLogged = true;
                 info("Injected lyricInfo translation action into player PlaybackState"
-                        + ", preservedCustomActions=" + original.getCustomActions().size());
+                        + ", preservedCustomActions=" + originalCustomActionCount);
             }
             return chain.proceed(patchedArgs);
         } catch (Throwable t) {
@@ -4267,7 +4407,11 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (state == null || TextUtils.isEmpty(actionId)) {
             return false;
         }
-        for (PlaybackState.CustomAction action : state.getCustomActions()) {
+        List<PlaybackState.CustomAction> actions = state.getCustomActions();
+        if (actions == null) {
+            return false;
+        }
+        for (PlaybackState.CustomAction action : actions) {
             if (action != null && actionId.equals(action.getAction())) {
                 return true;
             }
@@ -4275,10 +4419,24 @@ public final class LockscreenLyricsModule extends XposedModule {
         return false;
     }
 
+    private static PlaybackState copyPlaybackStateAndAppendCustomAction(
+            PlaybackState original,
+            PlaybackState.CustomAction appendedAction) {
+        PlaybackState.Builder builder = new PlaybackState.Builder(original);
+        if (appendedAction != null) {
+            builder.addCustomAction(appendedAction);
+        }
+        return builder.build();
+    }
+
     private int resolveTranslationActionPlaceholderIcon(PlaybackState state) {
-        for (PlaybackState.CustomAction action : state.getCustomActions()) {
-            if (action != null && action.getIcon() != 0) {
-                return action.getIcon();
+        List<PlaybackState.CustomAction> actions =
+                state == null ? null : state.getCustomActions();
+        if (actions != null) {
+            for (PlaybackState.CustomAction action : actions) {
+                if (action != null && action.getIcon() != 0) {
+                    return action.getIcon();
+                }
             }
         }
 

@@ -144,7 +144,7 @@ APK 输出位置：
 ## GitHub Actions
 
 - `Build Debug APK`：当 `main` 分支源码更新或发起 Pull Request 时自动构建，生成的 debug APK 会作为 workflow artifact 上传。
-- `Release APK`：推送类似 `v1.7.1` 的 tag 后在 Actions 页面手动触发。工作流会检出该 tag、读取 `docs/releases/<tag>.md`、构建 release 签名 APK、从 tag 设置 `versionName`，创建 GitHub Release，并同步发布到 LSPosed 模块仓库。
+- `Release APK`：推送类似 `v1.8.0` 的 tag 后在 Actions 页面手动触发。工作流会检出该 tag、读取 `docs/releases/<tag>.md`、构建 release 签名 APK、从 tag 设置 `versionName`，创建 GitHub Release，并同步发布到 LSPosed 模块仓库。
 
 手动发布工作流需要这些仓库 secrets：
 

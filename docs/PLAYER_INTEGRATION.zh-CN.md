@@ -4,6 +4,31 @@
 
 播放器本身不需要加入 LSPosed 作用域。`scope.list` 和 `PlayerAdapter` 只用于 Salt Player、ConePlayer 这类需要模块进入播放器进程抓取歌词的兼容适配。
 
+## OPlus 历史播放器接入（可选）
+
+需要在 ColorOS 控制中心保留历史播放器卡片、并允许 App 完全停止后从卡片重新接收媒体按键的播放器，可在自身 `AndroidManifest.xml` 的 `<application>` 中显式声明：
+
+```xml
+<meta-data
+    android:name="io.github.andrealtb.lockscreenlyrics.OPLUS_MEDIA_HISTORY"
+    android:value="true" />
+```
+
+模块会在 system_server 中保留原厂判断，并在原厂名单未命中时额外放行：
+
+- 本模块 `PlayerAdapter` 中的所有内置播放器包名。
+- 声明上述 Manifest 元数据的外部播放器。
+
+外部播放器不需要加入本模块的 LSPosed 作用域，也不需要依赖模块 APK。公共键同时暴露为 `LyricInfoContract.MANIFEST_METADATA_OPLUS_MEDIA_HISTORY`。
+
+该声明只负责允许播放器进入 OPlus 历史播放器栈。播放器仍需自行：
+
+1. 创建有效的 `MediaSession`，并设置媒体按键接收器或 `PendingIntent`。
+2. 在完全停止后正确处理 `android.intent.action.MEDIA_BUTTON`。
+3. 启动自身播放服务并恢复播放状态。
+
+模块不会为外部播放器猜测服务类名、Action 或播放队列，也不会替它伪造后台启动逻辑。已经位于 ColorOS 原厂白名单中的播放器无需添加该声明。
+
 ## 数据格式
 
 `lyricInfo` 的值是 JSON 字符串：
@@ -28,7 +53,7 @@
 - 模块会在 OPlus 消费 `lyric` 前，把同时间戳双语分组规范化为一个主歌词 item；完整翻译和逐字时间轴应继续放在 `rawLyric` 或带时间戳的翻译字段中。
 - 仅包含零宽字符的占位行会被忽略。不要依赖不可见占位行控制官方列表位置。
 
-只提供 `lyric` 也属于完整接入：OPlus 负责逐行显示，本模块仍可动态识别该播放器并处理白名单与屏幕超时逻辑。要获得逐字绘制效果，再增加 `rawLyric`。
+只提供 `lyric` 也属于完整歌词接入：OPlus 负责逐行显示，本模块仍可动态识别该播放器并处理歌词策略与屏幕超时逻辑。历史播放器卡片属于独立能力，需要原厂支持、内置适配器或上述 Manifest 显式声明。要获得逐字绘制效果，再增加 `rawLyric`。
 
 ## 数据源优先级
 

@@ -1,13 +1,9 @@
 package io.github.andrealtb.lockscreenlyrics;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
 import org.junit.Test;
 
 public class LockscreenIntegrationPolicyTest {
@@ -114,26 +110,23 @@ public class LockscreenIntegrationPolicyTest {
     }
 
     @Test
-    public void translationActionMovesAheadOfTransportActionsByIdentity() {
-        Object previous = new Object();
-        Object next = new Object();
-        Object translation = new Object();
-        List<Object> source = Arrays.asList(previous, next, translation);
-
-        ArrayList<Object> ordered =
-                LockscreenIntegrationPolicy.promoteActionIdentity(source, translation);
-
-        assertSame(translation, ordered.get(0));
-        assertEquals(Arrays.asList(translation, previous, next), ordered);
-        assertEquals(Arrays.asList(previous, next, translation), source);
+    public void oplusHistoryIntegrationKeepsOfficialAndExplicitPlayers() {
+        assertTrue(LockscreenIntegrationPolicy.shouldEnableOplusHistoryIntegration(
+                true, false, false));
+        assertTrue(LockscreenIntegrationPolicy.shouldEnableOplusHistoryIntegration(
+                false, true, false));
+        assertTrue(LockscreenIntegrationPolicy.shouldEnableOplusHistoryIntegration(
+                false, false, true));
+        assertFalse(LockscreenIntegrationPolicy.shouldEnableOplusHistoryIntegration(
+                false, false, false));
     }
 
     @Test
-    public void actionOrderIsLeftUntouchedWhenTranslationIsAlreadyFirst() {
-        Object translation = new Object();
-
-        assertNull(LockscreenIntegrationPolicy.promoteActionIdentity(
-                Arrays.asList(translation, new Object()), translation));
+    public void debounceAcceptsOnlyEventsOutsideWindow() {
+        assertTrue(LockscreenIntegrationPolicy.shouldAcceptDebouncedEvent(1_000L, 0L, 1_200L));
+        assertFalse(LockscreenIntegrationPolicy.shouldAcceptDebouncedEvent(1_500L, 1_000L, 1_200L));
+        assertTrue(LockscreenIntegrationPolicy.shouldAcceptDebouncedEvent(2_200L, 1_000L, 1_200L));
+        assertTrue(LockscreenIntegrationPolicy.shouldAcceptDebouncedEvent(900L, 1_000L, 1_200L));
     }
 
     @Test

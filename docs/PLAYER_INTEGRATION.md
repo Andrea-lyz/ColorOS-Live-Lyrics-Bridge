@@ -2,6 +2,27 @@
 
 Players that already own timed lyrics do not need an in-module `PlayerAdapter` or a dependency on the module APK. Publish an OPlus-compatible JSON string under the `lyricInfo` metadata key of the active media session. The module discovers the active provider in SystemUI.
 
+## Optional OPlus media-history integration
+
+Players that need a persistent ColorOS media card and media-button delivery after the app has fully stopped can opt in from their own `AndroidManifest.xml`:
+
+```xml
+<application>
+    <meta-data
+        android:name="io.github.andrealtb.lockscreenlyrics.OPLUS_MEDIA_HISTORY"
+        android:value="true" />
+</application>
+```
+
+The system-server hook preserves the original OPlus result, then additionally accepts:
+
+- Every package represented by a built-in `PlayerAdapter`.
+- External players that declare the metadata above.
+
+External players do not need to enter this module's LSPosed scope or depend on its APK. The key is also exposed as `LyricInfoContract.MANIFEST_METADATA_OPLUS_MEDIA_HISTORY`.
+
+This declaration only allows the package into the OPlus media-history stack. The player must still create a valid `MediaSession`, provide a media-button receiver or `PendingIntent`, handle `android.intent.action.MEDIA_BUTTON` after process death, start its own playback service, and restore its queue. The module does not guess external service classes or playback actions. Players already accepted by the original ColorOS whitelist do not need this opt-in.
+
 ```json
 {
   "songName": "Song title",
@@ -17,7 +38,7 @@ Players that already own timed lyrics do not need an in-module `PlayerAdapter` o
 - `rawLyric` is optional. It enables the module's word-level highlighting and layout renderer.
 - Before OPlus consumes `lyric`, the module normalizes same-timestamp bilingual groups to one primary line item. Keep complete translations and word timing in `rawLyric` or a timed translation field.
 - Zero-width spacer-only lines are ignored. Use real timed primary lines rather than invisible placeholders to control list position.
-- A player that publishes only `lyric` still gets native OPlus line-level lyrics, dynamic provider recognition, whitelist bypass, and screen-timeout handling.
+- A player that publishes only `lyric` still gets native OPlus line-level lyrics, dynamic provider recognition, lyric-policy handling, and screen-timeout handling. Media-history integration is separate and requires original ColorOS support, a built-in adapter, or the manifest opt-in above.
 - The player does not need to be added to the module's LSPosed scope.
 
 ## Data-source priority

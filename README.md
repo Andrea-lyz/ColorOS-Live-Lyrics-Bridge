@@ -144,7 +144,7 @@ JDK 21 is required to compile the Lyrics Core dependency. The helper discovers i
 ## GitHub Actions
 
 - `Build Debug APK`: runs on pushes to `main` and pull requests when project source or build files change. The generated debug APK is uploaded as a workflow artifact.
-- `Release APK`: manually triggered after pushing a tag such as `v1.7.1`. The workflow checks out that tag, reads `docs/releases/<tag>.md`, builds a release-signed APK, sets the APK `versionName` from the tag, publishes the GitHub Release, and mirrors the release to the LSPosed module repository.
+- `Release APK`: manually triggered after pushing a tag such as `v1.8.0`. The workflow checks out that tag, reads `docs/releases/<tag>.md`, builds a release-signed APK, sets the APK `versionName` from the tag, publishes the GitHub Release, and mirrors the release to the LSPosed module repository.
 
 The manual release workflow expects these repository secrets:
 

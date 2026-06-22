@@ -7,6 +7,8 @@ import java.util.regex.Pattern;
 /** Stable metadata contract for players that publish OPlus-compatible lyrics themselves. */
 public final class LyricInfoContract {
     public static final String METADATA_KEY = "lyricInfo";
+    public static final String MANIFEST_METADATA_OPLUS_MEDIA_HISTORY =
+            "io.github.andrealtb.lockscreenlyrics.OPLUS_MEDIA_HISTORY";
     public static final String ACTION_TOGGLE_TRANSLATION =
             "io.github.andrealtb.lockscreenlyrics.action.TOGGLE_TRANSLATION";
     public static final String JSON_SONG_NAME = "songName";

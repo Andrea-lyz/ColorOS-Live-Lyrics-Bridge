@@ -139,6 +139,11 @@ final class LyricSessionReducer {
                 capturedAtMillis,
                 capabilities,
                 currentTrack == null ? "" : currentTrack.key);
+        LyricDocument replayedCurrent = findCurrentTrackReplay(document);
+        if (replayedCurrent != null) {
+            mostRecentDocument = replayedCurrent;
+            return new CaptureUpdate(replayedCurrent, true);
+        }
         mostRecentDocument = document;
 
         boolean bindCurrent = false;
@@ -193,12 +198,13 @@ final class LyricSessionReducer {
         LyricDocument selected = findDocumentForTrack(nextTrack.key);
         LyricDocument pending = pendingDocument;
         if (isFresh(pending, observedAtMillis)
-                && shouldBindPending(
+                && canBindPendingToTrack(
                 pending,
                 nextTrack,
                 previousTrack,
                 trackChanged,
-                observationKind)) {
+                observationKind,
+                observedAtMillis)) {
             bind(pending, nextTrack.key);
             pendingDocument = null;
             selected = pending;
@@ -230,7 +236,28 @@ final class LyricSessionReducer {
         return findDocumentForTrack(trackKey);
     }
 
-    private boolean shouldBindPending(
+    private boolean canBindPendingToTrack(
+            LyricDocument pending,
+            TrackSnapshot nextTrack,
+            TrackSnapshot previousTrack,
+            boolean trackChanged,
+            ObservationKind observationKind,
+            long observedAtMillis) {
+        if (!pendingMatchesTrackObservation(
+                pending,
+                nextTrack,
+                previousTrack,
+                trackChanged,
+                observationKind)) {
+            return false;
+        }
+        return !isKnownUnhintedReplayForAnotherTrack(
+                pending,
+                nextTrack.key,
+                observedAtMillis);
+    }
+
+    private boolean pendingMatchesTrackObservation(
             LyricDocument pending,
             TrackSnapshot nextTrack,
             TrackSnapshot previousTrack,
@@ -240,7 +267,9 @@ final class LyricSessionReducer {
             if (TrackIdentity.matchesHintKey(pending.trackHintKey, nextTrack.key)) {
                 return true;
             }
-            if (pending.capabilities.stableTrackIdentity) {
+            if (pending.capabilities.stableTrackIdentity
+                    || hasCompleteTrackHint(pending.trackHintKey)) {
+                // A full title+artist hint is stronger than next-track observation timing.
                 return false;
             }
         }
@@ -306,6 +335,73 @@ final class LyricSessionReducer {
             return recent.boundTrackKey.equals(currentKey) ? recent : null;
         }
         return recent.baselineTrackKey.equals(currentKey) ? recent : null;
+    }
+
+    private LyricDocument findCurrentTrackReplay(LyricDocument document) {
+        if (document == null
+                || currentTrack == null
+                || !isUnhintedPassive(document)) {
+            return null;
+        }
+        LyricDocument current = findDocumentForTrack(currentTrack.key);
+        if (current == null
+                || !currentTrack.key.equals(current.boundTrackKey)
+                || !current.source.equals(document.source)) {
+            return null;
+        }
+        return sameLyricContent(current, document) ? current : null;
+    }
+
+    private boolean isKnownUnhintedReplayForAnotherTrack(
+            LyricDocument document,
+            String nextTrackKey,
+            long nowMillis) {
+        if (!isUnhintedPassive(document) || nextTrackKey == null || nextTrackKey.isEmpty()) {
+            return false;
+        }
+
+        boolean matchesDifferentTrack = false;
+        for (LyricDocument candidate : documentsByTrack.values()) {
+            if (candidate == null
+                    || candidate == document
+                    || !isFresh(candidate, nowMillis)
+                    || candidate.boundTrackKey.isEmpty()
+                    || !candidate.source.equals(document.source)
+                    || !sameLyricContent(candidate, document)) {
+                continue;
+            }
+            if (candidate.boundTrackKey.equals(nextTrackKey)) {
+                return false;
+            }
+            // The same unhinted lyric is already known to belong elsewhere.
+            matchesDifferentTrack = true;
+        }
+        return matchesDifferentTrack;
+    }
+
+    private static boolean isUnhintedPassive(LyricDocument document) {
+        return document != null
+                && document.trackHintKey.isEmpty()
+                && document.capabilities.associationStrategy
+                == LyricProviderCapabilities.AssociationStrategy.NEXT_TRACK_OBSERVATION;
+    }
+
+    private static boolean hasCompleteTrackHint(String trackHintKey) {
+        if (trackHintKey == null) {
+            return false;
+        }
+        int separator = trackHintKey.indexOf('|');
+        return separator > 0 && separator + 1 < trackHintKey.length();
+    }
+
+    private static boolean sameLyricContent(LyricDocument first, LyricDocument second) {
+        if (first == null || second == null) {
+            return false;
+        }
+        if (!first.rawLyric.isEmpty() && first.rawLyric.equals(second.rawLyric)) {
+            return true;
+        }
+        return !first.lyric.isEmpty() && first.lyric.equals(second.lyric);
     }
 
     private void bind(LyricDocument document, String trackKey) {
