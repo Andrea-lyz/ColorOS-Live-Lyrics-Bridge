@@ -42,6 +42,20 @@ public final class LyricLineBreakPolicyTest {
     }
 
     @Test
+    public void englishTextUsesTheWholeRemainingLineWhenItFits() {
+        String text = "merlot on his mouth";
+
+        int end = LyricLineBreakPolicy.chooseWrapEnd(
+                text,
+                0,
+                text.length(),
+                text.length(),
+                CODE_UNIT_WIDTH);
+
+        assertEquals(text.length(), end);
+    }
+
+    @Test
     public void cjkClosingPunctuationDoesNotStartNextLine() {
         String text = "\u805e\u3044\u3066\u79c1\u3055\u3001\u3053\u306e\u524d";
 

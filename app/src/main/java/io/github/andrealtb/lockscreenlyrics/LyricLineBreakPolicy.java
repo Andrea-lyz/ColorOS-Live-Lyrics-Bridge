@@ -50,7 +50,9 @@ final class LyricLineBreakPolicy {
             index = next;
         }
 
-        int boundary = bestWhitespaceBoundary > start
+        int boundary = bestCharacterBoundary == end
+                ? end
+                : bestWhitespaceBoundary > start
                 ? bestWhitespaceBoundary
                 : bestCharacterBoundary;
         if (boundary <= start) {
