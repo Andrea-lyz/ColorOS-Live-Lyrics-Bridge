@@ -14,6 +14,7 @@ on:
       - "gradlew"
       - ".github/lsposed/**"
       - ".github/workflows/build-debug.yml"
+      - ".github/workflows/release.yml"
       - "scripts/validate-lsposed-metadata.ps1"
   pull_request:
     paths:
@@ -26,6 +27,7 @@ on:
       - "gradlew"
       - ".github/lsposed/**"
       - ".github/workflows/build-debug.yml"
+      - ".github/workflows/release.yml"
       - "scripts/validate-lsposed-metadata.ps1"
 
 jobs:
