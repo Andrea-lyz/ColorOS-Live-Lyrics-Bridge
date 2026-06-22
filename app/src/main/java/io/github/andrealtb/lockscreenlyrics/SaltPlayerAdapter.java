@@ -11,6 +11,7 @@ import android.view.KeyEvent;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
+import java.util.List;
 import java.util.Locale;
 
 import io.github.libxposed.api.XposedInterface;
@@ -61,6 +62,21 @@ final class SaltPlayerAdapter implements PlayerAdapter {
     @Override
     public LyricProviderCapabilities lyricCapabilities() {
         return LyricProviderCapabilities.PASSIVE_PARSER;
+    }
+
+    @Override
+    public boolean supportsLyricRelayMetadata() {
+        return true;
+    }
+
+    @Override
+    public boolean mayRetainStaleLyricInfo() {
+        return true;
+    }
+
+    @Override
+    public boolean allowsModuleToReplaceUntrustedLyricInfo() {
+        return true;
     }
 
     @Override
@@ -294,12 +310,80 @@ final class SaltPlayerAdapter implements PlayerAdapter {
                     .setId(HOOK_ID_PREFIX
                             + simpleClassName(lyricResultClass.getName()) + "-" + kind)
                     .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
-                    .intercept(chain -> module.onPlayerLyricResultConstructed(
+                    .intercept(chain -> onLyricResultConstructed(
+                            module,
                             chain,
                             capabilities));
             count++;
         }
         return count;
+    }
+
+    private static Object onLyricResultConstructed(
+            LockscreenLyricsModule module,
+            XposedInterface.Chain chain,
+            LyricProviderCapabilities capabilities) throws Throwable {
+        Object result = chain.proceed();
+        try {
+            List<Object> args = chain.getArgs();
+            String source = args.isEmpty() ? "UNKNOWN" : String.valueOf(args.get(0));
+            String timedLyric = findTimedLyricArgument(args);
+            String rawCandidate = findRawLyricCandidate(args);
+            long nowMillis = System.currentTimeMillis();
+            LyricSourceEvent event;
+            if (!timedLyric.isEmpty()) {
+                event = LyricSourceEvent.resolved(
+                        source,
+                        "",
+                        "",
+                        "",
+                        LyricInfoTrackMatcher.inferTrackHintKey(timedLyric),
+                        "",
+                        timedLyric,
+                        nowMillis,
+                        capabilities);
+            } else {
+                LyricSourceEvent.Outcome outcome =
+                        LyricResultClassifier.classifyEmptyResult(source);
+                event = LyricSourceEvent.terminal(
+                        outcome,
+                        source,
+                        "",
+                        "",
+                        "",
+                        LyricInfoTrackMatcher.inferTrackHintKey(rawCandidate),
+                        rawCandidate,
+                        nowMillis,
+                        capabilities);
+            }
+            module.reportLyricSourceEvent(event);
+        } catch (Throwable t) {
+            module.error("Failed while decoding Salt Player lyric result", t);
+        }
+        return result;
+    }
+
+    private static String findTimedLyricArgument(List<Object> args) {
+        for (int index = args.size() - 1; index >= 0; index--) {
+            Object value = args.get(index);
+            if (value instanceof String
+                    && LyricInfoContract.containsTimedLrc((String) value)) {
+                return (String) value;
+            }
+        }
+        return "";
+    }
+
+    private static String findRawLyricCandidate(List<Object> args) {
+        String candidate = "";
+        for (int index = 1; index < args.size(); index++) {
+            Object value = args.get(index);
+            if (value instanceof String
+                    && ((String) value).trim().length() > candidate.trim().length()) {
+                candidate = (String) value;
+            }
+        }
+        return candidate;
     }
 
     private static String lyricConstructorKind(

@@ -8,4 +8,16 @@ interface PlayerAdapter {
     LyricProviderCapabilities lyricCapabilities();
 
     void installLyricSourceHooks(LockscreenLyricsModule module, ClassLoader classLoader);
+
+    default boolean supportsLyricRelayMetadata() {
+        return false;
+    }
+
+    default boolean mayRetainStaleLyricInfo() {
+        return false;
+    }
+
+    default boolean allowsModuleToReplaceUntrustedLyricInfo() {
+        return false;
+    }
 }

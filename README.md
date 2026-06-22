@@ -12,6 +12,8 @@ An LSPosed/libxposed API 102 module that bridges timed lyrics from supported And
 
 The module currently ships DexKit-based compatibility adapters for Salt Player and ConePlayer plus SystemUI renderer hooks. Other players should integrate by publishing the `lyricInfo` contract themselves.
 
+A player-independent transaction layer associates lyric callbacks with media metadata. Events with media IDs, URIs, or complete title/artist hints bind directly; anonymous passive callbacks wait for the next stable metadata observation so preloads and instrumentals cannot shift lyrics across tracks.
+
 ## What It Hooks
 
 Player process:
@@ -145,7 +147,7 @@ JDK 21 is required to compile the Lyrics Core dependency. The helper discovers i
 ## GitHub Actions
 
 - `Build Debug APK`: runs on pushes to `main` and pull requests when project source or build files change. The generated debug APK is uploaded as a workflow artifact.
-- `Release APK`: manually triggered after pushing a tag such as `v1.8.0`. The workflow validates the JSON `SCOPE`, syncs README/SUMMARY/SOURCE_URL/SCOPE to the LSPosed repository, builds a signed APK, publishes the source-repository release, and mirrors it with a `versionCode-versionName` tag such as `80-1.8.0`.
+- `Release APK`: manually triggered after pushing a tag such as `v1.9.0`. The workflow validates the JSON `SCOPE`, syncs README/SUMMARY/SOURCE_URL/SCOPE to the LSPosed repository, builds a signed APK, publishes the source-repository release, and mirrors it with a `versionCode-versionName` tag such as `90-1.9.0`.
 
 The manual release workflow expects these repository secrets:
 
@@ -165,7 +167,7 @@ adb shell am force-stop com.salt.music
 # Or: adb shell am force-stop ink.trantor.coneplayer
 ```
 
-Enable the module in LSPosed for the target player package, `system`, and System UI, then reboot the device. Restart the player, play a song, then lock the screen.
+Enable the module in LSPosed for the target player package, `system`, and System UI, then restart the target player and System UI. Reboot only after changing scopes or when validating the `system`-side media-history capability. Restart the player, play a song, then lock the screen.
 
 Useful logs:
 
@@ -182,7 +184,7 @@ LockscreenLyrics: Hooked Salt Player lyric result constructors via DexKit: resul
 LockscreenLyrics: Hooked ConePlayer lyric parser via DexKit: ...
 LockscreenLyrics: Hooked SystemUI official lyric TextView draw hooks
 LockscreenLyrics: Registered SystemUI screen timeout receiver
-LockscreenLyrics: Cached real timed lyric from LRC_FILE, rawChars=..., oplusChars=...
+LockscreenLyrics: Accepted lyric transaction from EMBEDDED, rawChars=..., oplusChars=..., identity=..., association=...
 LockscreenLyrics: Injected real LRC_FILE lyricInfo for title=...
 LockscreenLyrics: Cached SystemUI word lyric model, lines=...
 LockscreenLyrics: Lockscreen lyric UI keep-awake ON

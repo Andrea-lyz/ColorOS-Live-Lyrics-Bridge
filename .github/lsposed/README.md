@@ -9,7 +9,8 @@
 - 内置 Salt Player 与 ConePlayer 兼容适配器。
 - 支持播放器通过 `MediaMetadata["lyricInfo"]` 主动接入，无需依赖模块 APK。
 - 支持逐行 LRC、逐字 `rawLyric`、翻译行识别和重复歌词稳定定位。
-- 修复快速切歌时有歌词/无歌词曲目之间的歌词错绑。
+- 通过通用歌词事务层隔离异步回调，避免有歌词/无歌词曲目连续切换时歌词错绑或后续持续显示无歌词。
+- 长日语、中文歌词按 Unicode 字符边界换行，避免无空格长句被自动缩小。
 - 保留播放器原始媒体 action 语义，仅通过 OPlus Rule0 提供翻译按钮，避免上一首、播放/暂停、下一首错位。
 - Salt Player 完全停止后可从 ColorOS 历史媒体卡片恢复播放。
 - ConePlayer 冷启动恢复播放时可从已选中音轨元数据恢复歌词。
@@ -62,7 +63,8 @@ Bridges timed lyrics from supported music players into the native ColorOS/OPlus 
 - Built-in compatibility adapters for Salt Player and ConePlayer.
 - Public `MediaMetadata["lyricInfo"]` protocol for self-integrating players without an APK dependency.
 - Line-timed LRC, word-timed `rawLyric`, translation detection, and stable repeated-line matching.
-- Protection against cross-track lyric binding during rapid switches between tracks with and without lyrics.
+- A generic lyric transaction layer prevents stale asynchronous callbacks from binding across tracks, including sequences that contain instrumentals or no-lyric tracks.
+- Long Japanese and Chinese lyric lines wrap at Unicode character boundaries instead of being reduced to tiny text.
 - Preserves the player's original media-action semantics and exposes translation only through OPlus Rule0, preventing previous/play-pause/next slot corruption.
 - Restores Salt Player playback from the ColorOS history media card after the app has fully stopped.
 - Restores ConePlayer lyrics from selected audio-track metadata during background playback resumption.

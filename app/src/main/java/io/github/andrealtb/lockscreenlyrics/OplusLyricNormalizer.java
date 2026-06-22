@@ -13,6 +13,8 @@ final class OplusLyricNormalizer {
 
     private static final Pattern ANY_LRC_TIME_TAG =
             Pattern.compile("[\\[<]([0-9]{1,3}:[0-9]{2}(?:[.:][0-9]{1,3})?)[\\]>]");
+    private static final Pattern BRACKETED_LRC_TIME_TAG =
+            Pattern.compile("\\[([0-9]{1,3}:[0-9]{2}(?:[.:][0-9]{1,3})?)]");
 
     private OplusLyricNormalizer() {
     }
@@ -24,28 +26,30 @@ final class OplusLyricNormalizer {
 
         LinkedHashMap<Long, TimedLyricGroup> groups = new LinkedHashMap<>();
         for (String rawLine : splitRawLyricLines(rawLyric)) {
-            String line = rawLine == null ? "" : rawLine.trim();
-            if (line.isEmpty()) {
-                continue;
-            }
+            for (String expandedLine : splitEmbeddedTimedLines(rawLine)) {
+                String line = expandedLine == null ? "" : expandedLine.trim();
+                if (line.isEmpty()) {
+                    continue;
+                }
 
-            Matcher firstTag = ANY_LRC_TIME_TAG.matcher(line);
-            if (!firstTag.find() || firstTag.start() != 0) {
-                continue;
-            }
+                Matcher firstTag = ANY_LRC_TIME_TAG.matcher(line);
+                if (!firstTag.find() || firstTag.start() != 0) {
+                    continue;
+                }
 
-            long timeMillis = parseLrcTimeMillis(firstTag.group(1));
-            String text = cleanPlainLyricText(line.substring(firstTag.end()));
-            if (text.isEmpty() || isNonLyricInfoLine(text, timeMillis)) {
-                continue;
-            }
+                long timeMillis = parseLrcTimeMillis(firstTag.group(1));
+                String text = cleanPlainLyricText(line.substring(firstTag.end()));
+                if (text.isEmpty() || isNonLyricInfoLine(text, timeMillis)) {
+                    continue;
+                }
 
-            TimedLyricGroup group = groups.get(timeMillis);
-            if (group == null) {
-                group = new TimedLyricGroup(timeMillis);
-                groups.put(timeMillis, group);
+                TimedLyricGroup group = groups.get(timeMillis);
+                if (group == null) {
+                    group = new TimedLyricGroup(timeMillis);
+                    groups.put(timeMillis, group);
+                }
+                group.texts.add(text);
             }
-            group.texts.add(text);
         }
 
         ArrayList<TimedLyricGroup> groupedLines = new ArrayList<>(groups.values());
@@ -187,6 +191,29 @@ final class OplusLyricNormalizer {
 
     private static String[] splitRawLyricLines(String rawLyric) {
         return rawLyric.replace('\r', '\n').split("\n");
+    }
+
+    private static List<String> splitEmbeddedTimedLines(String rawLine) {
+        ArrayList<String> lines = new ArrayList<>();
+        String line = rawLine == null ? "" : rawLine;
+        Matcher matcher = BRACKETED_LRC_TIME_TAG.matcher(line);
+        if (!matcher.find()) {
+            lines.add(line);
+            return lines;
+        }
+
+        int segmentStart = matcher.start();
+        int previousTagEnd = matcher.end();
+        while (matcher.find()) {
+            String textBeforeTag = line.substring(previousTagEnd, matcher.start());
+            if (!LyricTextSanitizer.removeIgnorableCharacters(textBeforeTag).trim().isEmpty()) {
+                lines.add(line.substring(segmentStart, matcher.start()));
+                segmentStart = matcher.start();
+            }
+            previousTagEnd = matcher.end();
+        }
+        lines.add(line.substring(segmentStart));
+        return lines;
     }
 
     private static boolean containsLatinLetter(String text) {

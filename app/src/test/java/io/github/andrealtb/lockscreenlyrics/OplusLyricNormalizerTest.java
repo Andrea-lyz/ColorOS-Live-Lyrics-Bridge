@@ -63,4 +63,18 @@ public final class OplusLyricNormalizerTest {
                 + "[00:46.150]\u200B", normalized);
     }
 
+    @Test
+    public void embeddedBracketedTimestampStartsANewOfficialLine() {
+        String lrc = "[00:12.16]I walk a lonely road\n"
+                + "[00:12.16]\u6211\u8d70\u5728\u5b64\u72ec\u7684\u5c0f\u9053\u4e0a"
+                + "[00:14.27]The only one that I have ever known\n"
+                + "[00:14.27]\u8fd9\u662f\u6211\u552f\u4e00\u8ba4\u8bc6\u7684\u8def";
+
+        String normalized = OplusLyricNormalizer.normalizeForOfficialList(lrc);
+
+        assertEquals("[00:00.000]I walk a lonely road\n"
+                + "[00:14.270]The only one that I have ever known\n"
+                + "[00:22.270]\u200B", normalized);
+    }
+
 }

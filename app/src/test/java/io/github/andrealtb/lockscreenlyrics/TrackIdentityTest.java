@@ -80,4 +80,56 @@ public final class TrackIdentityTest {
                 TrackIdentity.buildKey("Tiny Moves", "Bleachers")));
     }
 
+    @Test
+    public void featuredTitleAndArtistSeparatorsStillMatchMetadata() {
+        assertTrue(TrackIdentity.matchesHintKey(
+                TrackIdentity.buildLrcHintKey(
+                        "2step (feat. Lil Baby)",
+                        "Ed Sheeran,Lil Baby"),
+                TrackIdentity.buildKey(
+                        "2step",
+                        "Ed Sheeran/Lil Baby")));
+    }
+
+    @Test
+    public void featureNormalizationDoesNotMergeDifferentBaseTitles() {
+        assertFalse(TrackIdentity.matchesHintKey(
+                TrackIdentity.buildLrcHintKey(
+                        "2step (feat. Lil Baby)",
+                        "Ed Sheeran,Lil Baby"),
+                TrackIdentity.buildKey(
+                        "Shivers",
+                        "Ed Sheeran/Lil Baby")));
+    }
+
+    @Test
+    public void artistNormalizationStillRejectsDifferentCollaborators() {
+        assertFalse(TrackIdentity.matchesHintKey(
+                TrackIdentity.buildLrcHintKey(
+                        "2step (feat. Lil Baby)",
+                        "Ed Sheeran,Lil Baby"),
+                TrackIdentity.buildKey(
+                        "2step",
+                        "Ed Sheeran/Stormzy")));
+    }
+
+    @Test
+    public void translatedTitleSuffixMatchesPlainLrcTitle() {
+        assertTrue(TrackIdentity.matchesHintKey(
+                TrackIdentity.buildKey("Boulevard of Broken Dreams", "Green Day"),
+                TrackIdentity.buildKey(
+                        "Boulevard of Broken Dreams（碎梦大道）",
+                        "Green Day")));
+    }
+
+    @Test
+    public void versionSuffixIsNotTreatedAsTranslationAlias() {
+        assertFalse(TrackIdentity.matchesHintKey(
+                TrackIdentity.buildKey("Sunny Boy", "Artist"),
+                TrackIdentity.buildKey("Sunny Boy（日语翻唱）", "Artist")));
+        assertFalse(TrackIdentity.matchesHintKey(
+                TrackIdentity.buildKey("Song", "Artist"),
+                TrackIdentity.buildKey("Song (Live)", "Artist")));
+    }
+
 }

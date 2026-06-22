@@ -116,6 +116,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     private static final int OPLUS_LYRIC_ENTRANCE_ALL = 52;
     private static final long LYRIC_CACHE_MAX_AGE_MS = 5 * 60 * 1000L;
     private static final int TRACK_LYRIC_CACHE_MAX_ENTRIES = 24;
+    private static final long SALT_STALE_FALLBACK_CONFIRM_WINDOW_MS = 8_000L;
     private static final long SCREEN_TIMEOUT_USER_ACTIVITY_INTERVAL_MS = 8_000L;
     private static final long SCREEN_TIMEOUT_WAKE_LOCK_LEASE_MS = 15_000L;
     private static final long SCREEN_TIMEOUT_VISIBLE_LYRIC_VIEW_MAX_AGE_MS = 12_000L;
@@ -138,12 +139,6 @@ public final class LockscreenLyricsModule extends XposedModule {
     private static final String OFFICIAL_LYRIC_LINE_SPACING_FIELD = "u";
     private static final Pattern LRC_TIME_TAG = Pattern.compile("\\[[0-9]{1,3}:[0-9]{2}(?:[.:][0-9]{1,3})?\\]");
     private static final Pattern ANY_LRC_TIME_TAG = Pattern.compile("[\\[<]([0-9]{1,3}:[0-9]{2}(?:[.:][0-9]{1,3})?)[\\]>]");
-    private static final Pattern LRC_TITLE_TAG = Pattern.compile(
-            "(?im)^\\s*\\[ti\\s*:(.*?)]\\s*$");
-    private static final Pattern LRC_ARTIST_TAG = Pattern.compile(
-            "(?im)^\\s*\\[ar\\s*:(.*?)]\\s*$");
-    private static final Pattern TITLE_ARTIST_SEPARATOR = Pattern.compile(
-            "\\s+[-\\u2013\\u2014]\\s+");
     private static final PlayerAdapter[] PLAYER_ADAPTERS = {
             new SaltPlayerAdapter(),
             new ConePlayerAdapter("ink.trantor.coneplayer"),
@@ -154,8 +149,10 @@ public final class LockscreenLyricsModule extends XposedModule {
             new LyricSessionReducer(LYRIC_CACHE_MAX_AGE_MS, TRACK_LYRIC_CACHE_MAX_ENTRIES);
     private volatile MediaSession lastSession;
     private volatile MediaMetadata lastMetadata;
-    private volatile String hookedPlayerPackage = "";
+    private volatile PlayerAdapter hookedPlayerAdapter;
     private volatile long lastLyricRelayLogAt;
+    private volatile String pendingSaltFallbackClearTrackKey = "";
+    private volatile long pendingSaltFallbackClearAtMillis = -1L;
     private volatile WordLyricModel currentWordLyricModel;
     private volatile String currentWordLyricModelSignature = "";
     private volatile long lastTextViewSpanLogAt;
@@ -333,7 +330,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (adapter == null) {
             return;
         }
-        hookedPlayerPackage = packageName;
+        hookedPlayerAdapter = adapter;
         installMediaMetadataHook();
         adapter.installLyricSourceHooks(this, param.getClassLoader());
     }
@@ -494,6 +491,21 @@ public final class LockscreenLyricsModule extends XposedModule {
             }
         }
         return null;
+    }
+
+    private boolean activeAdapterSupportsLyricRelayMetadata() {
+        PlayerAdapter adapter = hookedPlayerAdapter;
+        return adapter != null && adapter.supportsLyricRelayMetadata();
+    }
+
+    private boolean activeAdapterMayRetainStaleLyricInfo() {
+        PlayerAdapter adapter = hookedPlayerAdapter;
+        return adapter != null && adapter.mayRetainStaleLyricInfo();
+    }
+
+    private boolean activeAdapterAllowsModuleToReplaceUntrustedLyricInfo() {
+        PlayerAdapter adapter = hookedPlayerAdapter;
+        return adapter != null && adapter.allowsModuleToReplaceUntrustedLyricInfo();
     }
 
     private static String findPlayerPackageInLog(String message) {
@@ -4450,21 +4462,6 @@ public final class LockscreenLyricsModule extends XposedModule {
         return android.R.drawable.sym_def_app_icon;
     }
 
-    Object onPlayerLyricResultConstructed(
-            XposedInterface.Chain chain,
-            LyricProviderCapabilities capabilities) throws Throwable {
-        Object result = chain.proceed();
-        try {
-            List<Object> args = chain.getArgs();
-            String source = args.isEmpty() ? "UNKNOWN" : String.valueOf(args.get(0));
-            String rawLyric = findTimedLyricArgument(args);
-            maybeCacheRealLyric(source, rawLyric, capabilities);
-        } catch (Throwable t) {
-            error("Failed while reading player lyric result", t);
-        }
-        return result;
-    }
-
     void cacheTimedLyric(String source, String rawLyric) {
         cacheTimedLyric(source, rawLyric, LyricProviderCapabilities.PASSIVE_PARSER);
     }
@@ -4473,17 +4470,16 @@ public final class LockscreenLyricsModule extends XposedModule {
             String source,
             String rawLyric,
             LyricProviderCapabilities capabilities) {
-        maybeCacheRealLyric(source, rawLyric, capabilities);
-    }
-
-    private static String findTimedLyricArgument(List<Object> args) {
-        for (int i = args.size() - 1; i >= 0; i--) {
-            Object arg = args.get(i);
-            if (arg instanceof String && looksLikeTimedLrc((String) arg)) {
-                return (String) arg;
-            }
-        }
-        return "";
+        reportLyricSourceEvent(LyricSourceEvent.resolved(
+                source,
+                "",
+                "",
+                "",
+                inferTrackHintKey(rawLyric),
+                "",
+                rawLyric,
+                System.currentTimeMillis(),
+                capabilities));
     }
 
     @SuppressLint("WrongConstant")
@@ -4532,7 +4528,8 @@ public final class LockscreenLyricsModule extends XposedModule {
                         trackTitle,
                         trackArtist,
                         duration,
-                        original.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)),
+                        original.getString(MediaMetadata.METADATA_KEY_MEDIA_ID),
+                        original.getString(MediaMetadata.METADATA_KEY_MEDIA_URI)),
                 trackIdentity.saltRelay
                         ? LyricSessionReducer.ObservationKind.RELAY_METADATA
                         : LyricSessionReducer.ObservationKind.STABLE_METADATA,
@@ -4541,6 +4538,12 @@ public final class LockscreenLyricsModule extends XposedModule {
         LyricSessionReducer.LyricDocument realLyric = sessionUpdate.document != null
                 ? sessionUpdate.document
                 : playerLyricSession.documentForTrack(trackKey, observedAtMillis);
+        if (sessionUpdate.noDocumentConfirmed) {
+            info("Confirmed lyric transaction outcome=" + sessionUpdate.terminalOutcome
+                    + " for title=" + trackTitle
+                    + ", artist=" + nullToEmpty(trackArtist)
+                    + " from pending source event");
+        }
 
         if (shouldPreserveSaltLyricRelayMetadata(
                 original,
@@ -4559,27 +4562,75 @@ public final class LockscreenLyricsModule extends XposedModule {
             return chain.proceed(relayedArgs);
         }
 
-        boolean mismatchedExistingLyricInfo = !TextUtils.isEmpty(existingLyricInfo)
-                && !lyricInfoMatchesTrack(existingLyricInfo, trackTitle, trackArtist);
+        boolean mayRetainStaleLyricInfo = activeAdapterMayRetainStaleLyricInfo();
+        boolean hasExistingLyricInfo = !TextUtils.isEmpty(existingLyricInfo);
+        LyricInfoContract.Payload parsedExistingPayload =
+                LyricInfoContract.parse(existingLyricInfo);
+        boolean invalidExistingLyricInfo = hasExistingLyricInfo
+                && parsedExistingPayload == null;
+        boolean mismatchedExistingLyricInfo = hasExistingLyricInfo
+                && parsedExistingPayload != null
+                && !lyricInfoMatchesTrack(parsedExistingPayload, trackTitle, trackArtist);
+        boolean confirmingSaltFallbackClear =
+                isPendingSaltFallbackClear(trackKey, observedAtMillis);
+        boolean sameAsStableLyricInfo = hasExistingLyricInfo
+                && !TextUtils.isEmpty(stableLyricInfo)
+                && existingLyricInfo.equals(stableLyricInfo);
+        boolean unsafeSaltFallbackLyricInfo = mayRetainStaleLyricInfo
+                && hasExistingLyricInfo
+                && parsedExistingPayload != null
+                && LyricInfoTrackMatcher.shouldClearSaltPlayerFallbackLyricInfo(
+                parsedExistingPayload,
+                trackTitle,
+                trackArtist,
+                trackChanged,
+                confirmingSaltFallbackClear,
+                sameAsStableLyricInfo,
+                realLyric != null);
+        boolean clearExistingLyricInfo = invalidExistingLyricInfo
+                || mismatchedExistingLyricInfo
+                || unsafeSaltFallbackLyricInfo;
+        if (mayRetainStaleLyricInfo
+                && hasExistingLyricInfo
+                && parsedExistingPayload != null
+                && (mismatchedExistingLyricInfo || unsafeSaltFallbackLyricInfo)) {
+            noteStaleSaltFallbackLyricInfo(
+                    trackKey,
+                    trackChanged,
+                    confirmingSaltFallbackClear,
+                    observedAtMillis,
+                    trackTitle,
+                    trackArtist);
+        } else if (trackChanged || realLyric != null) {
+            clearPendingSaltFallbackClear();
+        }
+
         LyricInfoContract.Payload existingPayload =
-                mismatchedExistingLyricInfo
-                        ? null
-                        : LyricInfoContract.parse(existingLyricInfo);
+                clearExistingLyricInfo ? null : parsedExistingPayload;
+        boolean hasTrustedPlayerIntegrationData = existingPayload != null
+                && existingPayload.hasModuleExtensionData()
+                && (!activeAdapterAllowsModuleToReplaceUntrustedLyricInfo()
+                || existingPayload.isModuleEnvelope());
         LockscreenIntegrationPolicy.LyricInfoSource lyricInfoSource =
                 LockscreenIntegrationPolicy.chooseLyricInfoSource(
-                        !TextUtils.isEmpty(existingLyricInfo)
-                                && !mismatchedExistingLyricInfo,
-                        existingPayload != null && existingPayload.hasModuleExtensionData(),
+                        hasExistingLyricInfo
+                                && existingPayload != null
+                                && !clearExistingLyricInfo,
+                        hasTrustedPlayerIntegrationData,
                         realLyric != null);
         if (lyricInfoSource != LockscreenIntegrationPolicy.LyricInfoSource.MODULE_CAPTURE) {
-            if (mismatchedExistingLyricInfo) {
+            if (clearExistingLyricInfo) {
                 MediaMetadata cleared = new MediaMetadata.Builder(original)
                         .putString(OPLUS_LYRIC_INFO_KEY, "")
                         .build();
                 Object[] clearedArgs = chain.getArgs().toArray(new Object[0]);
                 clearedArgs[0] = cleared;
                 rememberPlayerMetadata(thisObject, cleared);
-                info("Cleared stale lyricInfo for title="
+                info("Cleared " + lyricInfoClearReason(
+                        invalidExistingLyricInfo,
+                        mismatchedExistingLyricInfo,
+                        unsafeSaltFallbackLyricInfo)
+                        + " lyricInfo for title="
                         + trackTitle + ", artist=" + nullToEmpty(trackArtist));
                 return chain.proceed(clearedArgs);
             }
@@ -4647,7 +4698,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             LyricSessionReducer.LyricDocument capturedLyric) {
         MetadataTrackIdentity originalIdentity =
                 new MetadataTrackIdentity(incomingTitle, incomingArtist, false);
-        if (!SALT_PLAYER_PACKAGE.equals(hookedPlayerPackage) || metadata == null) {
+        if (!activeAdapterSupportsLyricRelayMetadata() || metadata == null) {
             return originalIdentity;
         }
 
@@ -4736,7 +4787,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             String stableLyricInfo,
             String incomingTitle,
             MetadataTrackIdentity trackIdentity) {
-        if (!SALT_PLAYER_PACKAGE.equals(hookedPlayerPackage)
+        if (!activeAdapterSupportsLyricRelayMetadata()
                 || incoming == null
                 || stable == null
                 || trackIdentity == null
@@ -4807,6 +4858,54 @@ public final class LockscreenLyricsModule extends XposedModule {
         return normalizeLine(container).contains(normalizeLine(value));
     }
 
+    private boolean isPendingSaltFallbackClear(String trackKey, long nowMillis) {
+        if (TextUtils.isEmpty(trackKey)
+                || TextUtils.isEmpty(pendingSaltFallbackClearTrackKey)
+                || !trackKey.equals(pendingSaltFallbackClearTrackKey)
+                || pendingSaltFallbackClearAtMillis < 0L) {
+            return false;
+        }
+        long age = nowMillis - pendingSaltFallbackClearAtMillis;
+        return age >= 0L && age <= SALT_STALE_FALLBACK_CONFIRM_WINDOW_MS;
+    }
+
+    private void noteStaleSaltFallbackLyricInfo(
+            String trackKey,
+            boolean trackChanged,
+            boolean confirmingPreviousClear,
+            long observedAtMillis,
+            String title,
+            String artist) {
+        if (!trackChanged && confirmingPreviousClear) {
+            playerLyricSession.markCurrentTrackHasNoDocument(observedAtMillis);
+            info("Marked current track lyric unavailable from repeated stale Salt lyricInfo"
+                    + " for title=" + title + ", artist=" + nullToEmpty(artist));
+        }
+        pendingSaltFallbackClearTrackKey = nullToEmpty(trackKey);
+        pendingSaltFallbackClearAtMillis = observedAtMillis;
+    }
+
+    private void clearPendingSaltFallbackClear() {
+        pendingSaltFallbackClearTrackKey = "";
+        pendingSaltFallbackClearAtMillis = -1L;
+    }
+
+    private static String lyricInfoClearReason(
+            boolean invalidExistingLyricInfo,
+            boolean mismatchedExistingLyricInfo,
+            boolean unsafeSaltFallbackLyricInfo) {
+        if (invalidExistingLyricInfo) {
+            return "invalid";
+        }
+        if (mismatchedExistingLyricInfo) {
+            return "stale";
+        }
+        if (unsafeSaltFallbackLyricInfo) {
+            return "unsafe Salt fallback";
+        }
+        return "stale";
+    }
+
     private void maybeLogPreservedSaltLyricRelay(String title) {
         long now = SystemClock.elapsedRealtime();
         if (now - lastLyricRelayLogAt < 5_000L) {
@@ -4817,36 +4916,82 @@ public final class LockscreenLyricsModule extends XposedModule {
                 + shortenForLog(title));
     }
 
-    private void maybeCacheRealLyric(
-            String source,
-            String rawLyric,
-            LyricProviderCapabilities capabilities) {
-        if (TextUtils.isEmpty(rawLyric)) {
+    void reportLyricSourceEvent(LyricSourceEvent sourceEvent) {
+        if (sourceEvent == null) {
             return;
         }
+        LyricSourceEvent event = normalizeLyricSourceEvent(sourceEvent);
+        LyricSessionReducer.EventUpdate update =
+                playerLyricSession.acceptSourceEvent(event);
+        if (event.outcome == LyricSourceEvent.Outcome.RESOLVED) {
+            info("Accepted lyric transaction from " + event.source
+                    + ", rawChars=" + event.rawLyric.length()
+                    + ", oplusChars=" + event.lyric.length()
+                    + ", requestId=" + shortenForLog(event.requestId)
+                    + ", identity=" + lyricEventIdentityForLog(event)
+                    + ", association="
+                    + (update.boundToCurrentTrack ? "current-track" : "pending"));
+            if (update.boundToCurrentTrack) {
+                publishBoundDocumentToCurrentMetadata(update.document);
+            }
+            return;
+        }
+        if (event.outcome == LyricSourceEvent.Outcome.NO_LYRIC
+                || event.outcome == LyricSourceEvent.Outcome.PARSE_FAILED) {
+            info("Accepted lyric transaction outcome=" + event.outcome
+                    + " from " + event.source
+                    + ", identity=" + lyricEventIdentityForLog(event)
+                    + ", association=" + (update.queued ? "pending" : "current-track"));
+        }
+    }
+
+    private LyricSourceEvent normalizeLyricSourceEvent(LyricSourceEvent event) {
+        if (event.outcome != LyricSourceEvent.Outcome.RESOLVED) {
+            return event;
+        }
+        String rawLyric = firstNonEmpty(event.rawLyric, event.lyric);
         String normalized = sanitizeForOplusLyric(rawLyric);
         if (!looksLikeTimedLrc(normalized)) {
-            return;
+            return LyricSourceEvent.terminal(
+                    LyricSourceEvent.Outcome.PARSE_FAILED,
+                    event.source,
+                    event.requestId,
+                    event.mediaId,
+                    event.mediaUri,
+                    event.trackHintKey,
+                    rawLyric,
+                    event.occurredAtMillis,
+                    event.capabilities);
         }
-
-        String trackHintKey = inferTrackHintKey(rawLyric);
-        long capturedAtMillis = System.currentTimeMillis();
-        LyricSessionReducer.CaptureUpdate update = playerLyricSession.capture(
-                source,
+        return LyricSourceEvent.resolved(
+                event.source,
+                event.requestId,
+                event.mediaId,
+                event.mediaUri,
+                firstNonEmpty(event.trackHintKey, inferTrackHintKey(rawLyric)),
                 normalized,
                 rawLyric,
-                trackHintKey,
-                capturedAtMillis,
-                capabilities);
-        info("Cached real timed lyric from " + source
-                + ", rawChars=" + rawLyric.length()
-                + ", oplusChars=" + normalized.length()
-                + ", hasTrackHint=" + !TextUtils.isEmpty(trackHintKey)
-                + ", association="
-                + (update.boundToCurrentTrack ? "current-track" : "pending-next-track"));
-        if (update.boundToCurrentTrack) {
-            publishBoundDocumentToCurrentMetadata(update.document);
+                event.occurredAtMillis,
+                event.capabilities);
+    }
+
+    private static String lyricEventIdentityForLog(LyricSourceEvent event) {
+        if (event == null) {
+            return "none";
         }
+        if (!TextUtils.isEmpty(event.requestId)) {
+            return "request";
+        }
+        if (!TextUtils.isEmpty(event.mediaId)) {
+            return "media-id";
+        }
+        if (!TextUtils.isEmpty(event.mediaUri)) {
+            return "media-uri";
+        }
+        if (!TextUtils.isEmpty(event.trackHintKey)) {
+            return "title-artist";
+        }
+        return "ordered-fallback";
     }
 
     @SuppressLint("WrongConstant")
@@ -4871,7 +5016,8 @@ public final class LockscreenLyricsModule extends XposedModule {
                     LyricInfoContract.parse(existingLyricInfo);
             if (existingPayload != null
                     && existingPayload.hasModuleExtensionData()
-                    && !existingPayload.isModuleEnvelope()) {
+                    && !existingPayload.isModuleEnvelope()
+                    && !activeAdapterAllowsModuleToReplaceUntrustedLyricInfo()) {
                 return;
             }
             String mergedLyricInfo = buildModuleLyricInfo(
@@ -4897,38 +5043,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private static String inferTrackHintKey(String rawLyric) {
-        if (TextUtils.isEmpty(rawLyric)) {
-            return "";
-        }
-        java.util.regex.Matcher titleTag = LRC_TITLE_TAG.matcher(rawLyric);
-        java.util.regex.Matcher artistTag = LRC_ARTIST_TAG.matcher(rawLyric);
-        String taggedTitle = titleTag.find() ? titleTag.group(1).trim() : "";
-        String taggedArtist = artistTag.find() ? artistTag.group(1).trim() : "";
-        if (!TextUtils.isEmpty(taggedTitle)) {
-            return TrackIdentity.buildLrcHintKey(taggedTitle, taggedArtist);
-        }
-
-        int checked = 0;
-        for (String rawLine : splitRawLyricLines(rawLyric)) {
-            if (checked++ >= 8) {
-                break;
-            }
-            String text = ANY_LRC_TIME_TAG.matcher(rawLine).replaceAll("").trim();
-            if (TextUtils.isEmpty(text) || text.length() > 160) {
-                continue;
-            }
-            java.util.regex.Matcher separator = TITLE_ARTIST_SEPARATOR.matcher(text);
-            if (!separator.find() || separator.start() <= 0 || separator.end() >= text.length()) {
-                continue;
-            }
-            String title = text.substring(0, separator.start()).trim();
-            String artist = text.substring(separator.end()).trim();
-            artist = artist.replaceFirst("\\s*[\\(\\uff08].*$", "").trim();
-            if (!TextUtils.isEmpty(title) && !TextUtils.isEmpty(artist)) {
-                return buildTrackKey(title, artist);
-            }
-        }
-        return "";
+        return LyricInfoTrackMatcher.inferTrackHintKey(rawLyric);
     }
 
     static String buildTrackKey(String title, String artist) {
@@ -4936,13 +5051,8 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private static boolean lyricInfoMatchesTrack(
-            String lyricInfo, String title, String artist) {
-        LyricInfoContract.Payload payload = LyricInfoContract.parse(lyricInfo);
-        if (payload == null || TextUtils.isEmpty(payload.songName)) {
-            return true;
-        }
-        return buildTrackKey(payload.songName, payload.artist)
-                .equals(buildTrackKey(title, artist));
+            LyricInfoContract.Payload payload, String title, String artist) {
+        return LyricInfoTrackMatcher.payloadMatchesTrack(payload, title, artist);
     }
 
     private static boolean looksLikeTimedLrc(String lyric) {
@@ -7918,8 +8028,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             }
 
             if (singleLine
-                    || inactivePaint.measureText(text, textStart, textEnd) <= availableWidth
-                    || !textContainsSpace(text, textStart, textEnd)) {
+                    || inactivePaint.measureText(text, textStart, textEnd) <= availableWidth) {
                 addDrawLine(
                         textStart,
                         textEnd,
@@ -8055,24 +8164,13 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
 
         private int chooseWrapEnd(String text, int start, int end, float availableWidth) {
-            int bestEnd = -1;
-            int index = start;
-            while (index < end) {
-                while (index < end && !Character.isWhitespace(text.charAt(index))) {
-                    index++;
-                }
-                int candidateEnd = lastNonSpace(text, start, index);
-                if (candidateEnd > start) {
-                    float width = inactivePaint.measureText(text, start, candidateEnd);
-                    if (width <= availableWidth) {
-                        bestEnd = candidateEnd;
-                    } else {
-                        break;
-                    }
-                }
-                index = firstNonSpace(text, index, end);
-            }
-            return bestEnd > start ? bestEnd : end;
+            return LyricLineBreakPolicy.chooseWrapEnd(
+                    text,
+                    start,
+                    end,
+                    availableWidth,
+                    (value, rangeStart, rangeEnd) ->
+                            inactivePaint.measureText(value, rangeStart, rangeEnd));
         }
 
         private int chooseBalancedSplit(String text, int start, int end, float availableWidth) {

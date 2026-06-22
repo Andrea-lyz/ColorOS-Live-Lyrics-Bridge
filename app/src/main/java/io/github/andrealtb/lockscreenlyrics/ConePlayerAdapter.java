@@ -75,7 +75,7 @@ final class ConePlayerAdapter implements PlayerAdapter {
 
     @Override
     public LyricProviderCapabilities lyricCapabilities() {
-        return LyricProviderCapabilities.PASSIVE_PARSER;
+        return LyricProviderCapabilities.CURRENT_TRACK_SOURCE;
     }
 
     @Override
@@ -148,10 +148,10 @@ final class ConePlayerAdapter implements PlayerAdapter {
         Object result = chain.proceed();
         String rawLyric = findSelectedAudioLyric(tracks);
         if (isUsableTimedLyric(rawLyric)) {
-            module.cacheTimedLyric(
+            module.reportLyricSourceEvent(resolvedEvent(
                     TRACK_METADATA_SOURCE_NAME,
                     rawLyric,
-                    LyricProviderCapabilities.PASSIVE_PARSER);
+                    LyricProviderCapabilities.CURRENT_TRACK_SOURCE));
         }
         return result;
     }
@@ -287,12 +287,38 @@ final class ConePlayerAdapter implements PlayerAdapter {
         if (!LyricInfoContract.containsTimedLrc(lyric)) {
             return false;
         }
-        String text = TIMED_LRC_TAG.matcher(lyric).replaceAll("");
-        text = LyricTextSanitizer.removeIgnorableCharacters(text).trim();
+        String text = lyricDisplayText(lyric);
         if (text.isEmpty()) {
             return false;
         }
         return !EMPTY_LYRIC_TEXTS.contains(text.toLowerCase(Locale.ROOT));
+    }
+
+    private static boolean isNoLyricPlaceholder(String lyric) {
+        String text = lyricDisplayText(lyric);
+        return !text.isEmpty()
+                && EMPTY_LYRIC_TEXTS.contains(text.toLowerCase(Locale.ROOT));
+    }
+
+    private static String lyricDisplayText(String lyric) {
+        if (lyric == null) {
+            return "";
+        }
+        StringBuilder text = new StringBuilder();
+        for (String line : lyric.replace("\r\n", "\n").replace('\r', '\n').split("\n")) {
+            String trimmed = line.trim();
+            if (trimmed.matches("(?i)^\\[[a-z]{2,8}:.*]$")) {
+                continue;
+            }
+            String visible = TIMED_LRC_TAG.matcher(trimmed).replaceAll("").trim();
+            if (!visible.isEmpty()) {
+                if (text.length() > 0) {
+                    text.append('\n');
+                }
+                text.append(visible);
+            }
+        }
+        return LyricTextSanitizer.removeIgnorableCharacters(text.toString()).trim();
     }
 
     private static Object invoke(Object target, String methodName)
@@ -394,13 +420,46 @@ final class ConePlayerAdapter implements PlayerAdapter {
             LyricProviderCapabilities capabilities) throws Throwable {
         Object rawLyricArg = chain.getArg(0);
         Object result = chain.proceed();
-        if (rawLyricArg instanceof String
-                && isUsableTimedLyric((String) rawLyricArg)) {
-            module.cacheTimedLyric(
+        if (!(rawLyricArg instanceof String)) {
+            return result;
+        }
+        String rawLyric = (String) rawLyricArg;
+        if (isUsableTimedLyric(rawLyric)) {
+            module.reportLyricSourceEvent(resolvedEvent(
                     SOURCE_NAME,
-                    (String) rawLyricArg,
-                    capabilities);
+                    rawLyric,
+                    capabilities));
+        } else if (!rawLyric.trim().isEmpty()) {
+            LyricSourceEvent.Outcome outcome = isNoLyricPlaceholder(rawLyric)
+                    ? LyricSourceEvent.Outcome.NO_LYRIC
+                    : LyricSourceEvent.Outcome.PARSE_FAILED;
+            module.reportLyricSourceEvent(LyricSourceEvent.terminal(
+                    outcome,
+                    SOURCE_NAME,
+                    "",
+                    "",
+                    "",
+                    LyricInfoTrackMatcher.inferTrackHintKey(rawLyric),
+                    rawLyric,
+                    System.currentTimeMillis(),
+                    capabilities));
         }
         return result;
+    }
+
+    private static LyricSourceEvent resolvedEvent(
+            String source,
+            String rawLyric,
+            LyricProviderCapabilities capabilities) {
+        return LyricSourceEvent.resolved(
+                source,
+                "",
+                "",
+                "",
+                LyricInfoTrackMatcher.inferTrackHintKey(rawLyric),
+                "",
+                rawLyric,
+                System.currentTimeMillis(),
+                capabilities);
     }
 }

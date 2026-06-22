@@ -12,6 +12,8 @@
 
 当前项目内置基于 DexKit 的 Salt Player、ConePlayer 兼容适配器和 SystemUI 渲染 hook；其他播放器优先通过 `lyricInfo` 接入协议主动适配。
 
+歌词来源通过通用事务层与曲目元数据关联：带媒体 ID、URI 或完整标题/歌手的信息会精确匹配；无身份的被动回调只会等待下一次稳定元数据，避免纯音乐、预加载或异步回调造成跨曲歌词错位。
+
 ## 功能概览
 
 播放器进程：
@@ -145,7 +147,7 @@ APK 输出位置：
 ## GitHub Actions
 
 - `Build Debug APK`：当 `main` 分支源码更新或发起 Pull Request 时自动构建，生成的 debug APK 会作为 workflow artifact 上传。
-- `Release APK`：推送类似 `v1.8.0` 的 tag 后手动触发。工作流会校验 JSON 格式的 `SCOPE`，同步 README/SUMMARY/SOURCE_URL/SCOPE 到 LSPosed 仓库，构建签名 APK，并以 `80-1.8.0` 这类 `versionCode-versionName` 标签同步版本。
+- `Release APK`：推送类似 `v1.9.0` 的 tag 后手动触发。工作流会校验 JSON 格式的 `SCOPE`，同步 README/SUMMARY/SOURCE_URL/SCOPE 到 LSPosed 仓库，构建签名 APK，并以 `90-1.9.0` 这类 `versionCode-versionName` 标签同步版本。
 
 手动发布工作流需要这些仓库 secrets：
 
@@ -165,7 +167,7 @@ adb shell am force-stop com.salt.music
 # 或：adb shell am force-stop ink.trantor.coneplayer
 ```
 
-在 LSPosed 中为目标播放器包名、`system` 与系统界面启用模块，然后重启设备。之后打开播放器开始播放歌曲，再锁屏查看效果。
+在 LSPosed 中为目标播放器包名、`system` 与系统界面启用模块，然后重启目标播放器和系统界面。若修改了作用域，或需要验证 `system` 中的历史播放器能力，再重启设备。之后打开播放器开始播放歌曲，再锁屏查看效果。
 
 常用日志：
 
@@ -182,7 +184,7 @@ LockscreenLyrics: Hooked Salt Player lyric result constructors via DexKit: resul
 LockscreenLyrics: Hooked ConePlayer lyric parser via DexKit: ...
 LockscreenLyrics: Hooked SystemUI official lyric TextView draw hooks
 LockscreenLyrics: Registered SystemUI screen timeout receiver
-LockscreenLyrics: Cached real timed lyric from LRC_FILE, rawChars=..., oplusChars=...
+LockscreenLyrics: Accepted lyric transaction from EMBEDDED, rawChars=..., oplusChars=..., identity=..., association=...
 LockscreenLyrics: Injected real LRC_FILE lyricInfo for title=...
 LockscreenLyrics: Cached SystemUI word lyric model, lines=...
 LockscreenLyrics: Lockscreen lyric UI keep-awake ON

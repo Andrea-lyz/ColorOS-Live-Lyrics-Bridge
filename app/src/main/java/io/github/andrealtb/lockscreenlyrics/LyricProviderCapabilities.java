@@ -20,20 +20,40 @@ final class LyricProviderCapabilities {
     static final LyricProviderCapabilities PASSIVE_PARSER =
             new LyricProviderCapabilities(
                     AssociationStrategy.NEXT_TRACK_OBSERVATION,
+                    AssociationStrategy.NEXT_TRACK_OBSERVATION,
                     false);
 
     static final LyricProviderCapabilities ACTIVE_INTEGRATION =
             new LyricProviderCapabilities(
                     AssociationStrategy.EXPLICIT_TRACK,
+                    AssociationStrategy.EXPLICIT_TRACK,
                     true);
 
+    static final LyricProviderCapabilities CURRENT_TRACK_SOURCE =
+            new LyricProviderCapabilities(
+                    AssociationStrategy.CURRENT_TRACK,
+                    AssociationStrategy.CURRENT_TRACK,
+                    false);
+
     final AssociationStrategy associationStrategy;
+    final AssociationStrategy terminalAssociationStrategy;
     final boolean stableTrackIdentity;
 
     LyricProviderCapabilities(
             AssociationStrategy associationStrategy,
+            AssociationStrategy terminalAssociationStrategy,
             boolean stableTrackIdentity) {
         this.associationStrategy = associationStrategy;
+        this.terminalAssociationStrategy = terminalAssociationStrategy == null
+                ? associationStrategy
+                : terminalAssociationStrategy;
         this.stableTrackIdentity = stableTrackIdentity;
+    }
+
+    AssociationStrategy associationFor(LyricSourceEvent.Outcome outcome) {
+        return outcome == LyricSourceEvent.Outcome.NO_LYRIC
+                || outcome == LyricSourceEvent.Outcome.PARSE_FAILED
+                ? terminalAssociationStrategy
+                : associationStrategy;
     }
 }

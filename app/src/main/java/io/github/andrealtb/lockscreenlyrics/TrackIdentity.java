@@ -1,6 +1,8 @@
 package io.github.andrealtb.lockscreenlyrics;
 
 import java.util.Locale;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -14,6 +16,24 @@ final class TrackIdentity {
     private static final Pattern CONTENT_RATING_SUFFIX = Pattern.compile(
             "(?i)\\s*[\\[\\(\\uFF08\\u3010]\\s*(?:explicit|clean)"
                     + "\\s*[\\]\\)\\uFF09\\u3011]\\s*$");
+    private static final Pattern BRACKETED_FEATURE_SUFFIX = Pattern.compile(
+            "(?i)\\s*[\\[\\(\\uFF08\\u3010]\\s*"
+                    + "(?:feat(?:uring)?|ft)\\.?\\s+.*"
+                    + "[\\]\\)\\uFF09\\u3011]\\s*$");
+    private static final Pattern BARE_FEATURE_SUFFIX = Pattern.compile(
+            "(?i)\\s+(?:feat(?:uring)?|ft)\\.?\\s+.*$");
+    private static final Pattern ARTIST_FEATURE_SEPARATOR = Pattern.compile(
+            "(?i)\\s+(?:feat(?:uring)?|ft)\\.?\\s+");
+    private static final Pattern ARTIST_SEPARATOR = Pattern.compile(
+            "\\s*[/,&;\\uFF0C\\uFF1B\\u3001]\\s*");
+    private static final Pattern TRANSLATED_TITLE_SUFFIX = Pattern.compile(
+            "^(.*?)[\\(\\uFF08]([^\\)\\uFF09]+)[\\)\\uFF09]\\s*$");
+    private static final Pattern VERSION_MARKER = Pattern.compile(
+            "(?i)(?:live|remix|remaster(?:ed)?|version|edit|acoustic|demo|"
+                    + "instrumental|karaoke|cover|sped\\s*up|slowed|reverb|radio|"
+                    + "\\u73b0\\u573a|\\u7248\\u672c|\\u91cd\\u5236|\\u6df7\\u97f3|"
+                    + "\\u4f34\\u594f|\\u7eaf\\u97f3\\u4e50|\\u7ffb\\u5531|"
+                    + "\\u30ab\\u30d0\\u30fc)");
 
     private TrackIdentity() {
     }
@@ -51,14 +71,14 @@ final class TrackIdentity {
     static boolean matchesHintKey(String hintKey, String actualKey) {
         String[] hint = splitKey(hintKey);
         String[] actual = splitKey(actualKey);
-        if (!hint[0].equals(actual[0])) {
+        if (!titlesMatch(hint[0], actual[0])) {
             return false;
         }
         // LRC files frequently provide [ti] without [ar]. A missing artist is unknown,
         // not evidence that the lyric belongs to a different song.
         return hint[1].isEmpty()
                 || actual[1].isEmpty()
-                || hint[1].equals(actual[1]);
+                || artistsMatch(hint[1], actual[1]);
     }
 
     static SaltRelayIdentity parseSaltRelayArtist(String compositeArtist) {
@@ -115,6 +135,90 @@ final class TrackIdentity {
             matcher = CONTENT_RATING_SUFFIX.matcher(normalized);
         }
         return normalized;
+    }
+
+    private static boolean titlesMatch(String hintTitle, String actualTitle) {
+        if (hintTitle.equals(actualTitle)) {
+            return true;
+        }
+        String hintBase = stripFeatureSuffix(hintTitle);
+        String actualBase = stripFeatureSuffix(actualTitle);
+        if (hintBase.equals(actualBase)) {
+            return true;
+        }
+        return stripTranslatedTitleSuffix(hintBase).equals(actualBase)
+                || hintBase.equals(stripTranslatedTitleSuffix(actualBase));
+    }
+
+    private static String stripFeatureSuffix(String title) {
+        String normalized = title == null ? "" : title;
+        Matcher bracketed = BRACKETED_FEATURE_SUFFIX.matcher(normalized);
+        if (bracketed.find()) {
+            return normalized.substring(0, bracketed.start()).trim();
+        }
+        Matcher bare = BARE_FEATURE_SUFFIX.matcher(normalized);
+        if (bare.find()) {
+            return normalized.substring(0, bare.start()).trim();
+        }
+        return normalized;
+    }
+
+    private static String stripTranslatedTitleSuffix(String title) {
+        String normalized = title == null ? "" : title;
+        Matcher matcher = TRANSLATED_TITLE_SUFFIX.matcher(normalized);
+        if (!matcher.matches()) {
+            return normalized;
+        }
+        String base = matcher.group(1).trim();
+        String suffix = matcher.group(2).trim();
+        if (!containsAsciiLetter(base)
+                || !containsNonAsciiLetter(suffix)
+                || VERSION_MARKER.matcher(suffix).find()) {
+            return normalized;
+        }
+        return base;
+    }
+
+    private static boolean containsAsciiLetter(String value) {
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z')) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean containsNonAsciiLetter(String value) {
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if (ch > 0x7f && Character.isLetter(ch)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean artistsMatch(String hintArtist, String actualArtist) {
+        if (hintArtist.equals(actualArtist)) {
+            return true;
+        }
+        Set<String> hintArtists = splitArtists(hintArtist);
+        Set<String> actualArtists = splitArtists(actualArtist);
+        return !hintArtists.isEmpty() && hintArtists.equals(actualArtists);
+    }
+
+    private static Set<String> splitArtists(String artist) {
+        String normalized = ARTIST_FEATURE_SEPARATOR.matcher(
+                artist == null ? "" : artist).replaceAll("/");
+        Set<String> artists = new TreeSet<>();
+        for (String part : ARTIST_SEPARATOR.split(normalized)) {
+            String value = normalizeComponent(part);
+            if (!value.isEmpty()) {
+                artists.add(value);
+            }
+        }
+        return artists;
     }
 
     private static String normalizeComponent(String value) {

@@ -122,7 +122,7 @@ public final class LyricInfoContract {
         public final String trackKey;
         public final long sessionGeneration;
 
-        private Payload(
+        Payload(
                 String songName,
                 String artist,
                 String songId,
