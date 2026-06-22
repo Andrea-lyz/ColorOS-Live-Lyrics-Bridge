@@ -7005,11 +7005,14 @@ public final class LockscreenLyricsModule extends XposedModule {
             boolean untranslatedLayout = !sourceHasTranslation;
 
             String text = line.text;
+            int maxMainDrawLines = sourceHasTranslation
+                    ? MAX_TRANSLATED_MAIN_DRAW_LINES
+                    : MAX_DRAW_LINES;
             fitMainTextToMaxDrawLines(
                     textView.getContext(),
                     text,
                     availableWidth,
-                    MAX_DRAW_LINES);
+                    maxMainDrawLines);
             buildDrawLines(line, text, availableWidth, false, untranslatedLayout);
             int wordIndex = activeLine ? line.findWordIndex(position) : -1;
             WordRange activeWord = wordIndex >= 0 && wordIndex < line.words.size() ? line.words.get(wordIndex) : null;
@@ -7365,6 +7368,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                         position,
                         line.timeMillis,
                         line.endTimeMillis,
+                        line.rendererLayoutWidths,
                         totalLines,
                         MAX_TRANSLATED_MAIN_DRAW_LINES);
             }
@@ -9097,30 +9101,29 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private static boolean isLyricPrefixMatch(String visibleText, String fullText) {
-        if (TextUtils.isEmpty(visibleText) || TextUtils.isEmpty(fullText) || visibleText.length() < 5) {
+        if (TextUtils.isEmpty(visibleText) || TextUtils.isEmpty(fullText)) {
             return false;
         }
-        if (fullText.startsWith(visibleText)) {
-            return true;
-        }
-
         String visibleKey = lyricMatchKey(visibleText);
         String fullKey = lyricMatchKey(fullText);
-        return visibleKey.length() >= 5 && fullKey.startsWith(visibleKey);
+        return LyricTextMatchPolicy.hasSubstantialPrefix(
+                visibleText,
+                fullText,
+                visibleKey,
+                fullKey);
     }
 
     private static boolean isLyricPrefixMatchCached(
             String visibleText, String fullText, String fullKey) {
-        if (TextUtils.isEmpty(visibleText)
-                || TextUtils.isEmpty(fullText)
-                || visibleText.length() < 5) {
+        if (TextUtils.isEmpty(visibleText) || TextUtils.isEmpty(fullText)) {
             return false;
         }
-        if (fullText.startsWith(visibleText)) {
-            return true;
-        }
         String visibleKey = lyricMatchKeyFromNormalized(visibleText);
-        return visibleKey.length() >= 5 && fullKey.startsWith(visibleKey);
+        return LyricTextMatchPolicy.hasSubstantialPrefix(
+                visibleText,
+                fullText,
+                visibleKey,
+                fullKey);
     }
 
     private static String lyricMatchKey(String text) {

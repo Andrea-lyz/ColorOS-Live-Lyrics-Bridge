@@ -64,15 +64,21 @@ public class LockscreenIntegrationPolicyTest {
     }
 
     @Test
-    public void lineTimedLyricAdvancesToFinalWrappedLineByLineProgress() {
+    public void lineTimedLyricKeepsTheVisibleWindowUntilProgressReachesHiddenLine() {
         assertEquals(0, LockscreenIntegrationPolicy.lineTimedSlidingWindowStart(
                 6_790L,
                 6_790L,
                 12_410L,
                 3,
                 2));
-        assertEquals(1, LockscreenIntegrationPolicy.lineTimedSlidingWindowStart(
+        assertEquals(0, LockscreenIntegrationPolicy.lineTimedSlidingWindowStart(
                 9_000L,
+                6_790L,
+                12_410L,
+                3,
+                2));
+        assertEquals(1, LockscreenIntegrationPolicy.lineTimedSlidingWindowStart(
+                11_000L,
                 6_790L,
                 12_410L,
                 3,
@@ -81,6 +87,26 @@ public class LockscreenIntegrationPolicyTest {
                 12_300L,
                 6_790L,
                 12_410L,
+                3,
+                2));
+    }
+
+    @Test
+    public void lineTimedLyricUsesRenderedLineWidthsForWindowTiming() {
+        float[] widths = {60f, 20f, 20f};
+
+        assertEquals(0, LockscreenIntegrationPolicy.lineTimedSlidingWindowStart(
+                5_000L,
+                0L,
+                10_000L,
+                widths,
+                3,
+                2));
+        assertEquals(1, LockscreenIntegrationPolicy.lineTimedSlidingWindowStart(
+                8_100L,
+                0L,
+                10_000L,
+                widths,
                 3,
                 2));
     }

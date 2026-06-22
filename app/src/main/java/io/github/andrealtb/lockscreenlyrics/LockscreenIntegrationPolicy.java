@@ -129,10 +129,84 @@ final class LockscreenIntegrationPolicy {
                         1f,
                         (positionMillis - lineStartMillis)
                                 / (float) (lineEndMillis - lineStartMillis)));
-        int activeSegment = Math.min(
-                totalSegments - 1,
-                (int) Math.floor(progress * totalSegments));
-        return clampSlidingWindowStart(activeSegment, totalSegments, visibleSegments);
+        return lineTimedSlidingWindowStartForProgress(
+                progress,
+                null,
+                totalSegments,
+                visibleSegments);
+    }
+
+    static int lineTimedSlidingWindowStart(
+            long positionMillis,
+            long lineStartMillis,
+            long lineEndMillis,
+            float[] segmentWidths,
+            int totalSegments,
+            int visibleSegments) {
+        if (totalSegments <= visibleSegments
+                || visibleSegments <= 0
+                || lineEndMillis <= lineStartMillis) {
+            return 0;
+        }
+        float progress = Math.max(
+                0f,
+                Math.min(
+                        1f,
+                        (positionMillis - lineStartMillis)
+                                / (float) (lineEndMillis - lineStartMillis)));
+        return lineTimedSlidingWindowStartForProgress(
+                progress,
+                segmentWidths,
+                totalSegments,
+                visibleSegments);
+    }
+
+    private static int lineTimedSlidingWindowStartForProgress(
+            float progress,
+            float[] segmentWidths,
+            int totalSegments,
+            int visibleSegments) {
+        int activeSegment = activeSegmentForLineProgress(
+                progress,
+                segmentWidths,
+                totalSegments);
+        // Keep the currently revealed line visible at the bottom of the window.
+        // Moving as soon as its predecessor starts makes line-timed (pseudo word-level)
+        // lyrics jump a full visual line ahead of the progress highlight.
+        return clampSlidingWindowStart(
+                activeSegment - visibleSegments + 1,
+                totalSegments,
+                visibleSegments);
+    }
+
+    private static int activeSegmentForLineProgress(
+            float progress,
+            float[] segmentWidths,
+            int totalSegments) {
+        float totalWidth = 0f;
+        if (segmentWidths != null) {
+            for (int i = 0; i < totalSegments && i < segmentWidths.length; i++) {
+                totalWidth += Math.max(0f, segmentWidths[i]);
+            }
+        }
+        if (totalWidth <= 0f) {
+            return Math.min(
+                    totalSegments - 1,
+                    (int) Math.floor(progress * totalSegments));
+        }
+
+        float revealWidth = progress * totalWidth;
+        float consumedWidth = 0f;
+        for (int i = 0; i < totalSegments; i++) {
+            float segmentWidth = i < segmentWidths.length
+                    ? Math.max(0f, segmentWidths[i])
+                    : 0f;
+            consumedWidth += segmentWidth;
+            if (revealWidth < consumedWidth || i == totalSegments - 1) {
+                return i;
+            }
+        }
+        return totalSegments - 1;
     }
 
     static boolean shouldPreserveStableLyricInfoForRelay(
