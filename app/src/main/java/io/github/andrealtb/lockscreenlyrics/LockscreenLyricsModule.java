@@ -7005,14 +7005,11 @@ public final class LockscreenLyricsModule extends XposedModule {
             boolean untranslatedLayout = !sourceHasTranslation;
 
             String text = line.text;
-            int maxMainDrawLines = sourceHasTranslation
-                    ? MAX_TRANSLATED_MAIN_DRAW_LINES
-                    : MAX_DRAW_LINES;
             fitMainTextToMaxDrawLines(
                     textView.getContext(),
                     text,
                     availableWidth,
-                    maxMainDrawLines);
+                    MAX_DRAW_LINES);
             buildDrawLines(line, text, availableWidth, false, untranslatedLayout);
             int wordIndex = activeLine ? line.findWordIndex(position) : -1;
             WordRange activeWord = wordIndex >= 0 && wordIndex < line.words.size() ? line.words.get(wordIndex) : null;
