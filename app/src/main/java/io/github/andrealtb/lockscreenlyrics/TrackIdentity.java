@@ -16,6 +16,9 @@ final class TrackIdentity {
     private static final Pattern CONTENT_RATING_SUFFIX = Pattern.compile(
             "(?i)\\s*[\\[\\(\\uFF08\\u3010]\\s*(?:explicit|clean)"
                     + "\\s*[\\]\\)\\uFF09\\u3011]\\s*$");
+    private static final Pattern SAME_RECORDING_EDITION_SUFFIX = Pattern.compile(
+            "(?i)\\s*[\\(\\uFF08]\\s*from\\s+the\\s+vault"
+                    + "\\s*[\\)\\uFF09]\\s*$");
     private static final Pattern BRACKETED_FEATURE_SUFFIX = Pattern.compile(
             "(?i)\\s*[\\[\\(\\uFF08\\u3010]\\s*"
                     + "(?:feat(?:uring)?|ft)\\.?\\s+.*"
@@ -134,6 +137,11 @@ final class TrackIdentity {
             normalized = normalized.substring(0, matcher.start()).trim();
             matcher = CONTENT_RATING_SUFFIX.matcher(normalized);
         }
+        matcher = SAME_RECORDING_EDITION_SUFFIX.matcher(normalized);
+        while (matcher.find()) {
+            normalized = normalized.substring(0, matcher.start()).trim();
+            matcher = SAME_RECORDING_EDITION_SUFFIX.matcher(normalized);
+        }
         return normalized;
     }
 
@@ -230,6 +238,12 @@ final class TrackIdentity {
         boolean inWhitespace = false;
         for (int i = 0; i < trimmed.length(); i++) {
             char character = trimmed.charAt(i);
+            if (character == '\u2018'
+                    || character == '\u2019'
+                    || character == '\u02bc'
+                    || character == '\uff07') {
+                character = '\'';
+            }
             boolean whitespace = character == ' ' || character == '\t';
             if (whitespace) {
                 if (!inWhitespace) {

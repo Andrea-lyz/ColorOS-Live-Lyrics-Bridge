@@ -10,6 +10,7 @@ import java.util.regex.Pattern;
 final class OplusLyricNormalizer {
     static final long LEADING_PRE_ROLL_THRESHOLD_MS = 1_500L;
     static final long TAIL_SPACER_DELAY_MS = 8_000L;
+    private static final long EMBEDDED_LINE_SPLIT_GAP_MS = 3_000L;
 
     private static final Pattern ANY_LRC_TIME_TAG =
             Pattern.compile("[\\[<]([0-9]{1,3}:[0-9]{2}(?:[.:][0-9]{1,3})?)[\\]>]");
@@ -193,27 +194,49 @@ final class OplusLyricNormalizer {
         return rawLyric.replace('\r', '\n').split("\n");
     }
 
-    private static List<String> splitEmbeddedTimedLines(String rawLine) {
+    static List<String> splitEmbeddedTimedLines(String rawLine) {
         ArrayList<String> lines = new ArrayList<>();
         String line = rawLine == null ? "" : rawLine;
         Matcher matcher = BRACKETED_LRC_TIME_TAG.matcher(line);
-        if (!matcher.find()) {
+        ArrayList<TagMatch> tags = new ArrayList<>();
+        while (matcher.find()) {
+            tags.add(new TagMatch(
+                    matcher.start(),
+                    matcher.end(),
+                    parseLrcTimeMillis(matcher.group(1))));
+        }
+        if (tags.size() < 2) {
             lines.add(line);
             return lines;
         }
 
-        int segmentStart = matcher.start();
-        int previousTagEnd = matcher.end();
-        while (matcher.find()) {
-            String textBeforeTag = line.substring(previousTagEnd, matcher.start());
-            if (!LyricTextSanitizer.removeIgnorableCharacters(textBeforeTag).trim().isEmpty()) {
-                lines.add(line.substring(segmentStart, matcher.start()));
-                segmentStart = matcher.start();
+        int segmentStart = tags.get(0).start;
+        for (int i = 1; i < tags.size(); i++) {
+            TagMatch previous = tags.get(i - 1);
+            TagMatch current = tags.get(i);
+            boolean hasTextBefore = hasVisibleText(line, previous.end, current.start);
+            boolean hasTextAfter = hasVisibleText(
+                    line,
+                    current.end,
+                    i + 1 < tags.size() ? tags.get(i + 1).start : line.length());
+            boolean onlyTwoLineTags = tags.size() == 2;
+            boolean separatedByLineSizedGap =
+                    current.timeMillis - previous.timeMillis >= EMBEDDED_LINE_SPLIT_GAP_MS;
+            if (hasTextBefore
+                    && hasTextAfter
+                    && (onlyTwoLineTags || separatedByLineSizedGap)) {
+                lines.add(line.substring(segmentStart, current.start));
+                segmentStart = current.start;
             }
-            previousTagEnd = matcher.end();
         }
         lines.add(line.substring(segmentStart));
         return lines;
+    }
+
+    private static boolean hasVisibleText(String value, int start, int end) {
+        return start < end
+                && !LyricTextSanitizer.removeIgnorableCharacters(
+                value.substring(start, end)).trim().isEmpty();
     }
 
     private static boolean containsLatinLetter(String text) {
@@ -269,6 +292,18 @@ final class OplusLyricNormalizer {
             return Long.parseLong(value);
         } catch (NumberFormatException ignored) {
             return 0L;
+        }
+    }
+
+    private static final class TagMatch {
+        final int start;
+        final int end;
+        final long timeMillis;
+
+        TagMatch(int start, int end, long timeMillis) {
+            this.start = start;
+            this.end = end;
+            this.timeMillis = timeMillis;
         }
     }
 

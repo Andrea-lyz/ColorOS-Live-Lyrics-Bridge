@@ -82,6 +82,42 @@ public final class LyricSessionReducerTest {
     }
 
     @Test
+    public void saltPendingLyricMatchesVaultEditionMetadataOnTrackChange() {
+        LyricSessionReducer reducer = new LyricSessionReducer(300_000L, 24);
+        reducer.observeTrack(
+                new LyricSessionReducer.TrackSnapshot(
+                        "You're On Your Own, Kid",
+                        "Taylor Swift",
+                        194_206L,
+                        ""),
+                LyricSessionReducer.ObservationKind.STABLE_METADATA,
+                1_000L);
+
+        LyricSessionReducer.CaptureUpdate capture = reducer.capture(
+                "EMBEDDED",
+                "[00:00]You say I don't understand",
+                "[00:00]You say I don't understand",
+                TrackIdentity.buildKey("You're Losing Me", "Taylor Swift"),
+                1_100L,
+                LyricProviderCapabilities.PASSIVE_PARSER);
+        assertFalse(capture.boundToCurrentTrack);
+
+        LyricSessionReducer.TrackSnapshot next =
+                new LyricSessionReducer.TrackSnapshot(
+                        "You\u2019re Losing Me (From The Vault)",
+                        "Taylor Swift",
+                        277_832L,
+                        "");
+        LyricSessionReducer.TrackUpdate update = reducer.observeTrack(
+                next,
+                LyricSessionReducer.ObservationKind.STABLE_METADATA,
+                1_200L);
+
+        assertSame(capture.document, update.document);
+        assertEquals(next.key, update.document.boundTrackKey);
+    }
+
+    @Test
     public void firstTrackCanConsumePendingPassiveLyric() {
         LyricSessionReducer reducer = new LyricSessionReducer(300_000L, 24);
         LyricSessionReducer.CaptureUpdate capture = reducer.capture(

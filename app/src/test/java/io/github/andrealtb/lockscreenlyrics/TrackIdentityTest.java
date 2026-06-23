@@ -132,4 +132,13 @@ public final class TrackIdentityTest {
                 TrackIdentity.buildKey("Song (Live)", "Artist")));
     }
 
+    @Test
+    public void saltHintMatchesCurlyApostropheVaultEditionMetadata() {
+        assertTrue(TrackIdentity.matchesHintKey(
+                TrackIdentity.buildKey("You're Losing Me", "Taylor Swift"),
+                TrackIdentity.buildKey(
+                        "You\u2019re Losing Me (From The Vault)",
+                        "Taylor Swift")));
+    }
+
 }

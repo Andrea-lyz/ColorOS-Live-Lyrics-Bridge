@@ -5601,19 +5601,21 @@ public final class LockscreenLyricsModule extends XposedModule {
         int order = 0;
         int inlineTimedLineCount = 0;
         for (String rawLine : splitRawLyricLines(rawLyric)) {
-            InlineTimedLyricLine line = parseInlineTimedLyricLine(rawLine, order++);
-            if (line == null) {
-                continue;
+            for (String expandedLine : OplusLyricNormalizer.splitEmbeddedTimedLines(rawLine)) {
+                InlineTimedLyricLine line = parseInlineTimedLyricLine(expandedLine, order++);
+                if (line == null) {
+                    continue;
+                }
+                if (line.inlineTiming) {
+                    inlineTimedLineCount++;
+                }
+                ArrayList<InlineTimedLyricLine> group = groups.get(line.timeMillis);
+                if (group == null) {
+                    group = new ArrayList<>();
+                    groups.put(line.timeMillis, group);
+                }
+                group.add(line);
             }
-            if (line.inlineTiming) {
-                inlineTimedLineCount++;
-            }
-            ArrayList<InlineTimedLyricLine> group = groups.get(line.timeMillis);
-            if (group == null) {
-                group = new ArrayList<>();
-                groups.put(line.timeMillis, group);
-            }
-            group.add(line);
         }
         if (inlineTimedLineCount <= 0 || groups.isEmpty()) {
             model.lines.clear();

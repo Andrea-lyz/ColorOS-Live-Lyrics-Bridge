@@ -77,4 +77,20 @@ public final class OplusLyricNormalizerTest {
                 + "[00:22.270]\u200B", normalized);
     }
 
+    @Test
+    public void bracketedWordTimingRemainsOneOfficialLyricLine() {
+        String lrc = "[00:05.575]You [00:05.799]say \"[00:06.007]I "
+                + "[00:06.215]don't [00:06.473]understand\"[00:07.495]\n"
+                + "[00:05.575]\u4f60\u8bf4\u6211\u4e0d\u61c2"
+                + "[00:14.583]We [00:14.823]thought [00:15.159]a "
+                + "[00:15.447]cure[00:15.767]\n"
+                + "[00:14.583]\u6211\u4eec\u539f\u4ee5\u4e3a\u4f1a\u6709\u8f6c\u673a";
+
+        String normalized = OplusLyricNormalizer.normalizeForOfficialList(lrc);
+
+        assertEquals("[00:00.000]You say \"I don't understand\"\n"
+                + "[00:14.583]We thought a cure\n"
+                + "[00:22.583]\u200B", normalized);
+    }
+
 }
