@@ -9,9 +9,8 @@ import android.os.Looper;
 import android.os.SystemClock;
 import android.view.KeyEvent;
 
-import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.util.List;
 import java.util.Locale;
 
 import io.github.libxposed.api.XposedInterface;
@@ -33,6 +32,8 @@ final class SaltPlayerAdapter implements PlayerAdapter {
             "com.salt.music.service.MediaButtonIntentReceiver";
     private static final String MUSIC_SERVICE_CLASS =
             "com.salt.music.service.MusicService";
+    private static final String SALT_SONG_CLASS =
+            "com.salt.music.data.entry.Song";
     private static final String ACTION_PLAY_OR_PAUSE = "com.salt.music.play_or_pause";
     private static final String OBFUSCATED_PACKAGE = "androidx.obf";
     private static final String SOURCE_ENUM_MARKER_EMBEDDED = "EMBEDDED";
@@ -61,7 +62,7 @@ final class SaltPlayerAdapter implements PlayerAdapter {
 
     @Override
     public LyricProviderCapabilities lyricCapabilities() {
-        return LyricProviderCapabilities.PASSIVE_PARSER;
+        return LyricProviderCapabilities.ACTIVE_INTEGRATION;
     }
 
     @Override
@@ -110,24 +111,19 @@ final class SaltPlayerAdapter implements PlayerAdapter {
 
             Class<?> sourceEnumClass = sourceEnum.getInstance(classLoader);
             Class<?> lyricResultClass = lyricResult.getInstance(classLoader);
-            int hookCount = hookLyricResultConstructors(
+            installFinalLyricPublicationHook(
                     module,
+                    bridge,
+                    lyricResult,
                     lyricResultClass,
-                    sourceEnumClass,
-                    lyricCapabilities());
-            if (hookCount == 0) {
-                throw new IllegalStateException(
-                        "No matching lyric result constructors in " + lyricResult.getName());
-            }
-
+                    sourceEnumClass);
             module.info("Hooked " + displayName()
-                    + " lyric result constructors via DexKit: result=" + lyricResult.getName()
+                    + " final lyric publication via DexKit: result=" + lyricResult.getName()
                     + ", source=" + sourceEnum.getName()
-                    + ", scroll=" + scrollEnum.getName()
-                    + ", count=" + hookCount);
+                    + ", scroll=" + scrollEnum.getName());
         } catch (Throwable t) {
             module.error("Failed to hook " + displayName()
-                    + " lyric result constructors via DexKit", t);
+                    + " final lyric publication via DexKit", t);
         }
     }
 
@@ -285,6 +281,49 @@ final class SaltPlayerAdapter implements PlayerAdapter {
         return requireSingleClass("lyric result class", classes);
     }
 
+    /**
+     * Finds Salt's coroutine which publishes one {@code (Song, LyricResult)} pair only after it
+     * re-checks that the asynchronous result still belongs to the current {@code Song.id}.
+     *
+     * <p>Salt has already discarded stale asynchronous results at this point. We preserve the
+     * originating {@code Song}'s title/artist as explicit identity instead of guessing from LRC
+     * tags or binding an identity-less parser callback to whichever MediaSession is current.</p>
+     */
+    private static void installFinalLyricPublicationHook(
+            LockscreenLyricsModule module,
+            DexKitBridge bridge,
+            ClassData lyricResult,
+            Class<?> lyricResultClass,
+            Class<?> sourceEnumClass) throws Throwable {
+        ClassData publisher = findFinalLyricPublisherClass(bridge, lyricResult);
+        Class<?> publisherClass = publisher.getInstance(lyricResultClass.getClassLoader());
+        Method invokeSuspend = findInvokeSuspendMethod(publisherClass);
+        invokeSuspend.setAccessible(true);
+        module.hook(invokeSuspend)
+                .setId(HOOK_ID_PREFIX
+                        + simpleClassName(publisherClass.getName()) + "-final-publication")
+                .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                .intercept(chain -> onFinalLyricPublication(
+                        module,
+                        chain,
+                        lyricResultClass,
+                        sourceEnumClass));
+        module.info("Using Salt Player final lyric publisher: " + publisher.getName());
+    }
+
+    private static ClassData findFinalLyricPublisherClass(
+            DexKitBridge bridge,
+            ClassData lyricResult) {
+        ClassDataList classes = bridge.findClass(FindClass.create()
+                .searchPackages(OBFUSCATED_PACKAGE)
+                .matcher(ClassMatcher.create()
+                        .fields(FieldsMatcher.create()
+                                .addForType(SALT_SONG_CLASS)
+                                .addForType(lyricResult.getName())
+                                .matchType(MatchType.Contains))));
+        return requireSingleClass("final lyric publisher class", classes);
+    }
+
     private static ClassData requireSingleClass(String description, ClassDataList classes) {
         if (classes.size() == 1) {
             return classes.get(0);
@@ -294,78 +333,173 @@ final class SaltPlayerAdapter implements PlayerAdapter {
                         + ": " + classes);
     }
 
-    private static int hookLyricResultConstructors(
-            LockscreenLyricsModule module,
-            Class<?> lyricResultClass,
-            Class<?> sourceEnumClass,
-            LyricProviderCapabilities capabilities) {
-        int count = 0;
-        for (Constructor<?> constructor : lyricResultClass.getDeclaredConstructors()) {
-            String kind = lyricConstructorKind(constructor, sourceEnumClass);
-            if (kind == null) {
-                continue;
+    private static Method findInvokeSuspendMethod(Class<?> publisherClass)
+            throws NoSuchMethodException {
+        for (Method method : publisherClass.getDeclaredMethods()) {
+            Class<?>[] parameterTypes = method.getParameterTypes();
+            if ("invokeSuspend".equals(method.getName())
+                    && parameterTypes.length == 1
+                    && parameterTypes[0] == Object.class) {
+                return method;
             }
-            constructor.setAccessible(true);
-            module.hook(constructor)
-                    .setId(HOOK_ID_PREFIX
-                            + simpleClassName(lyricResultClass.getName()) + "-" + kind)
-                    .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
-                    .intercept(chain -> onLyricResultConstructed(
-                            module,
-                            chain,
-                            capabilities));
-            count++;
         }
-        return count;
+        throw new NoSuchMethodException(publisherClass.getName() + "#invokeSuspend(Object)");
     }
 
-    private static Object onLyricResultConstructed(
+    private static Object onFinalLyricPublication(
             LockscreenLyricsModule module,
             XposedInterface.Chain chain,
-            LyricProviderCapabilities capabilities) throws Throwable {
+            Class<?> lyricResultClass,
+            Class<?> sourceEnumClass) throws Throwable {
         Object result = chain.proceed();
         try {
-            List<Object> args = chain.getArgs();
-            String source = args.isEmpty() ? "UNKNOWN" : String.valueOf(args.get(0));
-            String timedLyric = findTimedLyricArgument(args);
-            String rawCandidate = findRawLyricCandidate(args);
-            long nowMillis = System.currentTimeMillis();
-            LyricSourceEvent event;
-            if (!timedLyric.isEmpty()) {
-                event = LyricSourceEvent.resolved(
-                        source,
-                        "",
-                        "",
-                        "",
-                        LyricInfoTrackMatcher.inferTrackHintKey(timedLyric),
-                        "",
-                        timedLyric,
-                        nowMillis,
-                        capabilities);
-            } else {
-                LyricSourceEvent.Outcome outcome =
-                        LyricResultClassifier.classifyEmptyResult(source);
-                event = LyricSourceEvent.terminal(
-                        outcome,
-                        source,
-                        "",
-                        "",
-                        "",
-                        LyricInfoTrackMatcher.inferTrackHintKey(rawCandidate),
-                        rawCandidate,
-                        nowMillis,
-                        capabilities);
+            Object publisher = chain.getThisObject();
+            Object song = findFieldValueOfType(publisher, SALT_SONG_CLASS);
+            Object lyricResult = findFieldValueOfType(publisher, lyricResultClass);
+            if (song == null || lyricResult == null) {
+                return result;
             }
-            module.reportLyricSourceEvent(event);
+
+            String songId = readStringProperty(song, "getId");
+            String title = readStringProperty(song, "getTitle");
+            String artist = readStringProperty(song, "getArtist");
+            String source = readEnumField(lyricResult, sourceEnumClass);
+            String timedLyric = findTimedLyricField(lyricResult);
+            String rawCandidate = findRawStringField(lyricResult);
+            LyricSourceEvent event = buildFinalLyricEvent(
+                    songId,
+                    title,
+                    artist,
+                    source,
+                    timedLyric,
+                    rawCandidate,
+                    System.currentTimeMillis());
+            if (event != null) {
+                module.reportLyricSourceEvent(event);
+            }
         } catch (Throwable t) {
-            module.error("Failed while decoding Salt Player lyric result", t);
+            module.error("Failed while decoding Salt final lyric publication", t);
         }
         return result;
     }
 
-    private static String findTimedLyricArgument(List<Object> args) {
-        for (int index = args.size() - 1; index >= 0; index--) {
-            Object value = args.get(index);
+    private static LyricSourceEvent buildFinalLyricEvent(
+            String songId,
+            String title,
+            String artist,
+            String source,
+            String timedLyric,
+            String rawCandidate,
+            long nowMillis) {
+        String trackHintKey = title == null || title.trim().isEmpty()
+                ? ""
+                : TrackIdentity.buildKey(title, artist);
+        if (trackHintKey.isEmpty()) {
+            return null;
+        }
+        String resolvedSource = "SALT_FINAL_" + (source == null ? "UNKNOWN" : source);
+        String rawLyric = timedLyric.isEmpty() ? rawCandidate : timedLyric;
+        String requestId = buildFinalRequestId(songId, source, rawLyric);
+        if (!timedLyric.isEmpty()) {
+            return LyricSourceEvent.resolved(
+                    resolvedSource,
+                    requestId,
+                    "",
+                    "",
+                    trackHintKey,
+                    "",
+                    rawLyric,
+                    nowMillis,
+                    LyricProviderCapabilities.ACTIVE_INTEGRATION);
+        }
+        LyricSourceEvent.Outcome outcome = LyricResultClassifier.classifyEmptyResult(source);
+        return outcome == LyricSourceEvent.Outcome.SOURCE_MISS
+                ? null
+                : LyricSourceEvent.terminal(
+                        outcome,
+                        resolvedSource,
+                        requestId,
+                        "",
+                        "",
+                        trackHintKey,
+                        rawLyric,
+                        nowMillis,
+                        LyricProviderCapabilities.ACTIVE_INTEGRATION);
+    }
+
+    private static String buildFinalRequestId(String songId, String source, String rawLyric) {
+        String normalizedSongId = songId == null ? "" : songId.trim();
+        String normalizedSource = source == null ? "UNKNOWN" : source;
+        String payload = rawLyric == null ? "" : rawLyric;
+        return "salt-final:"
+                + normalizedSongId
+                + ':' + normalizedSource
+                + ':' + payload.length()
+                + ':' + Integer.toHexString(payload.hashCode());
+    }
+
+    private static Object findFieldValueOfType(Object instance, Class<?> type)
+            throws IllegalAccessException {
+        if (instance == null || type == null) {
+            return null;
+        }
+        for (Field field : instance.getClass().getDeclaredFields()) {
+            if (!type.isAssignableFrom(field.getType())) {
+                continue;
+            }
+            field.setAccessible(true);
+            Object value = field.get(instance);
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private static Object findFieldValueOfType(Object instance, String typeName)
+            throws IllegalAccessException {
+        if (instance == null || typeName == null || typeName.isEmpty()) {
+            return null;
+        }
+        for (Field field : instance.getClass().getDeclaredFields()) {
+            if (!typeName.equals(field.getType().getName())) {
+                continue;
+            }
+            field.setAccessible(true);
+            Object value = field.get(instance);
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private static String readStringProperty(Object instance, String methodName) {
+        if (instance == null || methodName == null || methodName.isEmpty()) {
+            return "";
+        }
+        try {
+            Method method = instance.getClass().getMethod(methodName);
+            Object value = method.invoke(instance);
+            return value instanceof String ? (String) value : "";
+        } catch (Throwable ignored) {
+            return "";
+        }
+    }
+
+    private static String readEnumField(Object instance, Class<?> enumClass)
+            throws IllegalAccessException {
+        Object value = findFieldValueOfType(instance, enumClass);
+        return value == null ? "UNKNOWN" : String.valueOf(value);
+    }
+
+    private static String findTimedLyricField(Object instance) throws IllegalAccessException {
+        for (Field field : instance.getClass().getDeclaredFields()) {
+            if (field.getType() != String.class) {
+                continue;
+            }
+            field.setAccessible(true);
+            Object value = field.get(instance);
             if (value instanceof String
                     && LyricInfoContract.containsTimedLrc((String) value)) {
                 return (String) value;
@@ -374,34 +508,20 @@ final class SaltPlayerAdapter implements PlayerAdapter {
         return "";
     }
 
-    private static String findRawLyricCandidate(List<Object> args) {
+    private static String findRawStringField(Object instance) throws IllegalAccessException {
         String candidate = "";
-        for (int index = 1; index < args.size(); index++) {
-            Object value = args.get(index);
+        for (Field field : instance.getClass().getDeclaredFields()) {
+            if (field.getType() != String.class) {
+                continue;
+            }
+            field.setAccessible(true);
+            Object value = field.get(instance);
             if (value instanceof String
                     && ((String) value).trim().length() > candidate.trim().length()) {
                 candidate = (String) value;
             }
         }
         return candidate;
-    }
-
-    private static String lyricConstructorKind(
-            Constructor<?> constructor,
-            Class<?> sourceEnumClass) {
-        Class<?>[] types = constructor.getParameterTypes();
-        if (types.length != 3
-                || types[1] != String.class
-                || types[0] != sourceEnumClass) {
-            return null;
-        }
-        if (types[2] == String.class) {
-            return "primary";
-        }
-        if (types[2] == int.class) {
-            return "synthetic";
-        }
-        return null;
     }
 
     private static String simpleClassName(String className) {

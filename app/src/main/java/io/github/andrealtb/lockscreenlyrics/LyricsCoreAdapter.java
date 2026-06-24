@@ -123,6 +123,9 @@ final class LyricsCoreAdapter {
                     continue;
                 }
                 String candidate = texts.get(textIndex);
+                if (LyricLineVariantSelector.isLikelyJapaneseRomanization(text, candidate)) {
+                    continue;
+                }
                 if (!candidate.equals(text)) {
                     translation = candidate;
                     break;
@@ -148,12 +151,7 @@ final class LyricsCoreAdapter {
     }
 
     private static int findPrimaryTextIndex(List<String> texts) {
-        for (int index = 0; index < texts.size(); index++) {
-            if (containsLatinLetter(texts.get(index))) {
-                return index;
-            }
-        }
-        return 0;
+        return LyricLineVariantSelector.findPrimaryTextIndex(texts);
     }
 
     private static boolean containsLatinLetter(String text) {

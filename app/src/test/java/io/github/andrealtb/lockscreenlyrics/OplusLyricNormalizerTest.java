@@ -17,6 +17,23 @@ public final class OplusLyricNormalizerTest {
     }
 
     @Test
+    public void japaneseMainLineWinsOverSameTimestampRomaji() {
+        String lrc = "[00:30.436]<00:30.436>\u3053<00:30.676>\u3093<00:30.916>\u306a"
+                + "<00:31.413>\u79c1<00:32.526>\u306e<00:33.422>\u672a<00:33.470>\u719f"
+                + "<00:34.508>\u306a<00:34.570>\u3046<00:35.033>\u305f<00:35.625>\u3092<00:36.073>\n"
+                + "[00:30.436]<00:30.436>\u611f\u8c22\u4f60\u613f\u610f\u8046\u542c<00:36.470>\n"
+                + "[00:30.436]<00:30.436>ko <00:30.675>n <00:30.915><00:30.916>na "
+                + "<00:31.412>wa <00:31.940>ta <00:31.997>shi <00:32.525>no "
+                + "<00:33.421>mi <00:33.470>ju <00:33.723><00:33.964>ku "
+                + "<00:34.507>na <00:34.569>u <00:35.032>ta <00:35.624>wo <00:36.073>";
+
+        String normalized = OplusLyricNormalizer.normalizeForOfficialList(lrc);
+
+        assertEquals("[00:00.000]\u3053\u3093\u306a\u79c1\u306e\u672a\u719f\u306a\u3046\u305f\u3092\n"
+                + "[00:38.436]\u200B", normalized);
+    }
+
+    @Test
     public void delayedFirstLineUsesPreRollInsteadOfAddingASecondItem() {
         String lrc = "[00:02.00]Hello";
 
@@ -91,6 +108,29 @@ public final class OplusLyricNormalizerTest {
         assertEquals("[00:00.000]You say \"I don't understand\"\n"
                 + "[00:14.583]We thought a cure\n"
                 + "[00:22.583]\u200B", normalized);
+    }
+
+    @Test
+    public void chineseTitleAndProductionCreditsDoNotBlockWordTimedLyrics() {
+        String lrc = "[00:00.000]\u5927[00:00.141]\u7530[00:00.283]\u540e"
+                + "[00:00.425]\u751f[00:00.567]\u4ed4 [00:00.850]- "
+                + "[00:01.134]\u6797[00:01.276]\u542f[00:01.418]\u5f97[00:01.560]\n"
+                + "[00:01.560]\u8bcd[00:01.874]\uff1a[00:02.188]\u6797"
+                + "[00:02.502]\u542f[00:02.816]\u5f97[00:03.130]\n"
+                + "[00:07.820]\u9f13[00:08.212]\uff1a[00:08.604]\u80d6"
+                + "[00:08.996]\u5c0f[00:09.390]\n"
+                + "[00:10.950]\u548c[00:11.146]\u97f3[00:11.342]\u7f16"
+                + "[00:11.538]\u5199[00:11.734]\uff1a[00:11.930]\u66fe"
+                + "[00:12.126]\u6052[00:12.322]\u4e50[00:12.520]\n"
+                + "[00:18.780]\u76d1[00:19.040]\u68da[00:19.300]\uff1a"
+                + "[00:19.560]\u6797[00:19.820]\u542f[00:20.080]\u5f97[00:20.340]\n"
+                + "[00:21.000]\u6211[00:21.250]\u51fa[00:21.500]\u751f"
+                + "[00:21.750]\u7684[00:22.000]\u5730[00:22.250]\u65b9[00:22.600]";
+
+        String normalized = OplusLyricNormalizer.normalizeForOfficialList(lrc);
+
+        assertEquals("[00:00.000]\u6211\u51fa\u751f\u7684\u5730\u65b9\n"
+                + "[00:29.000]\u200B", normalized);
     }
 
 }

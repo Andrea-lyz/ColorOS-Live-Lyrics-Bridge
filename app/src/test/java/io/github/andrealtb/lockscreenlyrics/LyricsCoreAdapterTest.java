@@ -87,6 +87,19 @@ public final class LyricsCoreAdapterTest {
     }
 
     @Test
+    public void plainLrcFallbackIgnoresJapaneseRomajiVariant() {
+        String lrc = "[00:30.436]\u3053\u3093\u306a\u79c1\u306e\u672a\u719f\u306a\u3046\u305f\u3092\n"
+                + "[00:30.436]\u611f\u8c22\u4f60\u613f\u610f\u8046\u542c\n"
+                + "[00:30.436]ko n na wa ta shi no mi ju ku na u ta wo";
+
+        LyricsCoreAdapter.ParsedLyrics parsed = LyricsCoreAdapter.parsePlainLrc(lrc);
+
+        assertEquals(1, parsed.lines.size());
+        assertEquals("\u3053\u3093\u306a\u79c1\u306e\u672a\u719f\u306a\u3046\u305f\u3092", parsed.lines.get(0).text);
+        assertEquals("\u611f\u8c22\u4f60\u613f\u610f\u8046\u542c", parsed.lines.get(0).translation);
+    }
+
+    @Test
     public void ignoresZeroWidthSpacerBeforeBilingualLine() {
         String lrc = "[00:30.00]Before\n"
                 + "[00:38.13]\u200B\n"

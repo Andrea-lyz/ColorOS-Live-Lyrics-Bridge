@@ -257,8 +257,8 @@ final class LockscreenIntegrationPolicy {
         String artist = normalized.substring(separator + 1).trim();
         return title.length() >= 2
                 && artist.length() >= 2
-                && containsLatinLetter(title)
-                && containsLatinLetter(artist);
+                && containsLetter(title)
+                && containsLetter(artist);
     }
 
     static boolean shouldAttachDelayedTranslation(
@@ -353,6 +353,9 @@ final class LockscreenIntegrationPolicy {
                 "\u4eba\u58f0", // 人声
                 "\u5409\u4ed6", // 吉他
                 "\u8d1d\u65af", // 贝斯
+                "\u9f13", // 鼓
+                "\u548c\u97f3", // 和音
+                "\u76d1\u68da", // 监棚
                 "\u5f26\u4e50", // 弦乐
                 "\u548c\u58f0", // 和声
                 "\u4e50\u8c31"  // 乐谱
@@ -363,6 +366,18 @@ final class LockscreenIntegrationPolicy {
             }
         }
         return label.equals("\u8bcd") || label.equals("\u66f2"); // 词 / 曲
+    }
+
+    private static boolean containsLetter(String value) {
+        if (value == null) {
+            return false;
+        }
+        for (int index = 0; index < value.length(); index++) {
+            if (Character.isLetter(value.charAt(index))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String lyricIdentityKey(String value) {

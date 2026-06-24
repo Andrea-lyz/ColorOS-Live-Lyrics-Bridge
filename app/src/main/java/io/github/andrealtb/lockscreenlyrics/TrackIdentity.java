@@ -25,12 +25,18 @@ final class TrackIdentity {
                     + "[\\]\\)\\uFF09\\u3011]\\s*$");
     private static final Pattern BARE_FEATURE_SUFFIX = Pattern.compile(
             "(?i)\\s+(?:feat(?:uring)?|ft)\\.?\\s+.*$");
+    private static final Pattern FEATURED_ARTIST_SUFFIX = Pattern.compile(
+            "(?i)\\s*[\\[\\(\\uFF08\\u3010]\\s*"
+                    + "(?:feat(?:uring)?|ft)\\.?\\s+(.+?)"
+                    + "[\\]\\)\\uFF09\\u3011]\\s*$");
     private static final Pattern ARTIST_FEATURE_SEPARATOR = Pattern.compile(
             "(?i)\\s+(?:feat(?:uring)?|ft)\\.?\\s+");
     private static final Pattern ARTIST_SEPARATOR = Pattern.compile(
             "\\s*[/,&;\\uFF0C\\uFF1B\\u3001]\\s*");
     private static final Pattern TRANSLATED_TITLE_SUFFIX = Pattern.compile(
             "^(.*?)[\\(\\uFF08]([^\\)\\uFF09]+)[\\)\\uFF09]\\s*$");
+    private static final Pattern TIME_OF_DAY_TITLE_SEPARATOR = Pattern.compile(
+            "(?i)(?<!\\d)(\\d{1,2})\\s*:\\s*(\\d{2})(?=\\s*(?:a\\.?m\\.?|p\\.?m\\.?)\\b)");
     private static final Pattern VERSION_MARKER = Pattern.compile(
             "(?i)(?:live|remix|remaster(?:ed)?|version|edit|acoustic|demo|"
                     + "instrumental|karaoke|cover|sped\\s*up|slowed|reverb|radio|"
@@ -81,7 +87,9 @@ final class TrackIdentity {
         // not evidence that the lyric belongs to a different song.
         return hint[1].isEmpty()
                 || actual[1].isEmpty()
-                || artistsMatch(hint[1], actual[1]);
+                || artistsMatch(hint[1], actual[1])
+                || artistsMatchWhenOnlyFeaturedArtistsAreMissing(
+                hint[0], actual[0], hint[1], actual[1]);
     }
 
     static SaltRelayIdentity parseSaltRelayArtist(String compositeArtist) {
@@ -132,6 +140,7 @@ final class TrackIdentity {
 
     private static String normalizeTitle(String title) {
         String normalized = normalizeComponent(title);
+        normalized = TIME_OF_DAY_TITLE_SEPARATOR.matcher(normalized).replaceAll("$1 $2");
         Matcher matcher = CONTENT_RATING_SUFFIX.matcher(normalized);
         while (matcher.find()) {
             normalized = normalized.substring(0, matcher.start()).trim();
@@ -179,12 +188,24 @@ final class TrackIdentity {
         }
         String base = matcher.group(1).trim();
         String suffix = matcher.group(2).trim();
-        if (!containsAsciiLetter(base)
+        if ((!containsAsciiLetter(base) && !containsJapaneseKana(base))
                 || !containsNonAsciiLetter(suffix)
                 || VERSION_MARKER.matcher(suffix).find()) {
             return normalized;
         }
         return base;
+    }
+
+    private static boolean containsJapaneseKana(String value) {
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if ((ch >= '\u3040' && ch <= '\u309f')
+                    || (ch >= '\u30a0' && ch <= '\u30ff')
+                    || (ch >= '\uff66' && ch <= '\uff9d')) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean containsAsciiLetter(String value) {
@@ -214,6 +235,37 @@ final class TrackIdentity {
         Set<String> hintArtists = splitArtists(hintArtist);
         Set<String> actualArtists = splitArtists(actualArtist);
         return !hintArtists.isEmpty() && hintArtists.equals(actualArtists);
+    }
+
+    private static boolean artistsMatchWhenOnlyFeaturedArtistsAreMissing(
+            String hintTitle,
+            String actualTitle,
+            String hintArtist,
+            String actualArtist) {
+        Set<String> hintArtists = splitArtists(hintArtist);
+        Set<String> actualArtists = splitArtists(actualArtist);
+        if (hintArtists.isEmpty()
+                || actualArtists.isEmpty()
+                || !hintArtists.containsAll(actualArtists)) {
+            return false;
+        }
+
+        Set<String> missingArtists = new TreeSet<>(hintArtists);
+        missingArtists.removeAll(actualArtists);
+        if (missingArtists.isEmpty()) {
+            return true;
+        }
+
+        Set<String> featuredArtists = featuredArtistsFromTitle(hintTitle);
+        if (featuredArtists.isEmpty()) {
+            featuredArtists = featuredArtistsFromTitle(actualTitle);
+        }
+        return !featuredArtists.isEmpty() && featuredArtists.containsAll(missingArtists);
+    }
+
+    private static Set<String> featuredArtistsFromTitle(String title) {
+        Matcher matcher = FEATURED_ARTIST_SUFFIX.matcher(title == null ? "" : title);
+        return matcher.find() ? splitArtists(matcher.group(1)) : new TreeSet<>();
     }
 
     private static Set<String> splitArtists(String artist) {

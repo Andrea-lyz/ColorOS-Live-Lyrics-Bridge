@@ -92,6 +92,24 @@ public final class TrackIdentityTest {
     }
 
     @Test
+    public void saltMetadataMatchesTimeStyleTitleAndOmittedFeaturedArtist() {
+        assertTrue(TrackIdentity.matchesHintKey(
+                TrackIdentity.buildKey(
+                        "8:22am (feat. La Force)",
+                        "Big Red Machine/La Force"),
+                TrackIdentity.buildKey(
+                        "8 22am (feat. La Force)",
+                        "Big Red Machine")));
+    }
+
+    @Test
+    public void omittedArtistDoesNotMatchWithoutAnExplicitFeaturedCredit() {
+        assertFalse(TrackIdentity.matchesHintKey(
+                TrackIdentity.buildKey("A Duet", "Singer/Guest"),
+                TrackIdentity.buildKey("A Duet", "Singer")));
+    }
+
+    @Test
     public void featureNormalizationDoesNotMergeDifferentBaseTitles() {
         assertFalse(TrackIdentity.matchesHintKey(
                 TrackIdentity.buildLrcHintKey(
@@ -120,6 +138,22 @@ public final class TrackIdentityTest {
                 TrackIdentity.buildKey(
                         "Boulevard of Broken Dreams（碎梦大道）",
                         "Green Day")));
+    }
+
+    @Test
+    public void japaneseTitleMatchesChineseTranslatedSuffixFromSaltMetadata() {
+        assertTrue(TrackIdentity.matchesHintKey(
+                TrackIdentity.buildKey("17\u3055\u3044\u306e\u3046\u305f\u3002", "\u300e\u30e6\u30a4\u30ab\u300f"),
+                TrackIdentity.buildKey(
+                        "17\u3055\u3044\u306e\u3046\u305f\u3002 (17\u5c81\u7684\u6b4c\u3002)",
+                        "\u300e\u30e6\u30a4\u30ab\u300f")));
+    }
+
+    @Test
+    public void pureChineseTitleDoesNotTreatBracketedTextAsAnAlias() {
+        assertFalse(TrackIdentity.matchesHintKey(
+                TrackIdentity.buildKey("\u6211\u7684\u6b4c", "\u6b4c\u624b"),
+                TrackIdentity.buildKey("\u6211\u7684\u6b4c\uff08\u53e6\u4e00\u4e2a\u540d\u5b57\uff09", "\u6b4c\u624b")));
     }
 
     @Test

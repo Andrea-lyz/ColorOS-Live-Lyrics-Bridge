@@ -121,12 +121,7 @@ final class OplusLyricNormalizer {
     }
 
     private static int findPrimaryTextIndex(List<String> texts) {
-        for (int i = 0; i < texts.size(); i++) {
-            if (containsLatinLetter(texts.get(i))) {
-                return i;
-            }
-        }
-        return 0;
+        return LyricLineVariantSelector.findPrimaryTextIndex(texts);
     }
 
     private static String cleanPlainLyricText(String text) {
@@ -237,19 +232,6 @@ final class OplusLyricNormalizer {
         return start < end
                 && !LyricTextSanitizer.removeIgnorableCharacters(
                 value.substring(start, end)).trim().isEmpty();
-    }
-
-    private static boolean containsLatinLetter(String text) {
-        if (text == null) {
-            return false;
-        }
-        for (int i = 0; i < text.length(); i++) {
-            char ch = text.charAt(i);
-            if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z')) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private static boolean containsAny(String value, String... needles) {

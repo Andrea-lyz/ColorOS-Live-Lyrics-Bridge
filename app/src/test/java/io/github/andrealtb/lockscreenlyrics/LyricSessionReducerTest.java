@@ -179,6 +179,95 @@ public final class LyricSessionReducerTest {
     }
 
     @Test
+    public void saltFinalPublicationWaitsForItsMatchingTrackWithoutATimeout() {
+        LyricSessionReducer reducer = new LyricSessionReducer(300_000L, 24);
+        LyricSessionReducer.TrackSnapshot previous =
+                new LyricSessionReducer.TrackSnapshot(
+                        "Clean",
+                        "Taylor Swift",
+                        230_954L,
+                        "");
+        reducer.observeTrack(
+                previous,
+                LyricSessionReducer.ObservationKind.STABLE_METADATA,
+                1_000L);
+
+        LyricSessionReducer.EventUpdate lyric = reducer.acceptSourceEvent(
+                LyricSourceEvent.resolved(
+                "SALT_FINAL_EMBEDDED",
+                "salt-final:22",
+                "",
+                "",
+                TrackIdentity.buildKey("22 (Taylor's Version)", "Taylor Swift"),
+                "[00:00.00]It feels like a perfect night",
+                "[00:00.00]It feels like a perfect night",
+                1_100L,
+                LyricProviderCapabilities.ACTIVE_INTEGRATION));
+
+        assertFalse(lyric.boundToCurrentTrack);
+        assertNull(reducer.documentForTrack(previous.key, 1_150L));
+
+        LyricSessionReducer.TrackSnapshot current =
+                new LyricSessionReducer.TrackSnapshot(
+                        "22 (Taylor's Version)",
+                        "Taylor Swift",
+                        230_954L,
+                        "");
+        LyricSessionReducer.TrackUpdate matched = reducer.observeTrack(
+                current,
+                LyricSessionReducer.ObservationKind.STABLE_METADATA,
+                1_200L);
+        assertSame(lyric.document, matched.document);
+        assertSame(lyric.document, reducer.documentForTrack(current.key, 1_250L));
+    }
+
+    @Test
+    public void saltFinalNoLyricCannotClearThePreviousTrackDuringASwitch() {
+        LyricSessionReducer reducer = new LyricSessionReducer(300_000L, 24);
+        LyricSessionReducer.TrackSnapshot previous =
+                new LyricSessionReducer.TrackSnapshot("Clean", "Taylor Swift", 260_000L, "");
+        LyricSessionReducer.TrackSnapshot next =
+                new LyricSessionReducer.TrackSnapshot("Florida!!!", "Taylor Swift", 215_000L, "");
+        reducer.observeTrack(
+                previous,
+                LyricSessionReducer.ObservationKind.STABLE_METADATA,
+                1_000L);
+        LyricSessionReducer.EventUpdate previousLyric = reducer.acceptSourceEvent(
+                LyricSourceEvent.resolved(
+                "SALT_FINAL_EMBEDDED",
+                "salt-final:clean",
+                "",
+                "",
+                previous.key,
+                "[00:00.00]Me and my ghosts",
+                "[00:00.00]Me and my ghosts",
+                1_100L,
+                LyricProviderCapabilities.ACTIVE_INTEGRATION));
+        assertTrue(previousLyric.boundToCurrentTrack);
+
+        LyricSessionReducer.EventUpdate noLyric = reducer.acceptSourceEvent(
+                LyricSourceEvent.terminal(
+                LyricSourceEvent.Outcome.NO_LYRIC,
+                "SALT_FINAL_NOT_FOUND",
+                "salt-final:florida",
+                "",
+                "",
+                next.key,
+                "NOT_FOUND",
+                1_150L,
+                LyricProviderCapabilities.ACTIVE_INTEGRATION));
+        assertTrue(noLyric.queued);
+
+        LyricSessionReducer.TrackUpdate switched = reducer.observeTrack(
+                next,
+                LyricSessionReducer.ObservationKind.STABLE_METADATA,
+                1_200L);
+        assertEquals(LyricSourceEvent.Outcome.NO_LYRIC, switched.terminalOutcome);
+        assertSame(previousLyric.document, reducer.documentForTrack(previous.key, 1_250L));
+        assertNull(reducer.documentForTrack(next.key, 1_250L));
+    }
+
+    @Test
     public void slowPassiveLyricWaitsForRepeatedStableObservation() {
         LyricSessionReducer reducer = new LyricSessionReducer(300_000L, 24);
         LyricSessionReducer.TrackSnapshot slowTrack =
