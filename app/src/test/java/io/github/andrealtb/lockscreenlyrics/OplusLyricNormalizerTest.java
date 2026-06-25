@@ -34,6 +34,24 @@ public final class OplusLyricNormalizerTest {
     }
 
     @Test
+    public void japaneseMainLineWinsWhenRomajiLaneIsMissingForOneTimestamp() {
+        String lrc = "[00:00.000]\u4f5c\u8bcd: \u30ca\u30e6\u30bf\u30f3\u661f\u4eba\n"
+                + "[00:00.283]\u4f5c\u66f2: \u30ca\u30e6\u30bf\u30f3\u661f\u4eba\n"
+                + "[00:00.566]\u7f16\u66f2: \u30ca\u30e6\u30bf\u30f3\u661f\u4eba\n"
+                + "[00:00.850]\u3042\u306e\u4e00\u7b49\u661f\u306e\u3055\u3093\u3056\u3081\u304f\u5149\u3067\n"
+                + "[00:00.850]a no i tto u se i no sa n za me ku hi ka ri de\n"
+                + "[00:00.850]\u5728\u90a3\u4e00\u7b49\u661f\u7684\u55a7\u56a3\u5149\u8292\u4e4b\u4e0b\n"
+                + "[00:07.230]\u6211\u304c\u592a\u967d\u7cfb\u306e\u9f13\u52d5\u306b\u5408\u308f\u305b\u3066\n"
+                + "[00:07.230]\u8ba9\u6211\u4eec\u6765\u4f34\u7740 \u592a\u9633\u7cfb\u7684\u8109\u52a8";
+
+        String normalized = OplusLyricNormalizer.normalizeForOfficialList(lrc);
+
+        assertEquals("[00:00.850]\u3042\u306e\u4e00\u7b49\u661f\u306e\u3055\u3093\u3056\u3081\u304f\u5149\u3067\n"
+                + "[00:07.230]\u6211\u304c\u592a\u967d\u7cfb\u306e\u9f13\u52d5\u306b\u5408\u308f\u305b\u3066\n"
+                + "[00:15.230]\u200B", normalized);
+    }
+
+    @Test
     public void delayedFirstLineUsesPreRollInsteadOfAddingASecondItem() {
         String lrc = "[00:02.00]Hello";
 

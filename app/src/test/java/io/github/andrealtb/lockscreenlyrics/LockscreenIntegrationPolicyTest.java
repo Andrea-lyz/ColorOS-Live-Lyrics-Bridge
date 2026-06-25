@@ -190,6 +190,13 @@ public class LockscreenIntegrationPolicyTest {
     }
 
     @Test
+    public void japaneseLyricContainingDrumCharacterIsNotProductionDetail() {
+        assertEquals(false, LockscreenIntegrationPolicy.isProductionDetailLine(
+                "我が太陽系の鼓動に合わせて",
+                7_230L));
+    }
+
+    @Test
     public void saltLyricRelayKeepsStableLyricInfo() {
         assertTrue(LockscreenIntegrationPolicy.shouldPreserveStableLyricInfoForRelay(
                 true,

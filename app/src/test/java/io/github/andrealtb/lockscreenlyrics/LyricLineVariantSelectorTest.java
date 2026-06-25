@@ -38,4 +38,15 @@ public final class LyricLineVariantSelectorTest {
         assertEquals("\u60aa\u970a\u9000\u6563 ICBM",
                 LyricLineVariantSelector.appendLatinSuffix(texts.get(0), suffix));
     }
+
+    @Test
+    public void keepsJapaneseMainLineWhenRomajiLaneIsMissing() {
+        List<String> texts = Arrays.asList(
+                "\u6211\u304c\u592a\u967d\u7cfb\u306e\u9f13\u52d5\u306b\u5408\u308f\u305b\u3066",
+                "\u8ba9\u6211\u4eec\u6765\u4f34\u7740 \u592a\u9633\u7cfb\u7684\u8109\u52a8");
+
+        int primaryIndex = LyricLineVariantSelector.findPrimaryTextIndex(texts);
+
+        assertEquals(0, primaryIndex);
+    }
 }

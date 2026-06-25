@@ -165,6 +165,8 @@ public final class LockscreenLyricsModule extends XposedModule {
     private static final long LYRIC_VISIBILITY_RECOVERY_FIRST_DELAY_MS = 96L;
     private static final long LYRIC_VISIBILITY_RECOVERY_SECOND_DELAY_MS = 240L;
     private static final long LYRIC_VISIBILITY_RECOVERY_FINAL_DELAY_MS = 520L;
+    private static final long LYRIC_VISIBILITY_RECOVERY_LONG_DELAY_MS = 1_200L;
+    private static final long LYRIC_VISIBILITY_RECOVERY_LAST_DELAY_MS = 2_400L;
     private static final float LYRIC_SLOT_HEIGHT_DP = 80f;
     private static final float OFFICIAL_LYRIC_LINE_SPACING_DP = 6f;
     private static final float ACTIVE_LYRIC_CENTER_OFFSET_DP = 48f;
@@ -1898,7 +1900,26 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
         lastSystemUiPlaybackState = state;
         maybeLogSeedlingPlaybackState(state, nextPosition, computedPosition, speed);
+        if (shouldRecoverLyricVisibilityAfterPlaybackState(state, previousPosition, nextPosition)) {
+            scheduleLyricVisibilityRecovery("playback-position-jump");
+        }
         updateScreenTimeoutWakeLock(currentApplicationContext());
+    }
+
+    private boolean shouldRecoverLyricVisibilityAfterPlaybackState(
+            int state,
+            long previousPosition,
+            long nextPosition) {
+        if (currentWordLyricModel == null || !systemUiLyricModeKeepAwakeActive) {
+            return false;
+        }
+        if (hasStuckHiddenLyricsRecyclerCandidate()) {
+            return true;
+        }
+        if (!isPlaybackStateInMotion(state) || previousPosition < 0L || nextPosition < 0L) {
+            return false;
+        }
+        return Math.abs(nextPosition - previousPosition) >= 1_500L;
     }
 
     private boolean shouldIgnoreStalePlaybackPositionAfterTrackReset(
@@ -2809,6 +2830,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 info("Primed LyricsRecyclerView at index=" + targetIndex + ", reason=" + reason);
             }
         }
+        restoreStuckHiddenLyricsRecyclerViews("prime-" + nullToEmpty(reason));
     }
 
     private int resolveLyricsRecyclerPrimeTargetIndex(WordLyricModel model) {
@@ -3899,6 +3921,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             updateScreenTimeoutWakeLock(currentApplicationContext());
             return;
         }
+        restoreStuckHiddenLyricsRecyclerViews("active-refresh");
 
         ArrayList<TextView> candidates = activeLyricRefreshCandidates;
         candidates.clear();
@@ -4035,7 +4058,9 @@ public final class LockscreenLyricsModule extends XposedModule {
         long[] delays = {
                 LYRIC_VISIBILITY_RECOVERY_FIRST_DELAY_MS,
                 LYRIC_VISIBILITY_RECOVERY_SECOND_DELAY_MS,
-                LYRIC_VISIBILITY_RECOVERY_FINAL_DELAY_MS
+                LYRIC_VISIBILITY_RECOVERY_FINAL_DELAY_MS,
+                LYRIC_VISIBILITY_RECOVERY_LONG_DELAY_MS,
+                LYRIC_VISIBILITY_RECOVERY_LAST_DELAY_MS
         };
         for (int i = 0; i < delays.length; i++) {
             boolean finalPass = i == delays.length - 1;
@@ -4062,7 +4087,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             restoreSuppressedLyricsRecyclerViews(false);
         }
 
-        boolean touched = false;
+        boolean touched = restoreStuckHiddenLyricsRecyclerViews(reason);
         for (View recycler : snapshotLyricsRecyclerViews()) {
             if (recycler == null
                     || !recycler.isAttachedToWindow()
@@ -6243,9 +6268,69 @@ public final class LockscreenLyricsModule extends XposedModule {
                 pendingCustomLyricTakeoverFade = false;
                 info("Visibility watchdog restored lyric RecyclerView alpha");
             }
+            restoreStuckHiddenLyricsRecyclerViews("handoff-watchdog");
         }, SYSTEMUI_LYRIC_MODEL_HANDOFF_MAX_MS
                 + SYSTEMUI_LYRIC_HANDOFF_FADE_IN_MS
                 + 120L);
+    }
+
+    private boolean hasStuckHiddenLyricsRecyclerCandidate() {
+        long now = SystemClock.elapsedRealtime();
+        if (now < officialLyricDrawSuppressedUntilElapsedMs
+                || now <= externalLyricRecyclerMaskUntilElapsedMs
+                || now <= lyricRecyclerFadeInUntilElapsedMs) {
+            return false;
+        }
+        for (View recycler : snapshotLyricsRecyclerViews()) {
+            if (isRestorableLyricsRecycler(recycler) && recycler.getAlpha() <= 0.05f) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean restoreStuckHiddenLyricsRecyclerViews(String reason) {
+        if (currentWordLyricModel == null || !systemUiLyricModeKeepAwakeActive) {
+            return false;
+        }
+        long now = SystemClock.elapsedRealtime();
+        if (now < officialLyricDrawSuppressedUntilElapsedMs
+                || now <= externalLyricRecyclerMaskUntilElapsedMs
+                || now <= lyricRecyclerFadeInUntilElapsedMs) {
+            return false;
+        }
+
+        boolean restored = false;
+        for (View recycler : snapshotLyricsRecyclerViews()) {
+            if (!isRestorableLyricsRecycler(recycler) || recycler.getAlpha() > 0.05f) {
+                continue;
+            }
+            recycler.animate().cancel();
+            recycler.setAlpha(SYSTEMUI_LYRIC_VISIBLE_ALPHA);
+            invalidateLyricsRecyclerDescendants(recycler);
+            recycler.postInvalidateOnAnimation();
+            restored = true;
+        }
+        if (!restored) {
+            return false;
+        }
+
+        synchronized (suppressedLyricsRecyclerAlphasLock) {
+            suppressedLyricsRecyclerAlphas.clear();
+        }
+        pendingCustomLyricTakeoverFade = false;
+        externalLyricRecyclerMaskUntilElapsedMs = 0L;
+        lyricRecyclerFadeInUntilElapsedMs = 0L;
+        maybeLogLyricVisibilityRecovery("restored-hidden-recycler-" + nullToEmpty(reason));
+        return true;
+    }
+
+    private static boolean isRestorableLyricsRecycler(View recycler) {
+        return recycler != null
+                && recycler.isAttachedToWindow()
+                && recycler.getVisibility() == View.VISIBLE
+                && recycler.getWidth() > 0
+                && recycler.getHeight() > 0;
     }
 
     private boolean shouldSuppressOfficialLyricForTrackHandoff() {

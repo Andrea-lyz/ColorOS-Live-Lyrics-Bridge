@@ -100,6 +100,25 @@ public final class LyricsCoreAdapterTest {
     }
 
     @Test
+    public void keepsJapaneseMainLineWhenRomajiIsMissingForOneTimestamp() {
+        String lrc = "[00:00.850]\u3042\u306e\u4e00\u7b49\u661f\u306e\u3055\u3093\u3056\u3081\u304f\u5149\u3067\n"
+                + "[00:00.850]a no i tto u se i no sa n za me ku hi ka ri de\n"
+                + "[00:00.850]\u5728\u90a3\u4e00\u7b49\u661f\u7684\u55a7\u56a3\u5149\u8292\u4e4b\u4e0b\n"
+                + "[00:07.230]\u6211\u304c\u592a\u967d\u7cfb\u306e\u9f13\u52d5\u306b\u5408\u308f\u305b\u3066\n"
+                + "[00:07.230]\u8ba9\u6211\u4eec\u6765\u4f34\u7740 \u592a\u9633\u7cfb\u7684\u8109\u52a8";
+
+        LyricsCoreAdapter.ParsedLyrics parsed = LyricsCoreAdapter.parse(lrc);
+
+        LyricsCoreAdapter.ParsedLine line = parsed.lines.stream()
+                .filter(candidate -> candidate.startMillis == 7_230L)
+                .findFirst()
+                .orElseThrow();
+        assertEquals("\u6211\u304c\u592a\u967d\u7cfb\u306e\u9f13\u52d5\u306b\u5408\u308f\u305b\u3066", line.text);
+        assertEquals("\u8ba9\u6211\u4eec\u6765\u4f34\u7740 \u592a\u9633\u7cfb\u7684\u8109\u52a8",
+                line.translation);
+    }
+
+    @Test
     public void prefersChineseTranslationOverJapaneseRomajiLane() {
         String lrc = "[00:37.447]\u78ca[00:37.825]\u3005[00:38.223]\u843d"
                 + "[00:38.600]\u3005[00:39.023] [00:39.023]\u53cd"

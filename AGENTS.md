@@ -24,6 +24,37 @@ adb logcat -v time -s LockscreenLyrics
 
 `scripts\gradle-local.cmd` discovers JDK 21 from `SALT_LYRIC_JAVA_HOME`, `JAVA_HOME`, or common local JDK locations, runs Gradle through a temporary ASCII drive letter, bypasses the local PowerShell script execution policy for this helper only, stores the wrapper cache in `.gradle-user-home/`, and writes build outputs to `.gradle-local-build/`. This avoids Windows/Gradle test-worker classpath corruption when the repository path contains Chinese characters and avoids stale `app/build` output locks. `assembleDebug` produces the test APK. `testDebugUnitTest` runs the JUnit 4 suite. After installation, enable the module for System UI and the target player in LSPosed, then restart affected processes.
 
+## Release Process
+
+Before publishing, confirm the intended diff and update all release-facing files in the same commit:
+
+- Bump `defaultVersionName` and `versionCode` in `app/build.gradle.kts`.
+- Add `.github/release-notes/<version>.md`; the release workflow uses this file for both the source GitHub release and the LSPosed mirror release.
+- Add `docs/releases/v<version>.md`; this is the durable in-repo changelog archive and must not be skipped.
+- Update README or `.github/lsposed/` metadata when behavior, packaging, scope, or user-facing installation notes change.
+
+Validate locally before tagging:
+
+```powershell
+.\scripts\gradle-local.cmd testDebugUnitTest assembleDebug
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\validate-lsposed-metadata.ps1
+git diff --check
+```
+
+Publish from a clean, committed `main`:
+
+- Commit the release changes with a short subject such as `Release v2.0.1`.
+- Push `main`, then create and push the source tag `v<version>`.
+- The `Release APK Bundle` workflow builds and uploads both `ColorOS-Live-Lyrics-Bridge-v<version>.apk` and `LyricProvider-QQMusic-v<version>.apk`.
+- The LSPosed release tag is derived as `<versionCode>-<versionName>`, for example `101-2.0.1`.
+
+After the workflow succeeds, verify the source release, the LSPosed release, and LSPosed module presentation:
+
+- Confirm both APK assets exist on `Andrea-lyz/ColorOS-Live-Lyrics-Bridge` tag `v<version>`.
+- Confirm both APK assets exist on `Xposed-Modules-Repo/io.github.andrealtb.lockscreenlyrics` tag `<versionCode>-<versionName>`.
+- Sync the LSPosed mirror repo metadata (`README.md`, `SUMMARY`, `SOURCE_URL`, `SCOPE`) from `.github/lsposed/` when needed, push that metadata commit, and ensure the LSPosed release tag points at the latest metadata commit so LSPosed Manager sees the update.
+- Check the public LSPosed module page ordering after tag or metadata fixes.
+
 ## Coding Style & Naming Conventions
 
 Use four-space indentation and standard Java brace placement. Prefer `final` for immutable values, `UPPER_SNAKE_CASE` for constants, `lowerCamelCase` for methods and fields, and descriptive class names such as `SaltPlayerAdapter`. Keep reflection and hook failures guarded: SystemUI must degrade safely instead of crashing. Preserve fixed lyric-item geometry unless a change explicitly addresses scroll stability.

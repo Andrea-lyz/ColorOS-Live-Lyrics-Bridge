@@ -313,15 +313,18 @@ final class LockscreenIntegrationPolicy {
         String label = (separator >= 0 ? normalized.substring(0, separator) : normalized)
                 .trim()
                 .toLowerCase(java.util.Locale.ROOT);
+        if (separator < 0) {
+            return timeMillis >= 0L
+                    && timeMillis <= 15_000L
+                    && containsLatinLetter(label)
+                    && isProductionDetailLabel(label);
+        }
         if (label.isEmpty() || label.length() > 40 || !isProductionDetailLabel(label)) {
             return false;
         }
 
-        // A labelled credit is unambiguous even after a long intro. For legacy unlabelled
-        // "Lyrics by ..." lines, retain the conservative opening-only window.
-        return separator >= 0
-                ? separator + 1 < normalized.length()
-                : timeMillis >= 0L && timeMillis <= 15_000L;
+        // A labelled credit is unambiguous even after a long intro.
+        return separator + 1 < normalized.length();
     }
 
     private static boolean isProductionDetailLabel(String label) {
