@@ -4,6 +4,31 @@
 
 目标不是引入另一个歌词发布总线，而是在目标播放器进程内拿到整首时间轴歌词，复用本项目现有 `PlayerAdapter` 管线，最终注入 OPlus 可消费的 `MediaSession` `lyricInfo`。
 
+## 第一批适配范围
+
+第一批只做四个目标：
+
+- QQ 音乐
+- 网易云音乐
+- Apple Music
+- Poweramp 本地歌词
+
+第一批能力边界：
+
+- 核心目标是拿到整首歌词并覆盖 App 官方简版 `lyricInfo`。
+- 有逐字时间轴时保留到 `rawLyric`；没有逐字时至少输出稳定逐行 LRC。
+- QQ 音乐、网易云音乐、Apple Music 第一批都不输出罗马音歌词；即使上游数据包含罗马音，也只读取/忽略，不进入 `lyricInfo`。
+- 暂不适配背景人声、对唱/多角色格式歌词。这些形态对锁屏歌词展示过重，容易拉高解析和 UI 复杂度。
+- 日语歌词按当前解析器的初步适配能力处理，不额外接罗马音 lane。
+- Poweramp 第一批只做本地：读取音频标签或本地内嵌歌词，不做在线搜索。
+
+当前推进状态：
+
+- 已新增第一批 `PlayerAdapter` 注册和 scope：QQ 音乐、网易云音乐、Apple Music、Poweramp。
+- 已新增共享 `MediaSession` 曲目观测 adapter 基类，检测到官方简版 `lyricInfo` 时继续安排增强歌词查询。
+- 已新增 QQ 音乐进程内歌词对象主链路：DexKit 定位 `MediaSessionUpdateController.h(builder, SongInfo, lyric)` -> 读取 QQ 已匹配/解密/解析好的 `com.lyricengine.base.k` 主逐字对象；同时 hook `QRCDesDecrypt.doDecryptionLyric(String)` 捕获 QQ App 自己解密出的主 QRC/翻译/罗马音候选，只合并可用内部翻译 -> 逐字 `rawLyric` + 逐行 `lyric` -> 通过外部 handoff 覆盖官方简版 `lyricInfo`；旧 QRC HTTP 请求仅保留为内部 hook 未安装时的兜底。
+- 网易云音乐、Apple Music、Poweramp 当前已接入安全骨架和日志，不会误清空官方歌词；YRC/EAPI、Apple native song parser、Poweramp 本地标签读取仍待后续迁移。
+
 ## 总体原则
 
 - 主参考项目：`LyricProvider`。它多数适配已经拿到整首歌词、缓存文件或解析后的逐字模型，更贴近本项目的 `lyricInfo.lyric + rawLyric` 目标。
@@ -142,9 +167,10 @@ Fallback to official lyricInfo because adapter lyric failed
 
 - 酷狗音乐/概念版：优先 DexKit。歌词文件加载方法没有稳定方法名，但字符串和参数特征明确。
 - 网易云音乐/荣耀版：DexKit 用于偏好/内部工具方法；歌曲 ID、播放状态仍走 `MediaSession`。
+- QQ 音乐：已使用 DexKit 按参数结构定位 `MediaSessionUpdateController.h(builder, SongInfo, lyric)`，避免只依赖固定方法名。
 - QQ 音乐 HD：可准备 DexKit fallback，用参数类型或特征定位 `RemoteControlManager` 的 songId 来源方法。
 - Apple Music：先按已知私有类名实现；如果版本漂移明显，再为 `PlayerLyricsViewModel` 相关方法补 DexKit。
-- QQ 音乐、汽水音乐、Poweramp：第一阶段不需要 DexKit，固定入口已经足够清晰。
+- 汽水音乐、Poweramp：第一阶段不需要 DexKit，固定入口已经足够清晰。
 
 工程形态建议：
 
@@ -177,13 +203,15 @@ HookPointResolver
 2. 先查本地歌词缓存。
 3. 没有缓存时，通过 `PlayerLyricsViewModel#loadLyrics` 触发官方下载。
 4. `buildTimeRangeToLyricsMap` 被调用后解析 native song。
-5. 将 Apple 歌词行、逐字、翻译、背景人声转换为本项目 `lyricInfo`。
+5. 将 Apple 主歌词行、逐字、可用翻译转换为本项目 `lyricInfo`。
 
 迁移重点：
 
 - 保留 `AppleSongParser` / `AppleSongMapper` 的字段识别思路。
 - 不引入 Lyricon provider，只保留 native song -> 本项目歌词模型的转换。
 - Apple 的逐字和翻译信息质量高，适合作第一批高质量逐字适配。
+- 第一批裁剪背景人声、对唱/多角色格式、罗马音，只保留主时间轴歌词。
+- 多声部歌词如果能自然合并为同一时间轴，可按时间顺序拍平；如果需要 UI 标注角色或声部，先跳过该额外结构。
 
 风险：
 
@@ -215,10 +243,10 @@ HookPointResolver
    - `lrcTranslateLyric`
    - `yrc`
    - `yrcTranslateLyric`
-   - `roma`
+   - `roma`，第一批只读取不输出
 4. 优先解析 `yrc` 生成逐字主歌词。
 5. 没有 `yrc` 时退回 `lrc`。
-6. 翻译和罗马音按时间就近合并。
+6. 翻译按时间就近合并；罗马音后置，不进入第一批输出。
 
 荣耀版判断：
 
@@ -229,6 +257,7 @@ HookPointResolver
 
 - 直接移植 `YrcDownloader`、`YrcParser`、网易云加密请求和缓存结构。
 - `yrc` 适合作 `rawLyric`；`lrc` 适合作 `lyric` fallback。
+- 第一批不输出罗马音，避免锁屏歌词结构过重。
 - 即使 `MediaMetadata` 已经带官方 `lyricInfo`，仍应启动 YRC/LRC 增强路线；拿到逐字或更完整歌词后覆盖官方简版输出。
 - 偏好监听、Tinker 重新加载等私有点可以用 DexKit；主歌曲识别仍以 `MediaSession` metadata 为准。
 
@@ -248,30 +277,42 @@ HookPointResolver
 
 主要 hook 点：
 
-- 主进程 `android.app.SharedPreferencesImpl$EditorImpl#putBoolean`：监听 QQ 音乐翻译/罗马音开关变化。
-- 播放服务进程 `android.media.session.MediaSession#setMetadata(MediaMetadata)`：从 `METADATA_KEY_MEDIA_ID` 获取 songId。
+- DexKit 定位 `com.tencent.qqmusicplayerprocess.servicenew.mediasession.s#h(...)`，验证参数结构为 `MediaMetadataCompat.Builder`、`com.tencent.qqmusicplayerprocess.songinfo.SongInfo`、`com.lyricengine.base.k`。
+- 播放服务进程 `android.media.session.MediaSession#setMetadata(MediaMetadata)`：只观测当前曲目信息和官方简版 `lyricInfo`，不改写 QQ 原始 metadata，避免影响封面收发。
 - `android.media.session.MediaSession#setPlaybackState(PlaybackState)`：同步播放状态。
 
 数据路线：
 
-1. `setMetadata` 发现 songId 变化。
-2. 保存 `MediaMetadata`。
-3. 查询磁盘缓存。
-4. 缓存 miss 时使用 QQ QRC 下载器拉取歌词。
-5. `parsedLyric.richLyricLines` 作为统一中间模型。
-6. 转成 `lyric`、`rawLyric`、翻译 LRC。
+1. QQ 自己完成在线/本地歌曲匹配、QRC 解密和 lyricengine 解析。
+2. `MediaSessionUpdateController.h(builder, SongInfo, lyric)` 被调用时，adapter 从 `SongInfo` 读取标题/歌手，从 `com.lyricengine.base.k` 读取当前主逐字歌词对象。
+3. lyric 对象字段路线：行列表 `e`；每行文本/起点/时长/逐字列表为 `a/b/c/g`；逐字对象起点/时长/字符范围/文本为 `a/b/c/d/e`。
+4. `QRCDesDecrypt.doDecryptionLyric(String)` 返回后记录 QQ 内部刚解密出的 plain lyric；近期候选按时间轴与主逐字对象匹配。
+5. 只合并“非同文本、非罗马音、匹配数量达标”的内部翻译候选；主 QRC 和罗马音候选只用于诊断，不作为翻译。
+6. 将合并后的 `TimedLyricDocument` 输出逐行 `lyric` 和逐字 enhanced LRC `rawLyric`。
+7. 通过当前外部歌词 handoff 广播给 SystemUI，SystemUI 侧使用这份增强歌词覆盖官方简版 `lyricInfo`；不向 QQ 的 builder 写入新的 `lyricInfo`。
+8. 如果内部 hook 未安装成功，才退回旧 `MediaSession` songId -> QRC HTTP 请求兜底。
+
+QQ Lyric Probe：
+
+- 日志前缀统一为 `QQ Lyric Probe`，仍走模块 `LockscreenLyrics` tag。
+- DexKit 阶段输出 strict/loose 候选数量、签名校验数量和样例方法，用于判断是否定位到 `h(builder, SongInfo, lyric)`。
+- hook 命中后输出 `SongInfo` 摘要、最近一次 `MediaSession` 曲目信息、`com.lyricengine.base.k` 字段概览、`e` 行列表摘要、第一行 `a/b/c/g` 和第一逐字对象字段。
+- `reason=empty` 说明 hook 命中但 `e` 没读到可用行；`reason=no-word-timing` 说明读到了逐行但逐字字段缺失或结构变化；`reason=resolved-no-translation` 说明主逐字可用但暂未匹配到内部解密翻译候选。
+- `QQ Lyric Probe decrypted lyric` 记录 `QRCDesDecrypt` 返回的 plain lyric 摘要、解析行数、逐字能力和与当前主歌词的可用翻译匹配数；`usableMatches` 达到阈值后才合并。
+- Probe 只记录诊断信息，不写 QQ 的 metadata builder，不改变封面、播放状态或歌词发布结果。
 
 迁移重点：
 
-- 普通 QQ 的 songId 可直接来自 `METADATA_KEY_MEDIA_ID`。
-- QRC 解析结果通常包含逐字和翻译，适合作高质量逐字适配。
-- 即使原始 metadata 已经包含官方 `lyricInfo`，仍应启动 QRC 增强路线；QRC 结果就绪后覆盖官方简版输出。
-- 官方 `lyricInfo` 与 QRC 结果同时存在时，以 QRC 生成的增强 `lyricInfo` 为准，尤其要保留逐字 `rawLyric` 给锁屏岛逐字高亮使用。
+- 普通 QQ 的主路线不再依赖 `METADATA_KEY_MEDIA_ID` 外部请求；本地歌曲只要 QQ 已经自动匹配到歌词，就跟随 QQ 内部 lyric 对象。
+- 第一批只保留主歌词、逐字和 QQ 内部翻译合并；罗马音明确过滤，翻译偏好监听后置。
+- 即使原始 metadata 已经包含官方 `lyricInfo`，仍以内部 lyric 对象生成的增强 `rawLyric` 为准。
+- 内部 hook 安装成功后禁用旧 HTTP QRC 主动查询和网络翻译补充，避免本地歌曲被外部请求的编码/匹配结果反向覆盖。
 
 风险：
 
-- QQ 音乐播放服务进程必须加入 scope，否则 metadata hook 不会执行。
-- 翻译/罗马音开关不是第一阶段必须项，可先默认保留翻译。
+- QQ 音乐播放服务进程必须加入 scope，否则内部歌词对象和 metadata hook 都不会执行。
+- `SongInfo`/`com.lyricengine.base.k` 字段名来自当前 QQ lyricengine 结构，DexKit 只能保证 hook 点定位更稳；如果 QQ 重写 lyricengine 字段结构，需要同步更新反射字段候选。
+- 翻译/罗马音开关不是第一阶段必须项，可先不输出。
 
 ## QQ 音乐 HD
 
@@ -384,7 +425,7 @@ Skip Kugou lyric because metadata is missing
 3. 将 Poweramp 路径转换为 SAF URI。
 4. 使用 TagLib 读取音频标签里的 `LYRICS` 字段。
 5. 用增强 LRC parser 按时长解析。
-6. 本地标签无歌词时，可选在线搜索：
+6. 本地标签无歌词时，第一批不做在线搜索；后续可选：
    - 中文环境优先 QQMusicProvider
    - 其他环境可用 LrcLibProvider
 
@@ -392,6 +433,7 @@ Skip Kugou lyric because metadata is missing
 
 - Poweramp 不必依赖歌词 UI 页面。
 - 优先读本地音频标签歌词，这比 hook TextView 当前行更稳定。
+- 第一批只支持本地内嵌歌词，不接在线搜索、不接歌词 UI 当前行。
 
 风险：
 
@@ -440,13 +482,18 @@ md5("/luna/track_v2/$id")
 
 ## 推荐实施顺序
 
-1. QQ 音乐：songId 清晰，QRC 路线完整，适合先打通整套新增 adapter 流程。
-2. 网易云音乐：YRC/LRC/翻译/罗马音都完整，适合验证多字段转换。
-3. QQ 音乐 HD：复用 QRC，但验证 pending songId 与 metadata 时序。
-4. 汽水音乐：缓存文件路线清晰，适合做本地缓存型 adapter。
-5. 酷狗音乐/概念版：需要用户开启车载歌词模式，适合在前几条 adapter 框架稳定后接入。
-6. Apple Music：歌词质量高但私有结构更复杂，适合单独做一轮字段验证。
-7. Poweramp：先做本地内嵌歌词，在线搜索后置。
+第一批：
+
+1. QQ 音乐：已改为进程内 lyric 对象路线，适合优先验证在线歌曲、本地自动匹配歌曲和官方 `lyricInfo` 覆盖逻辑。
+2. 网易云音乐：YRC/LRC/翻译完整，适合验证多字段转换；罗马音不进第一批输出。
+3. Apple Music：歌词质量高，但私有结构复杂；第一批只保留主歌词、逐字和可用翻译，裁剪背景人声、对唱格式、罗马音。
+4. Poweramp：只做本地内嵌歌词，在线搜索后置。
+
+后续批次：
+
+- QQ 音乐 HD：复用 QRC，但需要验证 pending songId 与 metadata 时序。
+- 汽水音乐：缓存文件路线清晰，适合做本地缓存型 adapter。
+- 酷狗音乐/概念版：需要用户开启车载歌词模式，适合在前几条 adapter 框架稳定后接入。
 
 ## 验证清单
 

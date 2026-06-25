@@ -100,6 +100,57 @@ public final class LyricsCoreAdapterTest {
     }
 
     @Test
+    public void prefersChineseTranslationOverJapaneseRomajiLane() {
+        String lrc = "[00:37.447]\u78ca[00:37.825]\u3005[00:38.223]\u843d"
+                + "[00:38.600]\u3005[00:39.023] [00:39.023]\u53cd"
+                + "[00:39.415]\u6226[00:39.799]\u56fd[00:40.151]\u5bb6"
+                + "[00:40.351]\n"
+                + "[00:37.447]ra i ra i ra ku ra ku   ha n se n ko 'k ka \n"
+                + "[00:37.447]\u5149\u660e\u78ca\u843d\u53cd\u6218\u56fd\u5bb6";
+
+        LyricsCoreAdapter.ParsedLyrics parsed = LyricsCoreAdapter.parse(lrc);
+
+        assertEquals(1, parsed.lines.size());
+        assertEquals("\u78ca\u3005\u843d\u3005 \u53cd\u6226\u56fd\u5bb6",
+                parsed.lines.get(0).text);
+        assertEquals("\u5149\u660e\u78ca\u843d\u53cd\u6218\u56fd\u5bb6",
+                parsed.lines.get(0).translation);
+    }
+
+    @Test
+    public void keepsKanjiMainLineWhenRomajiLaneSharesTrailingLatinAcronym() {
+        String lrc = "[00:43.688]\u60aa[00:44.088]\u970a[00:44.423]\u9000"
+                + "[00:44.871]\u6563[00:45.111] [00:45.231]ICBM"
+                + "[00:46.584]\n"
+                + "[00:43.688]a ku ryo u ta i sa n ICBM \n"
+                + "[00:43.688]\u6076\u7075\u9000\u6563 ICBM";
+
+        LyricsCoreAdapter.ParsedLyrics parsed = LyricsCoreAdapter.parse(lrc);
+
+        assertEquals(1, parsed.lines.size());
+        assertEquals("\u60aa\u970a\u9000\u6563 ICBM", parsed.lines.get(0).text);
+        assertEquals("\u6076\u7075\u9000\u6563 ICBM", parsed.lines.get(0).translation);
+    }
+
+    @Test
+    public void parsesAdoSenbonzakuraRegressionFileWhenSupplied() throws Exception {
+        String testFile = System.getProperty("lyrics.ado.file", "");
+        assumeTrue("lyrics.ado.file was not supplied", !testFile.isEmpty());
+        String lrc = new String(
+                Files.readAllBytes(Paths.get(testFile)),
+                StandardCharsets.UTF_8);
+
+        LyricsCoreAdapter.ParsedLyrics parsed = LyricsCoreAdapter.parse(lrc);
+
+        LyricsCoreAdapter.ParsedLine line = parsed.lines.stream()
+                .filter(candidate -> candidate.startMillis == 43_688L)
+                .findFirst()
+                .orElseThrow();
+        assertEquals("\u60aa\u970a\u9000\u6563 ICBM", line.text);
+        assertEquals("\u6076\u7075\u9000\u6563 ICBM", line.translation);
+    }
+
+    @Test
     public void ignoresZeroWidthSpacerBeforeBilingualLine() {
         String lrc = "[00:30.00]Before\n"
                 + "[00:38.13]\u200B\n"

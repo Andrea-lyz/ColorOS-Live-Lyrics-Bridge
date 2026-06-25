@@ -11,18 +11,33 @@ public final class LyricInfoContract {
             "io.github.andrealtb.lockscreenlyrics.OPLUS_MEDIA_HISTORY";
     public static final String ACTION_TOGGLE_TRANSLATION =
             "io.github.andrealtb.lockscreenlyrics.action.TOGGLE_TRANSLATION";
+    public static final String ACTION_EXTERNAL_LYRIC_CAPTURED =
+            "io.github.andrealtb.lockscreenlyrics.action.EXTERNAL_LYRIC_CAPTURED";
     public static final String JSON_SONG_NAME = "songName";
     public static final String JSON_ARTIST = "artist";
     public static final String JSON_SONG_ID = "songId";
     public static final String JSON_LYRIC = "lyric";
     public static final String JSON_RAW_LYRIC = "rawLyric";
+    public static final String JSON_TRANSLATION_LYRIC = "translationLyric";
     public static final String JSON_PROVIDER = "provider";
     public static final String JSON_TRACK_KEY = "trackKey";
     public static final String JSON_SESSION_GENERATION = "sessionGeneration";
     public static final String MODULE_PROVIDER = "lockscreen-lyrics-module";
+    public static final String EXTRA_EXTERNAL_SOURCE = "source";
+    public static final String EXTRA_EXTERNAL_REQUEST_ID = "requestId";
+    public static final String EXTRA_EXTERNAL_MEDIA_ID = "mediaId";
+    public static final String EXTRA_EXTERNAL_MEDIA_URI = "mediaUri";
+    public static final String EXTRA_EXTERNAL_TRACK_KEY = "trackKey";
+    public static final String EXTRA_EXTERNAL_SONG_NAME = JSON_SONG_NAME;
+    public static final String EXTRA_EXTERNAL_ARTIST = JSON_ARTIST;
+    public static final String EXTRA_EXTERNAL_DURATION = "duration";
+    public static final String EXTRA_EXTERNAL_LYRIC = JSON_LYRIC;
+    public static final String EXTRA_EXTERNAL_RAW_LYRIC = JSON_RAW_LYRIC;
+    public static final String EXTRA_EXTERNAL_TRANSLATION_LYRIC = JSON_TRANSLATION_LYRIC;
+    public static final String EXTRA_EXTERNAL_CAPTURED_AT = "capturedAt";
 
     private static final String[] TRANSLATION_KEYS = {
-            "translationLyric",
+            JSON_TRANSLATION_LYRIC,
             "translatedLyric",
             "translateLyric",
             "transLyric",

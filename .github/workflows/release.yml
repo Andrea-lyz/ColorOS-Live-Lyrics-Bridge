@@ -1,163 +1,228 @@
-name: Release APK
+name: Release APK Bundle
 
 on:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
-      tag:
-        description: "Release tag, for example v1.1.0. The APK versionName becomes 1.1.0."
-        required: true
-        type: string
-      release_name:
-        description: "Release title. Defaults to the tag when empty."
+      release_tag:
+        description: "Release tag, for example v2.0.0. Empty means current ref name."
         required: false
         type: string
-      prerelease:
-        description: "Mark this release as prerelease"
-        required: true
-        default: false
-        type: boolean
+      lyric_provider_ref:
+        description: "LyricProvider ref to build."
+        required: false
+        default: "master"
+        type: string
 
 permissions:
   contents: write
 
+env:
+  JAVA_VERSION: "21"
+  LSP_REPO: Xposed-Modules-Repo/io.github.andrealtb.lockscreenlyrics
+
 jobs:
-  release:
-    name: Build and publish signed release
+  build-bridge:
+    name: Build ColorOS Live Lyrics Bridge
     runs-on: ubuntu-latest
-
+    outputs:
+      release_tag: ${{ steps.meta.outputs.release_tag }}
+      version_name: ${{ steps.meta.outputs.version_name }}
+      lsp_tag: ${{ steps.meta.outputs.lsp_tag }}
     steps:
-      - name: Checkout
+      - name: Checkout bridge
         uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.tag }}
 
-      - name: Set up JDK 21
+      - name: Resolve release metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ github.event.inputs.release_tag || github.ref_name }}"
+          if [[ -z "$tag" || "$tag" == "main" ]]; then
+            echo "release_tag is required when workflow_dispatch is not running on a tag" >&2
+            exit 1
+          fi
+          version_name="${tag#v}"
+          version_code="$(sed -n 's/.*versionCode = \([0-9][0-9]*\).*/\1/p' app/build.gradle.kts | head -n1)"
+          if [[ -z "$version_code" ]]; then
+            echo "Unable to resolve versionCode from app/build.gradle.kts" >&2
+            exit 1
+          fi
+          echo "release_tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version_name=$version_name" >> "$GITHUB_OUTPUT"
+          echo "lsp_tag=${version_code}-${version_name}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "21"
+          java-version: ${{ env.JAVA_VERSION }}
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Make Gradle wrapper executable
-        run: chmod +x ./gradlew
+      - name: Decode release keystore
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "${{ secrets.SIGNING_KEY }}" | base64 --decode > "$RUNNER_TEMP/release.jks"
 
-      - name: Validate LSPosed repository metadata
-        shell: pwsh
-        run: ./scripts/validate-lsposed-metadata.ps1
-
-      - name: Decode signing key
+      - name: Build signed bridge release
         shell: bash
         env:
-          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          SIGNING_STORE_FILE: ${{ runner.temp }}/release.jks
           KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          for secret in SIGNING_KEY KEY_STORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
-            if [ -z "${!secret}" ]; then
-              echo "::error title=Missing signing secret::$secret is not configured."
-              exit 1
-            fi
-          done
-
-          mkdir -p "$RUNNER_TEMP/keystore"
-          printf '%s' "$SIGNING_KEY" | base64 --decode > "$RUNNER_TEMP/keystore/release.jks"
-
-      - name: Build signed release APK
-        env:
-          SIGNING_STORE_FILE: ${{ runner.temp }}/keystore/release.jks
-          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          RELEASE_TAG: ${{ inputs.tag }}
-        run: ./gradlew :app:assembleRelease
-
-      - name: Prepare release artifact
-        run: |
-          mkdir -p release-artifacts
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleRelease -PreleaseTag="${{ steps.meta.outputs.release_tag }}"
+          mkdir -p out
           cp app/build/outputs/apk/release/app-release.apk \
-            "release-artifacts/ColorOS-Live-Lyrics-Bridge-${{ inputs.tag }}.apk"
+            "out/ColorOS-Live-Lyrics-Bridge-${{ steps.meta.outputs.release_tag }}.apk"
 
-      - name: Publish GitHub release
-        uses: softprops/action-gh-release@v2
+      - name: Upload bridge artifact
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ inputs.tag }}
-          name: ${{ inputs.release_name || inputs.tag }}
-          body_path: docs/releases/${{ inputs.tag }}.md
-          prerelease: ${{ inputs.prerelease }}
-          files: release-artifacts/*.apk
+          name: bridge-apk
+          path: out/*.apk
+          if-no-files-found: error
 
-      - name: Sync metadata to LSPosed module repo
-        env:
-          GH_TOKEN: ${{ secrets.LSP_REPO_TOKEN }}
-          LSP_REPO: Xposed-Modules-Repo/io.github.andrealtb.lockscreenlyrics
-          RELEASE_TAG: ${{ inputs.tag }}
+  build-qq-provider:
+    name: Build LyricProvider QQ
+    runs-on: ubuntu-latest
+    needs: build-bridge
+    steps:
+      - name: Checkout LyricProvider
+        uses: actions/checkout@v4
+        with:
+          repository: Andrea-lyz/LyricProvider
+          ref: ${{ github.event.inputs.lyric_provider_ref || 'master' }}
+          token: ${{ secrets.LYRIC_PROVIDER_TOKEN || github.token }}
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode release keystore
+        shell: bash
         run: |
-          if [ -z "$GH_TOKEN" ]; then
-            echo "::error title=Missing LSP_REPO_TOKEN::Set a PAT with content and release write access to $LSP_REPO."
+          set -euo pipefail
+          printf '%s' "${{ secrets.SIGNING_KEY }}" | base64 --decode > "$RUNNER_TEMP/release.jks"
+
+      - name: Build signed QQ provider release
+        shell: bash
+        env:
+          RELEASE_STORE_FILE: ${{ runner.temp }}/release.jks
+          RELEASE_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew --no-daemon :qq-music:assembleRelease
+          mkdir -p out
+          qq_apk="$(find qq-music/build/outputs/apk/release -name '*.apk' -type f | head -n1)"
+          if [[ -z "$qq_apk" ]]; then
+            echo "QQ provider APK not found" >&2
             exit 1
           fi
+          cp "$qq_apk" "out/LyricProvider-QQMusic-${{ needs.build-bridge.outputs.release_tag }}.apk"
 
-          gh auth setup-git
-          target_dir="$RUNNER_TEMP/lsposed-module-repo"
-          gh repo clone "$LSP_REPO" "$target_dir" -- --depth 1
-          cp .github/lsposed/README.md "$target_dir/README.md"
-          cp .github/lsposed/SUMMARY "$target_dir/SUMMARY"
-          cp .github/lsposed/SOURCE_URL "$target_dir/SOURCE_URL"
-          cp .github/lsposed/SCOPE "$target_dir/SCOPE"
+      - name: Upload QQ provider artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lyricprovider-qq-apk
+          path: out/*.apk
+          if-no-files-found: error
 
-          cd "$target_dir"
-          if [ -z "$(git status --porcelain -- README.md SUMMARY SOURCE_URL SCOPE)" ]; then
-            echo "LSPosed repository metadata is already up to date."
-            exit 0
-          fi
+  publish:
+    name: Publish GitHub and LSP releases
+    runs-on: ubuntu-latest
+    needs:
+      - build-bridge
+      - build-qq-provider
+    steps:
+      - name: Checkout bridge release notes
+        uses: actions/checkout@v4
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add README.md SUMMARY SOURCE_URL SCOPE
-          git commit -m "Sync module metadata for ${RELEASE_TAG}"
-          git push origin HEAD:main
+      - name: Download APK artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
 
-      - name: Sync release to LSPosed module repo
+      - name: Publish source repository release
+        shell: bash
         env:
-          GH_TOKEN: ${{ secrets.LSP_REPO_TOKEN }}
-          LSP_REPO: Xposed-Modules-Repo/io.github.andrealtb.lockscreenlyrics
-          RELEASE_TAG: ${{ inputs.tag }}
-          RELEASE_NAME: ${{ inputs.release_name || inputs.tag }}
-          PRERELEASE: ${{ inputs.prerelease }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.build-bridge.outputs.release_tag }}
+          VERSION_NAME: ${{ needs.build-bridge.outputs.version_name }}
         run: |
-          if [ -z "$GH_TOKEN" ]; then
-            echo "::error title=Missing LSP_REPO_TOKEN::Set a PAT with access to $LSP_REPO as the LSP_REPO_TOKEN repository secret."
+          set -euo pipefail
+          mapfile -t apk_files < <(find dist -name '*.apk' -type f | sort)
+          if [[ "${#apk_files[@]}" -eq 0 ]]; then
+            echo "No APK files found" >&2
             exit 1
           fi
-
-          notes_file="docs/releases/${RELEASE_TAG}.md"
-          version_code="$(jq -r '.elements[0].versionCode' app/build/outputs/apk/release/output-metadata.json)"
-          version_name="$(jq -r '.elements[0].versionName' app/build/outputs/apk/release/output-metadata.json)"
-          lsp_release_tag="${version_code}-${version_name}"
-
-          if gh release view "$lsp_release_tag" --repo "$LSP_REPO" >/dev/null 2>&1; then
-            gh release edit "$lsp_release_tag" \
-              --repo "$LSP_REPO" \
-              --title "$RELEASE_NAME" \
-              --notes-file "$notes_file" \
-              --prerelease="$PRERELEASE"
-            gh release upload "$lsp_release_tag" release-artifacts/*.apk \
-              --repo "$LSP_REPO" \
-              --clobber
-          else
-            create_args=(
-              "$lsp_release_tag"
-              release-artifacts/*.apk
-              --repo "$LSP_REPO"
-              --target main
-              --title "$RELEASE_NAME"
-              --notes-file "$notes_file"
-            )
-            if [ "$PRERELEASE" = "true" ]; then
-              create_args+=(--prerelease)
+          notes_file=".github/release-notes/${VERSION_NAME}.md"
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            if [[ -f "$notes_file" ]]; then
+              gh release edit "$RELEASE_TAG" \
+                --repo "$GITHUB_REPOSITORY" \
+                --title "$RELEASE_TAG" \
+                --notes-file "$notes_file"
             fi
-            gh release create "${create_args[@]}"
+            gh release upload "$RELEASE_TAG" "${apk_files[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+          elif [[ -f "$notes_file" ]]; then
+            gh release create "$RELEASE_TAG" "${apk_files[@]}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$RELEASE_TAG" \
+              --notes-file "$notes_file"
+          else
+            gh release create "$RELEASE_TAG" "${apk_files[@]}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$RELEASE_TAG" \
+              --generate-notes
+          fi
+
+      - name: Publish LSP repository release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.LSP_REPO_TOKEN }}
+          LSP_REPO: ${{ env.LSP_REPO }}
+          LSP_TAG: ${{ needs.build-bridge.outputs.lsp_tag }}
+          RELEASE_TAG: ${{ needs.build-bridge.outputs.release_tag }}
+          VERSION_NAME: ${{ needs.build-bridge.outputs.version_name }}
+        run: |
+          set -euo pipefail
+          mapfile -t apk_files < <(find dist -name '*.apk' -type f | sort)
+          notes_file=".github/release-notes/${VERSION_NAME}.md"
+          notes="ColorOS Live Lyrics Bridge ${RELEASE_TAG}. Includes LyricProvider QQ Music APK as an auxiliary release asset."
+          if gh release view "$LSP_TAG" --repo "$LSP_REPO" >/dev/null 2>&1; then
+            if [[ -f "$notes_file" ]]; then
+              gh release edit "$LSP_TAG" \
+                --repo "$LSP_REPO" \
+                --title "$RELEASE_TAG" \
+                --notes-file "$notes_file"
+            fi
+            gh release upload "$LSP_TAG" "${apk_files[@]}" --repo "$LSP_REPO" --clobber
+          elif [[ -f "$notes_file" ]]; then
+            gh release create "$LSP_TAG" "${apk_files[@]}" \
+              --repo "$LSP_REPO" \
+              --title "$RELEASE_TAG" \
+              --notes-file "$notes_file"
+          else
+            gh release create "$LSP_TAG" "${apk_files[@]}" \
+              --repo "$LSP_REPO" \
+              --title "$RELEASE_TAG" \
+              --notes "$notes"
           fi

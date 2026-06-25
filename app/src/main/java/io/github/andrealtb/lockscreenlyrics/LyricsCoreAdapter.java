@@ -48,6 +48,9 @@ final class LyricsCoreAdapter {
                             lines.add(line);
                         }
                     }
+                    if (!lines.isEmpty()) {
+                        lines = mergeSameTimestampVariants(lines);
+                    }
                 }
             }
         } catch (Throwable ignored) {
@@ -58,7 +61,8 @@ final class LyricsCoreAdapter {
         if (lines.isEmpty()
                 || (!fallback.lines.isEmpty()
                 && (lines.size() * 2 < fallback.lines.size()
-                || hasReversedBilingualPrimary(lines, fallback.lines)))) {
+                || hasReversedBilingualPrimary(lines, fallback.lines)
+                || hasRomanizationTranslationMismatch(lines, fallback.lines)))) {
             return fallback;
         }
         return lines.isEmpty()
@@ -126,6 +130,9 @@ final class LyricsCoreAdapter {
                 if (LyricLineVariantSelector.isLikelyJapaneseRomanization(text, candidate)) {
                     continue;
                 }
+                if (isLikelyRomanizationVariant(texts, primaryIndex, candidate)) {
+                    continue;
+                }
                 if (!candidate.equals(text)) {
                     translation = candidate;
                     break;
@@ -187,6 +194,123 @@ final class LyricsCoreAdapter {
             }
         }
         return false;
+    }
+
+    private static ArrayList<ParsedLine> mergeSameTimestampVariants(List<ParsedLine> sourceLines) {
+        LinkedHashMap<Long, ArrayList<ParsedLine>> grouped = new LinkedHashMap<>();
+        for (ParsedLine line : sourceLines) {
+            grouped.computeIfAbsent(line.startMillis, ignored -> new ArrayList<>()).add(line);
+        }
+
+        ArrayList<ParsedLine> merged = new ArrayList<>(grouped.size());
+        for (ArrayList<ParsedLine> group : grouped.values()) {
+            if (group.size() == 1) {
+                merged.add(group.get(0));
+                continue;
+            }
+            ArrayList<String> texts = new ArrayList<>(group.size());
+            for (ParsedLine line : group) {
+                texts.add(line.text);
+            }
+            int primaryIndex = findPrimaryTextIndex(texts);
+            ParsedLine primary = group.get(primaryIndex);
+            String translation = selectMergedTranslation(group, texts, primaryIndex);
+            merged.add(new ParsedLine(
+                    primary.startMillis,
+                    primary.endMillis,
+                    primary.text,
+                    translation,
+                    primary.syllables));
+        }
+        return merged;
+    }
+
+    private static String selectMergedTranslation(
+            ArrayList<ParsedLine> group,
+            ArrayList<String> texts,
+            int primaryIndex) {
+        ParsedLine primary = group.get(primaryIndex);
+        String translation = "";
+        if (isUsableTranslationCandidate(texts, primaryIndex, primary.translation)) {
+            translation = primary.translation;
+        }
+        for (int index = 0; index < group.size(); index++) {
+            if (index == primaryIndex) {
+                continue;
+            }
+            ParsedLine line = group.get(index);
+            if (isUsableTranslationCandidate(texts, primaryIndex, line.text)) {
+                return line.text;
+            }
+            if (translation.isEmpty()
+                    && isUsableTranslationCandidate(texts, primaryIndex, line.translation)) {
+                translation = line.translation;
+            }
+        }
+        return translation;
+    }
+
+    private static boolean hasRomanizationTranslationMismatch(
+            List<ParsedLine> parsedLines,
+            List<ParsedLine> fallbackLines) {
+        if (parsedLines.isEmpty() || fallbackLines.isEmpty()) {
+            return false;
+        }
+        LinkedHashMap<Long, ParsedLine> fallbackByStart = new LinkedHashMap<>();
+        for (ParsedLine line : fallbackLines) {
+            fallbackByStart.putIfAbsent(line.startMillis, line);
+        }
+        for (ParsedLine parsed : parsedLines) {
+            boolean parsedTranslationIsRomanization =
+                    !parsed.translation.isEmpty()
+                            && LyricLineVariantSelector.isLikelyJapaneseRomanizationLine(
+                            parsed.translation);
+            boolean parsedTextIsRomanization =
+                    LyricLineVariantSelector.isLikelyJapaneseRomanizationLine(parsed.text);
+            if (!parsedTranslationIsRomanization && !parsedTextIsRomanization) {
+                continue;
+            }
+            ParsedLine fallback = fallbackByStart.get(parsed.startMillis);
+            if (fallback != null
+                    && !fallback.translation.isEmpty()
+                    && containsCjkCharacter(fallback.translation)
+                    && !LyricLineVariantSelector.isLikelyJapaneseRomanizationLine(
+                    fallback.translation)) {
+                if (parsedTranslationIsRomanization
+                        || (parsedTextIsRomanization
+                        && containsCjkCharacter(fallback.text))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean isLikelyRomanizationVariant(
+            List<String> texts,
+            int primaryIndex,
+            String candidate) {
+        return LyricLineVariantSelector.isLikelyJapaneseRomanizationVariant(
+                texts,
+                primaryIndex,
+                candidate);
+    }
+
+    private static boolean isUsableTranslationCandidate(
+            List<String> texts,
+            int primaryIndex,
+            String candidate) {
+        String cleanCandidate = nullToEmpty(candidate).trim();
+        if (cleanCandidate.isEmpty()) {
+            return false;
+        }
+        String primary = primaryIndex >= 0 && primaryIndex < texts.size()
+                ? nullToEmpty(texts.get(primaryIndex)).trim()
+                : "";
+        if (cleanCandidate.equals(primary)) {
+            return false;
+        }
+        return !isLikelyRomanizationVariant(texts, primaryIndex, cleanCandidate);
     }
 
     private static boolean containsCjkCharacter(String text) {

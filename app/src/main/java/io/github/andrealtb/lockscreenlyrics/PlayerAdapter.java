@@ -20,4 +20,12 @@ interface PlayerAdapter {
     default boolean allowsModuleToReplaceUntrustedLyricInfo() {
         return false;
     }
+
+    default boolean rewritesPlayerLyricInfoMetadata() {
+        return true;
+    }
+
+    default boolean publishesCapturedLyricToMediaSession() {
+        return true;
+    }
 }
