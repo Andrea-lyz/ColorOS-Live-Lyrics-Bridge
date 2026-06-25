@@ -87,10 +87,26 @@ final class LyricLineVariantSelector {
                 syllableTokens++;
             }
         }
-        if (latinTokens < 3 || syllableTokens * 2 < latinTokens) {
+        if (!hasRomajiSyllableDensity(latinTokens, syllableTokens)) {
             return false;
         }
-        return totalLetters <= latinTokens * 3;
+        return hasRomajiTokenLengthProfile(latinTokens, syllableTokens, totalLetters);
+    }
+
+    private static boolean hasRomajiSyllableDensity(int latinTokens, int syllableTokens) {
+        return latinTokens >= 3 && syllableTokens * 3 >= latinTokens * 2;
+    }
+
+    private static boolean hasRomajiTokenLengthProfile(
+            int latinTokens,
+            int syllableTokens,
+            int totalLetters) {
+        if (latinTokens < 6) {
+            return latinTokens >= 4
+                    && syllableTokens == latinTokens
+                    && totalLetters * 2 <= latinTokens * 4;
+        }
+        return totalLetters * 2 <= latinTokens * 5;
     }
 
     static boolean isLikelyJapaneseRomanizationVariant(

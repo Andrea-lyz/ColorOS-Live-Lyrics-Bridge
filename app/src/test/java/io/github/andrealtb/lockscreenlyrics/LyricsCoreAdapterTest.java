@@ -236,4 +236,153 @@ public final class LyricsCoreAdapterTest {
                 "Wrote me a song saying it makes you sick to see my face",
                 third.text);
     }
+
+    @Test
+    public void keepsEnglishEnhancedLineAsPrimaryWhenChineseTranslationSharesTimestamp() {
+        assertEnhancedBilingualLine(
+                "[00:43.734] <00:43.734>Treat <00:43.931>me "
+                        + "<00:44.115>like <00:44.307>a <00:44.480>lady "
+                        + "<00:45.636>all <00:45.838>that <00:46.035>I "
+                        + "<00:46.226>can <00:46.395>say <00:46.835>is<00:47.387>\n"
+                        + "[00:43.734]\u4f60\u5bf9\u6211\u7ec5\u58eb\u793c\u8c8c "
+                        + "\u5bf9\u6b64\u6211\u53ea\u80fd\u8bf4",
+                43_734L,
+                "Treat me like a lady all that I can say is",
+                "\u4f60\u5bf9\u6211\u7ec5\u58eb\u793c\u8c8c \u5bf9\u6b64\u6211\u53ea\u80fd\u8bf4");
+    }
+
+    @Test
+    public void keepsGoldRushEnhancedLineAsPrimaryWhenChineseTranslationSharesTimestamp() {
+        assertEnhancedBilingualLine(
+                "[01:24.350] <01:24.350>Had <01:24.569>never "
+                        + "<01:24.936>seen <01:25.343>a <01:25.555>love "
+                        + "<01:26.011>as <01:26.167>pure <01:26.555>as "
+                        + "<01:26.770>it<01:27.604>\n"
+                        + "[01:24.350]\u672a\u66fe\u611f\u53d7\u8fc7"
+                        + "\u5982\u6b64\u771f\u5207\u7684\u7231",
+                84_350L,
+                "Had never seen a love as pure as it",
+                "\u672a\u66fe\u611f\u53d7\u8fc7\u5982\u6b64\u771f\u5207\u7684\u7231");
+    }
+
+    @Test
+    public void keepsBeautyAndABeatEnhancedLineAsPrimaryWhenChineseTranslationSharesTimestamp() {
+        assertEnhancedBilingualLine(
+                "[00:50.093] <00:50.093>Is <00:50.317>a "
+                        + "<00:50.501>beauty <00:51.461>and <00:51.973>a "
+                        + "<00:52.181>beat<00:53.917>\n"
+                        + "[00:50.093]\u5c31\u662f\u4e00\u4e2a\u7f8e\u4eba"
+                        + "\u548c\u4e00\u9996\u5e26\u611f\u7684\u6b4c",
+                50_093L,
+                "Is a beauty and a beat",
+                "\u5c31\u662f\u4e00\u4e2a\u7f8e\u4eba\u548c\u4e00\u9996\u5e26\u611f\u7684\u6b4c");
+    }
+
+    @Test
+    public void keepsAugustBracketInlineLineAsPrimaryWhenChineseTranslationSharesTimestamp() {
+        assertEnhancedBilingualLine(
+                "[00:26.609]But [00:26.793]I [00:27.041]can "
+                        + "[00:27.345]see [00:27.689]us[00:27.995]\n"
+                        + "[00:26.609]\u4f46\u6211\u770b\u89c1\u6211\u4eec",
+                26_609L,
+                "But I can see us",
+                "\u4f46\u6211\u770b\u89c1\u6211\u4eec");
+    }
+
+    @Test
+    public void userReportedEnhancedBilingualFilesKeepPrimaryLinesWhenSupplied() throws Exception {
+        String fixtureDir = System.getProperty("lyrics.swap.fixture.dir", "");
+        assumeTrue("lyrics.swap.fixture.dir was not supplied", !fixtureDir.isEmpty());
+
+        assertFileLine(
+                fixtureDir,
+                "01. Taylor Swift - All Of The Girls You Loved Before.lrc",
+                43_734L,
+                "Treat me like a lady all that I can say is",
+                "\u4f60\u5bf9\u6211\u7ec5\u58eb\u793c\u8c8c \u5bf9\u6b64\u6211\u53ea\u80fd\u8bf4");
+        assertFileLine(
+                fixtureDir,
+                "Taylor Swift - gold rush.lrc",
+                84_350L,
+                "Had never seen a love as pure as it",
+                "\u672a\u66fe\u611f\u53d7\u8fc7\u5982\u6b64\u771f\u5207\u7684\u7231");
+        assertFileLine(
+                fixtureDir,
+                "Justin Bieber&Nicki Minaj - Beauty And A Beat.lrc",
+                50_093L,
+                "Is a beauty and a beat",
+                "\u5c31\u662f\u4e00\u4e2a\u7f8e\u4eba\u548c\u4e00\u9996\u5e26\u611f\u7684\u6b4c");
+        assertFileLine(
+                fixtureDir,
+                "08 - Taylor Swift - august.lrc",
+                26_609L,
+                "But I can see us",
+                "\u4f46\u6211\u770b\u89c1\u6211\u4eec");
+    }
+
+    private static void assertEnhancedBilingualLine(
+            String lrc,
+            long startMillis,
+            String expectedText,
+            String expectedTranslation) {
+        LyricsCoreAdapter.ParsedLyrics parsed = LyricsCoreAdapter.parse(lrc);
+        LyricsCoreAdapter.ParsedLyrics fallback = LyricsCoreAdapter.parsePlainLrc(lrc);
+        TimedLyricDocument document = TimedLyricDocument.fromRawLrc(lrc);
+
+        assertParsedLine(parsed, startMillis, expectedText, expectedTranslation);
+        assertParsedLine(fallback, startMillis, expectedText, expectedTranslation);
+        assertDocumentLine(document, startMillis, expectedText, expectedTranslation);
+    }
+
+    private static void assertFileLine(
+            String fixtureDir,
+            String fileName,
+            long startMillis,
+            String expectedText,
+            String expectedTranslation) throws Exception {
+        String lrc = new String(
+                Files.readAllBytes(Paths.get(fixtureDir, fileName)),
+                StandardCharsets.UTF_8);
+        assertParsedLine(
+                LyricsCoreAdapter.parse(lrc),
+                startMillis,
+                expectedText,
+                expectedTranslation);
+        assertParsedLine(
+                LyricsCoreAdapter.parsePlainLrc(lrc),
+                startMillis,
+                expectedText,
+                expectedTranslation);
+        assertDocumentLine(
+                TimedLyricDocument.fromRawLrc(lrc),
+                startMillis,
+                expectedText,
+                expectedTranslation);
+    }
+
+    private static void assertParsedLine(
+            LyricsCoreAdapter.ParsedLyrics parsed,
+            long startMillis,
+            String expectedText,
+            String expectedTranslation) {
+        LyricsCoreAdapter.ParsedLine line = parsed.lines.stream()
+                .filter(candidate -> candidate.startMillis == startMillis)
+                .findFirst()
+                .orElseThrow();
+        assertEquals(expectedText, line.text);
+        assertEquals(expectedTranslation, line.translation);
+    }
+
+    private static void assertDocumentLine(
+            TimedLyricDocument document,
+            long startMillis,
+            String expectedText,
+            String expectedTranslation) {
+        TimedLyricDocument.Line line = document.lines().stream()
+                .filter(candidate -> candidate.startMillis == startMillis)
+                .findFirst()
+                .orElseThrow();
+        assertEquals(expectedText, line.text);
+        assertEquals(expectedTranslation, line.translation);
+    }
 }

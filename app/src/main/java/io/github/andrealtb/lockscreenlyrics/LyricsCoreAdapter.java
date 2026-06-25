@@ -24,8 +24,8 @@ import java.util.regex.Pattern;
  */
 final class LyricsCoreAdapter {
     private static final AutoParser AUTO_PARSER = new AutoParser();
-    private static final Pattern LRC_TIME_TAG = Pattern.compile(
-            "\\[(\\d{1,3}):([0-5]?\\d)(?:[\\.:](\\d{1,3}))?\\]");
+    private static final Pattern LRC_OR_WORD_TIME_TAG = Pattern.compile(
+            "[\\[<](\\d{1,3}):([0-5]?\\d)(?:[\\.:](\\d{1,3}))?[\\]>]");
 
     private LyricsCoreAdapter() {
     }
@@ -89,7 +89,7 @@ final class LyricsCoreAdapter {
             }
 
             String line = content.substring(lineStart, lineEnd).trim();
-            Matcher firstTag = LRC_TIME_TAG.matcher(line);
+            Matcher firstTag = LRC_OR_WORD_TIME_TAG.matcher(line);
             if (firstTag.find() && firstTag.start() == 0) {
                 long timeMillis = parseTimeMillis(firstTag);
                 String text = stripLrcTimeTags(line, firstTag.end());
@@ -329,7 +329,7 @@ final class LyricsCoreAdapter {
     }
 
     private static String stripLrcTimeTags(String line, int startIndex) {
-        Matcher matcher = LRC_TIME_TAG.matcher(line);
+        Matcher matcher = LRC_OR_WORD_TIME_TAG.matcher(line);
         matcher.region(startIndex, line.length());
         if (!matcher.find()) {
             return cleanLyricText(line.substring(startIndex));

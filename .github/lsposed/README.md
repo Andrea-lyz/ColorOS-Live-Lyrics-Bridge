@@ -63,6 +63,7 @@ Bridges timed lyrics from supported music players into the native ColorOS/OPlus 
 - Built-in compatibility adapters for Salt Player and ConePlayer.
 - Public `MediaMetadata["lyricInfo"]` protocol for self-integrating players without an APK dependency.
 - Line-timed LRC, word-timed `rawLyric`, translation detection, and stable repeated-line matching.
+- Compact dynamic lock-screen lyric layout with smoother translation toggles and AOD/highlight transition stabilization.
 - A generic lyric transaction layer prevents stale asynchronous callbacks from binding across tracks, including sequences that contain instrumentals or no-lyric tracks.
 - Long Japanese and Chinese lyric lines wrap at Unicode character boundaries instead of being reduced to tiny text.
 - Preserves the player's original media-action semantics and exposes translation only through OPlus Rule0, preventing previous/play-pause/next slot corruption.

@@ -162,12 +162,18 @@ public final class LockscreenLyricsModule extends XposedModule {
     private static final long SYSTEMUI_TRACK_RESET_STALE_POSITION_MS = 3_000L;
     private static final long ACTIVE_LYRIC_FRAME_DELAY_MS = 16L;
     private static final long ACTIVE_LYRIC_RETRY_DELAY_MS = 48L;
+    private static final long LYRIC_RECYCLER_SCREEN_STATE_SETTLE_MS = 900L;
+    private static final long LYRIC_RECYCLER_SET_CURRENT_SETTLE_MS = 360L;
+    private static final long LYRIC_RECYCLER_SETTLE_POSITION_DRIFT_MS = 1_800L;
     private static final long LYRIC_VISIBILITY_RECOVERY_FIRST_DELAY_MS = 96L;
     private static final long LYRIC_VISIBILITY_RECOVERY_SECOND_DELAY_MS = 240L;
     private static final long LYRIC_VISIBILITY_RECOVERY_FINAL_DELAY_MS = 520L;
     private static final long LYRIC_VISIBILITY_RECOVERY_LONG_DELAY_MS = 1_200L;
     private static final long LYRIC_VISIBILITY_RECOVERY_LAST_DELAY_MS = 2_400L;
     private static final float LYRIC_SLOT_HEIGHT_DP = 80f;
+    private static final float LYRIC_SLOT_MIN_HEIGHT_DP = 56f;
+    private static final float LYRIC_SLOT_VERTICAL_PADDING_DP = 12f;
+    private static final long TRANSLATION_TOGGLE_LAYOUT_SETTLE_DELAY_MS = 380L;
     private static final float OFFICIAL_LYRIC_LINE_SPACING_DP = 6f;
     private static final float ACTIVE_LYRIC_CENTER_OFFSET_DP = 48f;
     private static final String OFFICIAL_LYRIC_LINE_SPACING_FIELD = "u";
@@ -254,6 +260,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     private volatile long lyricUiTransitionGlowFrozenUntilElapsedMs;
     private volatile long lyricUiTransitionFrozenGlowPositionMs = -1L;
     private volatile int lyricModeRebindGeneration;
+    private volatile int translationLayoutGeneration;
     private volatile long officialLyricDrawSuppressedUntilElapsedMs;
     private volatile int officialLyricHandoffGeneration;
     private volatile int lyricRecyclerForceAlignGeneration;
@@ -289,6 +296,9 @@ public final class LockscreenLyricsModule extends XposedModule {
     private PowerManager.WakeLock screenTimeoutWakeLock;
     private PowerManager screenTimeoutPowerManager;
     private volatile int lastLyricsRecyclerIndex = -1;
+    private volatile int lyricRecyclerSettleOfficialIndex = -1;
+    private volatile long lyricRecyclerSettleUntilElapsedMs;
+    private volatile long lyricRecyclerSettleOfficialObservedAtMs = -1L;
     private volatile boolean lyricsRecyclerHookInstalled;
     private volatile boolean lyricsRecyclerSetCurrentUnavailable;
     private final Object lyricsRecyclerViewsLock = new Object();
@@ -1107,19 +1117,51 @@ public final class LockscreenLyricsModule extends XposedModule {
                     .apply();
         }
 
-        mainHandler.post(() -> refreshLyricViewsAfterTranslationToggle(enabled));
+        int generation = ++translationLayoutGeneration;
+        mainHandler.post(() -> refreshLyricViewsAfterTranslationToggle(generation));
+        mainHandler.postDelayed(
+                () -> settleLyricViewsAfterTranslationToggle(enabled, generation),
+                TRANSLATION_TOGGLE_LAYOUT_SETTLE_DELAY_MS);
         info("lyricInfo translation " + (enabled ? "enabled" : "disabled"));
     }
 
-    private void refreshLyricViewsAfterTranslationToggle(boolean enabled) {
-        ArrayList<TextView> textViews = snapshotActiveTextViews();
-        for (TextView textView : textViews) {
+    private void refreshLyricViewsAfterTranslationToggle(int generation) {
+        if (generation != translationLayoutGeneration) {
+            return;
+        }
+        redrawLyricRenderTargets(false, false);
+    }
+
+    private void settleLyricViewsAfterTranslationToggle(boolean enabled, int generation) {
+        if (generation != translationLayoutGeneration) {
+            return;
+        }
+        officialLyricTextRenderer.finishTranslationLayoutChange();
+        redrawLyricRenderTargets(!enabled, !enabled);
+    }
+
+    private void redrawLyricRenderTargets(boolean requestLayout, boolean syncRecyclerHeights) {
+        for (View recycler : snapshotLyricsRecyclerViews()) {
+            if (syncRecyclerHeights) {
+                applyVisibleLyricBlockHeights(recycler);
+            }
+            if (requestLayout) {
+                recycler.requestLayout();
+            }
+            invalidateLyricsRecyclerDescendants(recycler);
+            recycler.postInvalidateOnAnimation();
+        }
+        for (TextView textView : snapshotActiveTextViews()) {
+            if (requestLayout) {
+                textView.requestLayout();
+            }
             textView.invalidate();
             textView.postInvalidateOnAnimation();
         }
-        primeRememberedLyricsRecyclerViews(
-                enabled ? "translation-enabled" : "translation-disabled");
         for (View root : snapshotLyricRootViews()) {
+            if (requestLayout) {
+                root.requestLayout();
+            }
             root.invalidate();
             root.postInvalidateOnAnimation();
         }
@@ -1318,6 +1360,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private void rememberOfficialCurrentLyricIndex(int targetIndex) {
+        beginLyricRecyclerSettleWindow(targetIndex, LYRIC_RECYCLER_SET_CURRENT_SETTLE_MS);
         WordLyricModel model = currentWordLyricModel;
         if (model == null || targetIndex < 0) {
             return;
@@ -1354,12 +1397,16 @@ public final class LockscreenLyricsModule extends XposedModule {
                 return;
             }
             for (View recycler : snapshotLyricsRecyclerViews()) {
+                applyVisibleLyricBlockHeights(recycler);
+                recycler.requestLayout();
                 recycler.postInvalidateOnAnimation();
             }
             for (TextView textView : snapshotActiveTextViews()) {
+                textView.requestLayout();
                 textView.postInvalidateOnAnimation();
             }
             for (View root : snapshotLyricRootViews()) {
+                root.requestLayout();
                 root.postInvalidateOnAnimation();
             }
             if (active) {
@@ -1541,6 +1588,35 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (!TextUtils.isEmpty(packageName)) {
             bindCurrentLyricProviderPackage(packageName, "lyricInfo metadata");
         }
+    }
+
+    private void beginScreenStateLyricSettleWindow() {
+        beginLyricRecyclerSettleWindow(
+                lastLyricsRecyclerIndex,
+                LYRIC_RECYCLER_SCREEN_STATE_SETTLE_MS);
+        if (systemUiLyricModeKeepAwakeActive) {
+            TextView activeView = firstActiveLyricTextView();
+            if (activeView != null) {
+                scheduleActiveLyricRefresh(activeView, ACTIVE_LYRIC_RETRY_DELAY_MS);
+            } else {
+                scheduleActiveLyricRefresh(ACTIVE_LYRIC_RETRY_DELAY_MS);
+            }
+        }
+    }
+
+    private void beginLyricRecyclerSettleWindow(int officialIndex, long durationMs) {
+        long now = SystemClock.elapsedRealtime();
+        lyricRecyclerSettleUntilElapsedMs = Math.max(
+                lyricRecyclerSettleUntilElapsedMs,
+                now + Math.max(ACTIVE_LYRIC_RETRY_DELAY_MS, durationMs));
+        if (officialIndex >= 0) {
+            lyricRecyclerSettleOfficialIndex = officialIndex;
+            lyricRecyclerSettleOfficialObservedAtMs = now;
+        }
+    }
+
+    private boolean isLyricRecyclerSettleWindowActive() {
+        return SystemClock.elapsedRealtime() < lyricRecyclerSettleUntilElapsedMs;
     }
 
     private boolean isLyricPayloadTrackChanged(
@@ -2667,6 +2743,9 @@ public final class LockscreenLyricsModule extends XposedModule {
             if (index instanceof Integer) {
                 targetIndex = (Integer) index;
                 lastLyricsRecyclerIndex = targetIndex;
+                beginLyricRecyclerSettleWindow(
+                        targetIndex,
+                        LYRIC_RECYCLER_SET_CURRENT_SETTLE_MS);
                 WordLyricModel model = currentWordLyricModel;
                 if (model != null) {
                     WordLine line = model.lineAtOfficialIndex(lastLyricsRecyclerIndex);
@@ -2874,7 +2953,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             return false;
         }
         int generation = ++lyricRecyclerForceAlignGeneration;
-        int topOffset = computeLyricsRecyclerTopOffset(recycler);
+        int topOffset = computeLyricsRecyclerTopOffset(recycler, targetIndex);
         boolean immediate = scrollLyricsRecyclerToPositionWithOffset(
                 recycler,
                 targetIndex,
@@ -2905,22 +2984,39 @@ public final class LockscreenLyricsModule extends XposedModule {
             return;
         }
         stopLyricsRecyclerScroll(recycler);
+        applyVisibleLyricBlockHeights(recycler);
         scrollLyricsRecyclerToPositionWithOffset(
                 recycler,
                 targetIndex,
-                computeLyricsRecyclerTopOffset(recycler));
+                computeLyricsRecyclerTopOffset(recycler, targetIndex));
         offsetLyricsRecyclerCurrentLine(recycler, targetIndex);
-        applyVisibleLyricBlockHeights(recycler);
     }
 
-    private int computeLyricsRecyclerTopOffset(View recyclerView) {
+    private int computeLyricsRecyclerTopOffset(View recyclerView, int targetIndex) {
         if (recyclerView == null || recyclerView.getHeight() <= 0) {
             return 0;
         }
         int centerOffset = dp(recyclerView.getContext(), ACTIVE_LYRIC_CENTER_OFFSET_DP);
         int desiredCenter = recyclerView.getHeight() / 2 + centerOffset;
-        int itemHeight = dp(recyclerView.getContext(), LYRIC_SLOT_HEIGHT_DP);
+        int itemHeight = findBoundLyricsRecyclerItemHeight(recyclerView, targetIndex);
+        if (itemHeight <= 0) {
+            itemHeight = dp(recyclerView.getContext(), LYRIC_SLOT_HEIGHT_DP);
+        }
         return Math.max(0, desiredCenter - itemHeight / 2);
+    }
+
+    private static int findBoundLyricsRecyclerItemHeight(View recyclerView, int targetIndex) {
+        if (!(recyclerView instanceof ViewGroup) || targetIndex < 0) {
+            return 0;
+        }
+        ViewGroup group = (ViewGroup) recyclerView;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View child = group.getChildAt(i);
+            if (readRecyclerChildPosition(recyclerView, child) == targetIndex) {
+                return child.getHeight();
+            }
+        }
+        return 0;
     }
 
     private static boolean hasBoundLyricsRecyclerChildren(View recycler) {
@@ -3012,10 +3108,8 @@ public final class LockscreenLyricsModule extends XposedModule {
             return;
         }
         int desiredCenter = recyclerView.getHeight() / 2 + centerOffset;
-        int topOffset = computeLyricsRecyclerTopOffset(recyclerView);
-        if (scrollLyricsRecyclerToPositionWithOffset(recyclerView, targetIndex, topOffset)) {
-            return;
-        }
+        int topOffset = computeLyricsRecyclerTopOffset(recyclerView, targetIndex);
+        scrollLyricsRecyclerToPositionWithOffset(recyclerView, targetIndex, topOffset);
         LyricsRecyclerGeometry geometry = captureLyricsRecyclerGeometry(
                 recyclerView,
                 targetIndex);
@@ -3060,7 +3154,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                         estimatePlaybackPositionMillis());
                 if (match.line != null) {
                     prepareOfficialLyricTextView(textView);
-                    officialLyricTextRenderer.applySlotHeight(textView, model, match.line);
+                    officialLyricTextRenderer.applySlotHeight(textView, match.line);
                 }
             }
         }
@@ -3219,14 +3313,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
 
         long position = estimatePlaybackPositionMillis();
-        WordLine activeLine = model.findActiveLine(position);
-        WordLine seedlingActiveLine = recentSeedlingActiveLine(model);
-        if (seedlingActiveLine != null
-                && (activeLine == null
-                || Math.abs(seedlingActiveLine.timeMillis - position)
-                <= Math.abs(activeLine.timeMillis - position) + 1_000L)) {
-            activeLine = seedlingActiveLine;
-        }
+        WordLine activeLine = resolveStableActiveLyricLine(model, position, true);
         int adapterPosition = findValidLyricsRecyclerAdapterPosition(textView, model);
         WordLine indexedLine = model.lineAtOfficialIndex(adapterPosition);
         if (indexedLine == null) {
@@ -3427,6 +3514,68 @@ public final class LockscreenLyricsModule extends XposedModule {
             return null;
         }
         return model.findLineAtTime(lastSeedlingActiveLineTimeMs);
+    }
+
+    private WordLine resolveStableActiveLyricLine(
+            WordLyricModel model,
+            long position,
+            boolean includeSeedlingHint) {
+        if (model == null) {
+            return null;
+        }
+        WordLine activeLine = position >= 0L ? model.findActiveLine(position) : null;
+        if (includeSeedlingHint) {
+            WordLine seedlingActiveLine = recentSeedlingActiveLine(model);
+            if (seedlingActiveLine != null
+                    && (activeLine == null
+                    || Math.abs(seedlingActiveLine.timeMillis - position)
+                    <= Math.abs(activeLine.timeMillis - position) + 1_000L)) {
+                activeLine = seedlingActiveLine;
+            }
+        }
+        WordLine settledLine = resolveLyricRecyclerSettleLine(model, activeLine, position);
+        return settledLine != null ? settledLine : activeLine;
+    }
+
+    private WordLine resolveLyricRecyclerSettleLine(
+            WordLyricModel model,
+            WordLine progressLine,
+            long position) {
+        long now = SystemClock.elapsedRealtime();
+        if (model == null || now >= lyricRecyclerSettleUntilElapsedMs) {
+            return null;
+        }
+        int officialIndex = lyricRecyclerSettleOfficialIndex >= 0
+                ? lyricRecyclerSettleOfficialIndex
+                : lastLyricsRecyclerIndex;
+        WordLine officialLine = model.lineAtOfficialIndex(officialIndex);
+        if (officialLine == null) {
+            officialLine = model.lineAt(officialIndex);
+        }
+        if (officialLine == null) {
+            return null;
+        }
+        if (progressLine == null || sameWordLine(officialLine, progressLine)) {
+            return officialLine;
+        }
+        int officialLineIndex = model.indexOfLine(officialLine);
+        int progressLineIndex = model.indexOfLine(progressLine);
+        if (officialLineIndex < 0
+                || progressLineIndex < 0
+                || Math.abs(officialLineIndex - progressLineIndex) > 1) {
+            return null;
+        }
+        if (position >= 0L
+                && Math.abs(position - officialLine.timeMillis)
+                > LYRIC_RECYCLER_SETTLE_POSITION_DRIFT_MS) {
+            return null;
+        }
+        if (lyricRecyclerSettleOfficialObservedAtMs >= 0L
+                && now - lyricRecyclerSettleOfficialObservedAtMs
+                > LYRIC_RECYCLER_SCREEN_STATE_SETTLE_MS) {
+            return null;
+        }
+        return officialLine;
     }
 
     private static WordLine resolveFocusAnchorLine(
@@ -3932,7 +4081,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
 
         long position = estimatePlaybackPositionMillis();
-        WordLine line = model.findActiveLine(position);
+        WordLine line = resolveStableActiveLyricLine(model, position, true);
         if (line == null && position >= 0L) {
             line = model.lineAt(model.displayIndexAt(position));
         }
@@ -3992,7 +4141,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             updated++;
         }
 
-        if (updated == 0 && visible > 0) {
+        if (updated == 0 && visible > 0 && !isLyricRecyclerSettleWindowActive()) {
             updated = invalidateRenderableVisibleLyricTextViews(candidates, model, position);
         }
         if (visible == 0 || updated == 0) {
@@ -4538,6 +4687,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                     }
                     String action = intent.getAction();
                     if (Intent.ACTION_SCREEN_OFF.equals(action)) {
+                        beginScreenStateLyricSettleWindow();
                         screenTimeoutPausedByScreenOff = true;
                         screenTimeoutPausedByUserPresent = false;
                         releaseScreenTimeoutWakeLock("screen off");
@@ -4545,6 +4695,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                         return;
                     }
                     if (Intent.ACTION_SCREEN_ON.equals(action)) {
+                        beginScreenStateLyricSettleWindow();
                         if (screenTimeoutPausedByScreenOff) {
                             maybeLogScreenTimeout("Resumed screen timeout keep-awake after screen on", true);
                         }
@@ -8244,8 +8395,9 @@ public final class LockscreenLyricsModule extends XposedModule {
         private static final float ENTRANCE_REVEAL_START_SCALE = 0.975f;
         private static final long TRANSLATED_WINDOW_ANIMATION_MS = 220L;
         private static final float TRANSLATED_WINDOW_SLIDE_DP = 7f;
-        private static final long TRANSLATION_TOGGLE_ANIMATION_MS = 260L;
-        private static final float TRANSLATION_TOGGLE_SLIDE_DP = 5f;
+        private static final long TRANSLATION_TOGGLE_ANIMATION_MS = 320L;
+        private static final float TRANSLATION_TOGGLE_SLIDE_DP = 3f;
+        private static final float TRANSLATION_EXPAND_LAYOUT_SETTLE_AMOUNT = 0.985f;
         private static final float TRANSLATION_SCROLL_START_PROGRESS = 0.08f;
         private static final float TRANSLATION_SCROLL_END_PROGRESS = 0.82f;
         private static final long MODEL_SWITCH_REVEAL_ANIMATION_MS = 260L;
@@ -8324,8 +8476,13 @@ public final class LockscreenLyricsModule extends XposedModule {
             translationAnimationStartedAtMs = -1L;
         }
 
-        void applySlotHeight(TextView textView, WordLyricModel model, WordLine line) {
-            int height = resolveSlotHeight(textView, model, line);
+        synchronized void finishTranslationLayoutChange() {
+            translationAnimationStartAmount = translationAnimationTargetAmount;
+            translationAnimationStartedAtMs = -1L;
+        }
+
+        void applySlotHeight(TextView textView, WordLine line) {
+            int height = resolveSlotHeight(textView, line);
             if (height > 0) {
                 setOfficialLyricSlotHeight(textView, height);
             }
@@ -8354,7 +8511,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 return;
             }
 
-            int fixedSlotHeight = resolveSlotHeight(textView, frame.model, line);
+            int fixedSlotHeight = resolveSlotHeight(textView, line);
             if (fixedSlotHeight <= 0) {
                 return;
             }
@@ -8442,7 +8599,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 translationAnimationStartedAtMs = -1L;
                 return translationAnimationTargetAmount;
             }
-            float eased = smoothStep(rawProgress);
+            float eased = smootherStep(rawProgress);
             return translationAnimationStartAmount
                     + (translationAnimationTargetAmount - translationAnimationStartAmount)
                     * eased;
@@ -8450,6 +8607,16 @@ public final class LockscreenLyricsModule extends XposedModule {
 
         private synchronized boolean isTranslationAnimationRunning() {
             return translationAnimationStartedAtMs >= 0L;
+        }
+
+        private synchronized float resolveTranslationLayoutAmount(float translationAmount) {
+            float amount = Math.max(0f, Math.min(1f, translationAmount));
+            if (translationAnimationStartedAtMs >= 0L
+                    && translationAnimationTargetAmount > translationAnimationStartAmount
+                    && translationAnimationTargetAmount > 0.999f) {
+                return Math.min(1f, amount / TRANSLATION_EXPAND_LAYOUT_SETTLE_AMOUNT);
+            }
+            return amount;
         }
 
         private float resolveEntranceRevealAmount() {
@@ -8548,6 +8715,9 @@ public final class LockscreenLyricsModule extends XposedModule {
                 setTextSize(originalSize);
                 return;
             }
+            float layoutTranslationAmount = hasTranslation
+                    ? resolveTranslationLayoutAmount(translationAmount)
+                    : 0f;
             TranslatedLineWindow lineWindow = hasTranslation
                     ? resolveTranslatedMainLineWindow(
                     line,
@@ -8580,13 +8750,13 @@ public final class LockscreenLyricsModule extends XposedModule {
                     + lineGap * Math.max(0, drawLines.size() - 1);
             boolean translationReplacementTransition = lineWindow != null
                     && drawLines.size() > visibleMainLineCount
-                    && translationAmount < 0.999f;
-            float expandedAmount = 1f - translationAmount;
+                    && layoutTranslationAmount < 0.999f;
+            float expandedAmount = 1f - layoutTranslationAmount;
             float compactTop = Math.max(0f, (availableHeight - compactGroupHeight) * 0.5f);
             float expandedTop = Math.max(0f, (availableHeight - expandedMainHeight) * 0.5f);
             float groupHeight = mainHeight
                     + (hasTranslation
-                    ? (translationGap + translationHeight) * translationAmount
+                    ? (translationGap + translationHeight) * layoutTranslationAmount
                     : 0f);
             compactTop = clampTopWithinSlot(
                     compactTop,
@@ -8597,7 +8767,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                     availableHeight,
                     expandedMainHeight);
             float top = translationReplacementTransition
-                    ? compactTop * translationAmount + expandedTop * expandedAmount
+                    ? compactTop * layoutTranslationAmount + expandedTop * expandedAmount
                     : clampTopWithinSlot(
                     Math.max(0f, (availableHeight - groupHeight) * 0.5f),
                     availableHeight,
@@ -8628,7 +8798,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                         lineWindow.currentStart,
                         lineWindow.count,
                         focusAmount,
-                        translationAmount);
+                        layoutTranslationAmount);
                 textView.postInvalidateOnAnimation();
             } else if (lineWindow != null && lineWindow.animating) {
                 float slide = dp(textView.getContext(), TRANSLATED_WINDOW_SLIDE_DP);
@@ -8708,7 +8878,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                     float replacementBaseline = expandedTop
                             - mainMetrics.ascent
                             + replacementLineIndex * (lineHeight + lineGap);
-                    translationBaseline = compactTranslationBaseline * translationAmount
+                    translationBaseline = compactTranslationBaseline * layoutTranslationAmount
                             + replacementBaseline * expandedAmount;
                 } else {
                     translationBaseline = top
@@ -8791,11 +8961,65 @@ public final class LockscreenLyricsModule extends XposedModule {
             return startX - overflow * easedScrollProgress;
         }
 
-        private int resolveSlotHeight(TextView textView, WordLyricModel model, WordLine line) {
+        private int resolveSlotHeight(TextView textView, WordLine line) {
             if (textView == null || line == null) {
                 return 0;
             }
-            return dp(textView.getContext(), LYRIC_SLOT_HEIGHT_DP);
+            Context context = textView.getContext();
+            int fallbackHeight = dp(context, LYRIC_SLOT_HEIGHT_DP);
+            float availableWidth = resolveAvailableWidth(textView);
+            if (availableWidth <= 1f || TextUtils.isEmpty(line.text)) {
+                return fallbackHeight;
+            }
+
+            boolean sourceHasTranslation = !TextUtils.isEmpty(line.translation);
+            boolean untranslatedLayout = !sourceHasTranslation;
+            configurePaints(textView, false, untranslatedLayout);
+            fitMainTextToMaxDrawLines(
+                    context,
+                    line.text,
+                    availableWidth,
+                    MAX_DRAW_LINES);
+            buildDrawLines(line, line.text, availableWidth, false, untranslatedLayout);
+            if (drawLines.isEmpty()) {
+                return fallbackHeight;
+            }
+
+            float translationAmount = sourceHasTranslation
+                    ? resolveTranslationLayoutAmount(resolveTranslationAmount())
+                    : 0f;
+            int fullMainLineCount = drawLines.size();
+            int translatedMainLineCount = sourceHasTranslation
+                    ? Math.min(MAX_TRANSLATED_MAIN_DRAW_LINES, fullMainLineCount)
+                    : fullMainLineCount;
+
+            inactivePaint.getFontMetrics(mainFontMetrics);
+            Paint.FontMetrics mainMetrics = mainFontMetrics;
+            float lineHeight = mainMetrics.descent - mainMetrics.ascent;
+            float lineGap = fullMainLineCount > 1
+                    ? (untranslatedLayout
+                            ? dp(context, UNTRANSLATED_LINE_ADVANCE_DP) - lineHeight
+                            : dp(context, 1f))
+                    : 0f;
+            float fullMainHeight = lineHeight * fullMainLineCount
+                    + lineGap * Math.max(0, fullMainLineCount - 1);
+
+            float groupHeight = fullMainHeight;
+            if (sourceHasTranslation) {
+                translationPaint.getFontMetrics(translationFontMetrics);
+                Paint.FontMetrics translationMetrics = translationFontMetrics;
+                float translationHeight = translationMetrics.descent - translationMetrics.ascent;
+                float translatedMainHeight = lineHeight * translatedMainLineCount
+                        + lineGap * Math.max(0, translatedMainLineCount - 1);
+                float translatedGroupHeight =
+                        translatedMainHeight + dp(context, 2f) + translationHeight;
+                groupHeight = fullMainHeight
+                        + (translatedGroupHeight - fullMainHeight) * translationAmount;
+            }
+
+            int minHeight = dp(context, LYRIC_SLOT_MIN_HEIGHT_DP);
+            int verticalPadding = dp(context, LYRIC_SLOT_VERTICAL_PADDING_DP);
+            return Math.max(minHeight, Math.round(groupHeight + verticalPadding));
         }
 
         private float resolveAvailableWidth(TextView textView) {
@@ -9033,6 +9257,11 @@ public final class LockscreenLyricsModule extends XposedModule {
         private static float smoothStep(float progress) {
             float value = Math.max(0f, Math.min(1f, progress));
             return value * value * (3f - 2f * value);
+        }
+
+        private static float smootherStep(float progress) {
+            float value = Math.max(0f, Math.min(1f, progress));
+            return value * value * value * (value * (value * 6f - 15f) + 10f);
         }
 
         private void drawCompactLine(

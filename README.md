@@ -45,7 +45,7 @@ SystemUI process:
 - Resolves private OPlus media and lyric targets through DexKit, with legacy class-name fallback.
 - Draws inside the official lock-screen lyric `TextView.onDraw(Canvas)` path.
 - Maps official items by timestamp, normalized text, and occurrence order so repeated lyrics and pre-roll lines remain stable.
-- Keeps `80dp` lyric slots with `6dp` spacing, tightens short-line density, uses a moving two-line window for long main lyrics, and places the active line about `48dp` below the viewport center.
+- Uses compact dynamic lyric slots with a `56dp` floor and about `12dp` vertical padding, keeps official `6dp` line spacing, uses a moving two-line window for long main lyrics, and places the active line about `48dp` below the viewport center.
 - Recovers lyric rendering after transient visibility changes without changing item geometry during playback.
 - Dynamically recognizes player-provided `lyricInfo` without a hard-coded package name.
 - Keeps the screen from timing out while the recognized provider's lock-screen lyric UI is actively visible.

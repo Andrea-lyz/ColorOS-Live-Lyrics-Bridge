@@ -1,6 +1,7 @@
 package io.github.andrealtb.lockscreenlyrics;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import java.util.Arrays;
@@ -48,5 +49,41 @@ public final class LyricLineVariantSelectorTest {
         int primaryIndex = LyricLineVariantSelector.findPrimaryTextIndex(texts);
 
         assertEquals(0, primaryIndex);
+    }
+
+    @Test
+    public void shortEnglishLyricLineDoesNotLoseToChineseTranslationAsRomaji() {
+        List<String> texts = Arrays.asList(
+                "Is a beauty and a beat",
+                "\u5c31\u662f\u4e00\u4e2a\u7f8e\u4eba\u548c\u4e00\u9996\u5e26\u611f\u7684\u6b4c");
+
+        int primaryIndex = LyricLineVariantSelector.findPrimaryTextIndex(texts);
+
+        assertEquals(0, primaryIndex);
+        assertFalse(LyricLineVariantSelector.isLikelyJapaneseRomanizationLine(texts.get(0)));
+    }
+
+    @Test
+    public void shortEnglishAllSmallWordsDoesNotLoseToChineseTranslationAsRomaji() {
+        List<String> texts = Arrays.asList(
+                "But I can see us",
+                "\u4f46\u6211\u770b\u89c1\u6211\u4eec");
+
+        int primaryIndex = LyricLineVariantSelector.findPrimaryTextIndex(texts);
+
+        assertEquals(0, primaryIndex);
+        assertFalse(LyricLineVariantSelector.isLikelyJapaneseRomanizationLine(texts.get(0)));
+    }
+
+    @Test
+    public void romajiOnlyLaneStillYieldsCjkTextWhenNoJapaneseSourceIsPresent() {
+        List<String> texts = Arrays.asList(
+                "ra i ra i ra ku ra ku ha n se n ko k ka",
+                "\u5149\u660e\u78ca\u843d\u53cd\u6218\u56fd\u5bb6");
+
+        int primaryIndex = LyricLineVariantSelector.findPrimaryTextIndex(texts);
+
+        assertEquals(1, primaryIndex);
+        assertTrue(LyricLineVariantSelector.isLikelyJapaneseRomanizationLine(texts.get(0)));
     }
 }
