@@ -8,7 +8,7 @@
 
 - 内置 Salt Player 与 ConePlayer 兼容适配器。
 - 支持播放器通过 `MediaMetadata["lyricInfo"]` 主动接入，无需依赖模块 APK。
-- Release 附带可选 LyricProvider APK，可分别适配 QQ 音乐、网易云音乐/荣耀版、Poweramp 和 Spotify。
+- Release 附带可选 LyricProvider APK，可分别适配 QQ 音乐、网易云音乐/荣耀版、Apple Music、Poweramp 和 Spotify。
 - 支持逐行 LRC、逐字 `rawLyric`、翻译行识别和重复歌词稳定定位。
 - 通过通用歌词事务层隔离异步回调，避免有歌词/无歌词曲目连续切换时歌词错绑或后续持续显示无歌词。
 - 长日语、中文歌词按 Unicode 字符边界换行，避免无空格长句被自动缩小。
@@ -49,7 +49,7 @@
 2. 在 LSPosed 中启用模块，并确认推荐作用域包含 `system`、`com.android.systemui` 和需要进程内适配的播放器。
 3. 重启设备，使 SystemUI、system_server 和播放器进程中的 Hook 完整加载。
 
-QQ 音乐、网易云音乐/荣耀版、Poweramp、Spotify 需要额外安装 Release 中对应的 LyricProvider APK，并在 LSPosed 中为目标播放器单独启用该 Provider。
+QQ 音乐、网易云音乐/荣耀版、Apple Music、Poweramp、Spotify 需要额外安装 Release 中对应的 LyricProvider APK，并在 LSPosed 中为目标播放器单独启用该 Provider。Apple Music Provider 只输出逐字和翻译歌词，不输出背景人声或对唱格式歌词。
 
 源码、完整接入协议和问题反馈：
 
@@ -65,7 +65,7 @@ Bridges timed lyrics from supported music players into the native ColorOS/OPlus 
 
 - Built-in compatibility adapters for Salt Player and ConePlayer.
 - Public `MediaMetadata["lyricInfo"]` protocol for self-integrating players without an APK dependency.
-- Optional LyricProvider APKs in Releases for QQ Music, NetEase Cloud Music/Honor, Poweramp, and Spotify.
+- Optional LyricProvider APKs in Releases for QQ Music, NetEase Cloud Music/Honor, Apple Music, Poweramp, and Spotify.
 - Line-timed LRC, word-timed `rawLyric`, translation detection, and stable repeated-line matching.
 - Compact dynamic lock-screen lyric layout with smoother translation toggles and AOD/highlight transition stabilization.
 - A generic lyric transaction layer prevents stale asynchronous callbacks from binding across tracks, including sequences that contain instrumentals or no-lyric tracks.
@@ -107,7 +107,7 @@ This declaration does not replace the player's own `MediaSession`, media-button 
 2. Enable the module in LSPosed and confirm that `system`, `com.android.systemui`, and the required built-in player scopes are selected.
 3. Reboot the device so the SystemUI, system_server, and player-process hooks are loaded.
 
-QQ Music, NetEase Cloud Music/Honor, Poweramp, and Spotify require the matching LyricProvider APK from the same release, enabled separately for the target player in LSPosed.
+QQ Music, NetEase Cloud Music/Honor, Apple Music, Poweramp, and Spotify require the matching LyricProvider APK from the same release, enabled separately for the target player in LSPosed. The Apple Music Provider only outputs word-timed and translated lyrics; background vocals and duet lanes are excluded.
 
 Source, integration documentation, and support:
 

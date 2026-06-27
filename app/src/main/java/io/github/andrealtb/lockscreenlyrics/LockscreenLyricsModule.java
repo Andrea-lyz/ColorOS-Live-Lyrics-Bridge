@@ -283,8 +283,10 @@ public final class LockscreenLyricsModule extends XposedModule {
             ConcurrentHashMap.newKeySet();
     private final Set<String> refreshedTranslationToggleRule0Packages =
             ConcurrentHashMap.newKeySet();
-    private volatile boolean translationPreferenceLoaded;
-    private volatile boolean lyricInfoTranslationEnabled = true;
+    private final Set<String> loadedTranslationPreferencePackages =
+            ConcurrentHashMap.newKeySet();
+    private final Map<String, Boolean> lyricInfoTranslationEnabledByPackage =
+            new ConcurrentHashMap<>();
     private volatile boolean screenTimeoutReceiverRegistered;
     private volatile boolean systemUiLyricModeEnabled;
     private volatile boolean systemUiLyricModeKeepAwakeActive;
@@ -834,7 +836,8 @@ public final class LockscreenLyricsModule extends XposedModule {
         String packageName = packageNameArg instanceof String ? (String) packageNameArg : "";
         boolean hasTranslationAction = !TextUtils.isEmpty(packageName)
                 && controllerHasTranslationAction(controllerArg);
-        if (hasTranslationAction) {
+        if (hasTranslationAction
+                || ExternalLyricSources.canOverrideFavoriteActionWithTranslation(packageName)) {
             ensureTranslationToggleRule0(packageName);
         }
 
@@ -959,6 +962,8 @@ public final class LockscreenLyricsModule extends XposedModule {
             return;
         }
 
+        Object overrideCandidate = null;
+        String overrideActionId = "";
         for (Object mediaAction : (List<?>) actions) {
             Object runnable = invokeNoArgByName(mediaAction, "getAction");
             PlaybackState.CustomAction customAction = findPlaybackStateCustomAction(runnable);
@@ -971,27 +976,76 @@ public final class LockscreenLyricsModule extends XposedModule {
             boolean legacySaltAction = isBuiltInPlayerPackage(packageName)
                     && SALT_DESKTOP_LYRIC_ACTION.equals(actionId);
             if (!integrationAction && !legacySaltAction) {
+                if (overrideCandidate == null
+                        && shouldOverridePlayerActionWithTranslation(packageName)) {
+                    overrideCandidate = mediaAction;
+                    overrideActionId = actionId;
+                }
                 continue;
             }
 
-            if (integrationAction) {
-                promoteTranslationToggleAction(mediaButtonEx, (List<?>) actions, mediaAction);
-                if (!replaceMediaActionIcon(mediaAction, packageName)) {
-                    rememberCurrentMediaActionIcon(mediaAction);
-                }
-            } else {
-                replaceMediaActionIcon(mediaAction, packageName);
-            }
-
-            updateTranslationActionPresentation(mediaAction);
-            tryInvokeOneArgByName(mediaAction, "setAction", (Runnable) () -> {
-                toggleLyricInfoTranslation();
-                updateTranslationActionPresentation(mediaAction);
-            });
-            info("Configured lyricInfo translation toggle for " + packageName
-                    + ", protocol=" + (integrationAction ? "public" : "salt-legacy"));
+            configureTranslationMediaAction(
+                    packageName,
+                    mediaButtonEx,
+                    (List<?>) actions,
+                    mediaAction,
+                    integrationAction ? "public" : "salt-legacy",
+                    actionId);
             return;
         }
+        if (overrideCandidate != null) {
+            configureTranslationMediaAction(
+                    packageName,
+                    mediaButtonEx,
+                    (List<?>) actions,
+                    overrideCandidate,
+                    "player-override",
+                    overrideActionId);
+        }
+    }
+
+    private void configureTranslationMediaAction(
+            String packageName,
+            Object mediaButtonEx,
+            List<?> actions,
+            Object mediaAction,
+            String protocol,
+            String originalActionId) {
+        boolean publicProtocol = "public".equals(protocol);
+        boolean overrideProtocol = "player-override".equals(protocol);
+        if (publicProtocol || overrideProtocol) {
+            promoteTranslationToggleAction(mediaButtonEx, actions, mediaAction);
+            if (!replaceMediaActionIcon(mediaAction, packageName) && publicProtocol) {
+                rememberCurrentMediaActionIcon(mediaAction);
+            }
+        } else {
+            replaceMediaActionIcon(mediaAction, packageName);
+        }
+
+        updateTranslationActionPresentation(mediaAction, packageName);
+        tryInvokeOneArgByName(mediaAction, "setAction", (Runnable) () -> {
+            toggleLyricInfoTranslation(packageName);
+            updateTranslationActionPresentation(mediaAction, packageName);
+        });
+        info("Configured lyricInfo translation toggle for " + packageName
+                + ", protocol=" + protocol
+                + (TextUtils.isEmpty(originalActionId)
+                ? ""
+                : ", originalAction=" + originalActionId));
+    }
+
+    private boolean shouldOverridePlayerActionWithTranslation(String packageName) {
+        if (!ExternalLyricSources.canOverrideFavoriteActionWithTranslation(packageName)
+                || !isCurrentLyricProviderPackage(packageName)) {
+            return false;
+        }
+        WordLyricModel model = currentWordLyricModel;
+        if (model != null && model.translationCount() > 0) {
+            return true;
+        }
+        LyricInfoContract.Payload payload = currentLyricProviderPayload;
+        return payload != null
+                && LyricInfoContract.containsTimedLrc(payload.translationLyric);
     }
 
     private void promoteTranslationToggleAction(
@@ -1096,8 +1150,8 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
     }
 
-    private void updateTranslationActionPresentation(Object mediaAction) {
-        boolean enabled = isLyricInfoTranslationEnabled();
+    private void updateTranslationActionPresentation(Object mediaAction, String packageName) {
+        boolean enabled = isLyricInfoTranslationEnabled(packageName);
         tryInvokeOneArgByName(
                 mediaAction,
                 "setContentDescription",
@@ -1109,54 +1163,73 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
     }
 
-    private void toggleLyricInfoTranslation() {
-        setLyricInfoTranslationEnabled(!isLyricInfoTranslationEnabled());
+    private void toggleLyricInfoTranslation(String packageName) {
+        setLyricInfoTranslationEnabled(packageName, !isLyricInfoTranslationEnabled(packageName));
     }
 
     private boolean isLyricInfoTranslationEnabled() {
-        ensureTranslationPreferenceLoaded();
-        return lyricInfoTranslationEnabled;
+        return isLyricInfoTranslationEnabled(currentTranslationPreferencePackage());
+    }
+
+    private boolean isLyricInfoTranslationEnabled(String packageName) {
+        String preferencePackage = normalizeTranslationPreferencePackage(packageName);
+        ensureTranslationPreferenceLoaded(preferencePackage);
+        Boolean enabled = lyricInfoTranslationEnabledByPackage.get(preferencePackage);
+        return enabled == null || enabled;
     }
 
     private void ensureTranslationPreferenceLoaded() {
-        if (translationPreferenceLoaded) {
+        ensureTranslationPreferenceLoaded(currentTranslationPreferencePackage());
+    }
+
+    private void ensureTranslationPreferenceLoaded(String packageName) {
+        String preferencePackage = normalizeTranslationPreferencePackage(packageName);
+        if (loadedTranslationPreferencePackages.contains(preferencePackage)) {
             return;
         }
         synchronized (this) {
-            if (translationPreferenceLoaded) {
+            if (loadedTranslationPreferencePackages.contains(preferencePackage)) {
                 return;
             }
             Context context = currentApplicationContext();
             if (context == null) {
                 officialLyricTextRenderer.setTranslationEnabledImmediately(
-                        lyricInfoTranslationEnabled);
+                        isLyricInfoTranslationEnabledFromCache(preferencePackage));
                 return;
             }
             SharedPreferences preferences = context.getSharedPreferences(
                     TRANSLATION_PREFERENCES_NAME,
                     Context.MODE_PRIVATE);
-            lyricInfoTranslationEnabled = preferences.getBoolean(
-                    TRANSLATION_PREFERENCE_KEY,
-                    true);
-            officialLyricTextRenderer.setTranslationEnabledImmediately(
-                    lyricInfoTranslationEnabled);
-            translationPreferenceLoaded = true;
+            boolean defaultValue = defaultTranslationPreferenceValue(
+                    preferences,
+                    preferencePackage);
+            boolean enabled = preferences.getBoolean(
+                    translationPreferenceKeyForPackage(preferencePackage),
+                    defaultValue);
+            lyricInfoTranslationEnabledByPackage.put(preferencePackage, enabled);
+            loadedTranslationPreferencePackages.add(preferencePackage);
+            if (shouldApplyTranslationPreferenceToRenderer(preferencePackage)) {
+                officialLyricTextRenderer.setTranslationEnabledImmediately(enabled);
+            }
         }
     }
 
-    private void setLyricInfoTranslationEnabled(boolean enabled) {
-        ensureTranslationPreferenceLoaded();
-        if (lyricInfoTranslationEnabled == enabled) {
+    private void setLyricInfoTranslationEnabled(String packageName, boolean enabled) {
+        String preferencePackage = normalizeTranslationPreferencePackage(packageName);
+        ensureTranslationPreferenceLoaded(preferencePackage);
+        if (isLyricInfoTranslationEnabledFromCache(preferencePackage) == enabled) {
             return;
         }
 
-        lyricInfoTranslationEnabled = enabled;
-        officialLyricTextRenderer.setTranslationEnabled(enabled);
+        lyricInfoTranslationEnabledByPackage.put(preferencePackage, enabled);
+        if (shouldApplyTranslationPreferenceToRenderer(preferencePackage)) {
+            officialLyricTextRenderer.setTranslationEnabled(enabled);
+        }
         Context context = currentApplicationContext();
         if (context != null) {
             context.getSharedPreferences(TRANSLATION_PREFERENCES_NAME, Context.MODE_PRIVATE)
                     .edit()
-                    .putBoolean(TRANSLATION_PREFERENCE_KEY, enabled)
+                    .putBoolean(translationPreferenceKeyForPackage(preferencePackage), enabled)
                     .apply();
         }
 
@@ -1165,7 +1238,63 @@ public final class LockscreenLyricsModule extends XposedModule {
         mainHandler.postDelayed(
                 () -> settleLyricViewsAfterTranslationToggle(enabled, generation),
                 TRANSLATION_TOGGLE_LAYOUT_SETTLE_DELAY_MS);
-        info("lyricInfo translation " + (enabled ? "enabled" : "disabled"));
+        info("lyricInfo translation " + (enabled ? "enabled" : "disabled")
+                + " for " + preferencePackage);
+    }
+
+    private boolean shouldApplyTranslationPreferenceToRenderer(String packageName) {
+        String currentPackage = currentTranslationPreferencePackage();
+        return TextUtils.isEmpty(currentPackage)
+                || normalizeTranslationPreferencePackage(packageName).equals(currentPackage);
+    }
+
+    private void applyTranslationPreferenceForPackage(String packageName) {
+        String preferencePackage = normalizeTranslationPreferencePackage(packageName);
+        ensureTranslationPreferenceLoaded(preferencePackage);
+        officialLyricTextRenderer.setTranslationEnabledImmediately(
+                isLyricInfoTranslationEnabledFromCache(preferencePackage));
+        mainHandler.post(this::refreshTranslationActionViewVisibility);
+    }
+
+    private boolean isLyricInfoTranslationEnabledFromCache(String packageName) {
+        Boolean enabled = lyricInfoTranslationEnabledByPackage.get(
+                normalizeTranslationPreferencePackage(packageName));
+        return enabled == null || enabled;
+    }
+
+    private String currentTranslationPreferencePackage() {
+        if (!TextUtils.isEmpty(currentLyricProviderPackage)) {
+            return currentLyricProviderPackage;
+        }
+        if (currentWordLyricModelFromExternal
+                && !TextUtils.isEmpty(currentWordLyricModelExternalSource)) {
+            String packageName = ExternalLyricSources.playerPackageForSource(
+                    currentWordLyricModelExternalSource);
+            if (!TextUtils.isEmpty(packageName)) {
+                return packageName;
+            }
+        }
+        return "";
+    }
+
+    private static String normalizeTranslationPreferencePackage(String packageName) {
+        return TextUtils.isEmpty(packageName) ? "" : packageName;
+    }
+
+    private static String translationPreferenceKeyForPackage(String packageName) {
+        String preferencePackage = normalizeTranslationPreferencePackage(packageName);
+        return TextUtils.isEmpty(preferencePackage)
+                ? TRANSLATION_PREFERENCE_KEY
+                : TRANSLATION_PREFERENCE_KEY + "." + preferencePackage;
+    }
+
+    private static boolean defaultTranslationPreferenceValue(
+            SharedPreferences preferences,
+            String packageName) {
+        if (TextUtils.isEmpty(packageName) || isBuiltInPlayerPackage(packageName)) {
+            return preferences.getBoolean(TRANSLATION_PREFERENCE_KEY, true);
+        }
+        return true;
     }
 
     private void refreshLyricViewsAfterTranslationToggle(int generation) {
@@ -1962,6 +2091,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
         currentLyricProviderPackage = packageName;
         lastSystemUiPackageSupported = true;
+        applyTranslationPreferenceForPackage(packageName);
         info("Accepted " + moduleManagedPlayerKind(packageName)
                 + " lyricInfo provider " + packageName + " from " + source);
     }
@@ -7114,7 +7244,9 @@ public final class LockscreenLyricsModule extends XposedModule {
             String officialDisplayLyric = externalDocument == null
                     ? payloadLyric
                     : firstNonEmpty(externalDocument.lyric, payloadLyric);
-            applyOfficialDisplayTextAliases(model, officialDisplayLyric);
+            if (shouldApplyOfficialDisplayTextAliases(externalDocument)) {
+                applyOfficialDisplayTextAliases(model, officialDisplayLyric);
+            }
             if (externalDocument == null) {
                 mergeSupplementalTranslations(model, payloadLyric, rawLyric, false);
             }
@@ -7166,6 +7298,13 @@ public final class LockscreenLyricsModule extends XposedModule {
             invalidateRememberedLyricViews();
         });
         updateScreenTimeoutWakeLock(currentApplicationContext());
+    }
+
+    private static boolean shouldApplyOfficialDisplayTextAliases(
+            ExternalLyricDocument externalDocument) {
+        return externalDocument == null
+                || ExternalLyricSources.shouldApplyOfficialDisplayTextAliases(
+                externalDocument.source);
     }
 
     private boolean shouldRetainExternalWordLyricModel(String payloadKey) {
@@ -9110,7 +9249,13 @@ public final class LockscreenLyricsModule extends XposedModule {
             if (segmentStart >= segmentEnd) {
                 continue;
             }
-            if (!containsLatinLetter(rawLine.substring(segmentStart, segmentEnd))) {
+            String suffixText = cleanPlainLyricText(rawLine.substring(segmentStart, segmentEnd));
+            if (LockscreenIntegrationPolicy.isShortLatinTailAfterMainLyric(
+                    prefixText,
+                    suffixText)) {
+                continue;
+            }
+            if (!containsLatinLetter(suffixText)) {
                 continue;
             }
 

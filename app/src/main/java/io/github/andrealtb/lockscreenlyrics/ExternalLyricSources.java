@@ -1,23 +1,30 @@
 package io.github.andrealtb.lockscreenlyrics;
 
 final class ExternalLyricSources {
+    static final String QQ_MUSIC_PLAYER_PACKAGE = "com.tencent.qqmusic";
+    static final String QQ_MUSIC_HD_PLAYER_PACKAGE = "com.tencent.qqmusicpad";
+    static final String NETEASE_MUSIC_PLAYER_PACKAGE = "com.netease.cloudmusic";
+    static final String NETEASE_MUSIC_HONOR_PLAYER_PACKAGE = "com.hihonor.cloudmusic";
     static final String SPOTIFY_PLAYER_PACKAGE = "com.spotify.music";
     static final String SPOTIFY_SOURCE = "lyricprovider/spotify-music";
     static final String POWERAMP_PLAYER_PACKAGE = "com.maxmpz.audioplayer";
     static final String POWERAMP_SOURCE = "lyricprovider/poweramp-music";
     static final long POWERAMP_SYSTEMUI_TRACK_AUTHORITY_MS = 12_000L;
+    private static final String APPLE_MUSIC_PLAYER_PACKAGE = "com.apple.android.music";
+    private static final String APPLE_MUSIC_SOURCE = "lyricprovider/apple-music";
 
     private static final Source[] EXTERNAL_SOURCES = {
+            new Source(APPLE_MUSIC_SOURCE, APPLE_MUSIC_PLAYER_PACKAGE, false, false, false),
             new Source(SPOTIFY_SOURCE, SPOTIFY_PLAYER_PACKAGE, true, false, false),
             new Source(POWERAMP_SOURCE, POWERAMP_PLAYER_PACKAGE, false, true, true)
     };
 
     private static final String[] BRIDGE_PLAYER_PACKAGES = {
-            "com.tencent.qqmusic",
-            "com.tencent.qqmusicpad",
-            "com.netease.cloudmusic",
-            "com.hihonor.cloudmusic",
-            "com.apple.android.music",
+            QQ_MUSIC_PLAYER_PACKAGE,
+            QQ_MUSIC_HD_PLAYER_PACKAGE,
+            NETEASE_MUSIC_PLAYER_PACKAGE,
+            NETEASE_MUSIC_HONOR_PLAYER_PACKAGE,
+            APPLE_MUSIC_PLAYER_PACKAGE,
             POWERAMP_PLAYER_PACKAGE,
             SPOTIFY_PLAYER_PACKAGE
     };
@@ -69,6 +76,18 @@ final class ExternalLyricSources {
 
     static boolean isSpotifyContext(String packageName, String source) {
         return SPOTIFY_PLAYER_PACKAGE.equals(packageName) || SPOTIFY_SOURCE.equals(source);
+    }
+
+    static boolean shouldApplyOfficialDisplayTextAliases(String source) {
+        return !APPLE_MUSIC_SOURCE.equals(source);
+    }
+
+    static boolean canOverrideFavoriteActionWithTranslation(String packageName) {
+        return QQ_MUSIC_PLAYER_PACKAGE.equals(packageName)
+                || QQ_MUSIC_HD_PLAYER_PACKAGE.equals(packageName)
+                || NETEASE_MUSIC_PLAYER_PACKAGE.equals(packageName)
+                || NETEASE_MUSIC_HONOR_PLAYER_PACKAGE.equals(packageName)
+                || APPLE_MUSIC_PLAYER_PACKAGE.equals(packageName);
     }
 
     private static Source findBySource(String source) {

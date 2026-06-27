@@ -237,6 +237,39 @@ final class LockscreenIntegrationPolicy {
         return lastSegmentStartMillis > firstSegmentStartMillis;
     }
 
+    static boolean isShortLatinTailAfterMainLyric(String prefixText, String suffixText) {
+        String prefix = normalizeSimpleLyricText(prefixText);
+        String suffix = normalizeSimpleLyricText(suffixText);
+        if (prefix.isEmpty()
+                || suffix.isEmpty()
+                || !containsNonAscii(prefix)
+                || containsLyricLeadSeparator(prefix)
+                || !containsLatinLetter(suffix)
+                || containsNonAscii(suffix)) {
+            return false;
+        }
+
+        int tokenCount = 0;
+        int index = 0;
+        while (index < suffix.length()) {
+            while (index < suffix.length() && !isAsciiWordLike(suffix.charAt(index))) {
+                index++;
+            }
+            int start = index;
+            while (index < suffix.length() && isAsciiWordLike(suffix.charAt(index))) {
+                index++;
+            }
+            if (start >= index) {
+                continue;
+            }
+            if (++tokenCount > 2
+                    || !isShortLatinTailToken(suffix.substring(start, index))) {
+                return false;
+            }
+        }
+        return tokenCount > 0;
+    }
+
     static boolean isLikelyTitleArtistCredit(String text, long timeMillis) {
         if (text == null
                 || text.trim().isEmpty()
@@ -299,6 +332,61 @@ final class LockscreenIntegrationPolicy {
                 && containsLatinLetter(second)
                 && Math.min(firstKey.length(), secondKey.length()) >= 5
                 && (firstKey.startsWith(secondKey) || secondKey.startsWith(firstKey));
+    }
+
+    private static boolean isShortLatinTailToken(String token) {
+        String key = lyricIdentityKey(token);
+        if (key.length() < 2 || key.length() > 8) {
+            return false;
+        }
+        if (isUpperLatinAcronymToken(token, key)) {
+            return true;
+        }
+        return isShortLatinVocalToken(key);
+    }
+
+    private static boolean isUpperLatinAcronymToken(String token, String key) {
+        if (key.length() < 3 || key.length() > 6) {
+            return false;
+        }
+        boolean hasUpper = false;
+        for (int index = 0; index < token.length(); index++) {
+            char ch = token.charAt(index);
+            if (ch >= 'a' && ch <= 'z') {
+                return false;
+            }
+            if (ch >= 'A' && ch <= 'Z') {
+                hasUpper = true;
+            }
+        }
+        return hasUpper;
+    }
+
+    private static boolean isShortLatinVocalToken(String key) {
+        switch (key) {
+            case "ah":
+            case "ahh":
+            case "ha":
+            case "haa":
+            case "hm":
+            case "mm":
+            case "na":
+            case "la":
+            case "da":
+            case "oh":
+            case "ooh":
+            case "oooh":
+            case "hoh":
+            case "hey":
+            case "ya":
+            case "yeah":
+            case "woo":
+            case "wooh":
+            case "whoa":
+                return true;
+            default:
+                return false;
+        }
     }
 
     static boolean isProductionDetailLine(String text, long timeMillis) {
@@ -409,6 +497,54 @@ final class LockscreenIntegrationPolicy {
             }
         }
         return false;
+    }
+
+    private static String normalizeSimpleLyricText(String value) {
+        if (value == null) {
+            return "";
+        }
+        String trimmed = value.trim();
+        if (trimmed.isEmpty()) {
+            return "";
+        }
+        StringBuilder result = new StringBuilder(trimmed.length());
+        boolean inWhitespace = false;
+        for (int index = 0; index < trimmed.length(); index++) {
+            char ch = trimmed.charAt(index);
+            if (ch == ' ' || ch == '\t') {
+                if (!inWhitespace) {
+                    result.append(' ');
+                }
+                inWhitespace = true;
+            } else {
+                result.append(ch);
+                inWhitespace = false;
+            }
+        }
+        return result.toString();
+    }
+
+    private static boolean containsNonAscii(String value) {
+        if (value == null) {
+            return false;
+        }
+        for (int index = 0; index < value.length(); index++) {
+            if (value.charAt(index) > 0x7F) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean containsLyricLeadSeparator(String value) {
+        return value != null
+                && (value.indexOf(':') >= 0 || value.indexOf('\uFF1A') >= 0);
+    }
+
+    private static boolean isAsciiWordLike(char value) {
+        return (value >= 'A' && value <= 'Z')
+                || (value >= 'a' && value <= 'z')
+                || (value >= '0' && value <= '9');
     }
 
     private static int findSpacedTitleArtistSeparator(String text) {
