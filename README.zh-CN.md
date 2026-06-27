@@ -12,7 +12,7 @@
 
 当前项目内置基于 DexKit 的 Salt Player、ConePlayer 兼容适配器和 SystemUI 渲染 hook；其他播放器优先通过 `lyricInfo` 接入协议主动适配。
 
-从 v2.0.0 开始，Release 附带可选的 `LyricProvider-QQMusic` APK。它是面向 QQ 音乐的独立 LSPosed 模块，可同时为 ColorOS Live Lyrics Bridge 和 Lyricon/词幕转发完整歌词数据。
+从 v2.2.0 开始，Release 附带面向 QQ 音乐、网易云音乐、Poweramp、Spotify 的可选 LyricProvider APK。它们是独立 LSPosed 模块，可同时为 ColorOS Live Lyrics Bridge 和 Lyricon/词幕转发完整歌词数据。
 
 歌词来源通过通用事务层与曲目元数据关联：带媒体 ID、URI 或完整标题/歌手的信息会精确匹配；无身份的被动回调只会等待下一次稳定元数据，避免纯音乐、预加载或异步回调造成跨曲歌词错位。
 
@@ -93,22 +93,26 @@ hasLyric=false
 
 完整字段定义、Media3 示例和生命周期要求见[播放器主动接入协议](docs/PLAYER_INTEGRATION.zh-CN.md)。播放器无需依赖模块 APK、登记包名或加入 LSPosed 播放器作用域。
 
-## 可选 QQ 音乐歌词提供模块
+## 可选 LyricProvider 歌词提供模块
 
-v2.0.0 Release 包含两个 APK：
+Release 包含 Bridge APK 和独立 Provider APK：
 
 ```text
 ColorOS-Live-Lyrics-Bridge-<tag>.apk
 LyricProvider-QQMusic-<tag>.apk
+LyricProvider-163Music-<tag>.apk
+LyricProvider-Poweramp-<tag>.apk
+LyricProvider-Spotify-<tag>.apk
 ```
 
-`LyricProvider-QQMusic` 不属于 Bridge 主模块的静态作用域。请单独安装这个提供模块，并在 LSPosed 中为它启用：
+Provider APK 不属于 Bridge 主模块的静态作用域。请按目标播放器单独安装对应 Provider，并在 LSPosed 中为它启用目标播放器：
 
-```text
-com.tencent.qqmusic
-```
+- `LyricProvider-QQMusic`：`com.tencent.qqmusic`
+- `LyricProvider-163Music`：`com.netease.cloudmusic`、`com.hihonor.cloudmusic`
+- `LyricProvider-Poweramp`：`com.maxmpz.audioplayer`
+- `LyricProvider-Spotify`：`com.spotify.music`
 
-启用后重启 QQ 音乐和 SystemUI。该提供模块会 Hook QQ 音乐，保持对 Lyricon/词幕的兼容，并把 QQ 音乐暴露的完整歌词文档发送给 ColorOS Live Lyrics Bridge；当 QQ 音乐提供逐字时间轴和翻译时，Bridge 会优先使用这些数据覆盖官方简略 `lyricInfo`。
+启用后重启目标播放器和 SystemUI。Provider 会保持对 Lyricon/词幕的兼容，并把目标播放器暴露的完整歌词文档发送给 ColorOS Live Lyrics Bridge；当播放器提供逐字时间轴和翻译时，Bridge 会优先使用这些数据覆盖官方简略 `lyricInfo`。
 
 ## 兼容适配器
 
@@ -166,7 +170,7 @@ APK 输出位置：
 ## GitHub Actions
 
 - `Build Debug APK`：当 `main` 分支源码更新或发起 Pull Request 时自动构建，生成的 debug APK 会作为 workflow artifact 上传。
-- `Release APK Bundle`：推送类似 `v2.0.0` 的 tag 后自动运行，也可以手动触发。工作流会构建签名 Bridge APK，checkout `Andrea-lyz/LyricProvider`，构建签名 `:qq-music` APK，并把两个 APK 同时发布到源仓库 Release 与 LSPosed 仓库 Release；LSPosed 仓库使用 `100-2.0.0` 这类 `versionCode-versionName` 标签。
+- `Release APK Bundle`：推送类似 `v2.2.0` 的 tag 后自动运行，也可以手动触发。工作流会构建签名 Bridge APK，checkout `Andrea-lyz/LyricProvider`，构建签名 Provider APK，并把所有 APK 同时发布到源仓库 Release 与 LSPosed 仓库 Release；LSPosed 仓库使用 `103-2.2.0` 这类 `versionCode-versionName` 标签。
 
 发布工作流需要这些仓库 secrets：
 
@@ -177,7 +181,7 @@ APK 输出位置：
 - `LSP_REPO_TOKEN`：对 `Xposed-Modules-Repo/io.github.andrealtb.lockscreenlyrics` 具有仓库内容与 release 写入权限的 PAT。
 - `LYRIC_PROVIDER_TOKEN`：可选；当 `Andrea-lyz/LyricProvider` 为私有仓库时，用于 checkout 该仓库。
 
-发布产物会命名为 `ColorOS-Live-Lyrics-Bridge-<tag>.apk` 与 `LyricProvider-QQMusic-<tag>.apk`。
+发布产物会命名为 `ColorOS-Live-Lyrics-Bridge-<tag>.apk`、`LyricProvider-QQMusic-<tag>.apk`、`LyricProvider-163Music-<tag>.apk`、`LyricProvider-Poweramp-<tag>.apk` 与 `LyricProvider-Spotify-<tag>.apk`。
 
 使用播放器适配器测试：
 
@@ -225,7 +229,7 @@ Copyright 2026 Andrea-lyz。本项目采用 [Apache License 2.0](LICENSE) 开源
 
 本项目使用 [Accompanist Lyrics Core](https://github.com/6xingyv/accompanist-lyrics-core) `0.4.5`（`com.mocharealm.accompanist:lyrics-core-jvm`）解析时间轴歌词，该项目由 [6xingyv](https://github.com/6xingyv) 维护，同样采用 [Apache License 2.0](https://github.com/6xingyv/accompanist-lyrics-core/blob/main/LICENSE)。
 
-可选 QQ 音乐歌词提供模块基于 [tomakino/LyricProvider](https://github.com/tomakino/LyricProvider) 生态扩展而来。感谢 tomakino 与 LyricProvider 贡献者提供的歌词提供模块架构和 QQ 音乐歌词适配基础。
+可选歌词提供模块基于 [tomakino/LyricProvider](https://github.com/tomakino/LyricProvider) 生态扩展而来。感谢 tomakino 与 LyricProvider 贡献者提供的歌词提供模块架构与适配基础。
 
 Android、ColorOS、OPlus、LSPosed、Salt Player、ConePlayer 及其他产品名称的商标权归各自权利人所有；本项目与这些权利人不存在隶属或官方背书关系。
 

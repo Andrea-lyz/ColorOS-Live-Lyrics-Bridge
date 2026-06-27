@@ -12,7 +12,7 @@ An LSPosed/libxposed API 102 module that bridges timed lyrics from supported And
 
 The module currently ships DexKit-based compatibility adapters for Salt Player and ConePlayer plus SystemUI renderer hooks. Other players should integrate by publishing the `lyricInfo` contract themselves.
 
-Since v2.0.0, release assets also include an optional `LyricProvider-QQMusic` APK. It is a separate LSPosed module for QQ Music that forwards complete lyric data to ColorOS Live Lyrics Bridge and Lyricon/词幕.
+Since v2.2.0, release assets also include optional LyricProvider APKs for QQ Music, NetEase Cloud Music, Poweramp, and Spotify. They are separate LSPosed modules that forward complete lyric data to ColorOS Live Lyrics Bridge and Lyricon/词幕.
 
 A player-independent transaction layer associates lyric callbacks with media metadata. Events with media IDs, URIs, or complete title/artist hints bind directly; anonymous passive callbacks wait for the next stable metadata observation so preloads and instrumentals cannot shift lyrics across tracks.
 
@@ -93,22 +93,26 @@ Known self-integrating players:
 
 See the [player integration contract](docs/PLAYER_INTEGRATION.md). No module APK dependency, package-name registration, or LSPosed player scope is required.
 
-## Optional QQ Music Provider
+## Optional LyricProvider Modules
 
-The v2.0.0 release bundle includes two APKs:
+The release bundle includes the Bridge APK and separate provider APKs:
 
 ```text
 ColorOS-Live-Lyrics-Bridge-<tag>.apk
 LyricProvider-QQMusic-<tag>.apk
+LyricProvider-163Music-<tag>.apk
+LyricProvider-Poweramp-<tag>.apk
+LyricProvider-Spotify-<tag>.apk
 ```
 
-`LyricProvider-QQMusic` is not part of this module's static scope. Install it separately and enable that provider module for:
+Provider APKs are not part of the Bridge module's static scope. Install only the provider you need and enable that provider module for its target player:
 
-```text
-com.tencent.qqmusic
-```
+- `LyricProvider-QQMusic`: `com.tencent.qqmusic`
+- `LyricProvider-163Music`: `com.netease.cloudmusic`, `com.hihonor.cloudmusic`
+- `LyricProvider-Poweramp`: `com.maxmpz.audioplayer`
+- `LyricProvider-Spotify`: `com.spotify.music`
 
-Then restart QQ Music and SystemUI. The provider hooks QQ Music, keeps compatibility with Lyricon/词幕, and sends full lyric documents to ColorOS Live Lyrics Bridge, including word timing and translations when QQ Music exposes them.
+Then restart the target player and SystemUI. Providers keep compatibility with Lyricon/词幕 and send full lyric documents to ColorOS Live Lyrics Bridge, including word timing and translations when the player exposes them.
 
 ## Compatibility Adapters
 
@@ -166,7 +170,7 @@ JDK 21 is required to compile the Lyrics Core dependency. The helper discovers i
 ## GitHub Actions
 
 - `Build Debug APK`: runs on pushes to `main` and pull requests when project source or build files change. The generated debug APK is uploaded as a workflow artifact.
-- `Release APK Bundle`: runs after pushing a tag such as `v2.0.0`, or from manual dispatch. It builds the signed Bridge APK, checks out `Andrea-lyz/LyricProvider`, builds the signed `:qq-music` APK, publishes both APKs to the source release, and mirrors both APKs to the LSPosed repository release with a `versionCode-versionName` tag such as `100-2.0.0`.
+- `Release APK Bundle`: runs after pushing a tag such as `v2.2.0`, or from manual dispatch. It builds the signed Bridge APK, checks out `Andrea-lyz/LyricProvider`, builds the signed provider APKs, publishes all APKs to the source release, and mirrors all APKs to the LSPosed repository release with a `versionCode-versionName` tag such as `103-2.2.0`.
 
 The release workflow expects these repository secrets:
 
@@ -177,7 +181,7 @@ The release workflow expects these repository secrets:
 - `LSP_REPO_TOKEN`: PAT with repository-content and release write access to `Xposed-Modules-Repo/io.github.andrealtb.lockscreenlyrics`.
 - `LYRIC_PROVIDER_TOKEN`: optional PAT for checking out `Andrea-lyz/LyricProvider` when that repository is private.
 
-Release assets are published as `ColorOS-Live-Lyrics-Bridge-<tag>.apk` and `LyricProvider-QQMusic-<tag>.apk`.
+Release assets are published as `ColorOS-Live-Lyrics-Bridge-<tag>.apk`, `LyricProvider-QQMusic-<tag>.apk`, `LyricProvider-163Music-<tag>.apk`, `LyricProvider-Poweramp-<tag>.apk`, and `LyricProvider-Spotify-<tag>.apk`.
 
 Install and test with a built-in adapter:
 
@@ -225,6 +229,6 @@ Copyright 2026 Andrea-lyz. This project is released under the [Apache License 2.
 
 This project uses [Accompanist Lyrics Core](https://github.com/6xingyv/accompanist-lyrics-core) `0.4.5` (`com.mocharealm.accompanist:lyrics-core-jvm`), maintained by [6xingyv](https://github.com/6xingyv), for timed-lyric parsing. Accompanist Lyrics Core is also distributed under the [Apache License 2.0](https://github.com/6xingyv/accompanist-lyrics-core/blob/main/LICENSE).
 
-The optional QQ Music provider is based on the LyricProvider ecosystem by [tomakino/LyricProvider](https://github.com/tomakino/LyricProvider). Thanks to tomakino and LyricProvider contributors for the provider architecture and QQ Music lyric work this integration builds on.
+The optional provider APKs are based on the LyricProvider ecosystem by [tomakino/LyricProvider](https://github.com/tomakino/LyricProvider). Thanks to tomakino and LyricProvider contributors for the provider architecture these integrations build on.
 
 Android, ColorOS, OPlus, LSPosed, Salt Player, ConePlayer, and other product names are trademarks of their respective owners. This project is not affiliated with or endorsed by those owners.

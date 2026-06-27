@@ -1,7 +1,9 @@
 # Gradle / Android build outputs
 .gradle/
 .gradle-local-build/
+.gradle-local-build-v*/
 .gradle-user-home/
+.gradle-user-home-v*/
 build/
 **/build/
 

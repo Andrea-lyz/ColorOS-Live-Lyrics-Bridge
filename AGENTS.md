@@ -45,13 +45,23 @@ Publish from a clean, committed `main`:
 
 - Commit the release changes with a short subject such as `Release v2.0.1`.
 - Push `main`, then create and push the source tag `v<version>`.
-- The `Release APK Bundle` workflow builds and uploads both `ColorOS-Live-Lyrics-Bridge-v<version>.apk` and `LyricProvider-QQMusic-v<version>.apk`.
+- The `Release APK Bundle` workflow builds the bridge from this repository and builds provider APKs from `Andrea-lyz/LyricProvider`. On manual dispatch, set `lyric_provider_ref` when the provider release must use a branch, tag, or commit other than `master`.
+- The release workflow must upload the bridge APK and every release-ready LyricProvider APK to both the source GitHub release and the LSPosed mirror release. Current assets are `ColorOS-Live-Lyrics-Bridge-v<version>.apk`, `LyricProvider-QQMusic-v<version>.apk`, `LyricProvider-163Music-v<version>.apk`, `LyricProvider-Poweramp-v<version>.apk`, and `LyricProvider-Spotify-v<version>.apk`.
+- Provider APKs are auxiliary modules, not bundled into the bridge APK. Keep each player provider as a separate LyricProvider module and sign them with the same release keystore used by the bridge.
 - The LSPosed release tag is derived as `<versionCode>-<versionName>`, for example `101-2.0.1`.
+
+When a newly adapted player provider is ready to ship:
+
+- Add a provider build job to `.github/workflows/release.yml`, or extend the existing provider job pattern, so it checks out `Andrea-lyz/LyricProvider`, builds the provider module with `:<module-id>:assembleRelease`, copies the APK to `out/LyricProvider-<PlayerName>-${release_tag}.apk`, and uploads it as an artifact.
+- Add the new provider job to the `publish` job `needs` list. The existing artifact download and `gh release upload` steps collect all APK artifacts automatically once the new job uploads its APK.
+- Update the fallback release note text in `.github/workflows/release.yml` and the release-facing notes files (`.github/release-notes/<version>.md` and `docs/releases/v<version>.md`) so users know the new provider APK is included and must be installed separately.
+- Update this release-process checklist and the post-release asset verification list with the new expected APK name.
+- Verify the LyricProvider fork contains the provider changes on the ref used by the release workflow, especially when `lyric_provider_ref` is not `master`.
 
 After the workflow succeeds, verify the source release, the LSPosed release, and LSPosed module presentation:
 
-- Confirm both APK assets exist on `Andrea-lyz/ColorOS-Live-Lyrics-Bridge` tag `v<version>`.
-- Confirm both APK assets exist on `Xposed-Modules-Repo/io.github.andrealtb.lockscreenlyrics` tag `<versionCode>-<versionName>`.
+- Confirm all five APK assets exist on `Andrea-lyz/ColorOS-Live-Lyrics-Bridge` tag `v<version>`.
+- Confirm all five APK assets exist on `Xposed-Modules-Repo/io.github.andrealtb.lockscreenlyrics` tag `<versionCode>-<versionName>`.
 - Sync the LSPosed mirror repo metadata (`README.md`, `SUMMARY`, `SOURCE_URL`, `SCOPE`) from `.github/lsposed/` when needed, push that metadata commit, and ensure the LSPosed release tag points at the latest metadata commit so LSPosed Manager sees the update.
 - Check the public LSPosed module page ordering after tag or metadata fixes.
 

@@ -24,6 +24,8 @@ public final class LyricInfoContract {
     public static final String JSON_SESSION_GENERATION = "sessionGeneration";
     public static final String MODULE_PROVIDER = "lockscreen-lyrics-module";
     public static final String EXTRA_EXTERNAL_SOURCE = "source";
+    public static final String EXTRA_EXTERNAL_EVENT_TYPE = "eventType";
+    public static final String EXTRA_EXTERNAL_TRACK_GENERATION = "trackGeneration";
     public static final String EXTRA_EXTERNAL_REQUEST_ID = "requestId";
     public static final String EXTRA_EXTERNAL_MEDIA_ID = "mediaId";
     public static final String EXTRA_EXTERNAL_MEDIA_URI = "mediaUri";
@@ -35,6 +37,13 @@ public final class LyricInfoContract {
     public static final String EXTRA_EXTERNAL_RAW_LYRIC = JSON_RAW_LYRIC;
     public static final String EXTRA_EXTERNAL_TRANSLATION_LYRIC = JSON_TRANSLATION_LYRIC;
     public static final String EXTRA_EXTERNAL_CAPTURED_AT = "capturedAt";
+    public static final String EXTRA_EXTERNAL_PLAYBACK_STATE = "playbackState";
+    public static final String EXTRA_EXTERNAL_PLAYBACK_POSITION = "playbackPosition";
+    public static final String EXTRA_EXTERNAL_PLAYBACK_SPEED = "playbackSpeed";
+    public static final String EXTRA_EXTERNAL_PLAYBACK_LAST_POSITION_UPDATE_TIME =
+            "playbackLastPositionUpdateTime";
+    public static final String EVENT_EXTERNAL_TRACK_CHANGED = "trackChanged";
+    public static final String EVENT_EXTERNAL_LYRIC_READY = "lyricReady";
 
     private static final String[] TRANSLATION_KEYS = {
             JSON_TRANSLATION_LYRIC,
