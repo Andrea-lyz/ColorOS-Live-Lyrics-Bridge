@@ -62,6 +62,9 @@ import io.github.libxposed.api.XposedModule;
 
 public final class LockscreenLyricsModule extends XposedModule {
     private static final String TAG = "LockscreenLyrics";
+    private static final String LYRIC_PARSE_TRACE_TAG = "LockscreenLyricsParse";
+    private static final boolean LYRIC_PARSE_TRACE_ENABLED = false;
+    private static final int LYRIC_PARSE_TRACE_CHUNK_SIZE = 3000;
     private static final String MODULE_PACKAGE = "io.github.andrealtb.lockscreenlyrics";
     private static final String SYSTEMUI_PACKAGE = "com.android.systemui";
     private static final String SALT_PLAYER_PACKAGE = "com.salt.music";
@@ -7252,6 +7255,10 @@ public final class LockscreenLyricsModule extends XposedModule {
             }
             mergeSupplementalTranslations(model, translationLyric, rawLyric, true);
         }
+        traceWordLyricModel(
+                model,
+                "final-systemui",
+                externalDocument == null ? "systemui" : externalDocument.source);
         if (model.lines.isEmpty()) {
             currentWordLyricModel = null;
             currentWordLyricModelSignature = "";
@@ -7930,8 +7937,12 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private WordLyricModel parseWordLyric(String rawLyric, boolean primarySource) {
+        traceLyricParse("parse-start source=" + (primarySource ? "primary" : "supplemental")
+                + " rawChars=" + (rawLyric == null ? 0 : rawLyric.length())
+                + " rawHash=" + (rawLyric == null ? 0 : rawLyric.hashCode()));
         WordLyricModel inlineModel = parseInlineWordLrc(rawLyric);
         if (!inlineModel.lines.isEmpty()) {
+            traceWordLyricModel(inlineModel, "inline-result", primarySource ? "primary" : "supplemental");
             return inlineModel;
         }
 
@@ -7958,6 +7969,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             model.lines.addAll(uniqueLines.values());
             model.lines.sort((left, right) -> Long.compare(left.timeMillis, right.timeMillis));
             mergeSameTimestampLyricLines(model);
+            traceWordLyricModel(model, "lyrics-core-result", primarySource ? "primary" : "supplemental");
         } catch (Throwable t) {
             // Do not let a parser or dependency failure crash the injected process. An empty
             // model deliberately leaves the original ColorOS lyric renderer untouched.
@@ -7973,19 +7985,30 @@ public final class LockscreenLyricsModule extends XposedModule {
         WordLyricModel model = new WordLyricModel();
         model.parserName = "inline-lrc";
         if (TextUtils.isEmpty(rawLyric) || !LyricInfoContract.containsTimedLrc(rawLyric)) {
+            traceLyricParse("inline-skip reason=no-timed-lrc");
             return model;
         }
 
         LinkedHashMap<Long, ArrayList<InlineTimedLyricLine>> groups = new LinkedHashMap<>();
         ArrayList<InlineTimedLyricLine> orphanTranslations = new ArrayList<>();
         int order = 0;
+        int parsedTimedLineCount = 0;
         int inlineTimedLineCount = 0;
-        for (String rawLine : splitRawLyricLines(rawLyric)) {
+        ArrayList<String> rawLines = splitRawLyricLines(rawLyric);
+        traceLyricParse("inline-raw-lines count=" + rawLines.size());
+        int rawLineIndex = 0;
+        for (String rawLine : rawLines) {
+            traceLyricParse("raw-split#" + rawLineIndex + " " + rawLine);
             for (String expandedLine : OplusLyricNormalizer.splitEmbeddedTimedLines(rawLine)) {
                 InlineTimedLyricLine line = parseInlineTimedLyricLine(expandedLine, order++);
                 if (line == null) {
+                    traceLyricParse("inline-line rejected raw#" + rawLineIndex + " " + expandedLine);
                     continue;
                 }
+                parsedTimedLineCount++;
+                traceLyricParse("inline-line raw#" + rawLineIndex + " "
+                        + describeInlineTimedLyricLine(line)
+                        + " raw=" + expandedLine);
                 if (line.inlineTiming) {
                     inlineTimedLineCount++;
                 }
@@ -7996,8 +8019,20 @@ public final class LockscreenLyricsModule extends XposedModule {
                 }
                 group.add(line);
             }
+            rawLineIndex++;
         }
         if (inlineTimedLineCount <= 0 || groups.isEmpty()) {
+            traceLyricParse("inline-empty inlineTimedLineCount=" + inlineTimedLineCount
+                    + " groups=" + groups.size());
+            model.lines.clear();
+            return model;
+        }
+        if (LockscreenIntegrationPolicy.shouldFallbackToLineTimedLrcForSparseInlineTiming(
+                parsedTimedLineCount,
+                inlineTimedLineCount)) {
+            traceLyricParse("inline-empty reason=sparse-inline-timing parsedLines=" + parsedTimedLineCount
+                    + " inlineTimedLineCount=" + inlineTimedLineCount
+                    + " groups=" + groups.size());
             model.lines.clear();
             return model;
         }
@@ -8006,10 +8041,13 @@ public final class LockscreenLyricsModule extends XposedModule {
             ArrayList<InlineTimedLyricLine> group = entry.getValue();
             InlineTimedLyricLine primary = choosePrimaryInlineTimedLyricLine(group);
             if (primary == null) {
+                traceLyricParse("inline-group time=" + formatLrcTime(entry.getKey())
+                        + " skipped reason=no-primary size=" + group.size());
                 continue;
             }
             ArrayList<String> groupTexts = inlineTimedLyricLineTexts(group);
             int primaryIndex = indexOfInlineTimedLyricLine(group, primary);
+            traceInlineGroup(entry.getKey(), group, primaryIndex, "before-restore");
             primary = restoreSharedTrailingLatinToken(primary, group);
             if (!primary.inlineTiming
                     && group.size() == 1
@@ -8017,6 +8055,8 @@ public final class LockscreenLyricsModule extends XposedModule {
                 // In a mixed enhanced-LRC payload, a lone non-inline non-Latin line is almost
                 // always a delayed translation for the preceding word-timed line.
                 orphanTranslations.add(primary);
+                traceLyricParse("inline-group time=" + formatLrcTime(entry.getKey())
+                        + " orphan-translation " + describeInlineTimedLyricLine(primary));
                 continue;
             }
 
@@ -8038,7 +8078,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                         || LyricLineVariantSelector.isLikelyJapaneseRomanization(
                         primary.text,
                         translation)
-                        || LyricLineVariantSelector.isLikelyJapaneseRomanizationVariant(
+                        || LyricLineVariantSelector.isLikelyPhoneticVariant(
                         groupTexts,
                         primaryIndex,
                         translation)
@@ -8051,11 +8091,15 @@ public final class LockscreenLyricsModule extends XposedModule {
                     wordLine.translation = translation;
                 }
             }
+            traceLyricParse("inline-word-line " + describeWordLine(wordLine, true));
             model.lines.add(wordLine);
         }
 
         model.lines.sort((left, right) -> Long.compare(left.timeMillis, right.timeMillis));
         attachDelayedInlineTranslations(model, orphanTranslations);
+        traceLyricParse("inline-built lines=" + model.lines.size()
+                + " translations=" + model.translationCount()
+                + " orphanTranslations=" + orphanTranslations.size());
         return model;
     }
 
@@ -8355,7 +8399,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                     translation = cleanPlainLyricText(candidate.text);
                 }
                 if (TextUtils.isEmpty(translation)
-                        || LyricLineVariantSelector.isLikelyJapaneseRomanizationVariant(
+                        || LyricLineVariantSelector.isLikelyPhoneticVariant(
                         groupTexts,
                         primaryIndex,
                         translation)
@@ -9241,6 +9285,9 @@ public final class LockscreenLyricsModule extends XposedModule {
                 continue;
             }
             if (looksLikeInlineTimedPrefixBeforeSplit(rawLine, tags, i)) {
+                traceLyricParse("raw-split skip=inline-prefix tagIndex=" + i
+                        + " prefix=" + prefixText
+                        + " raw=" + rawLine);
                 continue;
             }
 
@@ -9253,6 +9300,10 @@ public final class LockscreenLyricsModule extends XposedModule {
             if (LockscreenIntegrationPolicy.isShortLatinTailAfterMainLyric(
                     prefixText,
                     suffixText)) {
+                traceLyricParse("raw-split skip=latin-tail tagIndex=" + i
+                        + " prefix=" + prefixText
+                        + " suffix=" + suffixText
+                        + " raw=" + rawLine);
                 continue;
             }
             if (!containsLatinLetter(suffixText)) {
@@ -9262,6 +9313,10 @@ public final class LockscreenLyricsModule extends XposedModule {
             String firstLine = "[" + formatLrcTime(tags.get(0).timeMillis) + "]" + prefixText;
             String secondLine = rawLine.substring(splitTag.start).trim();
             if (!TextUtils.isEmpty(secondLine)) {
+                traceLyricParse("raw-split apply tagIndex=" + i
+                        + " first=" + firstLine
+                        + " second=" + secondLine
+                        + " raw=" + rawLine);
                 return new String[]{firstLine, secondLine};
             }
         }
@@ -9278,9 +9333,14 @@ public final class LockscreenLyricsModule extends XposedModule {
                 || splitTagIndex >= tags.size()) {
             return false;
         }
+        if (startsWithLineStartAndFirstWordTag(rawLine, tags)) {
+            return true;
+        }
 
         int visibleSegments = 0;
         int compactSegments = 0;
+        long firstVisibleSegmentStartMillis = -1L;
+        long lastVisibleSegmentStartMillis = -1L;
         for (int index = 0; index < splitTagIndex; index++) {
             TagMatch current = tags.get(index);
             TagMatch next = tags.get(index + 1);
@@ -9292,11 +9352,183 @@ public final class LockscreenLyricsModule extends XposedModule {
                 continue;
             }
             visibleSegments++;
+            if (current.timeMillis >= 0L) {
+                if (firstVisibleSegmentStartMillis < 0L) {
+                    firstVisibleSegmentStartMillis = current.timeMillis;
+                }
+                lastVisibleSegmentStartMillis = current.timeMillis;
+            }
             if (normalizeLine(segment).length() <= 2) {
                 compactSegments++;
             }
         }
-        return visibleSegments >= 2 && compactSegments == visibleSegments;
+        return LockscreenIntegrationPolicy.isLikelyInlineTimedMainLyricPrefix(
+                visibleSegments,
+                compactSegments,
+                firstVisibleSegmentStartMillis,
+                lastVisibleSegmentStartMillis);
+    }
+
+    private static boolean startsWithLineStartAndFirstWordTag(
+            String rawLine,
+            ArrayList<TagMatch> tags) {
+        if (TextUtils.isEmpty(rawLine) || tags == null || tags.size() < 2) {
+            return false;
+        }
+        TagMatch lineStart = tags.get(0);
+        TagMatch firstWord = tags.get(1);
+        if (lineStart == null
+                || firstWord == null
+                || lineStart.start != 0
+                || lineStart.timeMillis != firstWord.timeMillis
+                || lineStart.end > firstWord.start) {
+            return false;
+        }
+        String prefix = rawLine.substring(lineStart.end, firstWord.start);
+        return TextUtils.isEmpty(prefix.trim());
+    }
+
+    private static void traceWordLyricModel(
+            WordLyricModel model,
+            String stage,
+            String source) {
+        if (!LYRIC_PARSE_TRACE_ENABLED || model == null) {
+            return;
+        }
+        traceLyricParse("model stage=" + nullToEmpty(stage)
+                + " source=" + nullToEmpty(source)
+                + " parser=" + nullToEmpty(model.parserName)
+                + " lines=" + model.lines.size()
+                + " officialLines=" + model.officialLines.size()
+                + " translations=" + model.translationCount());
+        for (int index = 0; index < model.lines.size(); index++) {
+            traceLyricParse("final-line#" + index + " " + describeWordLine(model.lines.get(index), true));
+        }
+    }
+
+    private static void traceInlineGroup(
+            long timeMillis,
+            ArrayList<InlineTimedLyricLine> group,
+            int primaryIndex,
+            String stage) {
+        if (!LYRIC_PARSE_TRACE_ENABLED || group == null) {
+            return;
+        }
+        traceLyricParse("inline-group stage=" + nullToEmpty(stage)
+                + " time=" + formatLrcTime(timeMillis)
+                + " size=" + group.size()
+                + " primaryIndex=" + primaryIndex);
+        for (int index = 0; index < group.size(); index++) {
+            traceLyricParse("inline-group-candidate#" + index
+                    + (index == primaryIndex ? " primary " : " ")
+                    + describeInlineTimedLyricLine(group.get(index)));
+        }
+    }
+
+    private static String describeInlineTimedLyricLine(InlineTimedLyricLine line) {
+        if (line == null) {
+            return "null";
+        }
+        return "order=" + line.order
+                + " time=" + formatLrcTime(line.timeMillis)
+                + " end=" + formatLrcTime(line.endTimeMillis)
+                + " inline=" + line.inlineTiming
+                + " words=" + (line.words == null ? 0 : line.words.size())
+                + " text=\"" + limitTraceValue(line.text, 360) + "\""
+                + " ranges=" + describeWordRanges(line.text, line.words);
+    }
+
+    private static String describeWordLine(WordLine line, boolean includeRanges) {
+        if (line == null) {
+            return "null";
+        }
+        StringBuilder builder = new StringBuilder();
+        builder.append("time=").append(formatLrcTime(line.timeMillis))
+                .append(" end=").append(formatLrcTime(line.endTimeMillis))
+                .append(" mode=").append(line.timingMode)
+                .append(" words=").append(line.words == null ? 0 : line.words.size())
+                .append(" text=\"").append(limitTraceValue(line.text, 420)).append("\"");
+        if (!TextUtils.isEmpty(line.displayText)) {
+            builder.append(" display=\"").append(limitTraceValue(line.displayText, 420)).append("\"");
+        }
+        if (!TextUtils.isEmpty(line.translation)) {
+            builder.append(" translation=\"")
+                    .append(limitTraceValue(line.translation, 420))
+                    .append("\"");
+        }
+        if (includeRanges) {
+            builder.append(" ranges=").append(describeWordRanges(line.text, line.words));
+        }
+        return builder.toString();
+    }
+
+    private static String describeWordRanges(String text, ArrayList<WordRange> words) {
+        if (words == null || words.isEmpty()) {
+            return "[]";
+        }
+        StringBuilder builder = new StringBuilder();
+        builder.append('[');
+        for (int index = 0; index < words.size(); index++) {
+            if (index > 0) {
+                builder.append(", ");
+            }
+            WordRange word = words.get(index);
+            if (word == null) {
+                builder.append(index).append(":null");
+                continue;
+            }
+            builder.append(index)
+                    .append(':')
+                    .append(formatLrcTime(word.timeMillis))
+                    .append('(')
+                    .append(word.start)
+                    .append('-')
+                    .append(word.end)
+                    .append(")=\"")
+                    .append(limitTraceValue(safeTraceSubstring(text, word.start, word.end), 80))
+                    .append('"');
+        }
+        builder.append(']');
+        return limitTraceValue(builder.toString(), 1800);
+    }
+
+    private static String safeTraceSubstring(String text, int start, int end) {
+        if (TextUtils.isEmpty(text)) {
+            return "";
+        }
+        int safeStart = Math.max(0, Math.min(start, text.length()));
+        int safeEnd = Math.max(safeStart, Math.min(end, text.length()));
+        return text.substring(safeStart, safeEnd);
+    }
+
+    private static void traceLyricParse(String message) {
+        if (!LYRIC_PARSE_TRACE_ENABLED) {
+            return;
+        }
+        String value = limitTraceValue(nullToEmpty(message)
+                .replace("\r", "\\r")
+                .replace("\n", "\\n"), 12_000);
+        if (value.length() <= LYRIC_PARSE_TRACE_CHUNK_SIZE) {
+            Log.i(LYRIC_PARSE_TRACE_TAG, value);
+            return;
+        }
+        int chunkIndex = 0;
+        int offset = 0;
+        while (offset < value.length()) {
+            int end = Math.min(value.length(), offset + LYRIC_PARSE_TRACE_CHUNK_SIZE);
+            Log.i(LYRIC_PARSE_TRACE_TAG,
+                    "chunk=" + chunkIndex + " " + value.substring(offset, end));
+            offset = end;
+            chunkIndex++;
+        }
+    }
+
+    private static String limitTraceValue(String value, int maxLength) {
+        String safe = nullToEmpty(value);
+        if (maxLength <= 0 || safe.length() <= maxLength) {
+            return safe;
+        }
+        return safe.substring(0, Math.max(0, maxLength - 3)) + "...";
     }
 
     private static boolean containsLyricLeadSeparator(String text) {
@@ -9415,6 +9647,9 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     void info(String message) {
+        if (!Log.isLoggable(TAG, Log.INFO)) {
+            return;
+        }
         Log.i(TAG, message);
         log(Log.INFO, TAG, message);
     }

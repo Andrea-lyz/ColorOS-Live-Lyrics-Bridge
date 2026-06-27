@@ -100,6 +100,28 @@ public final class LyricsCoreAdapterTest {
     }
 
     @Test
+    public void plainLrcFallbackIgnoresCantonesePhoneticVariant() {
+        String lrc = "[00:03.909]\u7f20[00:04.085]\u7ef5[00:04.261]\u7684"
+                + "[00:04.429]\u665a[00:04.669]\u98ce [00:06.189]\u5439"
+                + "[00:06.413]\u7184[00:06.749]\u7231[00:06.957]\u7684"
+                + "[00:07.317]\u68a6[00:07.685]\n"
+                + "[00:03.909]cin min di man fong  cui si oi di mong \n"
+                + "[00:08.637]\u4e3a[00:08.821]\u4f55[00:09.005]love "
+                + "[00:09.237]is [00:09.405]gone [00:10.013]gone "
+                + "[00:10.557]gone[00:10.853]\n"
+                + "[00:08.637]wai ho love is gone gone gone";
+
+        LyricsCoreAdapter.ParsedLyrics parsed = LyricsCoreAdapter.parsePlainLrc(lrc);
+
+        assertEquals(2, parsed.lines.size());
+        assertEquals("\u7f20\u7ef5\u7684\u665a\u98ce \u5439\u7184\u7231\u7684\u68a6",
+                parsed.lines.get(0).text);
+        assertEquals("", parsed.lines.get(0).translation);
+        assertEquals("\u4e3a\u4f55love is gone gone gone", parsed.lines.get(1).text);
+        assertEquals("", parsed.lines.get(1).translation);
+    }
+
+    @Test
     public void keepsJapaneseMainLineWhenRomajiIsMissingForOneTimestamp() {
         String lrc = "[00:00.850]\u3042\u306e\u4e00\u7b49\u661f\u306e\u3055\u3093\u3056\u3081\u304f\u5149\u3067\n"
                 + "[00:00.850]a no i tto u se i no sa n za me ku hi ka ri de\n"

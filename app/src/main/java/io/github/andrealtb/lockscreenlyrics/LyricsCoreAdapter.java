@@ -290,7 +290,7 @@ final class LyricsCoreAdapter {
             List<String> texts,
             int primaryIndex,
             String candidate) {
-        return LyricLineVariantSelector.isLikelyJapaneseRomanizationVariant(
+        return LyricLineVariantSelector.isLikelyPhoneticVariant(
                 texts,
                 primaryIndex,
                 candidate);

@@ -1,6 +1,7 @@
 package io.github.andrealtb.lockscreenlyrics;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
@@ -270,7 +271,10 @@ final class TimedLyricDocument {
             return false;
         }
         return !(containsCjkScript(primary)
-                && LyricLineVariantSelector.isLikelyJapaneseRomanizationLine(candidate));
+                && LyricLineVariantSelector.isLikelyPhoneticVariant(
+                Arrays.asList(primary, candidate),
+                0,
+                candidate));
     }
 
     private static void appendPlainLine(StringBuilder builder, long startMillis, String text) {

@@ -1,9 +1,27 @@
 package io.github.andrealtb.lockscreenlyrics;
 
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 /** Selects the source line from same-timestamp multilingual lyric variants. */
 final class LyricLineVariantSelector {
+    private static final Set<String> CJK_PHONETIC_LATIN_TOKENS =
+            new HashSet<>(Arrays.asList(
+                    "ai", "ba", "bat", "bin", "bing", "bi", "bou", "bun",
+                    "can", "cai", "ci", "cin", "coeng", "cui", "cun", "cung", "cvn",
+                    "da", "dan", "dang", "di", "dong", "dou", "doi",
+                    "fong", "fu", "ga", "gai", "gei", "gi", "gou", "gwo",
+                    "ha", "ho", "hoi", "hong", "hou", "lo", "loe", "loeng",
+                    "loi", "long", "lou", "lui", "lvn", "man", "mei",
+                    "min", "miu", "mong", "mu", "nang", "nei", "ng", "o",
+                    "oi", "san", "se", "si", "sing", "soeng", "sou", "sv",
+                    "tong", "wa", "wai", "wing", "wui", "wun", "ya", "yau",
+                    "yi", "yiu", "yong", "you", "yung", "zai", "zi", "ziu",
+                    "zoi", "zong", "zou", "zui"));
+
     private LyricLineVariantSelector() {
     }
 
@@ -30,6 +48,17 @@ final class LyricLineVariantSelector {
                 if (index != romanizationIndex && containsCjkScript(texts.get(index))) {
                     return index;
                 }
+            }
+        }
+        int cjkPhoneticIndex = findLikelyCjkPhoneticVariantIndex(texts);
+        if (cjkPhoneticIndex >= 0) {
+            int cjkBeforePhonetic = firstCjkTextBefore(texts, cjkPhoneticIndex);
+            if (cjkBeforePhonetic >= 0) {
+                return cjkBeforePhonetic;
+            }
+            int cjkIndex = firstCjkTextIndex(texts);
+            if (cjkIndex >= 0) {
+                return cjkIndex;
             }
         }
         for (int index = 0; index < texts.size(); index++) {
@@ -126,6 +155,53 @@ final class LyricLineVariantSelector {
                 && hasOtherCjkTranslationCandidate(texts, primaryIndex, candidate);
     }
 
+    static boolean isLikelyPhoneticVariant(
+            List<String> texts,
+            int primaryIndex,
+            String candidate) {
+        String primary = primaryIndex >= 0 && texts != null && primaryIndex < texts.size()
+                ? nullToEmpty(texts.get(primaryIndex)).trim()
+                : "";
+        return isLikelyJapaneseRomanizationVariant(texts, primaryIndex, candidate)
+                || (containsCjkScript(primary) && isLikelyJapaneseRomanizationLine(candidate))
+                || isLikelyCjkPhoneticVariant(texts, primaryIndex, candidate);
+    }
+
+    static boolean isLikelyCjkPhoneticVariant(
+            List<String> texts,
+            int primaryIndex,
+            String candidate) {
+        if (texts == null || primaryIndex < 0 || primaryIndex >= texts.size()) {
+            return false;
+        }
+        String primary = nullToEmpty(texts.get(primaryIndex)).trim();
+        String value = nullToEmpty(candidate).trim();
+        if (primary.isEmpty()
+                || value.isEmpty()
+                || !containsCjkScript(primary)
+                || !containsLatinLetter(value)
+                || containsCjkScript(value)) {
+            return false;
+        }
+
+        Set<String> primaryLatinTokens = latinTokenSet(primary);
+        int checkedTokens = 0;
+        int phoneticTokens = 0;
+        for (String token : latinTokens(value)) {
+            if (primaryLatinTokens.contains(token)) {
+                continue;
+            }
+            checkedTokens++;
+            if (isLikelyCjkPhoneticToken(token)) {
+                phoneticTokens++;
+            }
+        }
+        if (checkedTokens < 2 || phoneticTokens < 2) {
+            return false;
+        }
+        return phoneticTokens * 3 >= checkedTokens * 2;
+    }
+
     static String findSharedTrailingLatinToken(List<String> texts, int primaryIndex) {
         if (texts == null || primaryIndex < 0 || primaryIndex >= texts.size()) {
             return "";
@@ -211,8 +287,37 @@ final class LyricLineVariantSelector {
         return -1;
     }
 
+    private static int findLikelyCjkPhoneticVariantIndex(List<String> texts) {
+        if (texts == null || texts.isEmpty()) {
+            return -1;
+        }
+        for (int index = 0; index < texts.size(); index++) {
+            String candidate = texts.get(index);
+            if (!containsLatinLetter(candidate) || containsCjkScript(candidate)) {
+                continue;
+            }
+            int primaryIndex = firstCjkTextBefore(texts, index);
+            if (primaryIndex < 0) {
+                primaryIndex = firstCjkTextIndex(texts);
+            }
+            if (primaryIndex >= 0 && isLikelyCjkPhoneticVariant(texts, primaryIndex, candidate)) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
     private static int firstCjkTextBefore(List<String> texts, int boundaryIndex) {
         for (int index = 0; index < boundaryIndex && index < texts.size(); index++) {
+            if (containsCjkScript(texts.get(index))) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private static int firstCjkTextIndex(List<String> texts) {
+        for (int index = 0; index < texts.size(); index++) {
             if (containsCjkScript(texts.get(index))) {
                 return index;
             }
@@ -257,6 +362,42 @@ final class LyricLineVariantSelector {
             }
         }
         return false;
+    }
+
+    private static Set<String> latinTokenSet(String text) {
+        return new HashSet<>(latinTokens(text));
+    }
+
+    private static List<String> latinTokens(String text) {
+        java.util.ArrayList<String> tokens = new java.util.ArrayList<>();
+        String value = nullToEmpty(text).toLowerCase(Locale.ROOT);
+        int index = 0;
+        while (index < value.length()) {
+            while (index < value.length() && !isAsciiLetter(value.charAt(index))) {
+                index++;
+            }
+            int start = index;
+            while (index < value.length() && isAsciiLetter(value.charAt(index))) {
+                index++;
+            }
+            if (start < index) {
+                tokens.add(value.substring(start, index));
+            }
+        }
+        return tokens;
+    }
+
+    private static boolean isLikelyCjkPhoneticToken(String token) {
+        String value = nullToEmpty(token).toLowerCase(Locale.ROOT);
+        if (value.isEmpty()) {
+            return false;
+        }
+        if (CJK_PHONETIC_LATIN_TOKENS.contains(value)) {
+            return true;
+        }
+        return value.length() >= 2
+                && value.length() <= 4
+                && value.indexOf('v') >= 0;
     }
 
     private static String trailingUpperLatinToken(String text) {
@@ -305,10 +446,14 @@ final class LyricLineVariantSelector {
         }
         for (int index = 0; index < text.length(); index++) {
             char value = text.charAt(index);
-            if ((value >= 'A' && value <= 'Z') || (value >= 'a' && value <= 'z')) {
+            if (isAsciiLetter(value)) {
                 return true;
             }
         }
         return false;
+    }
+
+    private static boolean isAsciiLetter(char value) {
+        return (value >= 'A' && value <= 'Z') || (value >= 'a' && value <= 'z');
     }
 }

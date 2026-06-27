@@ -86,4 +86,49 @@ public final class LyricLineVariantSelectorTest {
         assertEquals(1, primaryIndex);
         assertTrue(LyricLineVariantSelector.isLikelyJapaneseRomanizationLine(texts.get(0)));
     }
+
+    @Test
+    public void cantonesePhoneticLaneDoesNotWinOverChineseMainLine() {
+        List<String> texts = Arrays.asList(
+                "\u7f20\u7ef5\u7684\u665a\u98ce \u5439\u7184\u7231\u7684\u68a6",
+                "cin min di man fong  cui si oi di mong");
+
+        int primaryIndex = LyricLineVariantSelector.findPrimaryTextIndex(texts);
+
+        assertEquals(0, primaryIndex);
+        assertTrue(LyricLineVariantSelector.isLikelyCjkPhoneticVariant(
+                texts,
+                primaryIndex,
+                texts.get(1)));
+    }
+
+    @Test
+    public void cantonesePhoneticLaneMayCopyEnglishWordsFromChineseMainLine() {
+        List<String> texts = Arrays.asList(
+                "\u4e3a\u4f55love is gone gone gone",
+                "wai ho love is gone gone gone");
+
+        int primaryIndex = LyricLineVariantSelector.findPrimaryTextIndex(texts);
+
+        assertEquals(0, primaryIndex);
+        assertTrue(LyricLineVariantSelector.isLikelyPhoneticVariant(
+                texts,
+                primaryIndex,
+                texts.get(1)));
+    }
+
+    @Test
+    public void shortEnglishLyricDoesNotLookLikeCantonesePhoneticLane() {
+        List<String> texts = Arrays.asList(
+                "But I can see us",
+                "\u4f46\u6211\u770b\u89c1\u6211\u4eec");
+
+        int primaryIndex = LyricLineVariantSelector.findPrimaryTextIndex(texts);
+
+        assertEquals(0, primaryIndex);
+        assertFalse(LyricLineVariantSelector.isLikelyCjkPhoneticVariant(
+                texts,
+                1,
+                texts.get(0)));
+    }
 }

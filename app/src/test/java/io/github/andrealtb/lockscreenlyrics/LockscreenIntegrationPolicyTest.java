@@ -243,6 +243,54 @@ public class LockscreenIntegrationPolicyTest {
     }
 
     @Test
+    public void progressiveInlinePrefixIsKeptBeforeLatinWord() {
+        assertTrue(LockscreenIntegrationPolicy.isLikelyInlineTimedMainLyricPrefix(
+                3,
+                0,
+                2_066L,
+                4_480L));
+    }
+
+    @Test
+    public void singlePlainTranslationPrefixIsNotInlineTimedMainLyric() {
+        assertFalse(LockscreenIntegrationPolicy.isLikelyInlineTimedMainLyricPrefix(
+                1,
+                0,
+                2_066L,
+                2_066L));
+    }
+
+    @Test
+    public void compactInlinePrefixStillStaysOnSameLine() {
+        assertTrue(LockscreenIntegrationPolicy.isLikelyInlineTimedMainLyricPrefix(
+                3,
+                3,
+                6_100L,
+                6_100L));
+    }
+
+    @Test
+    public void sparseInlineTimingFallsBackToLineTimedLrc() {
+        assertTrue(LockscreenIntegrationPolicy.shouldFallbackToLineTimedLrcForSparseInlineTiming(
+                63,
+                2));
+    }
+
+    @Test
+    public void denseInlineTimingKeepsWordTimedParser() {
+        assertFalse(LockscreenIntegrationPolicy.shouldFallbackToLineTimedLrcForSparseInlineTiming(
+                45,
+                45));
+    }
+
+    @Test
+    public void shortInlineSamplesDoNotForceFallback() {
+        assertFalse(LockscreenIntegrationPolicy.shouldFallbackToLineTimedLrcForSparseInlineTiming(
+                3,
+                1));
+    }
+
+    @Test
     public void cjkMainLyricKeepsShortLatinVocalTail() {
         assertTrue(LockscreenIntegrationPolicy.isShortLatinTailAfterMainLyric(
                 "\u719f\u6089\u7684\u4fa7\u8138\u90fd\u91cd\u53e0",

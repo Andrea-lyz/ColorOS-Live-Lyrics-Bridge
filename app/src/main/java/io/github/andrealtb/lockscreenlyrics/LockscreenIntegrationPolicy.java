@@ -237,6 +237,37 @@ final class LockscreenIntegrationPolicy {
         return lastSegmentStartMillis > firstSegmentStartMillis;
     }
 
+    static boolean isLikelyInlineTimedMainLyricPrefix(
+            int visibleSegmentCount,
+            int compactSegmentCount,
+            long firstVisibleSegmentStartMillis,
+            long lastVisibleSegmentStartMillis) {
+        if (visibleSegmentCount < 2) {
+            return false;
+        }
+        if (compactSegmentCount == visibleSegmentCount) {
+            return true;
+        }
+        if (firstVisibleSegmentStartMillis < 0L || lastVisibleSegmentStartMillis < 0L) {
+            return false;
+        }
+        return hasProgressiveInlineTiming(
+                visibleSegmentCount,
+                firstVisibleSegmentStartMillis,
+                lastVisibleSegmentStartMillis,
+                -1L,
+                -1L);
+    }
+
+    static boolean shouldFallbackToLineTimedLrcForSparseInlineTiming(
+            int parsedLineCount,
+            int inlineTimedLineCount) {
+        if (parsedLineCount < 12 || inlineTimedLineCount <= 0) {
+            return false;
+        }
+        return inlineTimedLineCount * 100 < parsedLineCount * 35;
+    }
+
     static boolean isShortLatinTailAfterMainLyric(String prefixText, String suffixText) {
         String prefix = normalizeSimpleLyricText(prefixText);
         String suffix = normalizeSimpleLyricText(suffixText);
