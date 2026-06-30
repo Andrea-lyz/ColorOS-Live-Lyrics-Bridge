@@ -1561,10 +1561,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (model == null || targetIndex < 0) {
             return;
         }
-        WordLine line = model.lineAtOfficialIndex(targetIndex);
-        if (line == null) {
-            line = model.lineAt(targetIndex);
-        }
+        WordLine line = model.lineAtAdapterIndex(targetIndex);
         if (line == null) {
             return;
         }
@@ -3305,10 +3302,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                         LYRIC_RECYCLER_SET_CURRENT_SETTLE_MS);
                 WordLyricModel model = currentWordLyricModel;
                 if (model != null) {
-                    WordLine line = model.lineAtOfficialIndex(lastLyricsRecyclerIndex);
-                    if (line == null) {
-                        line = model.lineAt(lastLyricsRecyclerIndex);
-                    }
+                    WordLine line = model.lineAtAdapterIndex(lastLyricsRecyclerIndex);
                     if (line != null) {
                         activeLyricLine = line.normalizedText;
                         activeLyricLineTimeMs = line.timeMillis;
@@ -3796,10 +3790,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
 
         int adapterPosition = findValidLyricsRecyclerAdapterPosition(textView, model);
-        WordLine indexedLine = model.lineAtOfficialIndex(adapterPosition);
-        if (indexedLine == null) {
-            indexedLine = model.lineAt(adapterPosition);
-        }
+        WordLine indexedLine = model.lineAtAdapterIndex(adapterPosition);
         WordLine line = null;
         WordLine translationLine = null;
         if (indexedLine != null) {
@@ -3872,10 +3863,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         long position = estimatePlaybackPositionMillis();
         WordLine activeLine = resolveStableActiveLyricLine(model, position, true);
         int adapterPosition = findValidLyricsRecyclerAdapterPosition(textView, model);
-        WordLine indexedLine = model.lineAtOfficialIndex(adapterPosition);
-        if (indexedLine == null) {
-            indexedLine = model.lineAt(adapterPosition);
-        }
+        WordLine indexedLine = model.lineAtAdapterIndex(adapterPosition);
         WordLine line = null;
         WordLine translationLine = null;
         if (indexedLine != null) {
@@ -4008,10 +3996,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             activeIndex = 0;
         }
         int adapterPosition = findValidLyricsRecyclerAdapterPosition(textView, model);
-        WordLine line = model.lineAtOfficialIndex(adapterPosition);
-        if (line == null) {
-            line = model.lineAt(adapterPosition);
-        }
+        WordLine line = model.lineAtAdapterIndex(adapterPosition);
         if (line == null) {
             line = model.lineAt(activeIndex);
         }
@@ -4105,10 +4090,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         int officialIndex = lyricRecyclerSettleOfficialIndex >= 0
                 ? lyricRecyclerSettleOfficialIndex
                 : lastLyricsRecyclerIndex;
-        WordLine officialLine = model.lineAtOfficialIndex(officialIndex);
-        if (officialLine == null) {
-            officialLine = model.lineAt(officialIndex);
-        }
+        WordLine officialLine = model.lineAtAdapterIndex(officialIndex);
         if (officialLine == null) {
             return null;
         }
@@ -7176,12 +7158,27 @@ public final class LockscreenLyricsModule extends XposedModule {
         String payloadRawLyric = payload == null ? "" : payload.rawLyric;
         String payloadTranslationLyric =
                 payload == null ? "" : payload.translationLyric;
+        String externalSource = externalDocument == null
+                ? ""
+                : externalDocument.source;
         String rawLyric = externalDocument == null
                 ? payloadRawLyric
-                : externalDocument.rawLyric;
+                : repairExternalLyricText(
+                externalSource,
+                externalDocument.rawLyric,
+                "rawLyric");
+        String externalDisplayLyric = externalDocument == null
+                ? ""
+                : repairExternalLyricText(
+                externalSource,
+                externalDocument.lyric,
+                "lyric");
         String externalTranslationLyric = externalDocument == null
                 ? ""
-                : externalDocument.translationLyric;
+                : repairExternalLyricText(
+                externalSource,
+                externalDocument.translationLyric,
+                "translationLyric");
         String translationLyric = LyricInfoContract.containsTimedLrc(externalTranslationLyric)
                 ? externalTranslationLyric
                 : payloadTranslationLyric;
@@ -7242,11 +7239,11 @@ public final class LockscreenLyricsModule extends XposedModule {
             return;
         }
 
-        WordLyricModel model = parseWordLyric(rawLyric, true);
+        WordLyricModel model = parseWordLyric(rawLyric, true, externalDocument == null);
         if (!model.lines.isEmpty()) {
             String officialDisplayLyric = externalDocument == null
                     ? payloadLyric
-                    : firstNonEmpty(externalDocument.lyric, payloadLyric);
+                    : firstNonEmpty(externalDisplayLyric, payloadLyric);
             if (shouldApplyOfficialDisplayTextAliases(externalDocument)) {
                 applyOfficialDisplayTextAliases(model, officialDisplayLyric);
             }
@@ -7305,6 +7302,17 @@ public final class LockscreenLyricsModule extends XposedModule {
             invalidateRememberedLyricViews();
         });
         updateScreenTimeoutWakeLock(currentApplicationContext());
+    }
+
+    private String repairExternalLyricText(String source, String value, String fieldName) {
+        String repaired = ExternalLyricTextRepair.restoreProviderMojibake(source, value);
+        if (!TextUtils.equals(repaired, value)) {
+            info("Repaired external lyric mojibake, source=" + source
+                    + ", field=" + fieldName
+                    + ", chars=" + nullToEmpty(value).length()
+                    + "->" + nullToEmpty(repaired).length());
+        }
+        return repaired;
     }
 
     private static boolean shouldApplyOfficialDisplayTextAliases(
@@ -7869,7 +7877,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             return;
         }
 
-        WordLyricModel supplementalModel = parseWordLyric(supplemental, false);
+        WordLyricModel supplementalModel = parseWordLyric(supplemental, false, true);
         if (supplementalModel.lines.isEmpty()) {
             return;
         }
@@ -7936,11 +7944,15 @@ public final class LockscreenLyricsModule extends XposedModule {
         return best;
     }
 
-    private WordLyricModel parseWordLyric(String rawLyric, boolean primarySource) {
+    private WordLyricModel parseWordLyric(
+            String rawLyric,
+            boolean primarySource,
+            boolean allowDelayedInlineTranslations) {
         traceLyricParse("parse-start source=" + (primarySource ? "primary" : "supplemental")
                 + " rawChars=" + (rawLyric == null ? 0 : rawLyric.length())
-                + " rawHash=" + (rawLyric == null ? 0 : rawLyric.hashCode()));
-        WordLyricModel inlineModel = parseInlineWordLrc(rawLyric);
+                + " rawHash=" + (rawLyric == null ? 0 : rawLyric.hashCode())
+                + " delayedInlineTranslations=" + allowDelayedInlineTranslations);
+        WordLyricModel inlineModel = parseInlineWordLrc(rawLyric, allowDelayedInlineTranslations);
         if (!inlineModel.lines.isEmpty()) {
             traceWordLyricModel(inlineModel, "inline-result", primarySource ? "primary" : "supplemental");
             return inlineModel;
@@ -7981,7 +7993,9 @@ public final class LockscreenLyricsModule extends XposedModule {
         return model;
     }
 
-    private WordLyricModel parseInlineWordLrc(String rawLyric) {
+    private WordLyricModel parseInlineWordLrc(
+            String rawLyric,
+            boolean allowDelayedInlineTranslations) {
         WordLyricModel model = new WordLyricModel();
         model.parserName = "inline-lrc";
         if (TextUtils.isEmpty(rawLyric) || !LyricInfoContract.containsTimedLrc(rawLyric)) {
@@ -8049,7 +8063,8 @@ public final class LockscreenLyricsModule extends XposedModule {
             int primaryIndex = indexOfInlineTimedLyricLine(group, primary);
             traceInlineGroup(entry.getKey(), group, primaryIndex, "before-restore");
             primary = restoreSharedTrailingLatinToken(primary, group);
-            if (!primary.inlineTiming
+            if (allowDelayedInlineTranslations
+                    && !primary.inlineTiming
                     && group.size() == 1
                     && !containsLatinLetter(primary.text)) {
                 // In a mixed enhanced-LRC payload, a lone non-inline non-Latin line is almost
@@ -8099,7 +8114,8 @@ public final class LockscreenLyricsModule extends XposedModule {
         attachDelayedInlineTranslations(model, orphanTranslations);
         traceLyricParse("inline-built lines=" + model.lines.size()
                 + " translations=" + model.translationCount()
-                + " orphanTranslations=" + orphanTranslations.size());
+                + " orphanTranslations=" + orphanTranslations.size()
+                + " delayedInlineTranslations=" + allowDelayedInlineTranslations);
         return model;
     }
 
@@ -8590,14 +8606,34 @@ public final class LockscreenLyricsModule extends XposedModule {
                     group.timeMillis,
                     normalizedDisplayText,
                     occurrence);
-            model.officialLines.add(wordLine);
+            boolean displayMatchesMainText =
+                    matchesWordLineText(wordLine, normalizedDisplayText);
+            model.officialLines.add(displayMatchesMainText ? wordLine : null);
+            boolean usableTranslationAlias = wordLine != null
+                    && !displayMatchesMainText
+                    && TextUtils.isEmpty(wordLine.translation)
+                    && isUsableOfficialTranslationAlias(wordLine, displayText);
+            traceOfficialAliasMapping(
+                    model,
+                    model.officialLines.size() - 1,
+                    group,
+                    primaryIndex,
+                    displayText,
+                    occurrence,
+                    wordLine,
+                    displayMatchesMainText,
+                    usableTranslationAlias);
             if (wordLine == null) {
                 continue;
             }
-            wordLine.displayText = displayText;
-            applied++;
-            if (TextUtils.isEmpty(firstAlias)) {
-                firstAlias = displayText;
+            if (displayMatchesMainText) {
+                wordLine.displayText = displayText;
+                applied++;
+                if (TextUtils.isEmpty(firstAlias)) {
+                    firstAlias = displayText;
+                }
+            } else if (usableTranslationAlias) {
+                wordLine.translation = displayText;
             }
             for (int i = 0; i < group.texts.size(); i++) {
                 if (i == primaryIndex || !TextUtils.isEmpty(wordLine.translation)) {
@@ -8619,6 +8655,57 @@ public final class LockscreenLyricsModule extends XposedModule {
             info("Applied official lyric display aliases, aliases=" + applied
                     + ", first=" + shortenForLog(firstAlias));
         }
+    }
+
+    private static void traceOfficialAliasMapping(
+            WordLyricModel model,
+            int officialIndex,
+            TimedLyricGroup group,
+            int primaryIndex,
+            String displayText,
+            int occurrence,
+            WordLine wordLine,
+            boolean displayMatchesMainText,
+            boolean usableTranslationAlias) {
+        if (!LYRIC_PARSE_TRACE_ENABLED) {
+            return;
+        }
+        traceLyricParse("official-alias#" + officialIndex
+                + " time=" + (group == null ? "" : formatLrcTime(group.timeMillis))
+                + " primaryIndex=" + primaryIndex
+                + " occurrence=" + occurrence
+                + " mappedIndex=" + (model == null ? -1 : model.indexOfLine(wordLine))
+                + " matchMain=" + displayMatchesMainText
+                + " useAsTranslation=" + usableTranslationAlias
+                + " display=\"" + limitTraceValue(displayText, 360) + "\""
+                + " mapped=" + describeWordLine(wordLine, false)
+                + " texts=" + limitTraceValue(
+                group == null ? "" : String.valueOf(group.texts),
+                900));
+    }
+
+    private static boolean isUsableOfficialTranslationAlias(
+            WordLine wordLine,
+            String displayText) {
+        if (wordLine == null || TextUtils.isEmpty(displayText)) {
+            return false;
+        }
+        String normalizedDisplayText = normalizeLine(displayText);
+        if (TextUtils.isEmpty(normalizedDisplayText)
+                || normalizedDisplayText.equals(wordLine.normalizedText)
+                || LockscreenIntegrationPolicy.sameLyricVariant(
+                wordLine.text,
+                displayText)
+                || LyricLineVariantSelector.isLikelyJapaneseRomanization(
+                wordLine.text,
+                displayText)
+                || LyricLineVariantSelector.isLikelyPhoneticVariant(
+                java.util.Arrays.asList(wordLine.text, displayText),
+                0,
+                displayText)) {
+            return false;
+        }
+        return !containsLatinLetter(wordLine.text) || !containsLatinLetter(displayText);
     }
 
     private static WordLine findOfficialWordLine(
@@ -8856,10 +8943,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         WordLyricModel model = currentWordLyricModel;
         WordLine hintedLine = model == null
                 ? null
-                : model.lineAtOfficialIndex(lastLyricsRecyclerIndex);
-        if (hintedLine == null && model != null) {
-            hintedLine = model.lineAt(lastLyricsRecyclerIndex);
-        }
+                : model.lineAtAdapterIndex(lastLyricsRecyclerIndex);
         if (hintedLine != null) {
             return hintedLine.timeMillis;
         }
@@ -11691,6 +11775,16 @@ public final class LockscreenLyricsModule extends XposedModule {
             return index >= 0 && index < officialLines.size()
                     ? officialLines.get(index)
                     : null;
+        }
+
+        WordLine lineAtAdapterIndex(int index) {
+            if (index < 0) {
+                return null;
+            }
+            if (!officialLines.isEmpty() && index < officialLines.size()) {
+                return officialLines.get(index);
+            }
+            return lineAt(index);
         }
 
         int indexOfLine(WordLine target) {

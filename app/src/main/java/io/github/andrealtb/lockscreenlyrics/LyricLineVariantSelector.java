@@ -21,6 +21,13 @@ final class LyricLineVariantSelector {
                     "tong", "wa", "wai", "wing", "wui", "wun", "ya", "yau",
                     "yi", "yiu", "yong", "you", "yung", "zai", "zi", "ziu",
                     "zoi", "zong", "zou", "zui"));
+    private static final Set<String> COMMON_ENGLISH_LYRIC_TOKENS =
+            new HashSet<>(Arrays.asList(
+                    "a", "am", "an", "and", "are", "be", "but", "cause",
+                    "coz", "do", "dont", "dream", "false", "for", "hate",
+                    "how", "i", "in", "is", "it", "just", "love", "not",
+                    "of", "on", "real", "that", "the", "this", "to", "we",
+                    "what", "when", "where", "who", "why", "yeah", "you"));
 
     private LyricLineVariantSelector() {
     }
@@ -39,6 +46,11 @@ final class LyricLineVariantSelector {
             }
         }
         int romanizationIndex = findLikelyJapaneseRomanizationIndex(texts);
+        if (romanizationIndex >= 0
+                && isLikelyWesternLyricLine(texts.get(romanizationIndex))
+                && hasOtherCjkTranslationCandidate(texts, romanizationIndex, texts.get(romanizationIndex))) {
+            romanizationIndex = -1;
+        }
         if (romanizationIndex >= 0) {
             int cjkBeforeRomanization = firstCjkTextBefore(texts, romanizationIndex);
             if (cjkBeforeRomanization >= 0) {
@@ -285,6 +297,42 @@ final class LyricLineVariantSelector {
             }
         }
         return -1;
+    }
+
+    private static boolean isLikelyWesternLyricLine(String text) {
+        String value = nullToEmpty(text).trim();
+        if (value.isEmpty()
+                || !containsLatinLetter(value)
+                || containsCjkScript(value)
+                || containsJapaneseMarker(value)) {
+            return false;
+        }
+        List<String> tokens = latinTokens(value);
+        if (tokens.size() < 2) {
+            return false;
+        }
+        int commonTokens = 0;
+        int commonWordTokens = 0;
+        int repeatedTokens = 0;
+        java.util.HashMap<String, Integer> counts = new java.util.HashMap<>();
+        for (String token : tokens) {
+            if (COMMON_ENGLISH_LYRIC_TOKENS.contains(token)) {
+                commonTokens++;
+                if (token.length() > 1) {
+                    commonWordTokens++;
+                }
+            }
+            Integer count = counts.get(token);
+            counts.put(token, count == null ? 1 : count + 1);
+        }
+        for (Integer count : counts.values()) {
+            if (count != null && count >= 2) {
+                repeatedTokens += count;
+            }
+        }
+        return commonWordTokens >= 2
+                && commonTokens >= 2
+                && (commonTokens * 2 >= tokens.size() || repeatedTokens >= 2);
     }
 
     private static int findLikelyCjkPhoneticVariantIndex(List<String> texts) {

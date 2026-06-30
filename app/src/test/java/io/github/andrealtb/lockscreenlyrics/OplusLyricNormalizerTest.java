@@ -17,6 +17,20 @@ public final class OplusLyricNormalizerTest {
     }
 
     @Test
+    public void repeatedEnglishPhraseRemainsOfficialPrimaryLine() {
+        String lrc = "[00:02.67]We are, we are, we are\n"
+                + "[00:02.67]\u6211\u4eec\u53ea\u662f\n"
+                + "[00:05.10]We are not beautiful\n"
+                + "[00:05.10]\u60f3\u62e5\u6709\u5e73\u51e1\u5feb\u4e50\u7684\u4eba";
+
+        String normalized = OplusLyricNormalizer.normalizeForOfficialList(lrc);
+
+        assertEquals("[00:00.000]We are, we are, we are\n"
+                + "[00:05.100]We are not beautiful\n"
+                + "[00:13.100]\u200B", normalized);
+    }
+
+    @Test
     public void japaneseMainLineWinsOverSameTimestampRomaji() {
         String lrc = "[00:30.436]<00:30.436>\u3053<00:30.676>\u3093<00:30.916>\u306a"
                 + "<00:31.413>\u79c1<00:32.526>\u306e<00:33.422>\u672a<00:33.470>\u719f"

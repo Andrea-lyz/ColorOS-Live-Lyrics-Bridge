@@ -76,6 +76,28 @@ public final class LyricLineVariantSelectorTest {
     }
 
     @Test
+    public void repeatedEnglishPhraseDoesNotLoseToChineseTranslationAsRomaji() {
+        List<String> texts = Arrays.asList(
+                "We are, we are, we are",
+                "\u6211\u4eec\u53ea\u662f");
+
+        int primaryIndex = LyricLineVariantSelector.findPrimaryTextIndex(texts);
+
+        assertEquals(0, primaryIndex);
+    }
+
+    @Test
+    public void repeatedEnglishQuestionDoesNotLoseToChineseTranslationAsRomaji() {
+        List<String> texts = Arrays.asList(
+                "Is it? Is it?",
+                "\u662f\u5417\uff1f\u662f\u5417\uff1f");
+
+        int primaryIndex = LyricLineVariantSelector.findPrimaryTextIndex(texts);
+
+        assertEquals(0, primaryIndex);
+    }
+
+    @Test
     public void romajiOnlyLaneStillYieldsCjkTextWhenNoJapaneseSourceIsPresent() {
         List<String> texts = Arrays.asList(
                 "ra i ra i ra ku ra ku ha n se n ko k ka",
