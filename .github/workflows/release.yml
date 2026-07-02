@@ -390,24 +390,50 @@ jobs:
             exit 1
           fi
           notes_file=".github/release-notes/${VERSION_NAME}.md"
+          body_file="$RUNNER_TEMP/source-release-body.md"
+          donation_image_url="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/main/PY_QR.png"
+          append_donation() {
+            local file="$1"
+            local image_url="$2"
+            perl -0pi -e 's/\n?<!-- donation:start -->.*?<!-- donation:end -->\n?/\n/s' "$file"
+            {
+              printf '\n\n<!-- donation:start -->\n'
+              printf '## Donate\n\n'
+              printf '<img src="%s" alt="WeChat and Alipay donation QR code" width="600" height="400">\n' "$image_url"
+              printf '<!-- donation:end -->\n'
+            } >> "$file"
+          }
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             if [[ -f "$notes_file" ]]; then
-              gh release edit "$RELEASE_TAG" \
+              cp "$notes_file" "$body_file"
+            else
+              gh release view "$RELEASE_TAG" \
                 --repo "$GITHUB_REPOSITORY" \
-                --title "$RELEASE_TAG" \
-                --notes-file "$notes_file"
+                --json body \
+                --jq '.body // ""' > "$body_file"
             fi
+            append_donation "$body_file" "$donation_image_url"
+            gh release edit "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$RELEASE_TAG" \
+              --notes-file "$body_file"
             gh release upload "$RELEASE_TAG" "${apk_files[@]}" --repo "$GITHUB_REPOSITORY" --clobber
           elif [[ -f "$notes_file" ]]; then
+            cp "$notes_file" "$body_file"
+            append_donation "$body_file" "$donation_image_url"
             gh release create "$RELEASE_TAG" "${apk_files[@]}" \
               --repo "$GITHUB_REPOSITORY" \
               --title "$RELEASE_TAG" \
-              --notes-file "$notes_file"
+              --notes-file "$body_file"
           else
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+              -f tag_name="$RELEASE_TAG" \
+              --jq '.body // ""' > "$body_file"
+            append_donation "$body_file" "$donation_image_url"
             gh release create "$RELEASE_TAG" "${apk_files[@]}" \
               --repo "$GITHUB_REPOSITORY" \
               --title "$RELEASE_TAG" \
-              --generate-notes
+              --notes-file "$body_file"
           fi
 
       - name: Publish LSP repository release
@@ -422,23 +448,47 @@ jobs:
           set -euo pipefail
           mapfile -t apk_files < <(find dist -name '*.apk' -type f | sort)
           notes_file=".github/release-notes/${VERSION_NAME}.md"
+          body_file="$RUNNER_TEMP/lsp-release-body.md"
+          donation_image_url="https://raw.githubusercontent.com/${LSP_REPO}/main/PY_QR.png"
           notes="ColorOS Live Lyrics Bridge ${RELEASE_TAG}. Includes LyricProvider QQ Music, 163 Music, Apple Music, Poweramp, and Spotify APKs as auxiliary release assets."
+          append_donation() {
+            local file="$1"
+            local image_url="$2"
+            perl -0pi -e 's/\n?<!-- donation:start -->.*?<!-- donation:end -->\n?/\n/s' "$file"
+            {
+              printf '\n\n<!-- donation:start -->\n'
+              printf '## Donate\n\n'
+              printf '<img src="%s" alt="WeChat and Alipay donation QR code" width="600" height="400">\n' "$image_url"
+              printf '<!-- donation:end -->\n'
+            } >> "$file"
+          }
           if gh release view "$LSP_TAG" --repo "$LSP_REPO" >/dev/null 2>&1; then
             if [[ -f "$notes_file" ]]; then
-              gh release edit "$LSP_TAG" \
+              cp "$notes_file" "$body_file"
+            else
+              gh release view "$LSP_TAG" \
                 --repo "$LSP_REPO" \
-                --title "$RELEASE_TAG" \
-                --notes-file "$notes_file"
+                --json body \
+                --jq '.body // ""' > "$body_file"
             fi
+            append_donation "$body_file" "$donation_image_url"
+            gh release edit "$LSP_TAG" \
+              --repo "$LSP_REPO" \
+              --title "$RELEASE_TAG" \
+              --notes-file "$body_file"
             gh release upload "$LSP_TAG" "${apk_files[@]}" --repo "$LSP_REPO" --clobber
           elif [[ -f "$notes_file" ]]; then
+            cp "$notes_file" "$body_file"
+            append_donation "$body_file" "$donation_image_url"
             gh release create "$LSP_TAG" "${apk_files[@]}" \
               --repo "$LSP_REPO" \
               --title "$RELEASE_TAG" \
-              --notes-file "$notes_file"
+              --notes-file "$body_file"
           else
+            printf '%s\n' "$notes" > "$body_file"
+            append_donation "$body_file" "$donation_image_url"
             gh release create "$LSP_TAG" "${apk_files[@]}" \
               --repo "$LSP_REPO" \
               --title "$RELEASE_TAG" \
-              --notes "$notes"
+              --notes-file "$body_file"
           fi

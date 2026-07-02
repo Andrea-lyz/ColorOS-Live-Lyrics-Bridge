@@ -114,3 +114,9 @@ Source, integration documentation, and support:
 - [Source repository](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge)
 - [Player integration protocol](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/blob/main/docs/PLAYER_INTEGRATION.md)
 - [Issues](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/issues)
+
+### Support
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Xposed-Modules-Repo/io.github.andrealtb.lockscreenlyrics/main/PY_QR.png" alt="WeChat and Alipay donation QR code" width="600" height="400">
+</p>

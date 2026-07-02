@@ -225,6 +225,14 @@ LockscreenLyrics: Refreshed active lyric renderer at position=..., line=...
 
 If you only see `Skip lyricInfo injection because no fresh real lyric is cached`, the adapter has not captured a timed LRC result in the current process yet, or the current song only has untimed lyrics.
 
+## Support
+
+If this project helps you, donations are welcome and appreciated.
+
+<p align="center">
+  <img src="PY_QR.png" alt="WeChat and Alipay donation QR code" width="600" height="400">
+</p>
+
 ## License and acknowledgements
 
 Copyright 2026 Andrea-lyz. This project is released under the [Apache License 2.0](LICENSE).
