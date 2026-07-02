@@ -225,6 +225,14 @@ LockscreenLyrics: Refreshed active lyric renderer at position=..., line=...
 
 如果只看到 `Skip lyricInfo injection because no fresh real lyric is cached`，说明当前进程里适配器还没有抓到时间轴歌词，或者当前歌曲只有非时间轴歌词。
 
+## 支持项目
+
+如果这个项目帮到了你，欢迎通过微信/支付宝捐赠支持。
+
+<p align="center">
+  <img src="PY_QR.png" alt="微信/支付宝捐赠二维码" width="600" height="400">
+</p>
+
 ## 开源协议与致谢
 
 Copyright 2026 Andrea-lyz。本项目采用 [Apache License 2.0](LICENSE) 开源。
