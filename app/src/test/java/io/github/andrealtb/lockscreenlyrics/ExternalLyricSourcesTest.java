@@ -18,6 +18,9 @@ public class ExternalLyricSourcesTest {
         assertEquals(
                 "com.apple.android.music",
                 ExternalLyricSources.playerPackageForSource("lyricprovider/apple-music"));
+        assertEquals(
+                "com.luna.music",
+                ExternalLyricSources.playerPackageForSource("lyricprovider/qishui-music"));
         assertEquals("", ExternalLyricSources.playerPackageForSource("unknown"));
     }
 
@@ -30,6 +33,7 @@ public class ExternalLyricSourcesTest {
         assertTrue(ExternalLyricSources.isBridgePlayerPackage("com.apple.android.music"));
         assertTrue(ExternalLyricSources.isBridgePlayerPackage("com.maxmpz.audioplayer"));
         assertTrue(ExternalLyricSources.isBridgePlayerPackage("com.spotify.music"));
+        assertTrue(ExternalLyricSources.isBridgePlayerPackage("com.luna.music"));
         assertFalse(ExternalLyricSources.isBridgePlayerPackage("com.example.music"));
     }
 
@@ -45,6 +49,8 @@ public class ExternalLyricSourcesTest {
                 "com.hihonor.cloudmusic"));
         assertTrue(ExternalLyricSources.canOverrideFavoriteActionWithTranslation(
                 "com.apple.android.music"));
+        assertTrue(ExternalLyricSources.canOverrideFavoriteActionWithTranslation(
+                "com.luna.music"));
         assertFalse(ExternalLyricSources.canOverrideFavoriteActionWithTranslation(
                 "com.maxmpz.audioplayer"));
         assertFalse(ExternalLyricSources.canOverrideFavoriteActionWithTranslation(
@@ -65,6 +71,7 @@ public class ExternalLyricSourcesTest {
     @Test
     public void sourceCapabilitiesStayProviderSpecific() {
         assertTrue(ExternalLyricSources.supportsPlaybackState("lyricprovider/spotify-music"));
+        assertTrue(ExternalLyricSources.supportsPlaybackState("lyricprovider/qishui-music"));
         assertFalse(ExternalLyricSources.supportsPlaybackState("lyricprovider/poweramp-music"));
         assertTrue(ExternalLyricSources.canPromoteAsAuthoritative(
                 "lyricprovider/poweramp-music",
@@ -76,6 +83,11 @@ public class ExternalLyricSourcesTest {
                 "lyricprovider/poweramp-music"));
         assertFalse(ExternalLyricSources.allowsTitleOnlyFallbackMatch(
                 "lyricprovider/spotify-music"));
+        assertFalse(ExternalLyricSources.canPromoteAsAuthoritative(
+                "lyricprovider/qishui-music",
+                "com.luna.music"));
+        assertFalse(ExternalLyricSources.allowsTitleOnlyFallbackMatch(
+                "lyricprovider/qishui-music"));
         assertFalse(ExternalLyricSources.supportsPlaybackState("lyricprovider/apple-music"));
         assertFalse(ExternalLyricSources.canPromoteAsAuthoritative(
                 "lyricprovider/apple-music",

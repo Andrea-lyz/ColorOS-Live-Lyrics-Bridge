@@ -12,7 +12,7 @@ An LSPosed/libxposed API 102 module that bridges timed lyrics from supported And
 
 The module currently ships DexKit-based compatibility adapters for Salt Player and ConePlayer plus SystemUI renderer hooks. Other players should integrate by publishing the `lyricInfo` contract themselves.
 
-Release assets also include optional LyricProvider APKs for QQ Music, NetEase Cloud Music, Apple Music, Poweramp, and Spotify. They are separate LSPosed modules that forward complete lyric data to ColorOS Live Lyrics Bridge and Lyricon/词幕.
+Release assets also include optional LyricProvider APKs for QQ Music, NetEase Cloud Music, Apple Music, Poweramp, Spotify, and QiShui Music. They are separate LSPosed modules that forward complete lyric data to ColorOS Live Lyrics Bridge and Lyricon/词幕.
 
 A player-independent transaction layer associates lyric callbacks with media metadata. Events with media IDs, URIs, or complete title/artist hints bind directly; anonymous passive callbacks wait for the next stable metadata observation so preloads and instrumentals cannot shift lyrics across tracks.
 
@@ -104,6 +104,7 @@ LyricProvider-163Music-<tag>.apk
 LyricProvider-AppleMusic-<tag>.apk
 LyricProvider-Poweramp-<tag>.apk
 LyricProvider-Spotify-<tag>.apk
+LyricProvider-QiShui-<tag>.apk
 ```
 
 Provider APKs are not part of the Bridge module's static scope. Install only the provider you need and enable that provider module for its target player:
@@ -113,8 +114,11 @@ Provider APKs are not part of the Bridge module's static scope. Install only the
 - `LyricProvider-AppleMusic`: `com.apple.android.music` (word-timed and translated lyrics only; background vocals and duet lanes are excluded)
 - `LyricProvider-Poweramp`: `com.maxmpz.audioplayer`
 - `LyricProvider-Spotify`: `com.spotify.music`
+- `LyricProvider-QiShui`: `com.luna.music`
 
 Then restart the target player and SystemUI. Providers keep compatibility with Lyricon/词幕 and send full lyric documents to ColorOS Live Lyrics Bridge, including word timing and translations when the player exposes them.
+
+QiShui Music also requires enabling LSPosed Manager's "Restore inline hooks" option for QiShui Music so `libart.so` is cleaned for listed apps; otherwise QiShui Music may show a version-safety warning and the provider may not work normally.
 
 ## Compatibility Adapters
 
@@ -183,7 +187,7 @@ The release workflow expects these repository secrets:
 - `LSP_REPO_TOKEN`: PAT with repository-content and release write access to `Xposed-Modules-Repo/io.github.andrealtb.lockscreenlyrics`.
 - `LYRIC_PROVIDER_TOKEN`: optional PAT for checking out `Andrea-lyz/LyricProvider` when that repository is private.
 
-Release assets are published as `ColorOS-Live-Lyrics-Bridge-<tag>.apk`, `LyricProvider-QQMusic-<tag>.apk`, `LyricProvider-163Music-<tag>.apk`, `LyricProvider-AppleMusic-<tag>.apk`, `LyricProvider-Poweramp-<tag>.apk`, and `LyricProvider-Spotify-<tag>.apk`.
+Release assets are published as `ColorOS-Live-Lyrics-Bridge-<tag>.apk`, `LyricProvider-QQMusic-<tag>.apk`, `LyricProvider-163Music-<tag>.apk`, `LyricProvider-AppleMusic-<tag>.apk`, `LyricProvider-Poweramp-<tag>.apk`, `LyricProvider-Spotify-<tag>.apk`, and `LyricProvider-QiShui-<tag>.apk`.
 
 Install and test with a built-in adapter:
 

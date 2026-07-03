@@ -19,6 +19,37 @@ final class LyricLineBreakPolicy {
     private LyricLineBreakPolicy() {
     }
 
+    static boolean shouldBalanceUntranslatedText(
+            String text,
+            int start,
+            int end,
+            float availableWidth,
+            WidthMeasurer measurer) {
+        if (text == null
+                || measurer == null
+                || start < 0
+                || end > text.length()
+                || start >= end
+                || availableWidth <= 0f
+                || measurer.measure(text, start, end) <= availableWidth) {
+            return false;
+        }
+        if (!textContainsSpace(text, start, end)) {
+            return false;
+        }
+        int visibleCharacters = 0;
+        for (int i = start; i < end; i++) {
+            char character = text.charAt(i);
+            if (character == ':' || character == '\uff1a') {
+                return false;
+            }
+            if (!Character.isWhitespace(character)) {
+                visibleCharacters++;
+            }
+        }
+        return visibleCharacters >= 8;
+    }
+
     static int chooseWrapEnd(
             String text,
             int start,
@@ -62,6 +93,15 @@ final class LyricLineBreakPolicy {
             boundary = adjustForCjkPunctuation(text, start, end, boundary);
         }
         return Math.max(start + 1, Math.min(end, boundary));
+    }
+
+    private static boolean textContainsSpace(String text, int start, int end) {
+        for (int i = start; i < end; i++) {
+            if (Character.isWhitespace(text.charAt(i))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static int adjustForCjkPunctuation(

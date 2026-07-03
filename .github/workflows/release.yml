@@ -357,6 +357,59 @@ jobs:
           path: out/*.apk
           if-no-files-found: error
 
+  build-qishui-provider:
+    name: Build LyricProvider QiShui Music
+    runs-on: ubuntu-latest
+    needs: build-bridge
+    steps:
+      - name: Checkout LyricProvider
+        uses: actions/checkout@v4
+        with:
+          repository: Andrea-lyz/LyricProvider
+          ref: ${{ github.event.inputs.lyric_provider_ref || 'master' }}
+          token: ${{ secrets.LYRIC_PROVIDER_TOKEN || github.token }}
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode release keystore
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "${{ secrets.SIGNING_KEY }}" | base64 --decode > "$RUNNER_TEMP/release.jks"
+
+      - name: Build signed QiShui Music provider release
+        shell: bash
+        env:
+          RELEASE_STORE_FILE: ${{ runner.temp }}/release.jks
+          RELEASE_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          chmod +x ./gradlew
+          ./gradlew --no-daemon :qishui-music:assembleRelease
+          mkdir -p out
+          provider_apk="$(find qishui-music/build/outputs/apk/release -name '*.apk' -type f | head -n1)"
+          if [[ -z "$provider_apk" ]]; then
+            echo "QiShui Music provider APK not found" >&2
+            exit 1
+          fi
+          cp "$provider_apk" "out/LyricProvider-QiShui-${{ needs.build-bridge.outputs.release_tag }}.apk"
+
+      - name: Upload QiShui Music provider artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lyricprovider-qishui-apk
+          path: out/*.apk
+          if-no-files-found: error
+
   publish:
     name: Publish GitHub and LSP releases
     runs-on: ubuntu-latest
@@ -367,6 +420,7 @@ jobs:
       - build-apple-provider
       - build-poweramp-provider
       - build-spotify-provider
+      - build-qishui-provider
     steps:
       - name: Checkout bridge release notes
         uses: actions/checkout@v4
@@ -450,7 +504,7 @@ jobs:
           notes_file=".github/release-notes/${VERSION_NAME}.md"
           body_file="$RUNNER_TEMP/lsp-release-body.md"
           donation_image_url="https://raw.githubusercontent.com/${LSP_REPO}/main/PY_QR.png"
-          notes="ColorOS Live Lyrics Bridge ${RELEASE_TAG}. Includes LyricProvider QQ Music, 163 Music, Apple Music, Poweramp, and Spotify APKs as auxiliary release assets."
+          notes="ColorOS Live Lyrics Bridge ${RELEASE_TAG}. Includes LyricProvider QQ Music, 163 Music, Apple Music, Poweramp, Spotify, and QiShui Music APKs as auxiliary release assets."
           append_donation() {
             local file="$1"
             local image_url="$2"

@@ -7,6 +7,8 @@ final class ExternalLyricSources {
     static final String NETEASE_MUSIC_HONOR_PLAYER_PACKAGE = "com.hihonor.cloudmusic";
     static final String SPOTIFY_PLAYER_PACKAGE = "com.spotify.music";
     static final String SPOTIFY_SOURCE = "lyricprovider/spotify-music";
+    static final String QISHUI_MUSIC_PLAYER_PACKAGE = "com.luna.music";
+    static final String QISHUI_MUSIC_SOURCE = "lyricprovider/qishui-music";
     static final String POWERAMP_PLAYER_PACKAGE = "com.maxmpz.audioplayer";
     static final String POWERAMP_SOURCE = "lyricprovider/poweramp-music";
     static final long POWERAMP_SYSTEMUI_TRACK_AUTHORITY_MS = 12_000L;
@@ -16,6 +18,7 @@ final class ExternalLyricSources {
     private static final Source[] EXTERNAL_SOURCES = {
             new Source(APPLE_MUSIC_SOURCE, APPLE_MUSIC_PLAYER_PACKAGE, false, false, false),
             new Source(SPOTIFY_SOURCE, SPOTIFY_PLAYER_PACKAGE, true, false, false),
+            new Source(QISHUI_MUSIC_SOURCE, QISHUI_MUSIC_PLAYER_PACKAGE, true, false, false),
             new Source(POWERAMP_SOURCE, POWERAMP_PLAYER_PACKAGE, false, true, true)
     };
 
@@ -26,7 +29,8 @@ final class ExternalLyricSources {
             NETEASE_MUSIC_HONOR_PLAYER_PACKAGE,
             APPLE_MUSIC_PLAYER_PACKAGE,
             POWERAMP_PLAYER_PACKAGE,
-            SPOTIFY_PLAYER_PACKAGE
+            SPOTIFY_PLAYER_PACKAGE,
+            QISHUI_MUSIC_PLAYER_PACKAGE
     };
 
     private ExternalLyricSources() {
@@ -87,7 +91,8 @@ final class ExternalLyricSources {
                 || QQ_MUSIC_HD_PLAYER_PACKAGE.equals(packageName)
                 || NETEASE_MUSIC_PLAYER_PACKAGE.equals(packageName)
                 || NETEASE_MUSIC_HONOR_PLAYER_PACKAGE.equals(packageName)
-                || APPLE_MUSIC_PLAYER_PACKAGE.equals(packageName);
+                || APPLE_MUSIC_PLAYER_PACKAGE.equals(packageName)
+                || QISHUI_MUSIC_PLAYER_PACKAGE.equals(packageName);
     }
 
     private static Source findBySource(String source) {

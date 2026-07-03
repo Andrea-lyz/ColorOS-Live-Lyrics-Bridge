@@ -56,6 +56,30 @@ public final class LyricLineBreakPolicyTest {
     }
 
     @Test
+    public void fittingUntranslatedEnglishTextDoesNotBalanceAcrossTwoLines() {
+        String text = "Forgive me, Peter";
+
+        assertFalse(LyricLineBreakPolicy.shouldBalanceUntranslatedText(
+                text,
+                0,
+                text.length(),
+                text.length(),
+                CODE_UNIT_WIDTH));
+    }
+
+    @Test
+    public void overflowingUntranslatedEnglishTextCanBalanceAcrossTwoLines() {
+        String text = "Preserved from when we were just kids";
+
+        assertTrue(LyricLineBreakPolicy.shouldBalanceUntranslatedText(
+                text,
+                0,
+                text.length(),
+                20f,
+                CODE_UNIT_WIDTH));
+    }
+
+    @Test
     public void cjkClosingPunctuationDoesNotStartNextLine() {
         String text = "\u805e\u3044\u3066\u79c1\u3055\u3001\u3053\u306e\u524d";
 
