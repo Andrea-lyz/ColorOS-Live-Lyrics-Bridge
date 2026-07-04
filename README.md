@@ -168,7 +168,7 @@ The local `../LSP_api` folder is libxposed API `102.0.0`. This project follows i
 APK output:
 
 ```text
-.gradle-local-build\app\outputs\apk\debug\app-debug.apk
+app\build\outputs\apk\debug\app-debug.apk
 ```
 
 JDK 21 is required to compile the Lyrics Core dependency. The helper discovers it from `SALT_LYRIC_JAVA_HOME`, `JAVA_HOME`, or common local JDK locations, and maps the repository to a temporary ASCII drive so Gradle works reliably when the checkout path contains non-ASCII characters. The app itself still targets Java 17 bytecode for Android compatibility.
@@ -192,7 +192,7 @@ Release assets are published as `ColorOS-Live-Lyrics-Bridge-<tag>.apk`, `LyricPr
 Install and test with a built-in adapter:
 
 ```powershell
-adb install -r .gradle-local-build\app\outputs\apk\debug\app-debug.apk
+adb install -r app\build\outputs\apk\debug\app-debug.apk
 adb shell am force-stop com.salt.music
 # Or: adb shell am force-stop ink.trantor.coneplayer
 ```

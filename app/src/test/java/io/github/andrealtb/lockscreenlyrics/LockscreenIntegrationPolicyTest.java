@@ -166,6 +166,16 @@ public class LockscreenIntegrationPolicyTest {
     }
 
     @Test
+    public void ordinaryLatinPrefixIsNotTreatedAsSameLyricVariant() {
+        assertFalse(LockscreenIntegrationPolicy.sameLyricVariant(
+                "He did",
+                "He did it"));
+        assertFalse(LockscreenIntegrationPolicy.sameLyricVariant(
+                "I think he did it",
+                "I think he did it but I just can't prove it"));
+    }
+
+    @Test
     public void distinctLanguageLineRemainsATranslation() {
         assertEquals(false, LockscreenIntegrationPolicy.sameLyricVariant(
                 "Put your lips close to mine",
@@ -243,6 +253,24 @@ public class LockscreenIntegrationPolicyTest {
     }
 
     @Test
+    public void largeDominantInlineTimingGapIsSuspicious() {
+        assertTrue(LockscreenIntegrationPolicy.hasSuspiciousInlineTimingGap(
+                3,
+                9_400L,
+                25_060L,
+                15_300L));
+    }
+
+    @Test
+    public void evenlySpacedLongInlineTimingIsNotSuspicious() {
+        assertFalse(LockscreenIntegrationPolicy.hasSuspiciousInlineTimingGap(
+                8,
+                0L,
+                28_000L,
+                4_000L));
+    }
+
+    @Test
     public void progressiveInlinePrefixIsKeptBeforeLatinWord() {
         assertTrue(LockscreenIntegrationPolicy.isLikelyInlineTimedMainLyricPrefix(
                 3,
@@ -267,6 +295,15 @@ public class LockscreenIntegrationPolicyTest {
                 3,
                 6_100L,
                 6_100L));
+    }
+
+    @Test
+    public void translationNeverReplacesHiddenMainLyricLine() {
+        assertFalse(LockscreenIntegrationPolicy.shouldUseTranslationReplacementTransition(
+                true,
+                3,
+                2,
+                0.5f));
     }
 
     @Test

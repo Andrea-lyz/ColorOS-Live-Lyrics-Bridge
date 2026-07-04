@@ -157,11 +157,6 @@ function Copy-GradleCacheIfMissing {
     if (-not (Test-Path -LiteralPath $Source -PathType Container)) {
         return
     }
-    if ((Test-Path -LiteralPath $Destination -PathType Container) -and
-            [string]::IsNullOrWhiteSpace($env:SALT_LYRIC_REFRESH_GRADLE_CACHE)) {
-        return
-    }
-
     New-Item -ItemType Directory -Force -Path $Destination | Out-Null
     & robocopy $Source $Destination /E /XF *.lock *.lck /XD daemon workers .tmp `
         /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
@@ -192,43 +187,6 @@ function Initialize-GradleUserHome {
     Copy-GradleCacheIfMissing (Join-Path $copySource 'wrapper') (Join-Path $fallback 'wrapper')
     Copy-GradleCacheIfMissing (Join-Path $copySource 'caches') (Join-Path $fallback 'caches')
     Write-Host "Using writable Gradle user home: $fallback"
-    return $fallback
-}
-
-function Test-DirectoryWritable {
-    param([string] $Path)
-
-    if ([string]::IsNullOrWhiteSpace($Path)) {
-        return $false
-    }
-    try {
-        New-Item -ItemType Directory -Force -Path $Path | Out-Null
-        $probe = Join-Path $Path 'write-probe.tmp'
-        $stream = [System.IO.File]::Open(
-            $probe,
-            [System.IO.FileMode]::Create,
-            [System.IO.FileAccess]::ReadWrite,
-            [System.IO.FileShare]::ReadWrite)
-        $stream.Close()
-        Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue
-        return $true
-    } catch {
-        return $false
-    }
-}
-
-function Initialize-BuildDirectory {
-    param([string] $DefaultPath)
-
-    if (Test-DirectoryWritable $DefaultPath) {
-        return $DefaultPath
-    }
-
-    $fallback = Join-Path $env:TEMP 'salt-lyric-build'
-    if (-not (Test-DirectoryWritable $fallback)) {
-        throw "No writable Gradle build directory is available. Tried $DefaultPath and $fallback"
-    }
-    Write-Host "Using writable Gradle build directory: $fallback"
     return $fallback
 }
 
@@ -294,6 +252,41 @@ function Initialize-ProjectOverlay {
     }
     Write-Host "Using writable project overlay: $overlay"
     return $overlay
+}
+
+function Sync-AppBuildOutputsFromOverlay {
+    param(
+        [string] $OverlayRoot,
+        [string] $DestinationRoot
+    )
+
+    if ([string]::IsNullOrWhiteSpace($OverlayRoot) -or
+            [string]::IsNullOrWhiteSpace($DestinationRoot) -or
+            [System.IO.Path]::GetFullPath($OverlayRoot).Equals(
+                [System.IO.Path]::GetFullPath($DestinationRoot),
+                [System.StringComparison]::OrdinalIgnoreCase)) {
+        return
+    }
+
+    $sourceOutputs = Join-Path $OverlayRoot 'app\build\outputs'
+    if (-not (Test-Path -LiteralPath $sourceOutputs -PathType Container)) {
+        return
+    }
+
+    $destinationOutputs = Join-Path $DestinationRoot 'app\build\outputs'
+    $resolvedDestinationRoot = [System.IO.Path]::GetFullPath($DestinationRoot)
+    $resolvedDestinationOutputs = [System.IO.Path]::GetFullPath($destinationOutputs)
+    if (-not $resolvedDestinationOutputs.StartsWith(
+            $resolvedDestinationRoot,
+            [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing to sync build outputs outside repository: $resolvedDestinationOutputs"
+    }
+
+    New-Item -ItemType Directory -Force -Path $destinationOutputs | Out-Null
+    Get-ChildItem -LiteralPath $sourceOutputs -Force | ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination $destinationOutputs -Recurse -Force
+    }
+    Write-Host "Synced app build outputs to: $destinationOutputs"
 }
 
 function Get-LocalSdkDir {
@@ -477,8 +470,7 @@ try {
         throw "Failed to create temporary ASCII Gradle path at $driveRoot"
     }
 
-    $env:SALT_LYRIC_BUILD_DIR = Initialize-BuildDirectory (
-        Join-Path $driveRoot '.gradle-local-build')
+    Remove-Item Env:SALT_LYRIC_BUILD_DIR -ErrorAction SilentlyContinue
     $env:GRADLE_USER_HOME = Initialize-GradleUserHome `
         (Join-Path $driveRoot '.gradle-user-home') `
         (Join-Path $sourceRepoRoot '.gradle-user-home')
@@ -487,7 +479,7 @@ try {
         $GradleArgs += '--no-daemon'
     }
     if ($GradleArgs -notcontains '--project-cache-dir') {
-        $projectCacheDir = Join-Path $env:SALT_LYRIC_BUILD_DIR '.project-cache'
+        $projectCacheDir = Join-Path $driveRoot '.gradle\project-cache'
         New-Item -ItemType Directory -Force -Path $projectCacheDir | Out-Null
         $GradleArgs += @('--project-cache-dir', $projectCacheDir)
     }
@@ -496,6 +488,9 @@ try {
     $pushed = $true
     & .\gradlew.bat @GradleArgs
     $exitCode = $LASTEXITCODE
+    if ($exitCode -eq 0) {
+        Sync-AppBuildOutputsFromOverlay $repoRoot $sourceRepoRoot
+    }
 } finally {
     if ($pushed) {
         Pop-Location

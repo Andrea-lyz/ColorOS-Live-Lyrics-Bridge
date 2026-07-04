@@ -435,6 +435,9 @@ final class QqMusicInternalLyricExtractor {
         if (isEmpty(text)) {
             return true;
         }
+        if (LyricMetadataFilter.isNonLyricInfoLine(text, line.startMillis)) {
+            return true;
+        }
         if (line.startMillis <= EARLY_METADATA_WINDOW_MS
                 && looksLikeTitleArtistCredit(text)) {
             return true;

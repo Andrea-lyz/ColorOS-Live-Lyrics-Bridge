@@ -1,6 +1,7 @@
 package io.github.andrealtb.lockscreenlyrics;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assume.assumeTrue;
 
@@ -84,6 +85,22 @@ public final class LyricsCoreAdapterTest {
         assertEquals("I'ma grow my hair", parsed.lines.get(1).text);
         assertEquals("我要留長頭髮", parsed.lines.get(1).translation);
         assertEquals("把錢裝進口袋裡", parsed.lines.get(2).translation);
+    }
+
+    @Test
+    public void plainLrcFallbackSkipsLyricTranslationProviderCredit() {
+        String lrc = "[00:01.00]He did it\n"
+                + "[00:01.00]\u4ed6\u80cc\u53db\u4e86\u6211\n"
+                + "[00:01.00]\u4ee5\u4e0b\u6b4c\u8bcd\u7ffb\u8bd1\u7531 Salt Player \u63d0\u4f9b\n"
+                + "[00:04.00]No, no body, no crime";
+
+        LyricsCoreAdapter.ParsedLyrics parsed = LyricsCoreAdapter.parsePlainLrc(lrc);
+
+        assertEquals(2, parsed.lines.size());
+        assertEquals("He did it", parsed.lines.get(0).text);
+        assertEquals("\u4ed6\u80cc\u53db\u4e86\u6211", parsed.lines.get(0).translation);
+        assertEquals("No, no body, no crime", parsed.lines.get(1).text);
+        assertEquals("", parsed.lines.get(1).translation);
     }
 
     @Test
@@ -312,6 +329,46 @@ public final class LyricsCoreAdapterTest {
     }
 
     @Test
+    public void userReportedNoBodyNoCrimeShortEnhancedLineKeepsPrimaryAndTranslation() {
+        String lrc = "[00:06.490]He [00:06.850]did [00:07.390]it[00:07.630]\n"
+                + "[00:06.490]\u4ed6\u80cc\u53db\u4e86\u6211\n"
+                + "[00:09.400]He [00:09.760]did [00:25.060]it[00:25.540]\n"
+                + "[00:09.400]\u4ed6\u80cc\u53db\u4e86\u6211";
+
+        assertEnhancedBilingualLine(
+                lrc,
+                6_490L,
+                "He did it",
+                "\u4ed6\u80cc\u53db\u4e86\u6211");
+        assertParsedLine(
+                LyricsCoreAdapter.parse(lrc),
+                9_400L,
+                "He did it",
+                "\u4ed6\u80cc\u53db\u4e86\u6211");
+        TimedLyricDocument document = TimedLyricDocument.fromRawLrc(lrc);
+        assertDocumentLine(document, 9_400L, "He did it", "\u4ed6\u80cc\u53db\u4e86\u6211");
+        assertDocumentWordCount(document, 9_400L, 1);
+    }
+
+    @Test
+    public void userReportedDeathByAThousandCutsOpeningKeepsEnglishMainAfterCredits() {
+        String lrc = "[by:Trap_Girl]\n"
+                + "[00:00.00]\u4f5c\u8bcd : Taylor Swift/Jack Antonoff\n"
+                + "[00:00.09]\u4f5c\u66f2 : Taylor Swift/Jack Antonoff\n"
+                + "[00:00.18]My, my, my, my\n"
+                + "[00:00.18]\u53ea\u5c5e\u4e8e\u6211\n";
+
+        LyricsCoreAdapter.ParsedLyrics parsed = LyricsCoreAdapter.parse(lrc);
+        String official = OplusLyricNormalizer.normalizeForOfficialList(lrc);
+
+        assertParsedLine(parsed, 180L, "My, my, my, my", "\u53ea\u5c5e\u4e8e\u6211");
+        assertTrue("official=" + official, official.contains("My, my, my, my"));
+        assertFalse(official.contains("\u4f5c\u8bcd"));
+        assertFalse(official.contains("\u4f5c\u66f2"));
+        assertFalse(official.contains("\u53ea\u5c5e\u4e8e\u6211"));
+    }
+
+    @Test
     public void userReportedEnhancedBilingualFilesKeepPrimaryLinesWhenSupplied() throws Exception {
         String fixtureDir = System.getProperty("lyrics.swap.fixture.dir", "");
         assumeTrue("lyrics.swap.fixture.dir was not supplied", !fixtureDir.isEmpty());
@@ -406,5 +463,16 @@ public final class LyricsCoreAdapterTest {
                 .orElseThrow();
         assertEquals(expectedText, line.text);
         assertEquals(expectedTranslation, line.translation);
+    }
+
+    private static void assertDocumentWordCount(
+            TimedLyricDocument document,
+            long startMillis,
+            int expectedWordCount) {
+        TimedLyricDocument.Line line = document.lines().stream()
+                .filter(candidate -> candidate.startMillis == startMillis)
+                .findFirst()
+                .orElseThrow();
+        assertEquals(expectedWordCount, line.words.size());
     }
 }

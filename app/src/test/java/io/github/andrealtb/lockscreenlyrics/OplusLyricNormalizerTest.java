@@ -165,4 +165,19 @@ public final class OplusLyricNormalizerTest {
                 + "[00:29.000]\u200B", normalized);
     }
 
+    @Test
+    public void lyricTranslationProviderCreditIsRemoved() {
+        String lrc = "[00:00.000]I did something bad\n"
+                + "[00:00.000]\u6211\u505a\u4e86\u4e00\u4ef6\u574f\u4e8b\n"
+                + "[00:04.000]\u4ee5\u4e0b\u6b4c\u8bcd\u7ffb\u8bd1\u7531 Salt Player \u63d0\u4f9b\n"
+                + "[00:08.000]Then why's it feel so good?\n"
+                + "[00:08.000]\u90a3\u4e3a\u4f55\u611f\u89c9\u5982\u6b64\u7f8e\u597d";
+
+        String normalized = OplusLyricNormalizer.normalizeForOfficialList(lrc);
+
+        assertEquals("[00:00.000]I did something bad\n"
+                + "[00:08.000]Then why's it feel so good?\n"
+                + "[00:16.000]\u200B", normalized);
+    }
+
 }

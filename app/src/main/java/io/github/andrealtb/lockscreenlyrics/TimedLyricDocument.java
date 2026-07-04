@@ -40,6 +40,11 @@ final class TimedLyricDocument {
                         clamp(syllable.start, 0, parsedLine.text.length()),
                         clamp(syllable.end, 0, parsedLine.text.length())));
             }
+            words = sanitizeSuspiciousWordTiming(
+                    parsedLine.startMillis,
+                    parsedLine.endMillis,
+                    parsedLine.text.length(),
+                    words);
             converted.add(new Line(
                     parsedLine.startMillis,
                     parsedLine.endMillis,
@@ -266,6 +271,7 @@ final class TimedLyricDocument {
                 nullToEmpty(primaryText)).trim();
         if (isEmpty(candidate)
                 || candidate.equals(primary)
+                || LyricMetadataFilter.isNonLyricInfoLine(candidate, -1L)
                 || LockscreenIntegrationPolicy.sameLyricVariant(primary, candidate)
                 || LyricLineVariantSelector.isLikelyJapaneseRomanization(primary, candidate)) {
             return false;
@@ -307,6 +313,40 @@ final class TimedLyricDocument {
 
     private static boolean isEmpty(String value) {
         return value == null || value.isEmpty();
+    }
+
+    private static ArrayList<Word> sanitizeSuspiciousWordTiming(
+            long lineStartMillis,
+            long lineEndMillis,
+            int textLength,
+            ArrayList<Word> words) {
+        if (words == null || words.size() < 2) {
+            return words;
+        }
+        long maxGap = 0L;
+        boolean strictlyIncreasing = true;
+        for (int index = 1; index < words.size(); index++) {
+            long gap = words.get(index).startMillis - words.get(index - 1).startMillis;
+            if (gap <= 0L) {
+                strictlyIncreasing = false;
+            }
+            maxGap = Math.max(maxGap, gap);
+        }
+        if (!LyricTimingRepair.shouldDowngradeWordTiming(
+                words.size(),
+                words.get(0).startMillis,
+                words.get(words.size() - 1).startMillis,
+                maxGap,
+                strictlyIncreasing)) {
+            return words;
+        }
+        ArrayList<Word> lineTimedWords = new ArrayList<>();
+        lineTimedWords.add(new Word(
+                lineStartMillis,
+                Math.max(lineStartMillis, lineEndMillis),
+                0,
+                textLength));
+        return lineTimedWords;
     }
 
     private static boolean containsCjkScript(String text) {

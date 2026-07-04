@@ -24,10 +24,12 @@ final class LyricLineVariantSelector {
     private static final Set<String> COMMON_ENGLISH_LYRIC_TOKENS =
             new HashSet<>(Arrays.asList(
                     "a", "am", "an", "and", "are", "be", "but", "cause",
-                    "coz", "do", "dont", "dream", "false", "for", "hate",
-                    "how", "i", "in", "is", "it", "just", "love", "not",
-                    "of", "on", "real", "that", "the", "this", "to", "we",
-                    "what", "when", "where", "who", "why", "yeah", "you"));
+                    "coz", "did", "do", "dont", "dream", "false", "for", "had",
+                    "has", "hate", "have", "he", "her", "him", "his", "how",
+                    "i", "in", "is", "it", "just", "love", "me", "my", "not",
+                    "of", "on", "over", "real", "she", "that", "the", "they", "this",
+                    "to", "was", "we", "were", "what", "when", "where", "who",
+                    "why", "with", "yeah", "you", "your"));
 
     private LyricLineVariantSelector() {
     }
@@ -445,7 +447,8 @@ final class LyricLineVariantSelector {
         }
         return value.length() >= 2
                 && value.length() <= 4
-                && value.indexOf('v') >= 0;
+                && value.indexOf('v') >= 0
+                && !COMMON_ENGLISH_LYRIC_TOKENS.contains(value);
     }
 
     private static String trailingUpperLatinToken(String text) {

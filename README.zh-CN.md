@@ -168,7 +168,7 @@ Salt 适配器已验证 Salt Player 12.0.0 正式版与 alpha07；ConePlayer 适
 APK 输出位置：
 
 ```text
-.gradle-local-build\app\outputs\apk\debug\app-debug.apk
+app\build\outputs\apk\debug\app-debug.apk
 ```
 
 构建需要 JDK 21，以便读取 Lyrics Core 依赖。本地脚本会依次从 `SALT_LYRIC_JAVA_HOME`、`JAVA_HOME` 和常见 JDK 安装目录中查找，并把仓库临时映射到 ASCII 盘符，避免中文路径导致 Gradle 测试进程类路径异常；应用本身仍输出 Java 17 字节码以保持 Android 兼容性。
@@ -192,7 +192,7 @@ APK 输出位置：
 使用播放器适配器测试：
 
 ```powershell
-adb install -r .gradle-local-build\app\outputs\apk\debug\app-debug.apk
+adb install -r app\build\outputs\apk\debug\app-debug.apk
 adb shell am force-stop com.salt.music
 # 或：adb shell am force-stop ink.trantor.coneplayer
 ```

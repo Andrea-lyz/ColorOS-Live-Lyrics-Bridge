@@ -93,7 +93,8 @@ final class LyricsCoreAdapter {
             if (firstTag.find() && firstTag.start() == 0) {
                 long timeMillis = parseTimeMillis(firstTag);
                 String text = stripLrcTimeTags(line, firstTag.end());
-                if (!text.isEmpty()) {
+                if (!text.isEmpty()
+                        && !LyricMetadataFilter.isNonLyricInfoLine(text, timeMillis)) {
                     grouped.computeIfAbsent(timeMillis, ignored -> new ArrayList<>()).add(text);
                 }
             }
@@ -119,27 +120,11 @@ final class LyricsCoreAdapter {
                 continue;
             }
 
-            int primaryIndex = findPrimaryTextIndex(texts);
-            String text = texts.get(primaryIndex);
-            String translation = "";
-            for (int textIndex = 0; textIndex < texts.size(); textIndex++) {
-                if (textIndex == primaryIndex) {
-                    continue;
-                }
-                String candidate = texts.get(textIndex);
-                if (LyricLineVariantSelector.isLikelyJapaneseRomanization(text, candidate)) {
-                    continue;
-                }
-                if (isLikelyRomanizationVariant(texts, primaryIndex, candidate)) {
-                    continue;
-                }
-                if (!candidate.equals(text)) {
-                    translation = candidate;
-                    break;
-                }
-            }
-
             long startMillis = group.getKey();
+            LyricLaneClassifier.Result lanes =
+                    LyricLaneClassifier.classify(texts, startMillis);
+            String text = lanes.primaryText();
+            String translation = lanes.firstTranslation();
             long endMillis = index + 1 < groups.size()
                     ? Math.max(startMillis + 80L, groups.get(index + 1).getKey())
                     : startMillis + 3_000L;
@@ -155,10 +140,6 @@ final class LyricsCoreAdapter {
                             text.length()))));
         }
         return lines.isEmpty() ? ParsedLyrics.EMPTY : new ParsedLyrics(lines);
-    }
-
-    private static int findPrimaryTextIndex(List<String> texts) {
-        return LyricLineVariantSelector.findPrimaryTextIndex(texts);
     }
 
     private static boolean containsLatinLetter(String text) {
@@ -212,9 +193,11 @@ final class LyricsCoreAdapter {
             for (ParsedLine line : group) {
                 texts.add(line.text);
             }
-            int primaryIndex = findPrimaryTextIndex(texts);
+            LyricLaneClassifier.Result lanes =
+                    LyricLaneClassifier.classify(texts, group.get(0).startMillis);
+            int primaryIndex = lanes.primaryIndex();
             ParsedLine primary = group.get(primaryIndex);
-            String translation = selectMergedTranslation(group, texts, primaryIndex);
+            String translation = selectMergedTranslation(group, texts, lanes);
             merged.add(new ParsedLine(
                     primary.startMillis,
                     primary.endMillis,
@@ -228,7 +211,8 @@ final class LyricsCoreAdapter {
     private static String selectMergedTranslation(
             ArrayList<ParsedLine> group,
             ArrayList<String> texts,
-            int primaryIndex) {
+            LyricLaneClassifier.Result lanes) {
+        int primaryIndex = lanes.primaryIndex();
         ParsedLine primary = group.get(primaryIndex);
         String translation = "";
         if (isUsableTranslationCandidate(texts, primaryIndex, primary.translation)) {
@@ -239,7 +223,8 @@ final class LyricsCoreAdapter {
                 continue;
             }
             ParsedLine line = group.get(index);
-            if (isUsableTranslationCandidate(texts, primaryIndex, line.text)) {
+            if (lanes.laneAt(index) == LyricLaneClassifier.Lane.TRANSLATION
+                    && isUsableTranslationCandidate(texts, primaryIndex, line.text)) {
                 return line.text;
             }
             if (translation.isEmpty()
@@ -302,6 +287,9 @@ final class LyricsCoreAdapter {
             String candidate) {
         String cleanCandidate = nullToEmpty(candidate).trim();
         if (cleanCandidate.isEmpty()) {
+            return false;
+        }
+        if (LyricMetadataFilter.isNonLyricInfoLine(cleanCandidate, -1L)) {
             return false;
         }
         String primary = primaryIndex >= 0 && primaryIndex < texts.size()
@@ -380,22 +368,37 @@ final class LyricsCoreAdapter {
                             text.length()));
                 }
             }
+            String cleanText = text.toString();
+            if (LyricMetadataFilter.isNonLyricInfoLine(cleanText, sourceLine.getStart())) {
+                return null;
+            }
+            String translation = cleanLyricText(karaokeLine.getTranslation());
+            if (LyricMetadataFilter.isNonLyricInfoLine(translation, sourceLine.getStart())) {
+                translation = "";
+            }
             return new ParsedLine(
                     sourceLine.getStart(),
                     sourceLine.getEnd(),
-                    text.toString(),
-                    cleanLyricText(karaokeLine.getTranslation()),
+                    cleanText,
+                    translation,
                     syllables);
         }
 
         if (sourceLine instanceof SyncedLine) {
             SyncedLine syncedLine = (SyncedLine) sourceLine;
             String text = cleanLyricText(syncedLine.getContent());
+            if (LyricMetadataFilter.isNonLyricInfoLine(text, sourceLine.getStart())) {
+                return null;
+            }
+            String translation = cleanLyricText(syncedLine.getTranslation());
+            if (LyricMetadataFilter.isNonLyricInfoLine(translation, sourceLine.getStart())) {
+                translation = "";
+            }
             return new ParsedLine(
                     sourceLine.getStart(),
                     sourceLine.getEnd(),
                     text,
-                    cleanLyricText(syncedLine.getTranslation()),
+                    translation,
                     Collections.singletonList(new ParsedSyllable(
                             sourceLine.getStart(),
                             sourceLine.getEnd(),

@@ -59,7 +59,12 @@ final class OplusLyricNormalizer {
                 && groupedLines.get(0).timeMillis > LEADING_PRE_ROLL_THRESHOLD_MS;
         if (preRollFirstLine) {
             TimedLyricGroup first = groupedLines.get(0);
-            appendLyricLine(out, 0L, first.texts.get(findPrimaryTextIndex(first.texts)));
+            appendLyricLine(
+                    out,
+                    0L,
+                    first.texts.get(LyricLaneClassifier.findPrimaryTextIndex(
+                            first.texts,
+                            first.timeMillis)));
         }
         for (int i = preRollFirstLine ? 1 : 0; i < groupedLines.size(); i++) {
             appendGroupedLyricLine(out, groupedLines.get(i));
@@ -69,33 +74,19 @@ final class OplusLyricNormalizer {
     }
 
     static boolean isNonLyricInfoLine(String text, long timeMillis) {
-        String normalized = normalizeLine(text);
-        if (normalized.isEmpty()) {
-            return false;
-        }
-
-        String lower = normalized.toLowerCase(Locale.ROOT);
-        if (containsAny(lower, "copyright", "all rights reserved")
-                || containsAny(
-                normalized,
-                "\u7248\u6743\u6240\u6709",
-                "\u8457\u4f5c\u6743",
-                "\u672a\u7ecf\u8bb8\u53ef",
-                "\u672a\u7ecf\u6388\u6743",
-                "\u7ffb\u8bd1\u4f5c\u54c1")) {
-            return true;
-        }
-        if (LockscreenIntegrationPolicy.isProductionDetailLine(normalized, timeMillis)) {
-            return true;
-        }
-        return LockscreenIntegrationPolicy.isLikelyTitleArtistCredit(normalized, timeMillis);
+        return LyricMetadataFilter.isNonLyricInfoLine(text, timeMillis);
     }
 
     private static void appendGroupedLyricLine(StringBuilder out, TimedLyricGroup group) {
         if (group == null || group.texts.isEmpty()) {
             return;
         }
-        appendLyricLine(out, group.timeMillis, group.texts.get(findPrimaryTextIndex(group.texts)));
+        appendLyricLine(
+                out,
+                group.timeMillis,
+                group.texts.get(LyricLaneClassifier.findPrimaryTextIndex(
+                        group.texts,
+                        group.timeMillis)));
     }
 
     private static void appendLyricLine(StringBuilder out, long timeMillis, String text) {
@@ -120,10 +111,6 @@ final class OplusLyricNormalizer {
         appendLyricLine(out, last.timeMillis + TAIL_SPACER_DELAY_MS, "\u200B");
     }
 
-    private static int findPrimaryTextIndex(List<String> texts) {
-        return LyricLineVariantSelector.findPrimaryTextIndex(texts);
-    }
-
     private static String cleanPlainLyricText(String text) {
         if (isEmpty(text)) {
             return "";
@@ -131,58 +118,6 @@ final class OplusLyricNormalizer {
         String cleaned = ANY_LRC_TIME_TAG.matcher(text).replaceAll("");
         cleaned = LyricTextSanitizer.removeIgnorableCharacters(cleaned).trim();
         return cleaned.replaceAll("[ \\t]{2,}", " ");
-    }
-
-    private static String normalizeLine(String line) {
-        if (line == null) {
-            return "";
-        }
-        String normalized = line;
-        if (normalized.indexOf('[') >= 0 || normalized.indexOf('<') >= 0) {
-            normalized = ANY_LRC_TIME_TAG.matcher(normalized).replaceAll("");
-        }
-        int length = normalized.length();
-        int start = 0;
-        int end = length;
-        while (start < end && normalized.charAt(start) <= ' ') {
-            start++;
-        }
-        while (end > start && normalized.charAt(end - 1) <= ' ') {
-            end--;
-        }
-        boolean collapseWhitespace = false;
-        for (int i = start + 1; i < end; i++) {
-            char previous = normalized.charAt(i - 1);
-            char current = normalized.charAt(i);
-            if ((previous == ' ' || previous == '\t')
-                    && (current == ' ' || current == '\t')) {
-                collapseWhitespace = true;
-                break;
-            }
-        }
-        if (!collapseWhitespace) {
-            return start == 0 && end == length
-                    ? normalized
-                    : normalized.substring(start, end);
-        }
-        StringBuilder result = new StringBuilder(end - start);
-        boolean inWhitespaceRun = false;
-        for (int i = start; i < end; i++) {
-            char ch = normalized.charAt(i);
-            boolean whitespace = ch == ' ' || ch == '\t';
-            if (whitespace) {
-                if (!inWhitespaceRun) {
-                    result.append(ch);
-                } else if (result.charAt(result.length() - 1) != ' ') {
-                    result.setCharAt(result.length() - 1, ' ');
-                }
-                inWhitespaceRun = true;
-            } else {
-                result.append(ch);
-                inWhitespaceRun = false;
-            }
-        }
-        return result.toString();
     }
 
     private static String[] splitRawLyricLines(String rawLyric) {
@@ -232,18 +167,6 @@ final class OplusLyricNormalizer {
         return start < end
                 && !LyricTextSanitizer.removeIgnorableCharacters(
                 value.substring(start, end)).trim().isEmpty();
-    }
-
-    private static boolean containsAny(String value, String... needles) {
-        if (isEmpty(value)) {
-            return false;
-        }
-        for (String needle : needles) {
-            if (!isEmpty(needle) && value.contains(needle)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private static long parseLrcTimeMillis(String time) {

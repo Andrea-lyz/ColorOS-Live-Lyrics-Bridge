@@ -3,5 +3,15 @@
         android:allowBackup="false"
         android:description="@string/module_description"
         android:label="@string/app_name"
-        android:supportsRtl="true" />
+        android:supportsRtl="true">
+        <activity
+            android:name=".LyricUiSettingsActivity"
+            android:exported="true"
+            android:label="@string/lyric_ui_settings_title">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="de.robv.android.xposed.category.MODULE_SETTINGS" />
+            </intent-filter>
+        </activity>
+    </application>
 </manifest>

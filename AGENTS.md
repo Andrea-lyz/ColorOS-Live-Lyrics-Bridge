@@ -18,11 +18,11 @@ JDK 21 is required, although Android output targets Java 17 bytecode.
 ```powershell
 .\scripts\gradle-local.cmd :app:assembleDebug
 .\scripts\gradle-local.cmd :app:testDebugUnitTest
-adb install -r .gradle-local-build\app\outputs\apk\debug\app-debug.apk
+adb install -r app\build\outputs\apk\debug\app-debug.apk
 adb logcat -v time -s LockscreenLyrics
 ```
 
-`scripts\gradle-local.cmd` discovers a real JDK 21 from `SALT_LYRIC_JAVA_HOME` or common local JDK locations, runs Gradle through a temporary ASCII drive letter, bypasses the local PowerShell script execution policy for this helper only, stores the wrapper cache in `.gradle-user-home/`, and writes build outputs to `.gradle-local-build/` when the repository build directory is writable. This avoids Windows/Gradle test-worker classpath corruption when the repository path contains Chinese characters and avoids stale `app/build` output locks. If existing Gradle lock files, project cache directories, or `local.properties` have restrictive ACLs, the script falls back to writable temp locations, mirrors the project to `%TEMP%\salt-lyric-project-overlay`, maps the workspace `android-sdk` to an ASCII drive letter, and prints the fallback paths it used. `assembleDebug` produces the test APK. `testDebugUnitTest` runs the JUnit 4 suite. After installation, enable the module for System UI and the target player in LSPosed, then restart affected processes.
+`scripts\gradle-local.cmd` discovers a real JDK 21 from `SALT_LYRIC_JAVA_HOME` or common local JDK locations, runs Gradle through a temporary ASCII drive letter, bypasses the local PowerShell script execution policy for this helper only, keeps the wrapper cache in `.gradle-user-home/`, and leaves build outputs in the standard module directories such as `app/build/outputs/`. This avoids Windows/Gradle test-worker classpath corruption when the repository path contains Chinese characters while keeping the APK path predictable. If existing Gradle lock files, project cache directories, or `local.properties` have restrictive ACLs, the script falls back to writable temp locations, mirrors the project to `%TEMP%\salt-lyric-project-overlay`, maps the workspace `android-sdk` to an ASCII drive letter, and prints the fallback paths it used. `assembleDebug` produces the test APK. `testDebugUnitTest` runs the JUnit 4 suite. After installation, enable the module for System UI and the target player in LSPosed, then restart affected processes.
 
 ## Release Process
 

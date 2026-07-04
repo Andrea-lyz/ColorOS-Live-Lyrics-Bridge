@@ -237,6 +237,26 @@ final class LockscreenIntegrationPolicy {
         return lastSegmentStartMillis > firstSegmentStartMillis;
     }
 
+    static boolean hasSuspiciousInlineTimingGap(
+            int timedSegmentCount,
+            long firstSegmentStartMillis,
+            long lastSegmentStartMillis,
+            long maxAdjacentStartGapMillis) {
+        return LyricTimingRepair.hasSuspiciousInlineTimingGap(
+                timedSegmentCount,
+                firstSegmentStartMillis,
+                lastSegmentStartMillis,
+                maxAdjacentStartGapMillis);
+    }
+
+    static boolean shouldUseTranslationReplacementTransition(
+            boolean hasLineWindow,
+            int totalMainLineCount,
+            int visibleMainLineCount,
+            float layoutTranslationAmount) {
+        return false;
+    }
+
     static boolean isLikelyInlineTimedMainLyricPrefix(
             int visibleSegmentCount,
             int compactSegmentCount,
@@ -357,12 +377,36 @@ final class LockscreenIntegrationPolicy {
 
         // Enhanced LRC sources sometimes publish both a word-timed line and a plain line with
         // an extra parenthetical/backing-vocal suffix. That is still one source lyric, not a
-        // translation. Restrict fuzzy prefix matching to Latin text so genuine CJK translation
-        // lines that happen to share a few characters are not discarded.
+        // translation. Do not treat ordinary Latin prefixes as the same line: "He did" and
+        // "He did it" are different lyric text, and collapsing them can split bilingual rows.
         return containsLatinLetter(first)
                 && containsLatinLetter(second)
-                && Math.min(firstKey.length(), secondKey.length()) >= 5
-                && (firstKey.startsWith(secondKey) || secondKey.startsWith(firstKey));
+                && (isParentheticalLatinSourceVariant(first, second, firstKey, secondKey)
+                || isParentheticalLatinSourceVariant(second, first, secondKey, firstKey));
+    }
+
+    private static boolean isParentheticalLatinSourceVariant(
+            String shorterText,
+            String longerText,
+            String shorterKey,
+            String longerKey) {
+        if (shorterKey.length() < 5
+                || longerKey.length() <= shorterKey.length()
+                || !longerKey.startsWith(shorterKey)) {
+            return false;
+        }
+        String shorter = normalizeSimpleLyricText(shorterText);
+        String longer = normalizeSimpleLyricText(longerText);
+        if (shorter.isEmpty()
+                || longer.length() <= shorter.length()
+                || !longer.regionMatches(true, 0, shorter, 0, shorter.length())) {
+            return false;
+        }
+        String suffix = longer.substring(shorter.length()).trim();
+        return suffix.startsWith("(")
+                || suffix.startsWith("[")
+                || suffix.startsWith("\uFF08")
+                || suffix.startsWith("\u3010");
     }
 
     private static boolean isShortLatinTailToken(String token) {
