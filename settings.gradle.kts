@@ -14,7 +14,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "ColorOSLiveLyricsBridge"
+rootProject.name = "ColorOS-Live-Lyrics-Bridge"
 
 include(":app")
 include(":libxposed-api-stubs")

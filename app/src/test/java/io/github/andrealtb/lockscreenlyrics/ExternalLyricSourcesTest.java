@@ -21,6 +21,13 @@ public class ExternalLyricSourcesTest {
         assertEquals(
                 "com.luna.music",
                 ExternalLyricSources.playerPackageForSource("lyricprovider/qishui-music"));
+        assertEquals(
+                "com.kugou.android",
+                ExternalLyricSources.playerPackageForSource("lyricprovider/kugou-music"));
+        assertEquals(
+                "com.kugou.android.lite",
+                ExternalLyricSources.playerPackageForSource(
+                        "lyricprovider/kugou-concept-music"));
         assertEquals("", ExternalLyricSources.playerPackageForSource("unknown"));
     }
 
@@ -34,6 +41,8 @@ public class ExternalLyricSourcesTest {
         assertTrue(ExternalLyricSources.isBridgePlayerPackage("com.maxmpz.audioplayer"));
         assertTrue(ExternalLyricSources.isBridgePlayerPackage("com.spotify.music"));
         assertTrue(ExternalLyricSources.isBridgePlayerPackage("com.luna.music"));
+        assertTrue(ExternalLyricSources.isBridgePlayerPackage("com.kugou.android"));
+        assertTrue(ExternalLyricSources.isBridgePlayerPackage("com.kugou.android.lite"));
         assertFalse(ExternalLyricSources.isBridgePlayerPackage("com.example.music"));
     }
 
@@ -51,6 +60,10 @@ public class ExternalLyricSourcesTest {
                 "com.apple.android.music"));
         assertTrue(ExternalLyricSources.canOverrideFavoriteActionWithTranslation(
                 "com.luna.music"));
+        assertTrue(ExternalLyricSources.canOverrideFavoriteActionWithTranslation(
+                "com.kugou.android"));
+        assertTrue(ExternalLyricSources.canOverrideFavoriteActionWithTranslation(
+                "com.kugou.android.lite"));
         assertFalse(ExternalLyricSources.canOverrideFavoriteActionWithTranslation(
                 "com.maxmpz.audioplayer"));
         assertFalse(ExternalLyricSources.canOverrideFavoriteActionWithTranslation(
@@ -72,6 +85,9 @@ public class ExternalLyricSourcesTest {
     public void sourceCapabilitiesStayProviderSpecific() {
         assertTrue(ExternalLyricSources.supportsPlaybackState("lyricprovider/spotify-music"));
         assertTrue(ExternalLyricSources.supportsPlaybackState("lyricprovider/qishui-music"));
+        assertTrue(ExternalLyricSources.supportsPlaybackState("lyricprovider/kugou-music"));
+        assertTrue(ExternalLyricSources.supportsPlaybackState(
+                "lyricprovider/kugou-concept-music"));
         assertFalse(ExternalLyricSources.supportsPlaybackState("lyricprovider/poweramp-music"));
         assertTrue(ExternalLyricSources.canPromoteAsAuthoritative(
                 "lyricprovider/poweramp-music",
@@ -88,6 +104,16 @@ public class ExternalLyricSourcesTest {
                 "com.luna.music"));
         assertFalse(ExternalLyricSources.allowsTitleOnlyFallbackMatch(
                 "lyricprovider/qishui-music"));
+        assertTrue(ExternalLyricSources.canPromoteAsAuthoritative(
+                "lyricprovider/kugou-music",
+                "com.kugou.android"));
+        assertFalse(ExternalLyricSources.allowsTitleOnlyFallbackMatch(
+                "lyricprovider/kugou-music"));
+        assertTrue(ExternalLyricSources.canPromoteAsAuthoritative(
+                "lyricprovider/kugou-concept-music",
+                "com.kugou.android.lite"));
+        assertFalse(ExternalLyricSources.allowsTitleOnlyFallbackMatch(
+                "lyricprovider/kugou-concept-music"));
         assertFalse(ExternalLyricSources.supportsPlaybackState("lyricprovider/apple-music"));
         assertFalse(ExternalLyricSources.canPromoteAsAuthoritative(
                 "lyricprovider/apple-music",

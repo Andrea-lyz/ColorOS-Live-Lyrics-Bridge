@@ -1,6 +1,6 @@
 # 大厂音乐 App Hook 工程线路
 
-本文记录 `SaltLyricLspDemo` 后续适配 Apple Music、网易云音乐/荣耀版、QQ 音乐、QQ 音乐 HD、酷狗音乐/概念版、Poweramp、汽水音乐时的工程路线。
+本文记录 `ColorOS-Live-Lyrics-Bridge` 后续适配 Apple Music、网易云音乐/荣耀版、QQ 音乐、QQ 音乐 HD、酷狗音乐/概念版、Poweramp、汽水音乐时的工程路线。
 
 目标不是引入另一个歌词发布总线，而是在目标播放器进程内拿到整首时间轴歌词，复用本项目现有 `PlayerAdapter` 管线，最终注入 OPlus 可消费的 `MediaSession` `lyricInfo`。
 
@@ -354,10 +354,10 @@ QQ Lyric Probe：
 - `com.kugou.android`
 - `com.kugou.android.lite`
 
-前置条件：
+触发/排查建议：
 
-- 项目 README 明确说明：需要在酷狗音乐/概念版 App 内开启车载歌词模式。
-- 这是适配成立的关键条件。未开启车载歌词模式时，酷狗可能不会加载或输出可 hook 的歌词文件，`LyricManager` 文件路径 hook 可能不触发。
+- 当前 Provider 在播放器 support 进程内 hook `LyricManager` 的歌词文件加载方法，并从 MediaSession 同步元数据和播放状态。
+- 车载歌词模式不再作为硬前置条件。若日志长时间看不到歌词文件加载，可尝试在酷狗音乐/概念版 App 内开启车载歌词模式辅助触发。
 
 主要 hook 点：
 
@@ -369,34 +369,35 @@ QQ Lyric Probe：
 
 数据路线：
 
-1. 用户在酷狗内开启车载歌词模式。
-2. 酷狗播放时加载 KRC/LRC 歌词文件。
-3. hook `LyricManager` 拿到歌词文件路径。
+1. 酷狗播放时加载 KRC/LYC/LRC/TXT 歌词文件。
+2. hook `LyricManager` 拿到歌词文件路径。
+3. 根据 MediaSession metadata 生成当前曲目身份和 track generation。
 4. 根据扩展名解析：
    - `.krc`：`KrcDecryptor.decrypt` + `KrcParser.parse`
-   - `.lrc`：`LrcParser.parse`
-5. 用当前 metadata 生成 track key。
-6. 转成 `lyricInfo`。
+   - `.lyc`：优先按 KRC 解密解析，失败后按 LRC 文本回退
+   - `.lrc` / `.txt`：按 LRC 文本解析
+5. 同步 Lyricon Provider 内部输出。
+6. 转成 Bridge 外部歌词广播，发送给 `com.android.systemui`。
 
 迁移重点：
 
 - 酷狗和概念版可共用同一个 adapter，差异主要是包名和进程。
-- 保留 KRC 解密和 parser。
-- track key 当前参考实现是 `title-artist-album-duration` 的 hash，没有真实 songId 稳定；本项目可用 `TrackIdentity` 再做一次保护。
+- 保留 KRC 解密和 parser，同时增加 LYC/TXT 回退。
+- 优先使用 MediaSession 的 `mediaId` / `mediaUri` 做曲目身份；没有时再回退到 `title-artist-album-duration`。
 
 风险：
 
-- 车载歌词模式未开启时，不要误判为适配失败，要在文档和日志中明确提示。
+- 歌词文件加载依赖酷狗内部 `LyricManager`；若完全没有路径日志，可提示用户尝试开启车载歌词模式排查触发链路。
 - support 进程必须加入 scope。
 - 本地歌词加载晚于 metadata，需缓存两边并做当前曲目校验。
 
 建议日志：
 
 ```text
-Kugou adapter requires in-app car lyric mode
 Hooked Kugou LyricManager load method
 Kugou lyric file loaded path=...
-Parsed Kugou KRC lines=...
+Parsed Kugou lyric file ext=krc lines=...
+Sent KuGou bridge payload source=...
 Skip Kugou lyric because metadata is missing
 ```
 
@@ -493,7 +494,7 @@ md5("/luna/track_v2/$id")
 
 - QQ 音乐 HD：复用 QRC，但需要验证 pending songId 与 metadata 时序。
 - 汽水音乐：缓存文件路线清晰，适合做本地缓存型 adapter。
-- 酷狗音乐/概念版：需要用户开启车载歌词模式，适合在前几条 adapter 框架稳定后接入。
+- 酷狗音乐/概念版：已接入 `LyricManager` 歌词文件加载和 MediaSession 同步；若不触发可建议用户尝试开启车载歌词模式排查。
 
 ## 验证清单
 

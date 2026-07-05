@@ -1,13 +1,13 @@
 # LyricProvider Bridge 接入线
 
-SaltLyricLspDemo 只负责 Bridge：在 `SystemUI` 和 `system_server` 侧接收歌词、合成/覆盖 `lyricInfo`、渲染逐字歌词，并把受支持播放器放进 OPlus 历史播放器和 AOD 媒体面板白名单。QQ 音乐、网易云音乐、Apple Music、Poweramp、Spotify、汽水音乐等播放器进程内的抓取逻辑放在 `Andrea-lyz/LyricProvider` fork 里，以独立 Provider APK 交付。
+ColorOS-Live-Lyrics-Bridge 只负责 Bridge：在 `SystemUI` 和 `system_server` 侧接收歌词、合成/覆盖 `lyricInfo`、渲染逐字歌词，并把受支持播放器放进 OPlus 历史播放器和 AOD 媒体面板白名单。QQ 音乐、网易云音乐、Apple Music、Poweramp、Spotify、汽水音乐、酷狗音乐等播放器进程内的抓取逻辑放在 `Andrea-lyz/LyricProvider` fork 里，以独立 Provider APK 交付。
 
 ## 运行边界
 
 - Bridge APK 的静态作用域只保留 `system`、`com.android.systemui`、Salt Music、ConePlayer 及其 Google Play 包名。
 - `PLAYER_ADAPTERS` 只放仍需 Bridge 进播放器进程兼容的内置适配器，例如 Salt Music、ConePlayer。
 - LyricProvider fork 的 Provider APK 单独安装、单独启用，并只作用于它自己的目标播放器。
-- 不要把 QQ 音乐、网易云音乐、Apple Music、Poweramp、Spotify、汽水音乐这类 Provider 目标包名加回 Bridge 的 `scope.list`，避免 Bridge 和 Provider 同时 hook 同一个播放器进程。
+- 不要把 QQ 音乐、网易云音乐、Apple Music、Poweramp、Spotify、汽水音乐、酷狗音乐这类 Provider 目标包名加回 Bridge 的 `scope.list`，避免 Bridge 和 Provider 同时 hook 同一个播放器进程。
 
 ## 当前 Bridge 侧登记
 
@@ -23,6 +23,8 @@ Bridge 侧的 Provider/播放器信息集中在 `ExternalLyricSources`：
 | Poweramp | `com.maxmpz.audioplayer` | bridge 播放器包名、`lyricprovider/poweramp-music` source、历史播放器/AOD 放行、外部歌词提升 |
 | Spotify | `com.spotify.music` | bridge 播放器包名、`lyricprovider/spotify-music` source、历史播放器/AOD 放行、外部播放状态 |
 | 汽水音乐 | `com.luna.music` | bridge 播放器包名、`lyricprovider/qishui-music` source、历史播放器/AOD 放行、外部播放状态、翻译开关 |
+| 酷狗音乐 | `com.kugou.android` | bridge 播放器包名、`lyricprovider/kugou-music` source、历史播放器/AOD 放行、外部播放状态、翻译开关 |
+| 酷狗音乐概念版 | `com.kugou.android.lite` | bridge 播放器包名、`lyricprovider/kugou-concept-music` source、历史播放器/AOD 放行、外部播放状态、翻译开关 |
 
 包名在 `BRIDGE_PLAYER_PACKAGES` 后，会自动进入 OPlus 历史播放器和 AOD 媒体面板放行逻辑。source 在 `EXTERNAL_SOURCES` 后，Bridge 才能把 Provider 广播反查到播放器包名，用于重试提升、无官方 `lyricInfo` 时的当前曲目绑定，以及可选的外部播放状态接收。
 
@@ -87,8 +89,8 @@ putExtra("playbackLastPositionUpdateTime", elapsedRealtimeMs)
 
 `ExternalLyricSources.Source` 的三个布尔能力要谨慎开启：
 
-- `supportsPlaybackState`：Provider 广播里会提供可信播放状态和进度。Spotify 和汽水音乐当前使用这个能力。
-- `canPromoteAsAuthoritative`：当 SystemUI 尚未给出可匹配曲目时，Bridge 可以短时间信任 Provider 的曲目信息并直接提升为当前歌词。只给确实能证明“这是当前曲目”的 Provider 开启。Poweramp 当前使用这个能力。
+- `supportsPlaybackState`：Provider 广播里会提供可信播放状态和进度。Spotify、汽水音乐和酷狗音乐当前使用这个能力。
+- `canPromoteAsAuthoritative`：当 SystemUI 尚未给出可匹配曲目时，Bridge 可以短时间信任 Provider 的曲目信息并直接提升为当前歌词。只给确实能证明“这是当前曲目”的 Provider 开启。Poweramp 与酷狗音乐/概念版当前使用这个能力，酷狗侧依赖 generation/key 校验。
 - `allowsTitleOnlyFallbackMatch`：允许只用标题做兜底匹配，适合本地播放器缺歌手、歌手格式漂移或 metadata 不稳定的场景。开启后误匹配风险更高，应尽量配合 generation 或 media id。
 
 QQ/网易这类已经有官方 `lyricInfo` 或能稳定走播放器 metadata 的适配，不一定需要 source 能力表；但如果 fork 模块改为只靠外部广播把歌词提升到 SystemUI，就必须补 `EXTERNAL_SOURCES` 映射。
