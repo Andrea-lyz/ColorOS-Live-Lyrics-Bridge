@@ -1,5 +1,9 @@
 # ColorOS Live Lyrics Bridge
 
+## Latest release
+
+v2.7.0 adds lyric UI controls, configurable lock-screen keep-awake behavior, LyricProvider protocol declarations, and a stronger KuGou MediaSession lyricInfo path, while further reducing routine log noise and stale-lyric handoff jitter. Release assets include `LyricProvider-v2.7.0.zip` for installing all provider APKs together.
+
 ## 简体中文
 
 将受支持音乐播放器的时间轴歌词桥接到 ColorOS/OPlus 原生锁屏歌词界面，并补充逐字高亮、翻译切换、媒体卡片和后台恢复能力。
@@ -10,6 +14,7 @@
 - 支持播放器通过 `MediaMetadata["lyricInfo"]` 主动接入，无需依赖模块 APK。
 - Release 附带可选 LyricProvider APK，可分别适配 QQ 音乐、网易云音乐/荣耀版、Apple Music、Poweramp、Spotify、汽水音乐和酷狗音乐/概念版。
 - 支持逐行 LRC、逐字 `rawLyric`、翻译行识别和重复歌词稳定定位。
+- 提供歌词界面设置，可控制普通逐行伪逐字、翻译逐字高亮、滚动放大、非实时行模糊和锁屏屏幕保活时长。
 - 通过通用歌词事务层隔离异步回调，避免有歌词/无歌词曲目连续切换时歌词错绑或后续持续显示无歌词。
 - 长日语、中文歌词按 Unicode 字符边界换行，避免无空格长句被自动缩小。
 - 保留播放器原始媒体 action 语义，仅通过 OPlus Rule0 提供翻译按钮，避免上一首、播放/暂停、下一首错位。
@@ -68,6 +73,7 @@ Bridges timed lyrics from supported music players into the native ColorOS/OPlus 
 - Optional LyricProvider APKs in Releases for QQ Music, NetEase Cloud Music/Honor, Apple Music, Poweramp, Spotify, QiShui Music, and KuGou Music/Concept.
 - Line-timed LRC, word-timed `rawLyric`, translation detection, and stable repeated-line matching.
 - Compact dynamic lock-screen lyric layout with smoother translation toggles and AOD/highlight transition stabilization.
+- Lyric UI settings for line-timed pseudo word progress, translation progress, scroll scaling, inactive-line blur, and lock-screen keep-awake duration.
 - A generic lyric transaction layer prevents stale asynchronous callbacks from binding across tracks, including sequences that contain instrumentals or no-lyric tracks.
 - Long Japanese and Chinese lyric lines wrap at Unicode character boundaries instead of being reduced to tiny text.
 - Preserves the player's original media-action semantics and exposes translation only through OPlus Rule0, preventing previous/play-pause/next slot corruption.

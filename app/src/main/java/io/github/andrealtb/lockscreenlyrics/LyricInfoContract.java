@@ -13,6 +13,7 @@ public final class LyricInfoContract {
             "io.github.andrealtb.lockscreenlyrics.action.TOGGLE_TRANSLATION";
     public static final String ACTION_EXTERNAL_LYRIC_CAPTURED =
             "io.github.andrealtb.lockscreenlyrics.action.EXTERNAL_LYRIC_CAPTURED";
+    public static final int EXTERNAL_PROTOCOL_VERSION_PROVIDER_DECLARATION = 2;
     public static final String JSON_SONG_NAME = "songName";
     public static final String JSON_ARTIST = "artist";
     public static final String JSON_SONG_ID = "songId";
@@ -23,7 +24,12 @@ public final class LyricInfoContract {
     public static final String JSON_TRACK_KEY = "trackKey";
     public static final String JSON_SESSION_GENERATION = "sessionGeneration";
     public static final String MODULE_PROVIDER = "lockscreen-lyrics-module";
+    public static final String EXTRA_EXTERNAL_PROTOCOL_VERSION = "protocolVersion";
     public static final String EXTRA_EXTERNAL_SOURCE = "source";
+    public static final String EXTRA_EXTERNAL_PLAYER_PACKAGE = "playerPackage";
+    public static final String EXTRA_EXTERNAL_CAPABILITIES = "capabilities";
+    public static final String EXTRA_EXTERNAL_MATCH_POLICY = "matchPolicy";
+    public static final String EXTRA_EXTERNAL_IDENTITY_CONFIDENCE = "identityConfidence";
     public static final String EXTRA_EXTERNAL_EVENT_TYPE = "eventType";
     public static final String EXTRA_EXTERNAL_TRACK_GENERATION = "trackGeneration";
     public static final String EXTRA_EXTERNAL_REQUEST_ID = "requestId";
@@ -44,6 +50,14 @@ public final class LyricInfoContract {
             "playbackLastPositionUpdateTime";
     public static final String EVENT_EXTERNAL_TRACK_CHANGED = "trackChanged";
     public static final String EVENT_EXTERNAL_LYRIC_READY = "lyricReady";
+    public static final String CAPABILITY_EXTERNAL_PLAYBACK_STATE = "playbackState";
+    public static final String CAPABILITY_EXTERNAL_TRACK_GENERATION = "trackGeneration";
+    public static final String CAPABILITY_EXTERNAL_CURRENT_TRACK_AUTHORITY =
+            "currentTrackAuthority";
+    public static final String CAPABILITY_EXTERNAL_TITLE_ONLY_FALLBACK = "titleOnlyFallback";
+    public static final String CAPABILITY_EXTERNAL_TRANSLATION_TOGGLE = "translationToggle";
+    public static final String MATCH_POLICY_EXTERNAL_TITLE_ONLY = "titleOnly";
+    public static final String IDENTITY_CONFIDENCE_EXTERNAL_CURRENT_TRACK = "currentTrack";
 
     private static final String[] TRANSLATION_KEYS = {
             JSON_TRANSLATION_LYRIC,

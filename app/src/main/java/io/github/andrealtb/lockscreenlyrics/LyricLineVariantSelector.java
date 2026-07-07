@@ -27,9 +27,10 @@ final class LyricLineVariantSelector {
                     "coz", "did", "do", "dont", "dream", "false", "for", "had",
                     "has", "hate", "have", "he", "her", "him", "his", "how",
                     "i", "in", "is", "it", "just", "love", "me", "my", "not",
-                    "of", "on", "over", "real", "she", "that", "the", "they", "this",
+                    "now", "of", "on", "over", "real", "saw", "she", "that", "the",
+                    "they", "this",
                     "to", "was", "we", "were", "what", "when", "where", "who",
-                    "why", "with", "yeah", "you", "your"));
+                    "why", "with", "yeah", "you", "your", "blind"));
 
     private LyricLineVariantSelector() {
     }

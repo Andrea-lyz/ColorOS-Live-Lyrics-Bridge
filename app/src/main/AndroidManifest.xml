@@ -7,7 +7,8 @@
         <activity
             android:name=".LyricUiSettingsActivity"
             android:exported="true"
-            android:label="@string/lyric_ui_settings_title">
+            android:label="@string/lyric_ui_settings_title"
+            android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="de.robv.android.xposed.category.MODULE_SETTINGS" />

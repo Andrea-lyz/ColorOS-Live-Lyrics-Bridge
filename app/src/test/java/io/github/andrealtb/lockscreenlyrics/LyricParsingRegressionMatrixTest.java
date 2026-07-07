@@ -115,6 +115,21 @@ public final class LyricParsingRegressionMatrixTest {
         assertEquals("[00:00.000]Over and over\n[01:18.060]\u200B", official);
     }
 
+    @Test
+    public void shortEnglishLineIsNotMistakenForRomajiWhenTranslationComesFirst() {
+        String translation = "\u6211\u66fe\u770b\u5230\u5982\u4eca\u9677\u5165\u8ff7\u5931";
+        String lrc = "[01:58.780]" + translation + "\n"
+                + "[01:58.780]I saw, now I am blind";
+
+        LyricsCoreAdapter.ParsedLyrics parsed = LyricsCoreAdapter.parsePlainLrc(lrc);
+        String official = OplusLyricNormalizer.normalizeForOfficialList(lrc);
+
+        assertEquals(1, parsed.lines.size());
+        assertParsedLine(parsed, 118_780L, "I saw, now I am blind", translation);
+        assertTrue(official.contains("I saw, now I am blind"));
+        assertFalse(official.contains(translation));
+    }
+
     private static void assertParsedLine(
             LyricsCoreAdapter.ParsedLyrics parsed,
             long startMillis,
