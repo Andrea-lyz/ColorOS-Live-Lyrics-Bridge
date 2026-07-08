@@ -316,6 +316,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     private volatile long lastStaleExternalGenerationLogAt;
     private volatile long lastStalePowerampExternalGenerationLogAt;
     private volatile long lastTransientLyricInfoMissLogAt;
+    private volatile long lastSuppressedKugouOfficialLyricInfoLogAt;
     private volatile long powerampExternalTrackGeneration;
     private volatile String powerampExternalTrackKey = "";
     private volatile String powerampExternalTrackTitle = "";
@@ -2126,6 +2127,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                         getText(metadata, MediaMetadata.METADATA_KEY_ARTIST),
                         getText(metadata, MediaMetadata.METADATA_KEY_ALBUM_ARTIST),
                         getText(metadata, MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE));
+                String packageName = findPlayerPackageInArgs(chain.getArgs());
                 String lyricInfo = metadata.getString(OPLUS_LYRIC_INFO_KEY);
                 LyricInfoContract.NormalizedPayload normalizedPayload =
                         LyricInfoContract.normalizeOfficialLyricInfo(lyricInfo);
@@ -2143,8 +2145,14 @@ public final class LockscreenLyricsModule extends XposedModule {
                 }
                 if (externalDocument != null) {
                     boolean hadOfficialPayload = payload != null;
-                    String bridgeTitle = firstNonEmpty(title, externalDocument.title);
-                    String bridgeArtist = firstNonEmpty(artist, externalDocument.artist);
+                    boolean metadataChurn =
+                            looksLikeExternalMetadataChurn(externalDocument, title, artist);
+                    String bridgeTitle = metadataChurn
+                            ? externalDocument.title
+                            : firstNonEmpty(title, externalDocument.title);
+                    String bridgeArtist = metadataChurn
+                            ? externalDocument.artist
+                            : firstNonEmpty(artist, externalDocument.artist);
                     long bridgeDuration = metadata.getLong(MediaMetadata.METADATA_KEY_DURATION);
                     if (bridgeDuration <= 0L) {
                         bridgeDuration = externalDocument.durationMillis;
@@ -2173,6 +2181,24 @@ public final class LockscreenLyricsModule extends XposedModule {
                                 + " for title=" + bridgeTitle
                                 + ", artist=" + nullToEmpty(bridgeArtist));
                     }
+                }
+                if (shouldSuppressKugouOfficialLyricInfo(
+                        packageName,
+                        payload,
+                        externalDocument)) {
+                    MediaMetadata strippedMetadata = buildMetadataWithLyricInfoPreservingArtwork(
+                            metadata,
+                            "",
+                            title,
+                            artist);
+                    normalizedArgs = chain.getArgs().toArray(new Object[0]);
+                    normalizedArgs[1] = strippedMetadata;
+                    retainExternalLyricModelAfterSuppressedOfficialLyricInfo(
+                            packageName,
+                            title,
+                            artist,
+                            payload);
+                    return chain.proceed(normalizedArgs);
                 }
                 if (payload != null) {
                     if (!TextUtils.equals(lyricInfo, normalizedPayload.lyricInfo)) {
@@ -2208,6 +2234,58 @@ public final class LockscreenLyricsModule extends XposedModule {
             bindCurrentLyricProviderPackage(packageName, "lyricInfo metadata");
         } else if (isLyricPayloadTrackChanged(previousPayload, payload)) {
             currentLyricProviderPackage = "";
+        }
+    }
+
+    private boolean shouldSuppressKugouOfficialLyricInfo(
+            String packageName,
+            LyricInfoContract.Payload payload,
+            ExternalLyricDocument externalDocument) {
+        if (!ExternalLyricSources.KUGOU_MUSIC_PLAYER_PACKAGE.equals(packageName)
+                || payload == null
+                || externalDocument != null
+                || payload.isModuleEnvelope()) {
+            return false;
+        }
+        if (ExternalLyricSources.KUGOU_MUSIC_SOURCE.equals(payload.provider)
+                || ExternalLyricSources.KUGOU_CONCEPT_MUSIC_SOURCE.equals(payload.provider)) {
+            return false;
+        }
+        return TextUtils.isEmpty(payload.provider) || !payload.hasWordTiming();
+    }
+
+    private void retainExternalLyricModelAfterSuppressedOfficialLyricInfo(
+            String packageName,
+            String title,
+            String artist,
+            LyricInfoContract.Payload payload) {
+        if (!TextUtils.isEmpty(packageName)) {
+            bindCurrentLyricProviderPackage(packageName, "suppressed official lyricInfo");
+        }
+        if (shouldProtectKugouExternalLyricSurface()) {
+            screenTimeoutLyricEvidenceGraceUntilElapsedMs =
+                    SystemClock.elapsedRealtime() + SCREEN_TIMEOUT_MODEL_EVIDENCE_GRACE_MS;
+            mainHandler.post(() -> {
+                restoreSuppressedLyricsRecyclerViews(false);
+                primeRememberedLyricsRecyclerViews("suppressed-kugou-official-lyricInfo");
+                scheduleLyricVisibilityRecovery("suppressed-kugou-official-lyricInfo");
+                invalidateRememberedLyricViews();
+                refreshTranslationActionViewVisibility();
+            });
+        }
+        long now = SystemClock.elapsedRealtime();
+        if (now - lastSuppressedKugouOfficialLyricInfoLogAt >= 1_500L) {
+            lastSuppressedKugouOfficialLyricInfoLogAt = now;
+            info("Suppressed KuGou official lyricInfo while Provider model is authoritative"
+                    + ", title=" + shortenForLog(title)
+                    + ", artist=" + shortenForLog(artist)
+                    + ", provider=" + (payload == null ? "" : nullToEmpty(payload.provider))
+                    + ", lyricChars=" + (payload == null || payload.lyric == null
+                    ? 0
+                    : payload.lyric.length())
+                    + ", rawChars=" + (payload == null || payload.rawLyric == null
+                    ? 0
+                    : payload.rawLyric.length()));
         }
     }
 
@@ -2402,16 +2480,24 @@ public final class LockscreenLyricsModule extends XposedModule {
             String title,
             String artist) {
         LyricInfoContract.Payload payload = currentLyricProviderPayload;
-        if (!TextUtils.isEmpty(title) && !payloadMatchesTrack(payload, title, artist)) {
+        boolean looksLikeCurrentExternalChurn =
+                looksLikeCurrentExternalMetadataChurn(title, artist);
+        if (!TextUtils.isEmpty(title)
+                && !payloadMatchesTrack(payload, title, artist)
+                && !looksLikeCurrentExternalChurn) {
             return false;
         }
         if (!TextUtils.isEmpty(lastSystemUiSongName)
-                && !payloadMatchesTrack(payload, lastSystemUiSongName, lastSystemUiArtistName)) {
+                && !payloadMatchesTrack(payload, lastSystemUiSongName, lastSystemUiArtistName)
+                && !looksLikeCurrentExternalMetadataChurn(
+                lastSystemUiSongName,
+                lastSystemUiArtistName)) {
             return false;
         }
         return currentWordLyricModel != null
-                && payload != null
-                && lastSystemUiPackageSupported;
+                && lastSystemUiPackageSupported
+                && (payload != null
+                || looksLikeCurrentExternalChurn && hasFreshExternalDocumentForCurrentWordModel());
     }
 
     private void clearCurrentLyricProvider() {
@@ -2528,6 +2614,12 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (relayIdentity != null) {
             songName = relayIdentity.title;
             artistName = relayIdentity.artist;
+        }
+        MetadataTrackIdentity externalChurnIdentity =
+                resolveCurrentExternalMetadataChurnIdentity(songName, artistName);
+        if (externalChurnIdentity != null) {
+            songName = externalChurnIdentity.title;
+            artistName = externalChurnIdentity.artist;
         }
         boolean hasSystemUiTrackTitle = !TextUtils.isEmpty(songName);
         int state = mediaData.getInt("state", -1);
@@ -2729,9 +2821,6 @@ public final class LockscreenLyricsModule extends XposedModule {
             clearSeedlingActiveLyricHint();
             extendPlaybackJumpScrollGuard();
             scheduleLyricsRecyclerPlaybackJumpRealign(previousPosition, activePosition);
-            if (hasStuckHiddenLyricsRecyclerCandidate()) {
-                scheduleLyricVisibilityRecovery("playback-position-jump-hidden");
-            }
         } else if (shouldRecoverLyricVisibilityAfterPlaybackState(state, previousPosition, nextPosition)) {
             scheduleLyricVisibilityRecovery("playback-position-jump");
         }
@@ -2768,9 +2857,6 @@ public final class LockscreenLyricsModule extends XposedModule {
             long nextPosition) {
         if (currentWordLyricModel == null || !systemUiLyricModeKeepAwakeActive) {
             return false;
-        }
-        if (hasStuckHiddenLyricsRecyclerCandidate()) {
-            return true;
         }
         if (!isPlaybackStateInMotion(state) || previousPosition < 0L || nextPosition < 0L) {
             return false;
@@ -3031,6 +3117,9 @@ public final class LockscreenLyricsModule extends XposedModule {
                     maybeLogExternalSoftHandoffMask(null);
                     return null;
                 }
+                if (shouldSuppressExternalSlotMismatchDraw(textView, model, normalizedTextOf(textView))) {
+                    return null;
+                }
                 return suppressingTrackHandoff || recyclerFadeInProgress
                         ? null
                         : chain.proceed();
@@ -3110,9 +3199,16 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private static String payloadTrackKey(LyricInfoContract.Payload payload) {
-        return payload == null
-                ? ""
-                : firstNonEmpty(payload.trackKey, buildTrackKey(payload.songName, payload.artist));
+        if (payload == null) {
+            return "";
+        }
+        if (!TextUtils.isEmpty(payload.trackKey)) {
+            return payload.trackKey;
+        }
+        if (TextUtils.isEmpty(payload.songName)) {
+            return "";
+        }
+        return buildTrackKey(payload.songName, payload.artist);
     }
 
     private void clearSystemUiLyricModelForTrackChange(String title, String artist) {
@@ -3300,6 +3396,8 @@ public final class LockscreenLyricsModule extends XposedModule {
                         () -> refreshLyricRenderingAfterModeChange(
                                 systemUiLyricModeKeepAwakeActive),
                         32L);
+            } else {
+                recentOfficialDrawFrames.clear();
             }
         }
         return result;
@@ -4002,7 +4100,6 @@ public final class LockscreenLyricsModule extends XposedModule {
                 info("Primed LyricsRecyclerView at index=" + targetIndex + ", reason=" + reason);
             }
         }
-        restoreStuckHiddenLyricsRecyclerViews("prime-" + nullToEmpty(reason));
     }
 
     private int resolveLyricsRecyclerPrimeTargetIndex(WordLyricModel model) {
@@ -4812,6 +4909,9 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (shouldSkipStrictOfficialAdapterSlot(model, adapterPosition, indexedLine, normalizedText)) {
             return null;
         }
+        if (shouldSuppressExternalAdapterSlotMismatch(model, adapterPosition, normalizedText)) {
+            return null;
+        }
         WordLine line = null;
         WordLine translationLine = null;
         String matchReason = "none";
@@ -5020,6 +5120,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 adapterPosition,
                 normalizedText);
         if (shouldSkipStrictOfficialAdapterSlot(model, adapterPosition, indexedLine, normalizedText)
+                || shouldSuppressExternalAdapterSlotMismatch(model, adapterPosition, normalizedText)
                 || shouldSuppressDuplicateOfficialAdapterDraw(model, adapterPosition, cached.line)) {
             recentOfficialDrawFrames.remove(textView);
             return null;
@@ -5220,6 +5321,59 @@ public final class LockscreenLyricsModule extends XposedModule {
                 && adapterPosition >= 0
                 && !model.officialLines.isEmpty()
                 && adapterPosition < model.officialLines.size();
+    }
+
+    private boolean shouldSuppressExternalSlotMismatchDraw(
+            TextView textView,
+            WordLyricModel model,
+            String normalizedText) {
+        if (textView == null || model == null || !isInLyricsRecyclerView(textView)) {
+            return false;
+        }
+        int adapterPosition = findValidLyricsRecyclerAdapterPosition(textView, model);
+        return shouldSuppressExternalAdapterSlotMismatch(model, adapterPosition, normalizedText);
+    }
+
+    private boolean shouldSuppressExternalAdapterSlotMismatch(
+            WordLyricModel model,
+            int adapterPosition,
+            String normalizedText) {
+        if (!currentWordLyricModelFromExternal
+                || model == null
+                || adapterPosition < 0
+                || adapterPosition >= model.lines.size()
+                || TextUtils.isEmpty(normalizedText)) {
+            return false;
+        }
+        WordLine slotLine = model.lineAt(adapterPosition);
+        if (slotLine == null) {
+            return false;
+        }
+        boolean matchesMain = matchesWordLineText(slotLine, normalizedText);
+        boolean matchesTranslation = !TextUtils.isEmpty(slotLine.translation)
+                && slotLine.normalizedTranslation().equals(normalizedText);
+        if (matchesMain || matchesTranslation) {
+            return false;
+        }
+        WordLine nearbyLine = model.findLineByTextNearIndex(
+                normalizedText,
+                adapterPosition,
+                3,
+                false);
+        WordLine nearbyTranslationLine = model.findLineByTranslationNearIndex(
+                normalizedText,
+                adapterPosition,
+                3);
+        if (nearbyLine != null || nearbyTranslationLine != null) {
+            return false;
+        }
+        maybeLogOfficialAdapterSuppression(
+                "external-slot-mismatch",
+                adapterPosition,
+                model.indexOfLine(slotLine),
+                normalizedText,
+                slotLine);
+        return true;
     }
 
     private boolean shouldSuppressDuplicateOfficialAdapterDraw(
@@ -6060,7 +6214,6 @@ public final class LockscreenLyricsModule extends XposedModule {
             updateScreenTimeoutWakeLock(currentApplicationContext());
             return;
         }
-        restoreStuckHiddenLyricsRecyclerViews("active-refresh");
 
         ArrayList<TextView> candidates = activeLyricRefreshCandidates;
         candidates.clear();
@@ -6290,7 +6443,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             restoreSuppressedLyricsRecyclerViews(false);
         }
 
-        boolean touched = restoreStuckHiddenLyricsRecyclerViews(reason);
+        boolean touched = false;
         boolean skipRecyclerPrime = shouldSkipRecyclerPrimeDuringPlaybackJump(reason);
         for (View recycler : snapshotLyricsRecyclerViews()) {
             if (recycler == null
@@ -7389,7 +7542,8 @@ public final class LockscreenLyricsModule extends XposedModule {
                         buildTrackKey(document.title, document.artist)),
                 document.trackGeneration > 0L
                         ? document.trackGeneration
-                        : document.capturedAtMillis);
+                        : document.capturedAtMillis,
+                document.source);
         currentLyricProviderPayload = payload;
         bindCurrentLyricProviderPackage(packageName, "external lyric document");
         if (promotedWithSystemUiFallback) {
@@ -7687,6 +7841,12 @@ public final class LockscreenLyricsModule extends XposedModule {
             document = externalLyricDocuments.get(externalTrackKey(trackKey));
             if (isFreshExternalLyric(document, nowMillis)) {
                 return document;
+            }
+            for (ExternalLyricDocument candidate : externalLyricDocuments.values()) {
+                if (isFreshExternalLyric(candidate, nowMillis)
+                        && looksLikeExternalMetadataChurn(candidate, title, artist)) {
+                    return candidate;
+                }
             }
             for (ExternalLyricDocument candidate : externalLyricDocuments.values()) {
                 if (isFreshExternalLyric(candidate, nowMillis)
@@ -8993,9 +9153,12 @@ public final class LockscreenLyricsModule extends XposedModule {
         String payloadRawLyric = payload == null ? "" : payload.rawLyric;
         String payloadTranslationLyric =
                 payload == null ? "" : payload.translationLyric;
+        String payloadExternalSource = payloadExternalSource(payload);
         String externalSource = externalDocument == null
-                ? ""
+                ? payloadExternalSource
                 : externalDocument.source;
+        boolean externalPayload = externalDocument != null
+                || !TextUtils.isEmpty(payloadExternalSource);
         String rawLyric = externalDocument == null
                 ? payloadRawLyric
                 : repairExternalLyricText(
@@ -9027,6 +9190,19 @@ public final class LockscreenLyricsModule extends XposedModule {
             screenTimeoutLyricEvidenceGraceUntilElapsedMs = 0L;
         }
         String payloadKey = payloadTrackKey(payload);
+        boolean hasRawWordLyric = LyricInfoContract.containsTimedLrc(rawLyric);
+        if (!hasRawWordLyric && shouldRetainExternalWordLyricModel(payload, payloadKey)) {
+            lyricModelReplacementInProgress = false;
+            screenTimeoutLyricEvidenceGraceUntilElapsedMs =
+                    SystemClock.elapsedRealtime() + SCREEN_TIMEOUT_MODEL_EVIDENCE_GRACE_MS;
+            info("Retained external SystemUI word lyric model while official lyricInfo "
+                    + "has no word model"
+                    + ", payloadKey=" + shortenForLog(payloadKey)
+                    + ", currentKey=" + shortenForLog(currentWordLyricModelTrackKey)
+                    + ", source=" + nullToEmpty(currentWordLyricModelExternalSource));
+            updateScreenTimeoutWakeLock(currentApplicationContext());
+            return;
+        }
         String signature = buildWordLyricModelSignature(payload, rawLyric, translationLyric);
         boolean replacingModel = currentWordLyricModel != null
                 && !TextUtils.isEmpty(signature)
@@ -9039,16 +9215,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 beginOfficialLyricTrackHandoff("parsing replacement lyric model");
             }
         }
-        if (!LyricInfoContract.containsTimedLrc(rawLyric)) {
-            if (shouldRetainExternalWordLyricModel(payloadKey)) {
-                lyricModelReplacementInProgress = false;
-                screenTimeoutLyricEvidenceGraceUntilElapsedMs =
-                        SystemClock.elapsedRealtime() + SCREEN_TIMEOUT_MODEL_EVIDENCE_GRACE_MS;
-                info("Retained external SystemUI word lyric model while official lyricInfo "
-                        + "has no word model");
-                updateScreenTimeoutWakeLock(currentApplicationContext());
-                return;
-            }
+        if (!hasRawWordLyric) {
             currentWordLyricModel = null;
             currentWordLyricModelSignature = "";
             currentWordLyricModelFromExternal = false;
@@ -9090,7 +9257,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         traceWordLyricModel(
                 model,
                 "final-systemui",
-                externalDocument == null ? "systemui" : externalDocument.source);
+                externalPayload ? firstNonEmpty(externalSource, "external") : "systemui");
         if (model.lines.isEmpty()) {
             currentWordLyricModel = null;
             currentWordLyricModelSignature = "";
@@ -9111,18 +9278,18 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
         currentWordLyricModel = model;
         currentWordLyricModelSignature = signature;
-        currentWordLyricModelFromExternal = externalDocument != null;
+        currentWordLyricModelFromExternal = externalPayload;
         currentWordLyricModelTrackKey = payloadKey;
-        currentWordLyricModelExternalSource = externalDocument == null
+        currentWordLyricModelExternalSource = !externalPayload
                 ? ""
-                : externalDocument.source;
+                : externalSource;
         clearSeedlingActiveLyricHint();
         lyricModelReplacementInProgress = false;
         activeRendererTextView = new WeakReference<>(null);
         activeRendererWordLine = null;
         officialLyricTextRenderer.clearGlowCache();
         officialLyricTextRenderer.cancelModelSwitchReveal();
-        if (externalDocument != null) {
+        if (externalPayload) {
             externalLyricSoftHandoffMaskUntilElapsedMs = Math.max(
                     externalLyricSoftHandoffMaskUntilElapsedMs,
                     SystemClock.elapsedRealtime() + EXTERNAL_LYRIC_MODEL_READY_MASK_MS);
@@ -9135,16 +9302,30 @@ public final class LockscreenLyricsModule extends XposedModule {
         info("Cached SystemUI word lyric model, parser=" + model.parserName
                 + ", lines=" + model.lines.size()
                 + ", translations=" + model.translationCount()
-                + (externalDocument == null ? "" : ", externalSource=" + externalDocument.source));
+                + (externalPayload ? ", externalSource=" + nullToEmpty(externalSource) : ""));
         maybeLogWordLyricModelSlotIntegrity(
                 model,
-                externalDocument == null ? "systemui-cache" : "external-cache");
+                externalPayload ? "external-cache" : "systemui-cache");
         mainHandler.post(() -> {
             refreshTranslationActionViewVisibility();
             primeRememberedLyricsRecyclerViews("model-ready");
             invalidateRememberedLyricViews();
         });
         updateScreenTimeoutWakeLock(currentApplicationContext());
+    }
+
+    private static String payloadExternalSource(LyricInfoContract.Payload payload) {
+        if (payload == null) {
+            return "";
+        }
+        if (payload.isModuleEnvelope()) {
+            return nullToEmpty(payload.source);
+        }
+        if (ExternalLyricSources.KUGOU_MUSIC_SOURCE.equals(payload.provider)
+                || ExternalLyricSources.KUGOU_CONCEPT_MUSIC_SOURCE.equals(payload.provider)) {
+            return payload.provider;
+        }
+        return "";
     }
 
     private String repairExternalLyricText(String source, String value, String fieldName) {
@@ -9165,12 +9346,24 @@ public final class LockscreenLyricsModule extends XposedModule {
                 externalDocument.source);
     }
 
-    private boolean shouldRetainExternalWordLyricModel(String payloadKey) {
+    private boolean shouldRetainExternalWordLyricModel(
+            LyricInfoContract.Payload payload,
+            String payloadKey) {
         if (currentWordLyricModel == null || !currentWordLyricModelFromExternal) {
             return false;
         }
         if (!TextUtils.isEmpty(payloadKey)
-                && payloadKey.equals(currentWordLyricModelTrackKey)) {
+                && !TextUtils.isEmpty(currentWordLyricModelTrackKey)) {
+            if (payloadKey.equals(currentWordLyricModelTrackKey)
+                    || TrackIdentity.matchesHintKey(
+                    payloadKey,
+                    currentWordLyricModelTrackKey)) {
+                return true;
+            }
+        }
+        if (payload != null
+                && LyricInfoContract.containsTimedLrc(payload.lyric)
+                && hasFreshExternalDocumentForCurrentWordModel()) {
             return true;
         }
         long now = SystemClock.elapsedRealtime();
@@ -9179,6 +9372,124 @@ public final class LockscreenLyricsModule extends XposedModule {
                 || (externalLyricHandoffStartedAtElapsedMs > 0L
                         && now - externalLyricHandoffStartedAtElapsedMs
                         <= EXTERNAL_LYRIC_SOFT_HANDOFF_MASK_MS);
+    }
+
+    private boolean hasFreshExternalDocumentForCurrentWordModel() {
+        if (TextUtils.isEmpty(currentWordLyricModelExternalSource)) {
+            return false;
+        }
+        return freshExternalDocumentForCurrentWordModel(System.currentTimeMillis()) != null;
+    }
+
+    private boolean shouldProtectKugouExternalLyricSurface() {
+        if (currentWordLyricModel == null
+                || !currentWordLyricModelFromExternal
+                || !ExternalLyricSources.KUGOU_MUSIC_SOURCE.equals(
+                currentWordLyricModelExternalSource)) {
+            return false;
+        }
+        return hasFreshExternalDocumentForCurrentWordModel()
+                || currentKugouProviderPayloadHasWordTiming();
+    }
+
+    private boolean currentKugouProviderPayloadHasWordTiming() {
+        LyricInfoContract.Payload payload = currentLyricProviderPayload;
+        if (payload == null
+                || !payload.hasWordTiming()
+                || !ExternalLyricSources.KUGOU_MUSIC_SOURCE.equals(
+                payloadExternalSource(payload))) {
+            return false;
+        }
+        if (!TextUtils.isEmpty(currentLyricProviderPackage)
+                && !ExternalLyricSources.KUGOU_MUSIC_PLAYER_PACKAGE.equals(
+                currentLyricProviderPackage)) {
+            return false;
+        }
+        String payloadKey = payloadTrackKey(payload);
+        return TextUtils.isEmpty(payloadKey)
+                || TextUtils.isEmpty(currentWordLyricModelTrackKey)
+                || payloadKey.equals(currentWordLyricModelTrackKey)
+                || TrackIdentity.matchesHintKey(payloadKey, currentWordLyricModelTrackKey);
+    }
+
+    private ExternalLyricDocument freshExternalDocumentForCurrentWordModel(long nowMillis) {
+        if (TextUtils.isEmpty(currentWordLyricModelExternalSource)) {
+            return null;
+        }
+        ExternalLyricSourceInfo sourceInfo =
+                externalLyricSourceInfoForSource(currentWordLyricModelExternalSource);
+        if (!TextUtils.isEmpty(currentLyricProviderPackage)
+                && !TextUtils.isEmpty(sourceInfo.playerPackage)
+                && !currentLyricProviderPackage.equals(sourceInfo.playerPackage)) {
+            return null;
+        }
+        synchronized (externalLyricCacheLock) {
+            ExternalLyricDocument latest = latestExternalLyricDocumentsBySource.get(
+                    currentWordLyricModelExternalSource);
+            if (!isFreshExternalLyric(latest, nowMillis)) {
+                return null;
+            }
+            String documentKey = firstNonEmpty(
+                    latest.trackHintKey,
+                    buildTrackKey(latest.title, latest.artist));
+            boolean matchesCurrentModel = TextUtils.isEmpty(currentWordLyricModelTrackKey)
+                    || TextUtils.isEmpty(documentKey)
+                    || currentWordLyricModelTrackKey.equals(documentKey)
+                    || TrackIdentity.matchesHintKey(currentWordLyricModelTrackKey, documentKey);
+            return matchesCurrentModel ? latest : null;
+        }
+    }
+
+    private boolean looksLikeCurrentExternalMetadataChurn(String title, String artist) {
+        return resolveCurrentExternalMetadataChurnIdentity(title, artist) != null;
+    }
+
+    private MetadataTrackIdentity resolveCurrentExternalMetadataChurnIdentity(
+            String title,
+            String artist) {
+        ExternalLyricDocument document =
+                freshExternalDocumentForCurrentWordModel(System.currentTimeMillis());
+        if (document == null || TextUtils.isEmpty(title)) {
+            return null;
+        }
+        if (!looksLikeExternalMetadataChurn(document, title, artist)) {
+            return null;
+        }
+        return new MetadataTrackIdentity(document.title, document.artist, false);
+    }
+
+    private static boolean looksLikeExternalMetadataChurn(
+            ExternalLyricDocument document,
+            String title,
+            String artist) {
+        if (document == null || TextUtils.isEmpty(document.title)) {
+            return false;
+        }
+        String incomingKey = buildTrackKey(title, artist);
+        String documentKey = firstNonEmpty(
+                document.trackHintKey,
+                buildTrackKey(document.title, document.artist));
+        if (!TextUtils.isEmpty(incomingKey)
+                && !TextUtils.isEmpty(documentKey)
+                && TrackIdentity.matchesHintKey(documentKey, incomingKey)) {
+            return false;
+        }
+
+        String incomingTitle = normalizeLooseMetadataText(title);
+        String incomingArtist = normalizeLooseMetadataText(artist);
+        String documentTitle = normalizeLooseMetadataText(document.title);
+        String documentArtist = normalizeLooseMetadataText(document.artist);
+        if (incomingTitle.isEmpty() || documentTitle.isEmpty()) {
+            return false;
+        }
+        boolean titleDecorated = incomingTitle.contains(documentTitle)
+                && (documentArtist.isEmpty()
+                || incomingTitle.contains(documentArtist)
+                || incomingArtist.contains(documentArtist));
+        boolean artistMergedWithTitle = !documentArtist.isEmpty()
+                && incomingArtist.contains(documentArtist)
+                && incomingArtist.contains(documentTitle);
+        return titleDecorated || artistMergedWithTitle;
     }
 
     private void beginOfficialLyricTrackHandoff(String reason) {
@@ -9457,33 +9768,14 @@ public final class LockscreenLyricsModule extends XposedModule {
                         holdUntil - now + ACTIVE_LYRIC_FRAME_DELAY_MS);
                 return;
             }
-            boolean restored = false;
-            for (View recycler : snapshotLyricsRecyclerViews()) {
-                if (recycler == null
-                        || !recycler.isAttachedToWindow()
-                        || recycler.getVisibility() != View.VISIBLE
-                        || recycler.getWidth() <= 0
-                        || recycler.getHeight() <= 0) {
-                continue;
-            }
-            if (recycler.getAlpha() < 0.99f) {
-                recycler.animate().cancel();
-                recycler.setAlpha(SYSTEMUI_LYRIC_VISIBLE_ALPHA);
-                restored = true;
-                }
-                invalidateLyricsRecyclerDescendants(recycler);
-                recycler.postInvalidateOnAnimation();
-            }
-            if (restored) {
-                synchronized (suppressedLyricsRecyclerAlphasLock) {
-                    suppressedLyricsRecyclerAlphas.clear();
-                }
+            if (hasSuppressedLyricsRecyclerAlphas()) {
+                restoreSuppressedLyricsRecyclerViews(true);
+                invalidateRememberedLyricViews();
                 pendingCustomLyricTakeoverFade = false;
                 if (isLyricLayoutDiagnosticsEnabled()) {
-                    info("Visibility watchdog restored lyric RecyclerView alpha");
+                    info("Visibility watchdog restored module-suppressed lyric RecyclerView alpha");
                 }
             }
-            restoreStuckHiddenLyricsRecyclerViews("handoff-watchdog");
         }, Math.max(32L, delayMs));
     }
 
@@ -9494,67 +9786,10 @@ public final class LockscreenLyricsModule extends XposedModule {
         return holdUntil > now ? holdUntil : 0L;
     }
 
-    private boolean hasStuckHiddenLyricsRecyclerCandidate() {
-        long now = SystemClock.elapsedRealtime();
-        if (now < officialLyricDrawSuppressedUntilElapsedMs
-                || now <= externalLyricRecyclerMaskUntilElapsedMs
-                || now <= lyricRecyclerFadeInUntilElapsedMs) {
-            return false;
-        }
-        for (View recycler : snapshotLyricsRecyclerViews()) {
-            if (isRestorableLyricsRecycler(recycler)
-                    && recycler.getAlpha() <= 0.05f) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private boolean restoreStuckHiddenLyricsRecyclerViews(String reason) {
-        if (currentWordLyricModel == null || !systemUiLyricModeKeepAwakeActive) {
-            return false;
-        }
-        long now = SystemClock.elapsedRealtime();
-        if (now < officialLyricDrawSuppressedUntilElapsedMs
-                || now <= externalLyricRecyclerMaskUntilElapsedMs
-                || now <= lyricRecyclerFadeInUntilElapsedMs) {
-            return false;
-        }
-
-        boolean restored = false;
-        for (View recycler : snapshotLyricsRecyclerViews()) {
-            if (!isRestorableLyricsRecycler(recycler)
-                    || recycler.getAlpha() > 0.05f) {
-                continue;
-            }
-            recycler.animate().cancel();
-            recycler.setAlpha(SYSTEMUI_LYRIC_VISIBLE_ALPHA);
-            invalidateLyricsRecyclerDescendants(recycler);
-            recycler.postInvalidateOnAnimation();
-            restored = true;
-        }
-        if (!restored) {
-            return false;
-        }
-
+    private boolean hasSuppressedLyricsRecyclerAlphas() {
         synchronized (suppressedLyricsRecyclerAlphasLock) {
-            suppressedLyricsRecyclerAlphas.clear();
+            return !suppressedLyricsRecyclerAlphas.isEmpty();
         }
-        pendingCustomLyricTakeoverFade = false;
-        externalLyricRecyclerMaskUntilElapsedMs = 0L;
-        externalLyricHandoffStartedAtElapsedMs = 0L;
-        externalLyricFadeInRetryGeneration = -1;
-        lyricRecyclerFadeInUntilElapsedMs = 0L;
-        maybeLogLyricVisibilityRecovery("restored-hidden-recycler-" + nullToEmpty(reason));
-        return true;
-    }
-
-    private static boolean isRestorableLyricsRecycler(View recycler) {
-        return recycler != null
-                && recycler.isAttachedToWindow()
-                && recycler.getVisibility() == View.VISIBLE
-                && recycler.getWidth() > 0
-                && recycler.getHeight() > 0;
     }
 
     private boolean shouldSuppressOfficialLyricForTrackHandoff() {
@@ -11169,7 +11404,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             long position,
             String matchReason,
             boolean duplicateText) {
-        if (!isLyricLayoutDiagnosticsEnabled() || model == null) {
+        if (!isLyricVerboseDiagnosticsEnabled() || model == null) {
             return;
         }
         WordLine slotLine = model.lineAt(adapterPosition);
@@ -11247,7 +11482,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     private void maybeLogWordLyricModelSlotIntegrity(
             WordLyricModel model,
             String reason) {
-        if (!isLyricLayoutDiagnosticsEnabled() || model == null) {
+        if (!isLyricVerboseDiagnosticsEnabled() || model == null) {
             return;
         }
         IdentityHashMap<WordLine, Integer> firstSlots = new IdentityHashMap<>();
@@ -11352,7 +11587,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private void maybeLogTextViewSpan(long position, String line, Object view) {
-        if (!isLyricLayoutDiagnosticsEnabled()) {
+        if (!isLyricVerboseDiagnosticsEnabled()) {
             return;
         }
         long now = System.currentTimeMillis();
@@ -11366,7 +11601,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private void maybeLogTextViewDraw(DrawFrame frame, TextView view) {
-        if (!isLyricLayoutDiagnosticsEnabled()) {
+        if (!isLyricVerboseDiagnosticsEnabled()) {
             return;
         }
         long now = System.currentTimeMillis();
@@ -11391,7 +11626,7 @@ public final class LockscreenLyricsModule extends XposedModule {
 
     private void maybeLogOfficialLyricPayload(
             LyricInfoContract.Payload payload, boolean normalizedForOfficialList) {
-        if (!isLyricLayoutDiagnosticsEnabled()) {
+        if (!isLyricVerboseDiagnosticsEnabled()) {
             return;
         }
         long now = System.currentTimeMillis();
@@ -11416,7 +11651,7 @@ public final class LockscreenLyricsModule extends XposedModule {
 
     private void maybeLogOfficialLyricGeometry(
             DrawFrame frame, TextView view, String role) {
-        if (!isLyricLayoutDiagnosticsEnabled()) {
+        if (!isLyricVerboseDiagnosticsEnabled()) {
             return;
         }
         long now = System.currentTimeMillis();
@@ -11449,7 +11684,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             int targetIndex,
             LyricsRecyclerGeometry before,
             LyricsRecyclerGeometry after) {
-        if (!isLyricLayoutDiagnosticsEnabled()) {
+        if (!isLyricVerboseDiagnosticsEnabled()) {
             return;
         }
         long now = System.currentTimeMillis();
@@ -11473,7 +11708,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private void maybeLogRecyclerScrollStabilize(View recycler, String reason) {
-        if (!isLyricLayoutDiagnosticsEnabled()) {
+        if (!isLyricVerboseDiagnosticsEnabled()) {
             return;
         }
         long now = System.currentTimeMillis();
@@ -11490,7 +11725,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             View recycler,
             int targetIndex,
             String reason) {
-        if (!isLyricLayoutDiagnosticsEnabled()) {
+        if (!isLyricVerboseDiagnosticsEnabled()) {
             return;
         }
         long now = System.currentTimeMillis();
@@ -11509,7 +11744,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             int currentOffset,
             int adjustedOffset,
             int baseOffset) {
-        if (!isLyricLayoutDiagnosticsEnabled()) {
+        if (!isLyricVerboseDiagnosticsEnabled()) {
             return;
         }
         info("Adjusted official lyric current line offset"
@@ -11521,7 +11756,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private void maybeLogSeedlingPlaybackState(int state, long storedPosition, long computedPosition, float speed) {
-        if (!isLyricLayoutDiagnosticsEnabled()) {
+        if (!isLyricVerboseDiagnosticsEnabled()) {
             return;
         }
         long now = System.currentTimeMillis();
@@ -11548,7 +11783,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             int recyclerCount,
             boolean setCurrentLyric,
             boolean forceAligned) {
-        if (!isLyricLayoutDiagnosticsEnabled()) {
+        if (!isLyricVerboseDiagnosticsEnabled()) {
             return;
         }
         long now = System.currentTimeMillis();
@@ -11619,7 +11854,7 @@ public final class LockscreenLyricsModule extends XposedModule {
 
     private void maybeLogActiveRefresh(
             long position, String line, int candidates, int attached, int visible, int updated) {
-        if (!isLyricLayoutDiagnosticsEnabled()) {
+        if (!isLyricVerboseDiagnosticsEnabled()) {
             return;
         }
         long now = System.currentTimeMillis();
@@ -11648,7 +11883,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private void maybeLogRecyclerIndex(int index) {
-        if (!isLyricLayoutDiagnosticsEnabled()) {
+        if (!isLyricVerboseDiagnosticsEnabled()) {
             return;
         }
         long now = System.currentTimeMillis();
@@ -11663,6 +11898,10 @@ public final class LockscreenLyricsModule extends XposedModule {
         return LYRIC_DEBUG_DIAGNOSTICS_ENABLED
                 || LYRIC_VERBOSE_DIAGNOSTICS_ENABLED
                 || Log.isLoggable(TAG, Log.DEBUG);
+    }
+
+    private static boolean isLyricVerboseDiagnosticsEnabled() {
+        return LYRIC_VERBOSE_DIAGNOSTICS_ENABLED || Log.isLoggable(TAG, Log.VERBOSE);
     }
 
     private static boolean isLyricParseTraceEnabled() {
@@ -11795,6 +12034,21 @@ public final class LockscreenLyricsModule extends XposedModule {
             }
         }
         return "";
+    }
+
+    private static String normalizeLooseMetadataText(String value) {
+        if (TextUtils.isEmpty(value)) {
+            return "";
+        }
+        String trimmed = value.trim().toLowerCase(Locale.ROOT);
+        StringBuilder builder = new StringBuilder(trimmed.length());
+        for (int i = 0; i < trimmed.length(); i++) {
+            char character = trimmed.charAt(i);
+            if (Character.isLetterOrDigit(character) || character > 0x7F) {
+                builder.append(character);
+            }
+        }
+        return builder.toString();
     }
 
     private static ArrayList<String> splitRawLyricLines(String rawLyric) {
@@ -12181,7 +12435,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         object.put(LyricInfoContract.JSON_PROVIDER, LyricInfoContract.MODULE_PROVIDER);
         object.put(LyricInfoContract.JSON_TRACK_KEY, nullToEmpty(trackKey));
         object.put(LyricInfoContract.JSON_SESSION_GENERATION, sessionGeneration);
-        object.put("source", nullToEmpty(source));
+        object.put(LyricInfoContract.JSON_SOURCE, nullToEmpty(source));
         return object.toString();
     }
 

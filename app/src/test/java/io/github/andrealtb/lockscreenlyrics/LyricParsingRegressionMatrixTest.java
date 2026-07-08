@@ -116,6 +116,60 @@ public final class LyricParsingRegressionMatrixTest {
     }
 
     @Test
+    public void neteaseBracketWordTimedLineKeepsTrueWordTiming() {
+        String lrc = "[00:46.230]Girl [00:46.470]tell [00:46.770]me "
+                + "[00:47.010]what [00:47.280]you [00:47.460]want"
+                + "[00:48.120], [00:48.120]what [00:48.690]you "
+                + "[00:48.870]want[00:50.340]\n"
+                + "[00:46.230]\u5b9d\u8d1d\u544a\u8bc9\u6211\u4f60\u60f3\u8981\u4ec0\u4e48";
+
+        LyricsCoreAdapter.ParsedLyrics parsed = LyricsCoreAdapter.parse(lrc);
+        TimedLyricDocument document = TimedLyricDocument.fromRawLrc(lrc);
+
+        assertParsedLine(
+                parsed,
+                46_230L,
+                "Girl tell me what you want, what you want",
+                "\u5b9d\u8d1d\u544a\u8bc9\u6211\u4f60\u60f3\u8981\u4ec0\u4e48");
+        TimedLyricDocument.Line line = document.lines().stream()
+                .filter(candidate -> candidate.startMillis == 46_230L)
+                .findFirst()
+                .orElseThrow();
+        assertEquals("Girl tell me what you want, what you want", line.text);
+        assertEquals("\u5b9d\u8d1d\u544a\u8bc9\u6211\u4f60\u60f3\u8981\u4ec0\u4e48", line.translation);
+        assertTrue(line.words.size() > 1);
+        assertEquals(46_230L, line.words.get(0).startMillis);
+        assertEquals(48_870L, line.words.get(line.words.size() - 1).startMillis);
+    }
+
+    @Test
+    public void neteaseEnhancedWordTimedLineKeepsTrueWordTiming() {
+        String lrc = "[00:46.230] <00:46.230>Girl <00:46.470>tell "
+                + "<00:46.770>me <00:47.010>what <00:47.280>you "
+                + "<00:47.460>want<00:48.120>, <00:48.120>what "
+                + "<00:48.690>you <00:48.870>want<00:50.340>\n"
+                + "[00:46.230]\u5b9d\u8d1d\u544a\u8bc9\u6211\u4f60\u60f3\u8981\u4ec0\u4e48";
+
+        LyricsCoreAdapter.ParsedLyrics parsed = LyricsCoreAdapter.parse(lrc);
+        TimedLyricDocument document = TimedLyricDocument.fromRawLrc(lrc);
+
+        assertParsedLine(
+                parsed,
+                46_230L,
+                "Girl tell me what you want, what you want",
+                "\u5b9d\u8d1d\u544a\u8bc9\u6211\u4f60\u60f3\u8981\u4ec0\u4e48");
+        TimedLyricDocument.Line line = document.lines().stream()
+                .filter(candidate -> candidate.startMillis == 46_230L)
+                .findFirst()
+                .orElseThrow();
+        assertEquals("Girl tell me what you want, what you want", line.text);
+        assertEquals("\u5b9d\u8d1d\u544a\u8bc9\u6211\u4f60\u60f3\u8981\u4ec0\u4e48", line.translation);
+        assertTrue(line.words.size() > 1);
+        assertEquals(46_230L, line.words.get(0).startMillis);
+        assertEquals(48_870L, line.words.get(line.words.size() - 1).startMillis);
+    }
+
+    @Test
     public void shortEnglishLineIsNotMistakenForRomajiWhenTranslationComesFirst() {
         String translation = "\u6211\u66fe\u770b\u5230\u5982\u4eca\u9677\u5165\u8ff7\u5931";
         String lrc = "[01:58.780]" + translation + "\n"

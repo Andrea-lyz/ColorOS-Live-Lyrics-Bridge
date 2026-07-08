@@ -21,6 +21,7 @@ public final class LyricInfoContract {
     public static final String JSON_RAW_LYRIC = "rawLyric";
     public static final String JSON_TRANSLATION_LYRIC = "translationLyric";
     public static final String JSON_PROVIDER = "provider";
+    public static final String JSON_SOURCE = "source";
     public static final String JSON_TRACK_KEY = "trackKey";
     public static final String JSON_SESSION_GENERATION = "sessionGeneration";
     public static final String MODULE_PROVIDER = "lockscreen-lyrics-module";
@@ -99,7 +100,8 @@ public final class LyricInfoContract {
                     findTranslationLyric(object),
                     object.optString(JSON_PROVIDER, ""),
                     object.optString(JSON_TRACK_KEY, ""),
-                    object.optLong(JSON_SESSION_GENERATION, 0L)
+                    object.optLong(JSON_SESSION_GENERATION, 0L),
+                    object.optString(JSON_SOURCE, "")
             );
         } catch (Throwable ignored) {
             return null;
@@ -159,6 +161,7 @@ public final class LyricInfoContract {
         public final String provider;
         public final String trackKey;
         public final long sessionGeneration;
+        public final String source;
 
         Payload(
                 String songName,
@@ -169,7 +172,8 @@ public final class LyricInfoContract {
                 String translationLyric,
                 String provider,
                 String trackKey,
-                long sessionGeneration) {
+                long sessionGeneration,
+                String source) {
             this.songName = songName;
             this.artist = artist;
             this.songId = songId;
@@ -179,6 +183,7 @@ public final class LyricInfoContract {
             this.provider = provider;
             this.trackKey = trackKey;
             this.sessionGeneration = sessionGeneration;
+            this.source = source;
         }
 
         public boolean hasWordTiming() {

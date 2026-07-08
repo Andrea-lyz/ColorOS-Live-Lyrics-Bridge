@@ -95,7 +95,8 @@ final class ExternalLyricSources {
     }
 
     static boolean shouldApplyOfficialDisplayTextAliases(String source) {
-        return !APPLE_MUSIC_SOURCE.equals(source);
+        return !APPLE_MUSIC_SOURCE.equals(source)
+                && !KUGOU_MUSIC_SOURCE.equals(source);
     }
 
     static boolean canOverrideFavoriteActionWithTranslation(String packageName) {

@@ -74,6 +74,10 @@ public class ExternalLyricSourcesTest {
     public void officialDisplayAliasesAreSkippedForAppleMusicProvider() {
         assertFalse(ExternalLyricSources.shouldApplyOfficialDisplayTextAliases(
                 "lyricprovider/apple-music"));
+        assertFalse(ExternalLyricSources.shouldApplyOfficialDisplayTextAliases(
+                "lyricprovider/kugou-music"));
+        assertTrue(ExternalLyricSources.shouldApplyOfficialDisplayTextAliases(
+                "lyricprovider/kugou-concept-music"));
         assertTrue(ExternalLyricSources.shouldApplyOfficialDisplayTextAliases(
                 "lyricprovider/spotify-music"));
         assertTrue(ExternalLyricSources.shouldApplyOfficialDisplayTextAliases(

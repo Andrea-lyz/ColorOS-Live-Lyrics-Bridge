@@ -92,6 +92,7 @@ public final class LyricInfoTrackMatcherTest {
                 "",
                 provider,
                 "",
-                0L);
+                0L,
+                "");
     }
 }

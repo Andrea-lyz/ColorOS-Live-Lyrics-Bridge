@@ -43,7 +43,7 @@ final class TimedLyricDocument {
             words = sanitizeSuspiciousWordTiming(
                     parsedLine.startMillis,
                     parsedLine.endMillis,
-                    parsedLine.text.length(),
+                    parsedLine.text,
                     words);
             converted.add(new Line(
                     parsedLine.startMillis,
@@ -318,24 +318,28 @@ final class TimedLyricDocument {
     private static ArrayList<Word> sanitizeSuspiciousWordTiming(
             long lineStartMillis,
             long lineEndMillis,
-            int textLength,
+            String text,
             ArrayList<Word> words) {
         if (words == null || words.size() < 2) {
             return words;
         }
+        ArrayList<Word> timingWords = lyricTimingWords(text, words);
+        if (timingWords.size() < 2) {
+            return words;
+        }
         long maxGap = 0L;
         boolean strictlyIncreasing = true;
-        for (int index = 1; index < words.size(); index++) {
-            long gap = words.get(index).startMillis - words.get(index - 1).startMillis;
+        for (int index = 1; index < timingWords.size(); index++) {
+            long gap = timingWords.get(index).startMillis - timingWords.get(index - 1).startMillis;
             if (gap <= 0L) {
                 strictlyIncreasing = false;
             }
             maxGap = Math.max(maxGap, gap);
         }
         if (!LyricTimingRepair.shouldDowngradeWordTiming(
-                words.size(),
-                words.get(0).startMillis,
-                words.get(words.size() - 1).startMillis,
+                timingWords.size(),
+                timingWords.get(0).startMillis,
+                timingWords.get(timingWords.size() - 1).startMillis,
                 maxGap,
                 strictlyIncreasing)) {
             return words;
@@ -345,8 +349,32 @@ final class TimedLyricDocument {
                 lineStartMillis,
                 Math.max(lineStartMillis, lineEndMillis),
                 0,
-                textLength));
+                nullToEmpty(text).length()));
         return lineTimedWords;
+    }
+
+    private static ArrayList<Word> lyricTimingWords(String text, ArrayList<Word> words) {
+        ArrayList<Word> timingWords = new ArrayList<>();
+        for (Word word : words) {
+            if (hasLyricTimingText(text, word)) {
+                timingWords.add(word);
+            }
+        }
+        return timingWords;
+    }
+
+    private static boolean hasLyricTimingText(String text, Word word) {
+        String safeText = nullToEmpty(text);
+        int start = clamp(word.start, 0, safeText.length());
+        int end = clamp(word.end, 0, safeText.length());
+        while (start < end) {
+            int codePoint = safeText.codePointAt(start);
+            if (Character.isLetterOrDigit(codePoint)) {
+                return true;
+            }
+            start += Character.charCount(codePoint);
+        }
+        return false;
     }
 
     private static boolean containsCjkScript(String text) {

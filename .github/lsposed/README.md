@@ -2,7 +2,7 @@
 
 ## Latest release
 
-v2.7.0 adds lyric UI controls, configurable lock-screen keep-awake behavior, LyricProvider protocol declarations, and a stronger KuGou MediaSession lyricInfo path, while further reducing routine log noise and stale-lyric handoff jitter. Release assets include `LyricProvider-v2.7.0.zip` for installing all provider APKs together.
+v2.7.1 improves KuGou original-provider switching stability, tightens Bridge handoff rendering, supports additional NetEase word-timed lyric formats, and further reduces diagnostic log noise. Release assets include `LyricProvider-v2.7.1.zip` for installing all provider APKs together.
 
 ## 简体中文
 

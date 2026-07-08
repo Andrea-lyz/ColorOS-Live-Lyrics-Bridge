@@ -35,13 +35,14 @@ final class LyricsCoreAdapter {
             return ParsedLyrics.EMPTY;
         }
 
+        String parserContent = normalizeBracketInlineTiming(content);
         ArrayList<ParsedLine> lines = new ArrayList<>();
         try {
             // AutoParser keeps mutable parser-selection state. SystemUI may deliver overlapping
             // lyricInfo updates while a track is changing, so keep one parse transaction atomic.
             synchronized (AUTO_PARSER) {
-                if (AUTO_PARSER.canParse(content)) {
-                    SyncedLyrics parsed = AUTO_PARSER.parse(content);
+                if (AUTO_PARSER.canParse(parserContent)) {
+                    SyncedLyrics parsed = AUTO_PARSER.parse(parserContent);
                     for (ISyncedLine sourceLine : parsed.getLines()) {
                         ParsedLine line = toParsedLine(sourceLine);
                         if (line != null && !line.text.trim().isEmpty()) {
@@ -68,6 +69,99 @@ final class LyricsCoreAdapter {
         return lines.isEmpty()
                 ? ParsedLyrics.EMPTY
                 : new ParsedLyrics(lines);
+    }
+
+    private static String normalizeBracketInlineTiming(String content) {
+        StringBuilder normalized = new StringBuilder(content.length());
+        int lineStart = 0;
+        int length = content.length();
+        while (lineStart < length) {
+            int lineEnd = lineStart;
+            while (lineEnd < length) {
+                char value = content.charAt(lineEnd);
+                if (value == '\n' || value == '\r') {
+                    break;
+                }
+                lineEnd++;
+            }
+
+            normalized.append(normalizeBracketInlineTimingLine(
+                    content.substring(lineStart, lineEnd)));
+            if (lineEnd < length) {
+                char newline = content.charAt(lineEnd);
+                normalized.append(newline);
+                if (newline == '\r'
+                        && lineEnd + 1 < length
+                        && content.charAt(lineEnd + 1) == '\n') {
+                    lineEnd++;
+                    normalized.append('\n');
+                }
+            }
+            lineStart = lineEnd + 1;
+        }
+        return normalized.toString();
+    }
+
+    private static String normalizeBracketInlineTimingLine(String line) {
+        Matcher matcher = LRC_OR_WORD_TIME_TAG.matcher(line);
+        StringBuilder normalized = null;
+        int segmentStart = 0;
+        boolean seenLyricText = false;
+        while (matcher.find()) {
+            if (containsLyricTimingText(line, segmentStart, matcher.start())) {
+                seenLyricText = true;
+            }
+            boolean bracketTag = line.charAt(matcher.start()) == '['
+                    && line.charAt(matcher.end() - 1) == ']';
+            boolean inlineBracketTag = seenLyricText && bracketTag;
+            if (inlineBracketTag && normalized == null) {
+                normalized = new StringBuilder(line.length());
+                normalized.append(line, 0, segmentStart);
+            }
+            if (normalized != null) {
+                normalized.append(line, segmentStart, matcher.start());
+                if (inlineBracketTag) {
+                    normalized.append(toAngleTimeTag(matcher));
+                } else {
+                    normalized.append(line, matcher.start(), matcher.end());
+                }
+            }
+            segmentStart = matcher.end();
+        }
+        if (normalized == null) {
+            return line;
+        }
+        normalized.append(line, segmentStart, line.length());
+        return ensureFirstBracketWordTiming(normalized.toString());
+    }
+
+    private static String ensureFirstBracketWordTiming(String line) {
+        Matcher firstTag = LRC_OR_WORD_TIME_TAG.matcher(line);
+        if (!firstTag.find()
+                || firstTag.start() != 0
+                || line.charAt(firstTag.start()) != '['
+                || line.charAt(firstTag.end() - 1) != ']') {
+            return line;
+        }
+
+        Matcher nextTag = LRC_OR_WORD_TIME_TAG.matcher(line);
+        nextTag.region(firstTag.end(), line.length());
+        if (!nextTag.find()
+                || !containsLyricTimingText(line, firstTag.end(), nextTag.start())) {
+            return line;
+        }
+        return line.substring(0, firstTag.end())
+                + toAngleTimeTag(firstTag)
+                + line.substring(firstTag.end());
+    }
+
+    private static String toAngleTimeTag(Matcher matcher) {
+        StringBuilder tag = new StringBuilder();
+        tag.append('<').append(matcher.group(1)).append(':').append(matcher.group(2));
+        if (matcher.group(3) != null) {
+            tag.append('.').append(matcher.group(3));
+        }
+        return tag.append('>').toString();
     }
 
     static ParsedLyrics parsePlainLrc(String content) {
@@ -312,6 +406,19 @@ final class LyricsCoreAdapter {
                 return true;
             }
             index += Character.charCount(codePoint);
+        }
+        return false;
+    }
+
+    private static boolean containsLyricTimingText(String text, int start, int end) {
+        int safeStart = Math.max(0, Math.min(start, text.length()));
+        int safeEnd = Math.max(safeStart, Math.min(end, text.length()));
+        while (safeStart < safeEnd) {
+            int codePoint = text.codePointAt(safeStart);
+            if (Character.isLetterOrDigit(codePoint)) {
+                return true;
+            }
+            safeStart += Character.charCount(codePoint);
         }
         return false;
     }
