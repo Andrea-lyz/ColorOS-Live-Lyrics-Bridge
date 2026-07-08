@@ -497,11 +497,6 @@ jobs:
             echo "No APK files found" >&2
             exit 1
           fi
-          mapfile -t bridge_apks < <(find dist -name 'ColorOS-Live-Lyrics-Bridge-*.apk' -type f | sort)
-          if [[ "${#bridge_apks[@]}" -eq 0 ]]; then
-            echo "No bridge APK files found" >&2
-            exit 1
-          fi
           mapfile -t provider_apks < <(find dist -name 'LyricProvider-*.apk' -type f | sort)
           if [[ "${#provider_apks[@]}" -eq 0 ]]; then
             echo "No LyricProvider APK files found" >&2
@@ -511,9 +506,7 @@ jobs:
           bundle_file="$RUNNER_TEMP/LyricProvider-${RELEASE_TAG}.zip"
           cp "${provider_apks[@]}" "$bundle_dir/"
           (cd "$bundle_dir" && zip -qr "$bundle_file" .)
-          # LSPosed parses raw APK assets to determine the module version. Keep provider
-          # APKs inside the bundle zip here so the mirror release is keyed by the bridge APK.
-          release_assets=("${bridge_apks[@]}" "$bundle_file")
+          release_assets=("${apk_files[@]}" "$bundle_file")
           notes_file=".github/release-notes/${VERSION_NAME}.md"
           body_file="$RUNNER_TEMP/source-release-body.md"
           donation_image_url="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/main/PY_QR.png"
