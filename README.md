@@ -179,7 +179,7 @@ JDK 21 is required to compile the Lyrics Core dependency. The helper discovers i
 ## GitHub Actions
 
 - `Build Debug APK`: runs on pushes to `main` and pull requests when project source or build files change. The generated debug APK is uploaded as a workflow artifact.
-- `Release APK Bundle`: runs after pushing a tag such as `v2.3.0`, or from manual dispatch. It builds the signed Bridge APK, checks out `Andrea-lyz/LyricProvider`, builds the signed provider APKs, publishes all APKs to the source release, and mirrors all APKs to the LSPosed repository release with a `versionCode-versionName` tag such as `104-2.3.0`.
+- `Release APK Bundle`: runs after pushing a tag such as `v2.3.0`, or from manual dispatch. It builds the signed Bridge APK, checks out `Andrea-lyz/LyricProvider`, builds the signed provider APKs, publishes all APKs to the source release, and mirrors only the Bridge APK plus `LyricProvider-<tag>.zip` to the LSPosed repository release with a `versionCode-versionName` tag such as `104-2.3.0`.
 
 The release workflow expects these repository secrets:
 

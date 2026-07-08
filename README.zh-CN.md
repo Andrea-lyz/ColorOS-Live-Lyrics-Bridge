@@ -179,7 +179,7 @@ app\build\outputs\apk\debug\app-debug.apk
 ## GitHub Actions
 
 - `Build Debug APK`：当 `main` 分支源码更新或发起 Pull Request 时自动构建，生成的 debug APK 会作为 workflow artifact 上传。
-- `Release APK Bundle`：推送类似 `v2.3.0` 的 tag 后自动运行，也可以手动触发。工作流会构建签名 Bridge APK，checkout `Andrea-lyz/LyricProvider`，构建签名 Provider APK，并把所有 APK 同时发布到源仓库 Release 与 LSPosed 仓库 Release；LSPosed 仓库使用 `104-2.3.0` 这类 `versionCode-versionName` 标签。
+- `Release APK Bundle`：推送类似 `v2.3.0` 的 tag 后自动运行，也可以手动触发。工作流会构建签名 Bridge APK，checkout `Andrea-lyz/LyricProvider`，构建签名 Provider APK；源仓库 Release 会发布所有 APK，LSPosed 仓库 Release 只发布 Bridge APK 和 `LyricProvider-<tag>.zip`，避免 LSPosed 把独立 Provider APK 误识别为主模块版本；LSPosed 仓库使用 `104-2.3.0` 这类 `versionCode-versionName` 标签。
 
 发布工作流需要这些仓库 secrets：
 
