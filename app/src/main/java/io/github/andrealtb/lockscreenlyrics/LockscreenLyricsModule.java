@@ -66,6 +66,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     private static final String TAG = "LockscreenLyrics";
     private static final String LYRIC_PARSE_TRACE_TAG = "LockscreenLyricsParse";
     private static final boolean LYRIC_DEBUG_DIAGNOSTICS_ENABLED = false;
+    private static final boolean TRANSLATION_BUTTON_DIAGNOSTICS_ENABLED = false;
     private static final boolean LYRIC_VERBOSE_DIAGNOSTICS_ENABLED = false;
     private static final boolean LYRIC_PARSE_TRACE_ENABLED = false;
     private static final int LYRIC_PARSE_TRACE_CHUNK_SIZE = 3000;
@@ -1033,8 +1034,14 @@ public final class LockscreenLyricsModule extends XposedModule {
         String packageName = packageNameArg instanceof String ? (String) packageNameArg : "";
         boolean hasTranslationAction = !TextUtils.isEmpty(packageName)
                 && controllerHasTranslationAction(controllerArg);
-        if (hasTranslationAction
-                || canOverrideFavoriteActionWithTranslation(packageName)) {
+        boolean canOverrideWithTranslation = canOverrideFavoriteActionWithTranslation(packageName);
+        translationButtonDebug("createActionsFromState package=" + nullToEmpty(packageName)
+                + ", hasPublicAction=" + hasTranslationAction
+                + ", canOverride=" + canOverrideWithTranslation
+                + ", controller=" + (controllerArg == null
+                ? "null"
+                : controllerArg.getClass().getName()));
+        if (hasTranslationAction || canOverrideWithTranslation) {
             ensureTranslationToggleRule0(packageName);
         }
 
@@ -1045,7 +1052,13 @@ public final class LockscreenLyricsModule extends XposedModule {
                         packageName,
                         controllerArg);
                 if (result != null) {
+                    translationButtonDebug("createActionsFromState result for "
+                            + packageName
+                            + ", class=" + result.getClass().getName());
                     replaceTranslationToggleAction(packageName, result);
+                } else {
+                    translationButtonDebug("createActionsFromState result null for "
+                            + packageName);
                 }
             }
         } catch (Throwable t) {
@@ -1065,12 +1078,18 @@ public final class LockscreenLyricsModule extends XposedModule {
     private void ensureTranslationToggleRule0(String packageName) {
         if (TextUtils.isEmpty(packageName)
                 || isBuiltInPlayerPackage(packageName)) {
+            translationButtonDebug("skip Rule0 ensure, package=" + nullToEmpty(packageName)
+                    + ", builtIn=" + isBuiltInPlayerPackage(packageName));
             return;
         }
-        translationToggleRule0Packages.add(packageName);
+        boolean added = translationToggleRule0Packages.add(packageName);
         if (!refreshedTranslationToggleRule0Packages.contains(packageName)) {
             pendingTranslationToggleRule0Packages.add(packageName);
         }
+        translationButtonDebug("ensure Rule0 package=" + packageName
+                + ", added=" + added
+                + ", pending=" + pendingTranslationToggleRule0Packages.contains(packageName)
+                + ", refreshed=" + refreshedTranslationToggleRule0Packages.contains(packageName));
         refreshPendingTranslationToggleRule0Packages();
     }
 
@@ -1084,6 +1103,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             }
         }
         if (pendingPackages.isEmpty()) {
+            translationButtonDebug("refresh Rule0 skipped: no pending packages");
             return;
         }
 
@@ -1093,6 +1113,10 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (selector == null
                 || updateMethod == null
                 || cachedArgs == null) {
+            translationButtonDebug("refresh Rule0 waiting, pending=" + pendingPackages
+                    + ", selector=" + (selector != null)
+                    + ", updateMethod=" + (updateMethod != null)
+                    + ", cachedArgs=" + (cachedArgs != null));
             return;
         }
 
@@ -1150,18 +1174,31 @@ public final class LockscreenLyricsModule extends XposedModule {
     private void replaceTranslationToggleAction(
             String packageName, Object mediaButton) {
         if (TextUtils.isEmpty(packageName) || mediaButton == null) {
+            translationButtonDebug("replace action skipped, package="
+                    + nullToEmpty(packageName)
+                    + ", mediaButton=" + (mediaButton != null));
             return;
         }
 
         Object mediaButtonEx = invokeNoArgByName(mediaButton, "getMediaButtonEx");
         Object actions = invokeNoArgByName(mediaButtonEx, "getRule0CustomActions");
         if (!(actions instanceof List)) {
+            translationButtonDebug("replace action skipped: Rule0 actions missing"
+                    + ", package=" + packageName
+                    + ", mediaButtonEx=" + (mediaButtonEx == null
+                    ? "null"
+                    : mediaButtonEx.getClass().getName())
+                    + ", actions=" + (actions == null ? "null" : actions.getClass().getName()));
             return;
         }
+        List<?> actionList = (List<?>) actions;
+        translationButtonDebug("inspect Rule0 actions, package=" + packageName
+                + ", count=" + actionList.size()
+                + ", actions=" + describeRule0ActionIds(actionList));
 
         Object overrideCandidate = null;
         String overrideActionId = "";
-        for (Object mediaAction : (List<?>) actions) {
+        for (Object mediaAction : actionList) {
             Object runnable = invokeNoArgByName(mediaAction, "getAction");
             PlaybackState.CustomAction customAction = findPlaybackStateCustomAction(runnable);
             if (customAction == null) {
@@ -1184,7 +1221,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             configureTranslationMediaAction(
                     packageName,
                     mediaButtonEx,
-                    (List<?>) actions,
+                    actionList,
                     mediaAction,
                     integrationAction ? "public" : "salt-legacy",
                     actionId);
@@ -1194,10 +1231,20 @@ public final class LockscreenLyricsModule extends XposedModule {
             configureTranslationMediaAction(
                     packageName,
                     mediaButtonEx,
-                    (List<?>) actions,
+                    actionList,
                     overrideCandidate,
                     "player-override",
                     overrideActionId);
+        } else {
+            translationButtonDebug("no translation action candidate, package=" + packageName
+                    + ", currentProvider=" + nullToEmpty(currentLyricProviderPackage)
+                    + ", modelTranslations="
+                    + (currentWordLyricModel == null ? -1 : currentWordLyricModel.translationCount())
+                    + ", payloadTranslationChars="
+                    + (currentLyricProviderPayload == null
+                    || currentLyricProviderPayload.translationLyric == null
+                    ? -1
+                    : currentLyricProviderPayload.translationLyric.length()));
         }
     }
 
@@ -1210,6 +1257,13 @@ public final class LockscreenLyricsModule extends XposedModule {
             String originalActionId) {
         boolean publicProtocol = "public".equals(protocol);
         boolean overrideProtocol = "player-override".equals(protocol);
+        translationButtonDebug("configure translation action, package=" + packageName
+                + ", protocol=" + protocol
+                + ", originalAction=" + nullToEmpty(originalActionId)
+                + ", enabledBefore=" + isLyricInfoTranslationEnabled(packageName)
+                + ", mediaAction=" + (mediaAction == null
+                ? "null"
+                : mediaAction.getClass().getName()));
         if (publicProtocol || overrideProtocol) {
             promoteTranslationToggleAction(mediaButtonEx, actions, mediaAction);
             if (!replaceMediaActionIcon(mediaAction, packageName) && publicProtocol) {
@@ -1221,7 +1275,12 @@ public final class LockscreenLyricsModule extends XposedModule {
 
         updateTranslationActionPresentation(mediaAction, packageName);
         tryInvokeOneArgByName(mediaAction, "setAction", (Runnable) () -> {
+            boolean before = isLyricInfoTranslationEnabled(packageName);
+            translationButtonDebug("translation action clicked, package=" + packageName
+                    + ", enabledBefore=" + before);
             toggleLyricInfoTranslation(packageName);
+            translationButtonDebug("translation action click applied, package=" + packageName
+                    + ", enabledAfter=" + isLyricInfoTranslationEnabled(packageName));
             updateTranslationActionPresentation(mediaAction, packageName);
         });
         maybeLogConfiguredTranslationMediaAction(packageName, protocol, originalActionId);
@@ -1239,7 +1298,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
         lastTranslationToggleConfigLogKey = logKey;
         lastTranslationToggleConfigLogAt = now;
-        info("Configured lyricInfo translation toggle for " + packageName
+        translationButtonDebug("Configured lyricInfo translation toggle for " + packageName
                 + ", protocol=" + protocol
                 + (TextUtils.isEmpty(actionId)
                 ? ""
@@ -1285,7 +1344,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 || ((List<?>) applied).get(0) != translationAction) {
             writeFieldValue(mediaButtonEx, "rule0CustomActions", ordered);
         }
-        info("Promoted lyricInfo translation toggle within OPlus Rule0 custom actions");
+        translationButtonDebug("Promoted lyricInfo translation toggle within OPlus Rule0 custom actions");
     }
 
     private void rememberCurrentMediaActionIcon(Object mediaAction) {
@@ -1315,6 +1374,31 @@ public final class LockscreenLyricsModule extends XposedModule {
             current = current.getSuperclass();
         }
         return null;
+    }
+
+    private static String describeRule0ActionIds(List<?> actions) {
+        if (actions == null) {
+            return "null";
+        }
+        StringBuilder builder = new StringBuilder("[");
+        int limit = Math.min(actions.size(), 8);
+        for (int i = 0; i < limit; i++) {
+            if (i > 0) {
+                builder.append(", ");
+            }
+            Object mediaAction = actions.get(i);
+            Object runnable = invokeNoArgByName(mediaAction, "getAction");
+            PlaybackState.CustomAction customAction = findPlaybackStateCustomAction(runnable);
+            if (customAction != null) {
+                builder.append(customAction.getAction());
+            } else {
+                builder.append(mediaAction == null ? "null" : mediaAction.getClass().getSimpleName());
+            }
+        }
+        if (actions.size() > limit) {
+            builder.append(", +").append(actions.size() - limit);
+        }
+        return builder.append(']').toString();
     }
 
     private boolean replaceMediaActionIcon(Object mediaAction, String packageName) {
@@ -1369,6 +1453,9 @@ public final class LockscreenLyricsModule extends XposedModule {
 
     private void updateTranslationActionPresentation(Object mediaAction, String packageName) {
         boolean enabled = isLyricInfoTranslationEnabled(packageName);
+        translationButtonDebug("update action presentation, package=" + nullToEmpty(packageName)
+                + ", enabled=" + enabled
+                + ", action=" + (mediaAction == null ? "null" : mediaAction.getClass().getName()));
         tryInvokeOneArgByName(
                 mediaAction,
                 "setContentDescription",
@@ -1778,6 +1865,33 @@ public final class LockscreenLyricsModule extends XposedModule {
                     .setId(HOOK_ID_VIEW_SET_VISIBILITY)
                     .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                     .intercept(this::onViewSetVisibility);
+
+            Method setContentDescription = View.class.getDeclaredMethod(
+                    "setContentDescription",
+                    CharSequence.class);
+            setContentDescription.setAccessible(true);
+            hook(setContentDescription)
+                    .setId(HOOK_ID_VIEW_SET_CONTENT_DESCRIPTION)
+                    .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                    .intercept(this::onViewSetContentDescription);
+
+            Method setImageDrawable = ImageView.class.getDeclaredMethod(
+                    "setImageDrawable",
+                    Drawable.class);
+            setImageDrawable.setAccessible(true);
+            hook(setImageDrawable)
+                    .setId(HOOK_ID_IMAGE_VIEW_SET_IMAGE_DRAWABLE)
+                    .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                    .intercept(this::onImageViewSetImage);
+
+            Method setImageBitmap = ImageView.class.getDeclaredMethod(
+                    "setImageBitmap",
+                    Bitmap.class);
+            setImageBitmap.setAccessible(true);
+            hook(setImageBitmap)
+                    .setId(HOOK_ID_IMAGE_VIEW_SET_IMAGE_BITMAP)
+                    .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                    .intercept(this::onImageViewSetImage);
 
             Method setTranslationY = View.class.getDeclaredMethod("setTranslationY", float.class);
             setTranslationY.setAccessible(true);
@@ -2532,7 +2646,11 @@ public final class LockscreenLyricsModule extends XposedModule {
             return;
         }
         if (shouldSoftRetainExternalLyricModelDuringTransientMiss()) {
-            beginExternalLyricSoftHandoff("lyricInfo temporarily unavailable");
+            if (shouldPreserveExternalLyricSurfaceForTransientMiss(title, artist)) {
+                preserveExternalLyricSurface("lyricInfo temporarily unavailable");
+            } else {
+                beginExternalLyricSoftHandoff("lyricInfo temporarily unavailable");
+            }
             currentLyricProviderPayload = null;
             currentLyricProviderPackage = "";
             systemUiHasOfficialLyric = false;
@@ -2787,7 +2905,11 @@ public final class LockscreenLyricsModule extends XposedModule {
             activeRendererTextView = new WeakReference<>(null);
             activeRendererWordLine = null;
             if (currentWordLyricModelFromExternal) {
-                beginExternalLyricSoftHandoff("playback position reset");
+                if (shouldPreserveExternalLyricSurfaceForPlaybackReset()) {
+                    preserveExternalLyricSurface("playback position reset");
+                } else {
+                    beginExternalLyricSoftHandoff("playback position reset");
+                }
             } else {
                 beginOfficialLyricTrackHandoff("playback position reset");
             }
@@ -2888,7 +3010,8 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (!currentWordLyricModelFromExternal
                 || currentWordLyricModel == null
                 || previousPosition < EXTERNAL_LYRIC_PLAYBACK_RESET_MIN_POSITION_MS
-                || !supportsExternalPlaybackState(currentWordLyricModelExternalSource)) {
+                || !supportsExternalPlaybackState(currentWordLyricModelExternalSource)
+                || shouldPreserveExternalLyricSurfaceForPlaybackReset()) {
             return false;
         }
         if (state == PlaybackState.STATE_PAUSED) {
@@ -2899,6 +3022,71 @@ public final class LockscreenLyricsModule extends XposedModule {
             return resetPosition >= 0L && resetPosition <= 250L;
         }
         return false;
+    }
+
+    private boolean shouldPreserveExternalLyricSurfaceForPlaybackReset() {
+        return shouldPreserveStableExternalLyricSurface();
+    }
+
+    private boolean shouldPreserveExternalLyricSurfaceForTransientMiss(
+            String title,
+            String artist) {
+        if (!TextUtils.isEmpty(title) && !matchesCurrentWordLyricModelTrack(title, artist)) {
+            return false;
+        }
+        return shouldPreserveStableExternalLyricSurface();
+    }
+
+    private boolean shouldPreserveStableExternalLyricSurface() {
+        if (!currentWordLyricModelFromExternal
+                || currentWordLyricModel == null
+                || !shouldPreserveExternalLyricSurfaceSource(currentWordLyricModelExternalSource)
+                || !isCurrentExternalTrackModelReady()) {
+            return false;
+        }
+        return true;
+    }
+
+    private boolean matchesCurrentWordLyricModelTrack(String title, String artist) {
+        String incomingKey = buildTrackKey(title, artist);
+        if (TextUtils.isEmpty(incomingKey) || TextUtils.isEmpty(currentWordLyricModelTrackKey)) {
+            return false;
+        }
+        return TrackIdentity.matchesHintKey(incomingKey, currentWordLyricModelTrackKey);
+    }
+
+    private static boolean shouldPreserveExternalLyricSurfaceSource(String source) {
+        return ExternalLyricSources.QISHUI_MUSIC_SOURCE.equals(source)
+                || ExternalLyricSources.KUGOU_CONCEPT_MUSIC_SOURCE.equals(source);
+    }
+
+    private void preserveExternalLyricSurface(String reason) {
+        long now = SystemClock.elapsedRealtime();
+        pendingCustomLyricTakeoverFade = false;
+        externalLyricSoftHandoffMaskUntilElapsedMs = 0L;
+        externalLyricRecyclerMaskUntilElapsedMs = 0L;
+        externalLyricFadeInRetryGeneration = -1;
+        lyricRecyclerFadeInUntilElapsedMs = 0L;
+        externalLyricRecyclerMaskCooldownUntilElapsedMs =
+                Math.max(externalLyricRecyclerMaskCooldownUntilElapsedMs, now + 900L);
+        suppressOfficialRowScaleAnimations(EXTERNAL_LYRIC_ROW_SCALE_SETTLE_MS);
+        beginLyricRecyclerSettleWindow(
+                lastLyricsRecyclerIndex,
+                EXTERNAL_LYRIC_ROW_SCALE_SETTLE_MS);
+        Runnable refresh = () -> {
+            restoreSuppressedLyricsRecyclerViews(false);
+            invalidateRememberedLyricViews();
+        };
+        if (Looper.myLooper() == mainHandler.getLooper()) {
+            refresh.run();
+        } else {
+            mainHandler.post(refresh);
+        }
+        if (isLyricLayoutDiagnosticsEnabled()) {
+            info("Preserved external lyric surface"
+                    + ", reason=" + nullToEmpty(reason)
+                    + ", source=" + nullToEmpty(currentWordLyricModelExternalSource));
+        }
     }
 
     private static boolean isPlaybackStateInMotion(int state) {
@@ -3353,9 +3541,15 @@ public final class LockscreenLyricsModule extends XposedModule {
         Object descriptionArg = chain.getArg(0);
         if (descriptionArg instanceof CharSequence
                 && isTranslationActionDescription((CharSequence) descriptionArg)) {
+            translationButtonDebug("contentDescription matched translation action, view="
+                    + describeViewForLog(view)
+                    + ", description=" + descriptionArg);
             rememberTranslationActionView(view, false);
         } else if (isRememberedTranslationActionView(view)
                 && !isIconMatchedTranslationActionView(view)) {
+            translationButtonDebug("contentDescription changed on tracked action, scheduling recheck"
+                    + ", view=" + describeViewForLog(view)
+                    + ", description=" + descriptionArg);
             // Binding briefly replaces the accessibility label before the matching icon/label is
             // restored. Validate after the bind settles instead of forgetting the action eagerly.
             mainHandler.postDelayed(
@@ -3383,6 +3577,9 @@ public final class LockscreenLyricsModule extends XposedModule {
             Object[] args = chain.getArgs().toArray();
             // Keep the action slot measured so previous/play/next remain centered.
             args[0] = View.INVISIBLE;
+            translationButtonDebug("redirect translation action visibility VISIBLE->INVISIBLE"
+                    + ", state=" + describeTranslationButtonState()
+                    + ", view=" + describeViewForLog(view));
             result = chain.proceed(args);
         } else {
             result = chain.proceed();
@@ -3431,7 +3628,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         boolean newlyDetected = !isRememberedTranslationActionView(imageView);
         rememberTranslationActionView(imageView, true);
         if (newlyDetected) {
-            info("Detected translation action view from " + reason);
+            translationButtonDebug("Detected translation action view from " + reason);
         }
     }
 
@@ -3484,7 +3681,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (!added) {
             return;
         }
-        info("Tracked translation action view, iconMatched=" + iconMatched
+        translationButtonDebug("Tracked translation action view, iconMatched=" + iconMatched
                 + ", attached=" + view.isAttachedToWindow()
                 + ", visibility=" + view.getVisibility());
         view.post(() -> applyTranslationActionViewVisibility(view));
@@ -3512,6 +3709,9 @@ public final class LockscreenLyricsModule extends XposedModule {
             rememberTranslationActionView(view, true);
             return;
         }
+        translationButtonDebug("forget translation action after rebound, view="
+                + describeViewForLog(view)
+                + ", description=" + view.getContentDescription());
         forgetTranslationActionView(view);
     }
 
@@ -3532,6 +3732,8 @@ public final class LockscreenLyricsModule extends XposedModule {
         synchronized (translationActionViewsLock) {
             views = new ArrayList<>(translationActionViews.keySet());
         }
+        translationButtonDebug("refresh translation action views, count=" + views.size()
+                + ", state=" + describeTranslationButtonState());
         for (View view : views) {
             applyTranslationActionViewVisibility(view);
         }
@@ -3544,6 +3746,9 @@ public final class LockscreenLyricsModule extends XposedModule {
         // Before the immersive lyric surface is attached, leave the action at ColorOS' requested
         // visibility. Hiding it during the pre-bind phase can strand a recycled view INVISIBLE.
         if (!shouldManageTranslationActionViewVisibility()) {
+            translationButtonDebug("skip translation view visibility management"
+                    + ", state=" + describeTranslationButtonState()
+                    + ", view=" + describeViewForLog(view));
             return;
         }
         int targetVisibility = shouldShowTranslationActionView()
@@ -3552,9 +3757,12 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (view.getVisibility() != targetVisibility) {
             view.setVisibility(targetVisibility);
             WordLyricModel model = currentWordLyricModel;
-            info("Updated translation action view visibility=" + targetVisibility
+            translationButtonDebug("Updated translation action view visibility=" + targetVisibility
                     + ", translations=" + (model == null ? -1 : model.translationCount())
                     + ", attached=" + view.isAttachedToWindow());
+            translationButtonDebug("applied translation view visibility=" + targetVisibility
+                    + ", state=" + describeTranslationButtonState()
+                    + ", view=" + describeViewForLog(view));
         }
     }
 
@@ -3567,6 +3775,27 @@ public final class LockscreenLyricsModule extends XposedModule {
         return shouldManageTranslationActionViewVisibility()
                 && model != null
                 && model.translationCount() > 0;
+    }
+
+    private String describeTranslationButtonState() {
+        WordLyricModel model = currentWordLyricModel;
+        return "package=" + nullToEmpty(currentTranslationPreferencePackage())
+                + ", provider=" + nullToEmpty(currentLyricProviderPackage)
+                + ", external=" + currentWordLyricModelFromExternal
+                + ", externalSource=" + nullToEmpty(currentWordLyricModelExternalSource)
+                + ", modeActive=" + systemUiLyricModeKeepAwakeActive
+                + ", recyclerAttached=" + hasAttachedLyricsRecyclerView()
+                + ", model=" + (model != null)
+                + ", translations=" + (model == null ? -1 : model.translationCount())
+                + ", trackedViews=" + rememberedTranslationActionViewCount()
+                + ", enabled=" + isLyricInfoTranslationEnabledFromCache(
+                currentTranslationPreferencePackage());
+    }
+
+    private int rememberedTranslationActionViewCount() {
+        synchronized (translationActionViewsLock) {
+            return translationActionViews.size();
+        }
     }
 
     private static boolean isTranslationActionDescription(CharSequence description) {
@@ -7120,6 +7349,25 @@ public final class LockscreenLyricsModule extends XposedModule {
                         bridgePayload == null ? "" : bridgePayload.rawLyric,
                         bridgePayload == null ? "" : bridgePayload.lyric,
                         intent.getStringExtra(EXTRA_EXTERNAL_LYRIC))));
+        logExternalLyricCaptureForAlignment(
+                intent,
+                sourceInfo,
+                eventType,
+                trackGeneration,
+                trackHintKey,
+                title,
+                artist,
+                firstNonEmpty(
+                        intent.getStringExtra(EXTRA_EXTERNAL_RAW_LYRIC),
+                        bridgePayload == null ? "" : bridgePayload.rawLyric,
+                        bridgePayload == null ? "" : bridgePayload.lyric,
+                        intent.getStringExtra(EXTRA_EXTERNAL_LYRIC)),
+                firstNonEmpty(
+                        intent.getStringExtra(EXTRA_EXTERNAL_LYRIC),
+                        bridgePayload == null ? "" : bridgePayload.lyric),
+                firstNonEmpty(
+                        intent.getStringExtra(EXTRA_EXTERNAL_TRANSLATION_LYRIC),
+                        bridgePayload == null ? "" : bridgePayload.translationLyric));
         if (rememberPowerampExternalTrackIfNeeded(
                 source,
                 eventType,
@@ -7223,6 +7471,49 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (payload != null) {
             mainHandler.post(() -> cacheSystemUiLyricModel(payload));
         }
+    }
+
+    private void logExternalLyricCaptureForAlignment(
+            Intent intent,
+            ExternalLyricSourceInfo sourceInfo,
+            String eventType,
+            long trackGeneration,
+            String trackHintKey,
+            String title,
+            String artist,
+            String rawLyric,
+            String lyric,
+            String translationLyric) {
+        if (!isLyricLayoutDiagnosticsEnabled()) {
+            return;
+        }
+        boolean hasPlayback = intent != null
+                && intent.hasExtra(EXTRA_EXTERNAL_PLAYBACK_STATE);
+        int playbackState = hasPlayback
+                ? intent.getIntExtra(EXTRA_EXTERNAL_PLAYBACK_STATE, -1)
+                : -1;
+        long playbackPosition = hasPlayback
+                ? intent.getLongExtra(EXTRA_EXTERNAL_PLAYBACK_POSITION, -1L)
+                : -1L;
+        String source = sourceInfo == null ? "" : sourceInfo.source;
+        String playerPackage = sourceInfo == null ? "" : sourceInfo.playerPackage;
+        info("KG_ALIGN bridge receive"
+                + ", source=" + nullToEmpty(source)
+                + ", player=" + nullToEmpty(playerPackage)
+                + ", event=" + nullToEmpty(eventType)
+                + ", gen=" + trackGeneration
+                + ", playback=" + hasPlayback
+                + ", state=" + playbackState
+                + ", pos=" + playbackPosition
+                + ", key=" + shortenForLog(trackHintKey)
+                + ", title=" + shortenForLog(title)
+                + ", artist=" + shortenForLog(artist)
+                + ", rawChars=" + nullToEmpty(rawLyric).length()
+                + ", lyricChars=" + nullToEmpty(lyric).length()
+                + ", transChars=" + nullToEmpty(translationLyric).length()
+                + ", currentProvider=" + nullToEmpty(currentLyricProviderPackage)
+                + ", currentSource=" + nullToEmpty(currentWordLyricModelExternalSource)
+                + ", currentKey=" + shortenForLog(currentWordLyricModelTrackKey));
     }
 
     private boolean rememberPowerampExternalTrackIfNeeded(
@@ -7686,6 +7977,14 @@ public final class LockscreenLyricsModule extends XposedModule {
                 EXTRA_EXTERNAL_PLAYBACK_LAST_POSITION_UPDATE_TIME,
                 -1L);
         if (state < 0 || !shouldAcceptExternalPlaybackState(source)) {
+            if (isLyricLayoutDiagnosticsEnabled()) {
+                info("KG_ALIGN bridge playback ignored"
+                        + ", source=" + nullToEmpty(source)
+                        + ", state=" + state
+                        + ", stored=" + storedPosition
+                        + ", currentProvider=" + nullToEmpty(currentLyricProviderPackage)
+                        + ", currentSource=" + nullToEmpty(currentWordLyricModelExternalSource));
+            }
             return;
         }
         long computedPosition = LockscreenIntegrationPolicy.extrapolatePlaybackPosition(
@@ -7697,6 +7996,15 @@ public final class LockscreenLyricsModule extends XposedModule {
         bindCurrentLyricProviderPackage(
                 playerPackageForExternalSource(source),
                 "external playback state");
+        if (isLyricLayoutDiagnosticsEnabled()) {
+            info("KG_ALIGN bridge playback accepted"
+                    + ", source=" + nullToEmpty(source)
+                    + ", state=" + state
+                    + ", stored=" + storedPosition
+                    + ", computed=" + computedPosition
+                    + ", speed=" + speed
+                    + ", currentKey=" + shortenForLog(currentWordLyricModelTrackKey));
+        }
         rememberSystemUiPlaybackState(state, storedPosition, computedPosition, speed);
     }
 
@@ -12472,6 +12780,15 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
         Log.i(TAG, message);
         log(Log.INFO, TAG, message);
+    }
+
+    private void translationButtonDebug(String message) {
+        if (!TRANSLATION_BUTTON_DIAGNOSTICS_ENABLED) {
+            return;
+        }
+        String formatted = "[TranslationButton] " + message;
+        Log.i(TAG, formatted);
+        log(Log.INFO, TAG, formatted);
     }
 
     void error(String message, Throwable throwable) {

@@ -2,7 +2,7 @@
 
 ## Latest release
 
-v2.7.1 improves KuGou original-provider switching stability, tightens Bridge handoff rendering, supports additional NetEase word-timed lyric formats, and further reduces diagnostic log noise. Release assets include `LyricProvider-v2.7.1.zip` for installing all provider APKs together.
+v2.7.2 improves QiShui Music lyric source fallback, tightens KuGou/KuGou Concept switching stability, preserves Bridge handoff rendering during transient lyricInfo misses, and further reduces release log noise. Release assets include `LyricProvider-v2.7.2.zip` for installing all provider APKs together.
 
 ## 简体中文
 
