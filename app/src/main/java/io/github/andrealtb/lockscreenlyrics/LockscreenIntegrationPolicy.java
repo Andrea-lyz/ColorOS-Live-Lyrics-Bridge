@@ -145,6 +145,13 @@ final class LockscreenIntegrationPolicy {
                 && nowElapsedRealtime <= authorityUntilElapsedRealtime;
     }
 
+    static boolean isLyricsRecyclerComputingLayoutException(Throwable throwable) {
+        String message = throwable == null ? null : throwable.getMessage();
+        return message != null
+                && message.contains("LyricsRecyclerView")
+                && message.contains("computing a layout");
+    }
+
     static int clampSlidingWindowStart(
             int activeSegmentIndex,
             int totalSegments,
@@ -408,6 +415,19 @@ final class LockscreenIntegrationPolicy {
         boolean immediatelyBeforeNextPrimary = nextPrimaryTimeMillis >= candidateTimeMillis
                 && nextPrimaryTimeMillis - candidateTimeMillis <= 1_000L;
         return nearPreviousEnd || immediatelyBeforeNextPrimary;
+    }
+
+    static boolean shouldTreatAsDelayedInlineTranslation(
+            boolean delayedTranslationsEnabled,
+            boolean hasUsableInlineTiming,
+            int sourceTimedSegmentCount,
+            int sameTimestampVariantCount,
+            boolean containsLatinText) {
+        return delayedTranslationsEnabled
+                && !hasUsableInlineTiming
+                && sourceTimedSegmentCount <= 1
+                && sameTimestampVariantCount == 1
+                && !containsLatinText;
     }
 
     static boolean sameLyricVariant(String first, String second) {

@@ -98,6 +98,21 @@ public final class LyricLineVariantSelectorTest {
     }
 
     @Test
+    public void repeatedYouLyricDoesNotBecomeChineseTranslationPhoneticText() {
+        List<String> texts = Arrays.asList(
+                "You you",
+                "\u4f60 \u4f60");
+
+        int primaryIndex = LyricLineVariantSelector.findPrimaryTextIndex(texts);
+
+        assertEquals(0, primaryIndex);
+        assertFalse(LyricLineVariantSelector.isLikelyCjkPhoneticVariant(
+                texts,
+                1,
+                texts.get(0)));
+    }
+
+    @Test
     public void repeatedEnglishQuestionDoesNotLoseToChineseTranslationAsRomaji() {
         List<String> texts = Arrays.asList(
                 "Is it? Is it?",

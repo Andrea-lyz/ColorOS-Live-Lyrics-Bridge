@@ -107,6 +107,19 @@ public class LockscreenIntegrationPolicyTest {
     }
 
     @Test
+    public void onlyLyricRecyclerLayoutNotificationsAreGuarded() {
+        assertTrue(LockscreenIntegrationPolicy.isLyricsRecyclerComputingLayoutException(
+                new IllegalStateException(
+                        "Cannot call this method while RecyclerView is computing a layout "
+                                + "or scrolling LyricsRecyclerView")));
+        assertFalse(LockscreenIntegrationPolicy.isLyricsRecyclerComputingLayoutException(
+                new IllegalStateException(
+                        "Cannot call this method while RecyclerView is computing a layout")));
+        assertFalse(LockscreenIntegrationPolicy.isLyricsRecyclerComputingLayoutException(
+                new IllegalStateException("LyricsRecyclerView was detached")));
+    }
+
+    @Test
     public void thirdWrappedLineSlidesIntoTwoLineWindow() {
         assertEquals(0, LockscreenIntegrationPolicy.clampSlidingWindowStart(0, 3, 2));
         assertEquals(1, LockscreenIntegrationPolicy.clampSlidingWindowStart(1, 3, 2));
@@ -452,5 +465,21 @@ public class LockscreenIntegrationPolicyTest {
                 24_200L,
                 24_860L,
                 29_860L));
+    }
+
+    @Test
+    public void downgradedWordTimedChineseLineRemainsPrimaryLyric() {
+        assertFalse(LockscreenIntegrationPolicy.shouldTreatAsDelayedInlineTranslation(
+                true,
+                false,
+                9,
+                1,
+                false));
+        assertTrue(LockscreenIntegrationPolicy.shouldTreatAsDelayedInlineTranslation(
+                true,
+                false,
+                1,
+                1,
+                false));
     }
 }

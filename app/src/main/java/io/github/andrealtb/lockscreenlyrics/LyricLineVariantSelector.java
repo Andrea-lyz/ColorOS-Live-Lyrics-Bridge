@@ -195,7 +195,8 @@ final class LyricLineVariantSelector {
                 || value.isEmpty()
                 || !containsCjkScript(primary)
                 || !containsLatinLetter(value)
-                || containsCjkScript(value)) {
+                || containsCjkScript(value)
+                || hasOnlyCommonEnglishLyricTokens(value)) {
             return false;
         }
 
@@ -336,6 +337,19 @@ final class LyricLineVariantSelector {
         return commonWordTokens >= 2
                 && commonTokens >= 2
                 && (commonTokens * 2 >= tokens.size() || repeatedTokens >= 2);
+    }
+
+    private static boolean hasOnlyCommonEnglishLyricTokens(String text) {
+        List<String> tokens = latinTokens(text);
+        if (tokens.size() < 2) {
+            return false;
+        }
+        for (String token : tokens) {
+            if (!COMMON_ENGLISH_LYRIC_TOKENS.contains(token)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static int findLikelyCjkPhoneticVariantIndex(List<String> texts) {

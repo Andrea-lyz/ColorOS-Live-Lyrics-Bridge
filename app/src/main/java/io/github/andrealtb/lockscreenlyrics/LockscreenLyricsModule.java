@@ -102,6 +102,8 @@ public final class LockscreenLyricsModule extends XposedModule {
             "oplus-translation-button-image-bitmap";
     private static final String HOOK_ID_CLASS_LOADER_LOAD_CLASS = "oplus-word-classloader-load-class";
     private static final String HOOK_ID_LYRICS_RECYCLER = "oplus-word-lyrics-recycler";
+    private static final String HOOK_ID_LYRICS_RECYCLER_NOTIFY_GUARD =
+            "oplus-word-lyrics-recycler-notify-guard";
     private static final String HOOK_ID_RECYCLER_ADAPTER_NOTIFY_CHANGED =
             "oplus-word-recycler-adapter-notify-changed";
     private static final String HOOK_ID_SYSTEMUI_LOG_I = "oplus-lyric-ui-mode-log-i";
@@ -458,6 +460,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     private volatile int lastTrackResetPrimeLoggedIndex = -1;
     private volatile long officialRowScaleAnimationSuppressUntilElapsedMs;
     private volatile boolean lyricsRecyclerHookInstalled;
+    private volatile boolean lyricsRecyclerNotifyCrashGuardInstalled;
     private volatile boolean lyricsRecyclerSetCurrentUnavailable;
     private volatile boolean recyclerAdapterNotifyHookInstalled;
     private volatile boolean recyclerAdapterNotifyGuardUnavailableLogged;
@@ -4940,7 +4943,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private void tryInstallLyricsRecyclerViewHook(ClassLoader classLoader) {
-        if (lyricsRecyclerHookInstalled) {
+        if (lyricsRecyclerHookInstalled && lyricsRecyclerNotifyCrashGuardInstalled) {
             return;
         }
         try {
@@ -4951,14 +4954,29 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private synchronized void tryInstallLyricsRecyclerViewHook(Class<?> lyricsRecyclerViewClass) {
-        if (lyricsRecyclerHookInstalled || lyricsRecyclerViewClass == null) {
+        if ((lyricsRecyclerHookInstalled && lyricsRecyclerNotifyCrashGuardInstalled)
+                || lyricsRecyclerViewClass == null) {
             return;
         }
         try {
             int hooked = 0;
+            int notifyCrashGuards = 0;
             Class<?> current = lyricsRecyclerViewClass;
             while (current != null) {
                 for (Method method : current.getDeclaredMethods()) {
+                    if (current == lyricsRecyclerViewClass
+                            && isLyricsRecyclerNotifyCrashGuardMethod(method)) {
+                        method.setAccessible(true);
+                        hook(method)
+                                .setId(HOOK_ID_LYRICS_RECYCLER_NOTIFY_GUARD
+                                        + "-"
+                                        + notifyCrashGuards
+                                        + "-"
+                                        + method.getParameterTypes().length)
+                                .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                                .intercept(this::onLyricsRecyclerNotifyCrashGuard);
+                        notifyCrashGuards++;
+                    }
                     if (!isLyricsRecyclerCurrentLyricMethod(method)) {
                         continue;
                     }
@@ -4982,6 +5000,14 @@ public final class LockscreenLyricsModule extends XposedModule {
                 info("No LyricsRecyclerView current lyric hook target found on "
                         + lyricsRecyclerViewClass.getName());
             }
+            lyricsRecyclerNotifyCrashGuardInstalled = notifyCrashGuards > 0;
+            if (notifyCrashGuards > 0) {
+                info("Hooked LyricsRecyclerView notify crash guard, methods="
+                        + notifyCrashGuards);
+            } else {
+                info("No LyricsRecyclerView notify crash guard target found on "
+                        + lyricsRecyclerViewClass.getName());
+            }
             lyricsRecyclerHookInstalled = true;
         } catch (Throwable t) {
             error("Failed to hook LyricsRecyclerView current lyric updates", t);
@@ -4999,6 +5025,12 @@ public final class LockscreenLyricsModule extends XposedModule {
             return true;
         }
         return isOfficialTimedCurrentLyricMethod(method);
+    }
+
+    private static boolean isLyricsRecyclerNotifyCrashGuardMethod(Method method) {
+        return method != null
+                && "e".equals(method.getName())
+                && method.getReturnType() == void.class;
     }
 
     private static boolean isOfficialTimedCurrentLyricMethod(Method method) {
@@ -5131,7 +5163,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         try {
             return chain.proceed();
         } catch (IllegalStateException e) {
-            if (!isRecyclerComputingLayoutException(e)) {
+            if (!LockscreenIntegrationPolicy.isLyricsRecyclerComputingLayoutException(e)) {
                 throw e;
             }
             maybeLogRecyclerAdapterNotifyGuard(e);
@@ -5139,11 +5171,19 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
     }
 
-    private static boolean isRecyclerComputingLayoutException(Throwable throwable) {
-        String message = throwable == null ? null : throwable.getMessage();
-        return message != null
-                && message.contains("LyricsRecyclerView")
-                && message.contains("computing a layout");
+    private Object onLyricsRecyclerNotifyCrashGuard(XposedInterface.Chain chain) throws Throwable {
+        try {
+            return chain.proceed();
+        } catch (IllegalStateException e) {
+            Object recycler = chain.getThisObject();
+            if (!(recycler instanceof View)
+                    || !isLyricsRecyclerView((View) recycler)
+                    || !LockscreenIntegrationPolicy.isLyricsRecyclerComputingLayoutException(e)) {
+                throw e;
+            }
+            maybeLogRecyclerAdapterNotifyGuard(e);
+            return null;
+        }
     }
 
     private void maybeLogRecyclerAdapterNotifyGuard(Throwable throwable) {
@@ -11124,10 +11164,12 @@ public final class LockscreenLyricsModule extends XposedModule {
                 traceInlineGroup(entry.getKey(), group, primaryIndex, "before-restore");
             }
             primary = restoreSharedTrailingLatinToken(primary, group);
-            if (allowDelayedInlineTranslations
-                    && !primary.inlineTiming
-                    && group.size() == 1
-                    && !containsLatinLetter(primary.text)) {
+            if (LockscreenIntegrationPolicy.shouldTreatAsDelayedInlineTranslation(
+                    allowDelayedInlineTranslations,
+                    primary.inlineTiming,
+                    primary.sourceTimedSegmentCount,
+                    group.size(),
+                    containsLatinLetter(primary.text))) {
                 // In a mixed enhanced-LRC payload, a lone non-inline non-Latin line is almost
                 // always a delayed translation for the preceding word-timed line.
                 orphanTranslations.add(primary);
@@ -11316,6 +11358,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 normalized.text,
                 renderedWords,
                 inlineTiming,
+                normalized.words.size(),
                 order);
     }
 
@@ -11569,6 +11612,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 text,
                 extendLastWordRange(primary.words, text.length()),
                 primary.inlineTiming,
+                primary.sourceTimedSegmentCount,
                 primary.order);
     }
 
@@ -12935,6 +12979,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 + " time=" + formatLrcTime(line.timeMillis)
                 + " end=" + formatLrcTime(line.endTimeMillis)
                 + " inline=" + line.inlineTiming
+                + " sourceSegments=" + line.sourceTimedSegmentCount
                 + " words=" + (line.words == null ? 0 : line.words.size())
                 + " text=\"" + limitTraceValue(line.text, 360) + "\""
                 + " ranges=" + describeWordRanges(line.text, line.words);
@@ -16971,6 +17016,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         final String text;
         final ArrayList<WordRange> words;
         final boolean inlineTiming;
+        final int sourceTimedSegmentCount;
         final int order;
 
         InlineTimedLyricLine(
@@ -16979,12 +17025,14 @@ public final class LockscreenLyricsModule extends XposedModule {
                 String text,
                 ArrayList<WordRange> words,
                 boolean inlineTiming,
+                int sourceTimedSegmentCount,
                 int order) {
             this.timeMillis = timeMillis;
             this.endTimeMillis = Math.max(timeMillis, endTimeMillis);
             this.text = text;
             this.words = words;
             this.inlineTiming = inlineTiming;
+            this.sourceTimedSegmentCount = Math.max(0, sourceTimedSegmentCount);
             this.order = order;
         }
     }
