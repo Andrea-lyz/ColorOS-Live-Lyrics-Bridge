@@ -141,6 +141,15 @@ public class ExternalLyricSourcesTest {
         assertFalse(ExternalLyricSources.canPromoteLatestGeneratedTrackForActivePlayer(
                 "lyricprovider/spotify-music",
                 "com.spotify.music"));
+        assertTrue(ExternalLyricSources.requiresSystemUiLyricReadyRefresh(
+                "lyricprovider/apple-music",
+                "com.apple.android.music"));
+        assertFalse(ExternalLyricSources.requiresSystemUiLyricReadyRefresh(
+                "lyricprovider/apple-music",
+                "com.spotify.music"));
+        assertFalse(ExternalLyricSources.requiresSystemUiLyricReadyRefresh(
+                "lyricprovider/spotify-music",
+                "com.apple.android.music"));
         assertFalse(ExternalLyricSources.allowsTitleOnlyFallbackMatch(
                 "lyricprovider/apple-music"));
     }

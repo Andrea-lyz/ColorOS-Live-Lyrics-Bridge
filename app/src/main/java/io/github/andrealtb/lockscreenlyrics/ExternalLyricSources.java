@@ -88,6 +88,15 @@ final class ExternalLyricSources {
                 && APPLE_MUSIC_PLAYER_PACKAGE.equals(packageName);
     }
 
+    static boolean requiresSystemUiLyricReadyRefresh(String source, String packageName) {
+        return APPLE_MUSIC_SOURCE.equals(source)
+                && APPLE_MUSIC_PLAYER_PACKAGE.equals(packageName);
+    }
+
+    static boolean mayRequireSystemUiLyricReadyRefresh(String packageName) {
+        return APPLE_MUSIC_PLAYER_PACKAGE.equals(packageName);
+    }
+
     static boolean allowsTitleOnlyFallbackMatch(String source) {
         Source externalSource = findBySource(source);
         return externalSource != null && externalSource.allowsTitleOnlyFallbackMatch;

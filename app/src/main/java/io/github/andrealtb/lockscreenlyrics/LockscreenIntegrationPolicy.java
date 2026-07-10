@@ -194,6 +194,51 @@ final class LockscreenIntegrationPolicy {
                 && activePlayerContext;
     }
 
+    static boolean shouldReplaySystemUiLyricLoadAfterExternalPromotion(
+            boolean sourceRequiresRefresh,
+            boolean currentGeneratedDocument,
+            boolean contextMatchesPlayer,
+            boolean contextMatchesTrack,
+            boolean alreadyCommitted,
+            long contextAgeMillis,
+            long maxContextAgeMillis) {
+        return sourceRequiresRefresh
+                && currentGeneratedDocument
+                && contextMatchesPlayer
+                && contextMatchesTrack
+                && !alreadyCommitted
+                && contextAgeMillis >= 0L
+                && contextAgeMillis <= Math.max(0L, maxContextAgeMillis);
+    }
+
+    static boolean shouldUseRecentSystemUiTrackContext(
+            boolean sourceRequiresRefresh,
+            boolean contextMatchesPlayer,
+            boolean contextMatchesTrack,
+            long contextAgeMillis,
+            long maxContextAgeMillis) {
+        return sourceRequiresRefresh
+                && contextMatchesPlayer
+                && contextMatchesTrack
+                && contextAgeMillis >= 0L
+                && contextAgeMillis <= Math.max(0L, maxContextAgeMillis);
+    }
+
+    static boolean shouldIgnoreExternalPlaybackStateForRecentSystemUiTrack(
+            boolean sourceRequiresRefresh,
+            boolean contextMatchesPlayer,
+            boolean contextMatchesTrack,
+            boolean playbackMatchesCurrentLyricTrack,
+            long contextAgeMillis,
+            long maxContextAgeMillis) {
+        return sourceRequiresRefresh
+                && contextMatchesPlayer
+                && !contextMatchesTrack
+                && playbackMatchesCurrentLyricTrack
+                && contextAgeMillis >= 0L
+                && contextAgeMillis <= Math.max(0L, maxContextAgeMillis);
+    }
+
     static int clampSlidingWindowStart(
             int activeSegmentIndex,
             int totalSegments,
@@ -253,6 +298,38 @@ final class LockscreenIntegrationPolicy {
                 segmentWidths,
                 totalSegments,
                 visibleSegments);
+    }
+
+    static long estimateFinalLineTimedDurationMillis(
+            long previousLineIntervalMillis,
+            String text) {
+        int readingUnits = 0;
+        String safeText = text == null ? "" : text;
+        for (int offset = 0; offset < safeText.length();) {
+            int codePoint = safeText.codePointAt(offset);
+            offset += Character.charCount(codePoint);
+            if (!Character.isLetterOrDigit(codePoint)) {
+                continue;
+            }
+            Character.UnicodeScript script = Character.UnicodeScript.of(codePoint);
+            boolean denseScript = script == Character.UnicodeScript.HAN
+                    || script == Character.UnicodeScript.HIRAGANA
+                    || script == Character.UnicodeScript.KATAKANA
+                    || script == Character.UnicodeScript.HANGUL
+                    || script == Character.UnicodeScript.BOPOMOFO;
+            readingUnits += denseScript ? 2 : 1;
+        }
+
+        long textEstimateMillis = Math.max(
+                2_800L,
+                Math.min(8_000L, 1_800L + Math.min(70, readingUnits) * 90L));
+        if (previousLineIntervalMillis < 1_000L || previousLineIntervalMillis > 12_000L) {
+            return textEstimateMillis;
+        }
+        long cadenceEstimateMillis = Math.max(
+                2_800L,
+                Math.min(8_000L, previousLineIntervalMillis));
+        return Math.max(textEstimateMillis, cadenceEstimateMillis);
     }
 
     private static int lineTimedSlidingWindowStartForProgress(

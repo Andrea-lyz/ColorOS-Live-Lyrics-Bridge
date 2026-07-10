@@ -2,7 +2,7 @@
 
 ## Latest release
 
-v3.0.1 is a SystemUI performance and rendering-stability maintenance update. It stops hidden lyric surfaces from retaining refresh and recovery callbacks, moves Provider lyric parsing off the SystemUI main path, adds allocation-free fast exits to lyric-local view hooks, and scopes crash protection to the official lyric surface. It also stabilizes lockscreen island transitions and Apple Music same-session lyric handoff. Provider APK internal versions are unchanged, so existing Provider installations do not need to be reinstalled. Release assets include `LyricProvider-v3.0.1.zip` for installing all provider APKs together.
+v3.0.2 fixes Apple Music automatic track-change handoff and the overly fast pseudo-word completion of the final line. It follows the latest Bridge MediaSession metadata during Apple Music queue preloading, retries the bounded SystemUI lyric handoff, and estimates a sensible duration for the final line of line-timed lyrics. It preserves the v3.0.1 SystemUI performance and rendering-stability work. Provider APK internal versions are incremented, so matching Provider modules should be updated together with the Bridge. Release assets include `LyricProvider-v3.0.2.zip` for installing all bundled provider APKs together.
 
 ## 简体中文
 

@@ -150,6 +150,50 @@ public class LockscreenIntegrationPolicyTest {
     }
 
     @Test
+    public void delayedExternalLyricCommitRequiresFreshMatchingCurrentContext() {
+        assertTrue(LockscreenIntegrationPolicy.shouldReplaySystemUiLyricLoadAfterExternalPromotion(
+                true, true, true, true, false, 320L, 15_000L));
+        assertFalse(LockscreenIntegrationPolicy.shouldReplaySystemUiLyricLoadAfterExternalPromotion(
+                false, true, true, true, false, 320L, 15_000L));
+        assertFalse(LockscreenIntegrationPolicy.shouldReplaySystemUiLyricLoadAfterExternalPromotion(
+                true, false, true, true, false, 320L, 15_000L));
+        assertFalse(LockscreenIntegrationPolicy.shouldReplaySystemUiLyricLoadAfterExternalPromotion(
+                true, true, false, true, false, 320L, 15_000L));
+        assertFalse(LockscreenIntegrationPolicy.shouldReplaySystemUiLyricLoadAfterExternalPromotion(
+                true, true, true, false, false, 320L, 15_000L));
+        assertFalse(LockscreenIntegrationPolicy.shouldReplaySystemUiLyricLoadAfterExternalPromotion(
+                true, true, true, true, true, 320L, 15_000L));
+        assertFalse(LockscreenIntegrationPolicy.shouldReplaySystemUiLyricLoadAfterExternalPromotion(
+                true, true, true, true, false, 15_001L, 15_000L));
+    }
+
+    @Test
+    public void applePromotionCanUseFreshMatchingSystemUiMetadataBeforeSeedlingCatchesUp() {
+        assertTrue(LockscreenIntegrationPolicy.shouldUseRecentSystemUiTrackContext(
+                true, true, true, 295L, 15_000L));
+        assertFalse(LockscreenIntegrationPolicy.shouldUseRecentSystemUiTrackContext(
+                true, true, false, 295L, 15_000L));
+        assertFalse(LockscreenIntegrationPolicy.shouldUseRecentSystemUiTrackContext(
+                true, true, true, 15_001L, 15_000L));
+    }
+
+    @Test
+    public void staleApplePlaybackStateYieldsToFreshSystemUiTrackMetadata() {
+        assertTrue(LockscreenIntegrationPolicy
+                .shouldIgnoreExternalPlaybackStateForRecentSystemUiTrack(
+                        true, true, false, true, 17L, 3_000L));
+        assertFalse(LockscreenIntegrationPolicy
+                .shouldIgnoreExternalPlaybackStateForRecentSystemUiTrack(
+                        true, true, true, true, 17L, 3_000L));
+        assertFalse(LockscreenIntegrationPolicy
+                .shouldIgnoreExternalPlaybackStateForRecentSystemUiTrack(
+                        false, true, false, true, 17L, 3_000L));
+        assertFalse(LockscreenIntegrationPolicy
+                .shouldIgnoreExternalPlaybackStateForRecentSystemUiTrack(
+                        true, true, false, false, 17L, 3_000L));
+    }
+
+    @Test
     public void thirdWrappedLineSlidesIntoTwoLineWindow() {
         assertEquals(0, LockscreenIntegrationPolicy.clampSlidingWindowStart(0, 3, 2));
         assertEquals(1, LockscreenIntegrationPolicy.clampSlidingWindowStart(1, 3, 2));
@@ -202,6 +246,30 @@ public class LockscreenIntegrationPolicyTest {
                 widths,
                 3,
                 2));
+    }
+
+    @Test
+    public void finalPseudoWordLineUsesPreviousCadenceInsteadOfSixHundredMilliseconds() {
+        assertEquals(4_200L,
+                LockscreenIntegrationPolicy.estimateFinalLineTimedDurationMillis(
+                        4_200L,
+                        "Final line"));
+    }
+
+    @Test
+    public void finalPseudoWordLineUsesReadableTextFallbackWithoutPreviousLine() {
+        long duration = LockscreenIntegrationPolicy.estimateFinalLineTimedDurationMillis(
+                -1L,
+                "这是最后一句歌词");
+        assertTrue(duration >= 3_000L);
+        assertTrue(duration <= 8_000L);
+    }
+
+    @Test
+    public void finalPseudoWordLineRejectsImplausiblyShortPreviousCadence() {
+        assertTrue(LockscreenIntegrationPolicy.estimateFinalLineTimedDurationMillis(
+                600L,
+                "Last line") >= 2_800L);
     }
 
     @Test
