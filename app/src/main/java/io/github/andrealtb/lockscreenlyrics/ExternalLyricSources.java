@@ -60,6 +60,10 @@ final class ExternalLyricSources {
         return false;
     }
 
+    static String[] bridgePlayerPackages() {
+        return BRIDGE_PLAYER_PACKAGES.clone();
+    }
+
     static String playerPackageForSource(String source) {
         Source externalSource = findBySource(source);
         return externalSource == null ? "" : externalSource.playerPackage;
@@ -75,6 +79,13 @@ final class ExternalLyricSources {
         return externalSource != null
                 && externalSource.canPromoteAsAuthoritative
                 && externalSource.playerPackage.equals(packageName);
+    }
+
+    static boolean canPromoteLatestGeneratedTrackForActivePlayer(
+            String source,
+            String packageName) {
+        return APPLE_MUSIC_SOURCE.equals(source)
+                && APPLE_MUSIC_PLAYER_PACKAGE.equals(packageName);
     }
 
     static boolean allowsTitleOnlyFallbackMatch(String source) {

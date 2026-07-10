@@ -47,6 +47,16 @@ public class ExternalLyricSourcesTest {
     }
 
     @Test
+    public void scopedOplusWhitelistPackagesAreReturnedAsADefensiveCopy() {
+        String[] packages = ExternalLyricSources.bridgePlayerPackages();
+        assertTrue(packages.length >= 10);
+        packages[0] = "com.example.music";
+
+        assertFalse("com.example.music".equals(
+                ExternalLyricSources.bridgePlayerPackages()[0]));
+    }
+
+    @Test
     public void favoriteActionOverrideIsLimitedToOfficialLyricPlayers() {
         assertTrue(ExternalLyricSources.canOverrideFavoriteActionWithTranslation(
                 "com.tencent.qqmusic"));
@@ -122,6 +132,15 @@ public class ExternalLyricSourcesTest {
         assertFalse(ExternalLyricSources.canPromoteAsAuthoritative(
                 "lyricprovider/apple-music",
                 "com.apple.android.music"));
+        assertTrue(ExternalLyricSources.canPromoteLatestGeneratedTrackForActivePlayer(
+                "lyricprovider/apple-music",
+                "com.apple.android.music"));
+        assertFalse(ExternalLyricSources.canPromoteLatestGeneratedTrackForActivePlayer(
+                "lyricprovider/apple-music",
+                "com.maxmpz.audioplayer"));
+        assertFalse(ExternalLyricSources.canPromoteLatestGeneratedTrackForActivePlayer(
+                "lyricprovider/spotify-music",
+                "com.spotify.music"));
         assertFalse(ExternalLyricSources.allowsTitleOnlyFallbackMatch(
                 "lyricprovider/apple-music"));
     }

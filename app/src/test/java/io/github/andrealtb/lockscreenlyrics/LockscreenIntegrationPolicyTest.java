@@ -120,6 +120,36 @@ public class LockscreenIntegrationPolicyTest {
     }
 
     @Test
+    public void providerBroadcastPayloadLimitsRejectSingleAndAggregateOversizeData() {
+        assertTrue(LockscreenIntegrationPolicy.isExternalLyricPayloadSizeAcceptable(
+                20_000, 10_000, 100_000, 20_000, 128,
+                1_500_000, 3_000_000, 16_384));
+        assertFalse(LockscreenIntegrationPolicy.isExternalLyricPayloadSizeAcceptable(
+                1_500_001, 0, 0, 0, 128,
+                1_500_000, 3_000_000, 16_384));
+        assertFalse(LockscreenIntegrationPolicy.isExternalLyricPayloadSizeAcceptable(
+                1_000_000, 1_000_000, 1_000_000, 1, 128,
+                1_500_000, 3_000_000, 16_384));
+        assertFalse(LockscreenIntegrationPolicy.isExternalLyricPayloadSizeAcceptable(
+                10, 10, 10, 10, 16_385,
+                1_500_000, 3_000_000, 16_384));
+    }
+
+    @Test
+    public void generationScopedPromotionRequiresCurrentTrackAndActivePlayer() {
+        assertTrue(LockscreenIntegrationPolicy.shouldAllowGenerationScopedExternalLyricPromotion(
+                true, 5554232L, true, true));
+        assertFalse(LockscreenIntegrationPolicy.shouldAllowGenerationScopedExternalLyricPromotion(
+                false, 5554232L, true, true));
+        assertFalse(LockscreenIntegrationPolicy.shouldAllowGenerationScopedExternalLyricPromotion(
+                true, 0L, true, true));
+        assertFalse(LockscreenIntegrationPolicy.shouldAllowGenerationScopedExternalLyricPromotion(
+                true, 5554232L, false, true));
+        assertFalse(LockscreenIntegrationPolicy.shouldAllowGenerationScopedExternalLyricPromotion(
+                true, 5554232L, true, false));
+    }
+
+    @Test
     public void thirdWrappedLineSlidesIntoTwoLineWindow() {
         assertEquals(0, LockscreenIntegrationPolicy.clampSlidingWindowStart(0, 3, 2));
         assertEquals(1, LockscreenIntegrationPolicy.clampSlidingWindowStart(1, 3, 2));

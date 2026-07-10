@@ -152,6 +152,48 @@ final class LockscreenIntegrationPolicy {
                 && message.contains("computing a layout");
     }
 
+    static boolean isExternalLyricPayloadSizeAcceptable(
+            int lyricInfoChars,
+            int lyricChars,
+            int rawLyricChars,
+            int translationChars,
+            int largestMetadataFieldChars,
+            int maxPayloadFieldChars,
+            int maxTotalPayloadChars,
+            int maxMetadataFieldChars) {
+        if (lyricInfoChars < 0
+                || lyricChars < 0
+                || rawLyricChars < 0
+                || translationChars < 0
+                || largestMetadataFieldChars < 0
+                || maxPayloadFieldChars < 0
+                || maxTotalPayloadChars < 0
+                || maxMetadataFieldChars < 0) {
+            return false;
+        }
+        int largestPayloadField = Math.max(
+                Math.max(lyricInfoChars, lyricChars),
+                Math.max(rawLyricChars, translationChars));
+        long totalPayloadChars = (long) lyricInfoChars
+                + lyricChars
+                + rawLyricChars
+                + translationChars;
+        return largestPayloadField <= maxPayloadFieldChars
+                && totalPayloadChars <= maxTotalPayloadChars
+                && largestMetadataFieldChars <= maxMetadataFieldChars;
+    }
+
+    static boolean shouldAllowGenerationScopedExternalLyricPromotion(
+            boolean sourceAllowsGenerationScopedPromotion,
+            long trackGeneration,
+            boolean currentGeneratedDocument,
+            boolean activePlayerContext) {
+        return sourceAllowsGenerationScopedPromotion
+                && trackGeneration > 0L
+                && currentGeneratedDocument
+                && activePlayerContext;
+    }
+
     static int clampSlidingWindowStart(
             int activeSegmentIndex,
             int totalSegments,
