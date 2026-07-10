@@ -92,6 +92,24 @@ public final class TrackIdentityTest {
     }
 
     @Test
+    public void qishuiBulletSeparatedArtistsMatchProviderArtists() {
+        assertTrue(TrackIdentity.matchesHintKey(
+                TrackIdentity.buildKey(
+                        "NO BATID\u00C3O",
+                        "PROPHECY/\u68CD\u5723"),
+                TrackIdentity.buildKey(
+                        "NO BATID\u00C3O",
+                        "PROPHECY\u2022 \u68CD\u5723")));
+        assertTrue(TrackIdentity.matchesHintKey(
+                TrackIdentity.buildKey(
+                        "Angel",
+                        "\uC724\uBBF8\uB798/Bizzy/Tiger JK"),
+                TrackIdentity.buildKey(
+                        "Angel",
+                        "\uC724\uBBF8\uB798\u2022 Bizzy\u2022 Tiger JK")));
+    }
+
+    @Test
     public void saltMetadataMatchesTimeStyleTitleAndOmittedFeaturedArtist() {
         assertTrue(TrackIdentity.matchesHintKey(
                 TrackIdentity.buildKey(

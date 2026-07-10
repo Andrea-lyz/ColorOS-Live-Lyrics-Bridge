@@ -20,7 +20,7 @@ Bridge 侧的 Provider/播放器信息集中在 `ExternalLyricSources`：
 | 网易云音乐 | `com.netease.cloudmusic` | bridge 播放器包名、历史播放器/AOD 放行、翻译开关 |
 | 网易云音乐荣耀版 | `com.hihonor.cloudmusic` | bridge 播放器包名、历史播放器/AOD 放行、翻译开关 |
 | Apple Music | `com.apple.android.music` | bridge 播放器包名、`lyricprovider/apple-music` source、历史播放器/AOD 放行、翻译开关 |
-| Poweramp | `com.maxmpz.audioplayer` | bridge 播放器包名、`lyricprovider/poweramp-music` source、历史播放器/AOD 放行、外部歌词提升 |
+| Poweramp | `com.maxmpz.audioplayer` | bridge 播放器包名、`lyricprovider/poweramp-music` source、历史播放器/AOD 放行、外部歌词提升；播放状态沿用原生 MediaSession |
 | Spotify | `com.spotify.music` | bridge 播放器包名、`lyricprovider/spotify-music` source、历史播放器/AOD 放行、外部播放状态 |
 | 汽水音乐 | `com.luna.music` | bridge 播放器包名、`lyricprovider/qishui-music` source、历史播放器/AOD 放行、外部播放状态、翻译开关 |
 | 酷狗音乐 | `com.kugou.android` | bridge 播放器包名、`lyricprovider/kugou-music` source、历史播放器/AOD 放行、外部播放状态、翻译开关 |
@@ -89,7 +89,7 @@ putExtra("playbackLastPositionUpdateTime", elapsedRealtimeMs)
 
 `ExternalLyricSources.Source` 的三个布尔能力要谨慎开启：
 
-- `supportsPlaybackState`：Provider 广播里会提供可信播放状态和进度。Spotify、汽水音乐和酷狗音乐当前使用这个能力。
+- `supportsPlaybackState`：Provider 广播里会提供可信播放状态和进度。Spotify、汽水音乐和酷狗音乐当前使用这个能力。Poweramp 已有稳定的原生 MediaSession，不能再开启此能力，否则拖动进度时两路状态会重复触发歌词定位。
 - `canPromoteAsAuthoritative`：当 SystemUI 尚未给出可匹配曲目时，Bridge 可以短时间信任 Provider 的曲目信息并直接提升为当前歌词。只给确实能证明“这是当前曲目”的 Provider 开启。Poweramp 与酷狗音乐/概念版当前使用这个能力，酷狗侧依赖 generation/key 校验。
 - `allowsTitleOnlyFallbackMatch`：允许只用标题做兜底匹配，适合本地播放器缺歌手、歌手格式漂移或 metadata 不稳定的场景。开启后误匹配风险更高，应尽量配合 generation 或 media id。
 

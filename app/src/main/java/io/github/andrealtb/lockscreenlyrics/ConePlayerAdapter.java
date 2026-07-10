@@ -79,6 +79,11 @@ final class ConePlayerAdapter implements PlayerAdapter {
     }
 
     @Override
+    public boolean supportsLyricRelayMetadata() {
+        return true;
+    }
+
+    @Override
     public void installLyricSourceHooks(LockscreenLyricsModule module, ClassLoader classLoader) {
         module.installInjectedTranslationToggleActionHook(packageName);
         installTrackMetadataHook(module, classLoader);

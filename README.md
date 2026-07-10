@@ -115,7 +115,7 @@ Provider APKs are not part of the Bridge module's static scope. Install only the
 - `LyricProvider-163Music`: `com.netease.cloudmusic`, `com.hihonor.cloudmusic`
 - `LyricProvider-AppleMusic`: `com.apple.android.music` (word-timed and translated lyrics only; background vocals and duet lanes are excluded)
 - `LyricProvider-Poweramp`: `com.maxmpz.audioplayer`
-- `LyricProvider-Spotify`: `com.spotify.music`
+- `LyricProvider-Spotify`: `com.spotify.music` (original lyrics only; translation is not currently supported)
 - `LyricProvider-QiShui`: `com.luna.music`
 - `LyricProvider-KuGou`: `com.kugou.android`, `com.kugou.android.lite`
 

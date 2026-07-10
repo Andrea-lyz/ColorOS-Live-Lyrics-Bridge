@@ -426,15 +426,19 @@ Skip Kugou lyric because metadata is missing
 3. 将 Poweramp 路径转换为 SAF URI。
 4. 使用 TagLib 读取音频标签里的 `LYRICS` 字段。
 5. 用增强 LRC parser 按时长解析。
-6. 本地标签无歌词时，第一批不做在线搜索；后续可选：
+6. 曲目切换时发送带 generation 的 `trackChanged`，歌词准备完成后发送 `lyricReady`，并复用同一份歌词 payload 注入 `MediaSession` 的 `lyricInfo`。
+7. 播放状态只沿用 Poweramp 原生 `MediaSession`，Provider 不再额外广播同一份进度，避免拖动时重复驱动歌词 Recycler 定位。
+8. 本地标签无歌词时，按用户设置进行在线搜索：
    - 中文环境优先 QQMusicProvider
    - 其他环境可用 LrcLibProvider
+9. 对 `[行时间]单词 [单词时间]...` 形式的本地逐字标签，Provider 仅在 Bridge 输出侧转换成 `<单词时间>` enhanced LRC，并生成不含行内时间戳的官方逐行歌词，避免 Recycler adapter 行号与逐字模型错位。
 
 迁移重点：
 
 - Poweramp 不必依赖歌词 UI 页面。
 - 优先读本地音频标签歌词，这比 hook TextView 当前行更稳定。
-- 第一批只支持本地内嵌歌词，不接在线搜索、不接歌词 UI 当前行。
+- 不接歌词 UI 当前行；本地歌词优先，在线搜索仅在用户启用时使用。
+- 内部反射 probe 只在显式开启 Poweramp debug tag 后安装，避免发布态为纯诊断增加 hook 和反射开销。
 
 风险：
 

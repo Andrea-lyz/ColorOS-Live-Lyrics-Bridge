@@ -32,7 +32,8 @@ final class TrackIdentity {
     private static final Pattern ARTIST_FEATURE_SEPARATOR = Pattern.compile(
             "(?i)\\s+(?:feat(?:uring)?|ft)\\.?\\s+");
     private static final Pattern ARTIST_SEPARATOR = Pattern.compile(
-            "\\s*[/,&;\\uFF0C\\uFF1B\\u3001]\\s*");
+            "\\s*[/,&;\\u00B7\\u2022\\u2027\\u2219\\u22C5\\u30FB"
+                    + "\\uFF0C\\uFF1B\\u3001]\\s*");
     private static final Pattern TRANSLATED_TITLE_SUFFIX = Pattern.compile(
             "^(.*?)[\\(\\uFF08]([^\\)\\uFF09]+)[\\)\\uFF09]\\s*$");
     private static final Pattern TIME_OF_DAY_TITLE_SEPARATOR = Pattern.compile(

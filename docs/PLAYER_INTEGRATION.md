@@ -51,6 +51,16 @@ For a player outside the built-in compatibility-adapter scope, a valid player-pr
 
 This means a future line-only native `lyricInfo` implementation remains a safe fallback, while the adapter can still provide word timing and translations. Once adapter data is available, the module builds a fresh payload instead of merging fields from the simple native payload.
 
+## Car Bluetooth and notification lyric adapters
+
+Some players implement car-Bluetooth or notification lyrics by reusing `MediaMetadata` fields. During playback they may put the current lyric line in `TITLE`, a translation in `ARTIST`, or temporary credits such as `Lyrics by...`, `Composed by...`, and copyright notices in their display metadata. Those updates are not real track transitions.
+
+External players should keep `TITLE`, `ARTIST`, `MEDIA_ID`, `DISPLAY_TITLE`, and `DISPLAY_SUBTITLE` stable for the current track. Use a car/notification-specific field or transport for live lyric text. Do not write live lyric lines, translations, or credits into track-identity fields, and do not publish a lyric-free metadata update solely for such a transient frame.
+
+If a built-in `PlayerAdapter` cannot avoid this metadata reuse, it must explicitly implement `supportsLyricRelayMetadata()`. Treat an update as relay metadata only when a fresh complete LRC is already bound to the current track and either its temporary title can be verified against that LRC or its identity can be restored from a stable payload. Never infer relay status solely from a lyric-like title, a hyphenated artist string, or timing proximity, because that can retain the previous lyric across a real track change.
+
+Integration testing must cover ordinary lyric lines, translations, title/artist opening lines, `Lyrics by...`/`Composed by...`/copyright lines, pause-resume, and rapid track changes. Verify both that the lock-screen lyric surface does not fall back to "No lyrics" and that the original car-Bluetooth lyric output remains continuous.
+
 For Media3, place the JSON in `MediaItem.mediaMetadata.extras`. Prefer publishing the first current item with its complete `lyricInfo` already attached. For framework media sessions, use `android.media.MediaMetadata.Builder.putString("lyricInfo", json)` and call `MediaSession.setMetadata`.
 
 Update the whole payload on each track transition, remove it when lyrics are disabled or unavailable, and keep `lyric` and `rawLyric` on the same time offset. `LyricInfoContract.java` is the canonical constants and validation reference; players do not need to link against it.

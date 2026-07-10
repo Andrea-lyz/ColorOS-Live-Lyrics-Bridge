@@ -100,6 +100,34 @@ final class LockscreenIntegrationPolicy {
                 && previousPosition - nextPosition >= 6_000L;
     }
 
+    static boolean shouldRealignAfterPlaybackPositionJump(
+            int state,
+            long previousPosition,
+            long nextPosition,
+            long jumpThresholdMillis) {
+        if (previousPosition < 0L
+                || nextPosition < 0L
+                || jumpThresholdMillis < 0L
+                || Math.abs(nextPosition - previousPosition) < jumpThresholdMillis) {
+            return false;
+        }
+        // Scrubbing is reported while paused or buffering before the following PLAYING state.
+        return state == 2 || state == 3 || state == 4 || state == 5 || state == 6;
+    }
+
+    static boolean shouldPreferProgressScaleForStalePowerampIndex(
+            boolean powerampSource,
+            long officialLineTimeMillis,
+            long activeLineTimeMillis,
+            long positionMillis,
+            long graceMillis) {
+        return powerampSource
+                && officialLineTimeMillis >= 0L
+                && activeLineTimeMillis >= 0L
+                && officialLineTimeMillis < activeLineTimeMillis
+                && positionMillis >= activeLineTimeMillis + Math.max(0L, graceMillis);
+    }
+
     static int clampSlidingWindowStart(
             int activeSegmentIndex,
             int totalSegments,

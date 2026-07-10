@@ -1,5 +1,7 @@
 package io.github.andrealtb.lockscreenlyrics;
 
+import android.annotation.SuppressLint;
+
 import android.media.MediaMetadata;
 import android.media.session.MediaSession;
 import android.text.TextUtils;
@@ -84,6 +86,7 @@ abstract class FirstBatchMediaSessionAdapter implements PlayerAdapter {
         return result;
     }
 
+    @SuppressLint("WrongConstant")
     private void onMetadata(LockscreenLyricsModule module, MediaMetadata metadata) {
         TrackMetadata track = TrackMetadata.from(metadata);
         if (!track.hasUsableTitle()) {

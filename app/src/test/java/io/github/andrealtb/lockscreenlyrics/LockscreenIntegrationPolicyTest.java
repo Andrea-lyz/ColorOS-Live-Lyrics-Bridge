@@ -57,6 +57,32 @@ public class LockscreenIntegrationPolicyTest {
     }
 
     @Test
+    public void pausedAndBufferingPositionJumpsRealignLyrics() {
+        assertTrue(LockscreenIntegrationPolicy.shouldRealignAfterPlaybackPositionJump(
+                2, 26_000L, 17_000L, 1_500L));
+        assertTrue(LockscreenIntegrationPolicy.shouldRealignAfterPlaybackPositionJump(
+                6, 17_000L, 7_621L, 1_500L));
+        assertTrue(LockscreenIntegrationPolicy.shouldRealignAfterPlaybackPositionJump(
+                3, 1_000L, 69_000L, 1_500L));
+        assertFalse(LockscreenIntegrationPolicy.shouldRealignAfterPlaybackPositionJump(
+                0, 17_000L, 0L, 1_500L));
+        assertFalse(LockscreenIntegrationPolicy.shouldRealignAfterPlaybackPositionJump(
+                2, 17_000L, 16_000L, 1_500L));
+    }
+
+    @Test
+    public void stalePowerampScaleIndexYieldsToEstablishedProgressLine() {
+        assertTrue(LockscreenIntegrationPolicy.shouldPreferProgressScaleForStalePowerampIndex(
+                true, 117_617L, 125_833L, 128_001L, 420L));
+        assertFalse(LockscreenIntegrationPolicy.shouldPreferProgressScaleForStalePowerampIndex(
+                true, 117_617L, 125_833L, 126_100L, 420L));
+        assertFalse(LockscreenIntegrationPolicy.shouldPreferProgressScaleForStalePowerampIndex(
+                false, 117_617L, 125_833L, 128_001L, 420L));
+        assertFalse(LockscreenIntegrationPolicy.shouldPreferProgressScaleForStalePowerampIndex(
+                true, 129_535L, 125_833L, 128_001L, 420L));
+    }
+
+    @Test
     public void thirdWrappedLineSlidesIntoTwoLineWindow() {
         assertEquals(0, LockscreenIntegrationPolicy.clampSlidingWindowStart(0, 3, 2));
         assertEquals(1, LockscreenIntegrationPolicy.clampSlidingWindowStart(1, 3, 2));
