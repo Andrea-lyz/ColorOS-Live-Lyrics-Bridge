@@ -83,6 +83,30 @@ public class LockscreenIntegrationPolicyTest {
     }
 
     @Test
+    public void samePowerampTrackReattachKeepsNativePlaybackPosition() {
+        assertTrue(LockscreenIntegrationPolicy.shouldPreservePowerampPositionForSameTrackReattach(
+                true, true, true, true));
+        assertTrue(LockscreenIntegrationPolicy.shouldPreservePowerampPositionForSameTrackReattach(
+                false, false, true, true));
+        assertFalse(LockscreenIntegrationPolicy.shouldPreservePowerampPositionForSameTrackReattach(
+                true, false, true, true));
+        assertFalse(LockscreenIntegrationPolicy.shouldPreservePowerampPositionForSameTrackReattach(
+                true, true, false, true));
+        assertFalse(LockscreenIntegrationPolicy.shouldPreservePowerampPositionForSameTrackReattach(
+                true, true, true, false));
+    }
+
+    @Test
+    public void powerampTrackEventTemporarilyMakesNativePositionAuthoritative() {
+        assertTrue(LockscreenIntegrationPolicy.shouldTrustPowerampNativePosition(
+                14_900_397L, 14_902_357L));
+        assertFalse(LockscreenIntegrationPolicy.shouldTrustPowerampNativePosition(
+                14_902_358L, 14_902_357L));
+        assertFalse(LockscreenIntegrationPolicy.shouldTrustPowerampNativePosition(
+                10L, 0L));
+    }
+
+    @Test
     public void thirdWrappedLineSlidesIntoTwoLineWindow() {
         assertEquals(0, LockscreenIntegrationPolicy.clampSlidingWindowStart(0, 3, 2));
         assertEquals(1, LockscreenIntegrationPolicy.clampSlidingWindowStart(1, 3, 2));

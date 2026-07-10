@@ -128,6 +128,23 @@ final class LockscreenIntegrationPolicy {
                 && positionMillis >= activeLineTimeMillis + Math.max(0L, graceMillis);
     }
 
+    static boolean shouldPreservePowerampPositionForSameTrackReattach(
+            boolean previousExternalTrackKnown,
+            boolean sameExternalTrack,
+            boolean payloadMatchesTrack,
+            boolean powerampModelMatchesTrack) {
+        return (!previousExternalTrackKnown || sameExternalTrack)
+                && payloadMatchesTrack
+                && powerampModelMatchesTrack;
+    }
+
+    static boolean shouldTrustPowerampNativePosition(
+            long nowElapsedRealtime,
+            long authorityUntilElapsedRealtime) {
+        return authorityUntilElapsedRealtime > 0L
+                && nowElapsedRealtime <= authorityUntilElapsedRealtime;
+    }
+
     static int clampSlidingWindowStart(
             int activeSegmentIndex,
             int totalSegments,

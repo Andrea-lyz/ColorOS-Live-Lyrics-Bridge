@@ -255,6 +255,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     private static final float OFFICIAL_LYRIC_ROW_EASE_X2 = 0.46f;
     private static final float OFFICIAL_LYRIC_ROW_EASE_Y2 = 1f;
     private static final long POWERAMP_STALE_SCALE_INDEX_GRACE_MS = 420L;
+    private static final long POWERAMP_NATIVE_POSITION_AUTHORITY_MS = 3_000L;
     private static final long OFFICIAL_LYRIC_ROW_SCALE_ATTACH_SUPPRESS_MS = 180L;
     private static final long AOD_WORD_PROGRESS_TO_LINE_ANIMATION_MS = 240L;
     private static final float ACTIVE_LYRIC_CENTER_OFFSET_DP = 48f;
@@ -333,6 +334,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     private volatile String powerampExternalTrackTitle = "";
     private volatile String powerampExternalTrackArtist = "";
     private volatile long lastPowerampExternalTrackChangedAtElapsedMs;
+    private volatile long powerampNativePositionAuthorityUntilElapsedMs;
     private volatile boolean lastSystemUiPackageSupported;
     private volatile String currentLyricProviderPackage = "";
     private volatile LyricInfoContract.Payload currentLyricProviderPayload;
@@ -451,6 +453,9 @@ public final class LockscreenLyricsModule extends XposedModule {
     private volatile int lyricRecyclerSettleOfficialIndex = -1;
     private volatile long lyricRecyclerSettleUntilElapsedMs;
     private volatile long lyricRecyclerSettleOfficialObservedAtMs = -1L;
+    private volatile long lyricTrackPositionResetGuardStartedAtElapsedMs = -1L;
+    private volatile long lastOfficialLyricIndexObservedAtElapsedMs = -1L;
+    private volatile int lastTrackResetPrimeLoggedIndex = -1;
     private volatile long officialRowScaleAnimationSuppressUntilElapsedMs;
     private volatile boolean lyricsRecyclerHookInstalled;
     private volatile boolean lyricsRecyclerSetCurrentUnavailable;
@@ -2060,6 +2065,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
 
         lastLyricsRecyclerIndex = targetIndex;
+        lastOfficialLyricIndexObservedAtElapsedMs = SystemClock.elapsedRealtime();
         activeLyricLine = line.normalizedText;
         activeLyricLineTimeMs = line.timeMillis;
         long now = SystemClock.elapsedRealtime();
@@ -2507,6 +2513,9 @@ public final class LockscreenLyricsModule extends XposedModule {
         lastLyricsRecyclerIndex = 0;
         lastPrimedLyricsRecyclerView = new WeakReference<>(null);
         lastPrimedLyricsRecyclerIndex = -1;
+        lyricTrackPositionResetGuardStartedAtElapsedMs = now;
+        lastOfficialLyricIndexObservedAtElapsedMs = -1L;
+        lastTrackResetPrimeLoggedIndex = -1;
         externalLyricRecyclerMaskCooldownUntilElapsedMs = 0L;
         lyricTrackPositionResetGuardUntilElapsedMs =
                 now + SYSTEMUI_TRACK_RESET_POSITION_GUARD_MS;
@@ -2995,6 +3004,11 @@ public final class LockscreenLyricsModule extends XposedModule {
             long storedPosition,
             long computedPosition,
             long now) {
+        if (LockscreenIntegrationPolicy.shouldTrustPowerampNativePosition(
+                now,
+                powerampNativePositionAuthorityUntilElapsedMs)) {
+            return false;
+        }
         if (!isPlaybackStateInMotion(state)
                 || now > lyricTrackPositionResetGuardUntilElapsedMs
                 || previousPosition < 0
@@ -4365,6 +4379,19 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
         if (currentWordLyricModelFromExternal
                 && SystemClock.elapsedRealtime() <= lyricTrackPositionResetGuardUntilElapsedMs) {
+            long officialObservedAt = lastOfficialLyricIndexObservedAtElapsedMs;
+            if (officialObservedAt >= lyricTrackPositionResetGuardStartedAtElapsedMs
+                    && lastLyricsRecyclerIndex > 0
+                    && model.lineAtAdapterIndex(lastLyricsRecyclerIndex) != null) {
+                if (lastTrackResetPrimeLoggedIndex != lastLyricsRecyclerIndex) {
+                    lastTrackResetPrimeLoggedIndex = lastLyricsRecyclerIndex;
+                    info("Preserved official opening lyric index during track-reset prime"
+                            + ", index=" + lastLyricsRecyclerIndex
+                            + ", observedAfterResetMs="
+                            + (officialObservedAt - lyricTrackPositionResetGuardStartedAtElapsedMs));
+                }
+                return lastLyricsRecyclerIndex;
+            }
             return 0;
         }
         return model.adapterIndexAt(estimatePlaybackPositionMillis());
@@ -7754,16 +7781,39 @@ public final class LockscreenLyricsModule extends XposedModule {
         powerampExternalTrackArtist = nullToEmpty(artist);
         long now = SystemClock.elapsedRealtime();
         lastPowerampExternalTrackChangedAtElapsedMs = now;
+        powerampNativePositionAuthorityUntilElapsedMs =
+                now + POWERAMP_NATIVE_POSITION_AUTHORITY_MS;
         lastSystemUiTrackIdentityChangedAtElapsedMs = now;
         bindCurrentLyricProviderPackage(
                 ExternalLyricSources.POWERAMP_PLAYER_PACKAGE,
                 "Poweramp external track event");
 
+        boolean previousExternalTrackKnown = !TextUtils.isEmpty(previousKey);
+        boolean incomingMatchesPreviousTrack = previousExternalTrackKnown
+                && TrackIdentity.matchesHintKey(incomingKey, previousKey);
+        boolean payloadMatchesIncomingTrack = payloadMatchesTrack(
+                currentLyricProviderPayload,
+                title,
+                artist);
+        boolean powerampModelMatchesIncomingTrack = currentWordLyricModelFromExternal
+                && ExternalLyricSources.isPowerampSource(currentWordLyricModelExternalSource)
+                && !TextUtils.isEmpty(currentWordLyricModelTrackKey)
+                && TrackIdentity.matchesHintKey(incomingKey, currentWordLyricModelTrackKey);
+        boolean preserveSameTrackPosition =
+                LockscreenIntegrationPolicy.shouldPreservePowerampPositionForSameTrackReattach(
+                        previousExternalTrackKnown,
+                        incomingMatchesPreviousTrack,
+                        payloadMatchesIncomingTrack,
+                        powerampModelMatchesIncomingTrack);
+        if (preserveSameTrackPosition && isLyricLayoutDiagnosticsEnabled()) {
+            info("Preserved native Poweramp playback position across same-track reattach"
+                    + ", title=" + shortenForLog(title));
+        }
         if (!TextUtils.isEmpty(title)
-                && (!TrackIdentity.matchesHintKey(incomingKey, previousKey)
-                || !payloadMatchesTrack(currentLyricProviderPayload, title, artist))) {
+                && !preserveSameTrackPosition
+                && (!incomingMatchesPreviousTrack || !payloadMatchesIncomingTrack)) {
             clearSystemUiLyricModelForTrackChange(title, artist);
-        } else if (!TextUtils.isEmpty(title)) {
+        } else if (!TextUtils.isEmpty(title) && !preserveSameTrackPosition) {
             resetSystemUiPlaybackPositionForTrackChange(
                     title,
                     artist,
