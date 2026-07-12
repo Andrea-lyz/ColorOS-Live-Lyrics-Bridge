@@ -43,6 +43,7 @@ import android.widget.TextView;
 
 import org.json.JSONObject;
 
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.ref.WeakReference;
@@ -80,6 +81,8 @@ public final class LockscreenLyricsModule extends XposedModule {
             "com.android.server.media.OplusMediaControlService";
     private static final String OPLUS_HISTORY_WHITELIST_METHOD =
             "isInHistoryPlayInfoWhiteList";
+    private static final String OPLUS_PLUGIN_CLASS_LOADER_CLASS =
+            "com.android.systemui.shared.plugins.OPlusPluginClassLoader";
     private static final String LYRICS_RECYCLER_VIEW_CLASS =
             "com.oplus.systemui.plugins.shared.template.component.media.view.LyricsRecyclerView";
     private static final String LYRICS_SWITCHER_VIEW_CLASS =
@@ -103,7 +106,8 @@ public final class LockscreenLyricsModule extends XposedModule {
             "oplus-translation-button-image-drawable";
     private static final String HOOK_ID_IMAGE_VIEW_SET_IMAGE_BITMAP =
             "oplus-translation-button-image-bitmap";
-    private static final String HOOK_ID_CLASS_LOADER_LOAD_CLASS = "oplus-word-classloader-load-class";
+    private static final String HOOK_ID_PLUGIN_CLASS_LOADER_CONSTRUCTOR =
+            "oplus-word-plugin-classloader-constructor";
     private static final String HOOK_ID_LYRICS_RECYCLER = "oplus-word-lyrics-recycler";
     private static final String HOOK_ID_LYRICS_RECYCLER_NOTIFY_GUARD =
             "oplus-word-lyrics-recycler-notify-guard";
@@ -488,8 +492,8 @@ public final class LockscreenLyricsModule extends XposedModule {
     private volatile long lastOfficialLyricIndexObservedAtElapsedMs = -1L;
     private volatile int lastTrackResetPrimeLoggedIndex = -1;
     private volatile long officialRowScaleAnimationSuppressUntilElapsedMs;
-    private volatile boolean lyricsRecyclerHookInstalled;
-    private volatile boolean lyricsRecyclerNotifyCrashGuardInstalled;
+    private volatile boolean lyricsRecyclerHookInstallAttempted;
+    private volatile boolean pluginClassLoaderConstructorHookInstalled;
     private volatile boolean lyricsRecyclerSetCurrentUnavailable;
     private volatile boolean recyclerAdapterNotifyHookInstalled;
     private volatile boolean recyclerAdapterNotifyGuardUnavailableLogged;
@@ -1936,15 +1940,8 @@ public final class LockscreenLyricsModule extends XposedModule {
                     .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                     .intercept(this::onImageViewSetImage);
 
-            Method loadClass = ClassLoader.class.getDeclaredMethod("loadClass", String.class, boolean.class);
-            loadClass.setAccessible(true);
-            hook(loadClass)
-                    .setId(HOOK_ID_CLASS_LOADER_LOAD_CLASS)
-                    .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
-                    .intercept(this::onClassLoaderLoadClass);
-
+            tryInstallPluginClassLoaderConstructorHook(classLoader);
             tryInstallLyricsRecyclerViewHook(classLoader);
-            tryInstallRecyclerAdapterNotifyHook(classLoader);
             ensureScreenTimeoutReceiver(currentApplicationContext());
             ensureExternalLyricReceiver(currentApplicationContext());
             info("Hooked SystemUI official lyric hooks"
@@ -4169,19 +4166,6 @@ public final class LockscreenLyricsModule extends XposedModule {
         return hash;
     }
 
-    private Object onClassLoaderLoadClass(XposedInterface.Chain chain) throws Throwable {
-        Object result = chain.proceed();
-        Object name = chain.getArg(0);
-        if (LYRICS_RECYCLER_VIEW_CLASS.equals(name) && result instanceof Class<?>) {
-            Class<?> lyricsRecyclerViewClass = (Class<?>) result;
-            tryInstallLyricsRecyclerViewHook(lyricsRecyclerViewClass);
-            scheduleRecyclerAdapterNotifyHook(
-                    null,
-                    lyricsRecyclerViewClass.getClassLoader());
-        }
-        return result;
-    }
-
     private Object onLyricsRecyclerSetCurrentLyric(XposedInterface.Chain chain) throws Throwable {
         if (Boolean.TRUE.equals(suppressLyricsRecyclerHook.get())) {
             return chain.proceed();
@@ -4916,7 +4900,14 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private static boolean hasLyricsRecyclerViewClassName(View view) {
-        return view != null && view.getClass().getName().contains("LyricsRecyclerView");
+        Class<?> current = view == null ? null : view.getClass();
+        while (current != null) {
+            if (LYRICS_RECYCLER_VIEW_CLASS.equals(current.getName())) {
+                return true;
+            }
+            current = current.getSuperclass();
+        }
+        return false;
     }
 
     private void stabilizeLyricsRecyclerScroll(View recycler, String reason) {
@@ -5123,21 +5114,74 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private void tryInstallLyricsRecyclerViewHook(ClassLoader classLoader) {
-        if (lyricsRecyclerHookInstalled && lyricsRecyclerNotifyCrashGuardInstalled) {
+        if (lyricsRecyclerHookInstallAttempted || classLoader == null) {
             return;
         }
         try {
-            tryInstallLyricsRecyclerViewHook(classLoader.loadClass(LYRICS_RECYCLER_VIEW_CLASS));
+            Class<?> lyricsRecyclerViewClass =
+                    classLoader.loadClass(LYRICS_RECYCLER_VIEW_CLASS);
+            tryInstallLyricsRecyclerViewHook(lyricsRecyclerViewClass);
+            ClassLoader recyclerClassLoader = lyricsRecyclerViewClass.getClassLoader();
+            if (!recyclerAdapterNotifyHookInstalled) {
+                tryInstallRecyclerAdapterNotifyHook(recyclerClassLoader);
+            }
+            if (!recyclerAdapterNotifyHookInstalled) {
+                scheduleRecyclerAdapterNotifyHook(null, recyclerClassLoader);
+            }
         } catch (Throwable ignored) {
-            // The Seedling plugin class is loaded lazily; ClassLoader.loadClass hook will catch it later.
+            // The Seedling plugin class is loaded lazily. The targeted plugin ClassLoader
+            // constructor hook, or its first View attachment, installs the lyric-local hooks.
         }
     }
 
-    private synchronized void tryInstallLyricsRecyclerViewHook(Class<?> lyricsRecyclerViewClass) {
-        if ((lyricsRecyclerHookInstalled && lyricsRecyclerNotifyCrashGuardInstalled)
-                || lyricsRecyclerViewClass == null) {
+    private synchronized void tryInstallPluginClassLoaderConstructorHook(
+            ClassLoader classLoader) {
+        if (pluginClassLoaderConstructorHookInstalled || classLoader == null) {
             return;
         }
+        try {
+            Class<?> pluginClassLoaderClass =
+                    classLoader.loadClass(OPLUS_PLUGIN_CLASS_LOADER_CLASS);
+            Constructor<?>[] constructors = pluginClassLoaderClass.getDeclaredConstructors();
+            int hooked = 0;
+            for (Constructor<?> constructor : constructors) {
+                constructor.setAccessible(true);
+                hook(constructor)
+                        .setId(HOOK_ID_PLUGIN_CLASS_LOADER_CONSTRUCTOR
+                                + "-"
+                                + hooked
+                                + "-"
+                                + constructor.getParameterTypes().length)
+                        .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                        .intercept(this::onPluginClassLoaderConstructed);
+                hooked++;
+            }
+            pluginClassLoaderConstructorHookInstalled = hooked > 0;
+            if (pluginClassLoaderConstructorHookInstalled) {
+                info("Hooked OPlus plugin ClassLoader constructors, methods=" + hooked);
+            }
+        } catch (Throwable t) {
+            error("Failed to hook OPlus plugin ClassLoader constructors", t);
+        }
+    }
+
+    private Object onPluginClassLoaderConstructed(XposedInterface.Chain chain) throws Throwable {
+        Object result = chain.proceed();
+        Object thisObject = chain.getThisObject();
+        if (thisObject instanceof ClassLoader) {
+            tryInstallLyricsRecyclerViewHook((ClassLoader) thisObject);
+        }
+        return result;
+    }
+
+    private synchronized void tryInstallLyricsRecyclerViewHook(Class<?> lyricsRecyclerViewClass) {
+        if (lyricsRecyclerHookInstallAttempted || lyricsRecyclerViewClass == null) {
+            return;
+        }
+        // A missing optional obfuscated guard method must not cause repeated hook installation.
+        // Re-entering here used to duplicate every setCurrentLyric interceptor on each attach or
+        // plugin ClassLoader construction when that method was absent on a firmware variant.
+        lyricsRecyclerHookInstallAttempted = true;
         try {
             int hooked = 0;
             int notifyCrashGuards = 0;
@@ -5180,7 +5224,6 @@ public final class LockscreenLyricsModule extends XposedModule {
                 info("No LyricsRecyclerView current lyric hook target found on "
                         + lyricsRecyclerViewClass.getName());
             }
-            lyricsRecyclerNotifyCrashGuardInstalled = notifyCrashGuards > 0;
             if (notifyCrashGuards > 0) {
                 info("Hooked LyricsRecyclerView notify crash guard, methods="
                         + notifyCrashGuards);
@@ -5188,7 +5231,6 @@ public final class LockscreenLyricsModule extends XposedModule {
                 info("No LyricsRecyclerView notify crash guard target found on "
                         + lyricsRecyclerViewClass.getName());
             }
-            lyricsRecyclerHookInstalled = true;
         } catch (Throwable t) {
             error("Failed to hook LyricsRecyclerView current lyric updates", t);
         }
@@ -6344,7 +6386,9 @@ public final class LockscreenLyricsModule extends XposedModule {
 
     private static int findLyricsRecyclerAdapterPosition(TextView textView) {
         LyricsRecyclerMatch match = findLyricsRecyclerMatch(textView);
-        return match == null ? -1 : readRecyclerChildPosition(match.recycler, match.itemView);
+        return match == null
+                ? -1
+                : readRecyclerChildPosition(match.recycler(), match.itemView());
     }
 
     private static int readRecyclerChildPosition(View recyclerView, View child) {
@@ -6411,13 +6455,13 @@ public final class LockscreenLyricsModule extends XposedModule {
 
     private static View findContainingLyricsRecyclerView(TextView textView) {
         LyricsRecyclerMatch match = findLyricsRecyclerMatch(textView);
-        return match == null ? null : match.recycler;
+        return match == null ? null : match.recycler();
     }
 
     private static View findLyricsRecyclerItemView(TextView textView) {
         LyricsRecyclerMatch match = findLyricsRecyclerMatch(textView);
         if (match != null) {
-            return match.itemView;
+            return match.itemView();
         }
         if (textView == null) {
             return null;
@@ -17158,19 +17202,29 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private static final class LyricsRecyclerMatch {
-        final View recycler;
-        final View itemView;
+        final WeakReference<View> recycler;
+        final WeakReference<View> itemView;
 
         LyricsRecyclerMatch(View recycler, View itemView) {
-            this.recycler = recycler;
-            this.itemView = itemView;
+            this.recycler = new WeakReference<>(recycler);
+            this.itemView = new WeakReference<>(itemView);
+        }
+
+        View recycler() {
+            return recycler.get();
+        }
+
+        View itemView() {
+            return itemView.get();
         }
 
         boolean isUsable() {
-            return recycler != null
-                    && itemView != null
-                    && recycler.isAttachedToWindow()
-                    && itemView.isAttachedToWindow();
+            View currentRecycler = recycler();
+            View currentItemView = itemView();
+            return currentRecycler != null
+                    && currentItemView != null
+                    && currentRecycler.isAttachedToWindow()
+                    && currentItemView.isAttachedToWindow();
         }
     }
 

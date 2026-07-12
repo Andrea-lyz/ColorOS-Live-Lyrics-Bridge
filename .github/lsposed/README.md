@@ -2,7 +2,7 @@
 
 ## Latest release
 
-v3.0.2 fixes Apple Music automatic track-change handoff and the overly fast pseudo-word completion of the final line. It follows the latest Bridge MediaSession metadata during Apple Music queue preloading, retries the bounded SystemUI lyric handoff, and estimates a sensible duration for the final line of line-timed lyrics. It preserves the v3.0.1 SystemUI performance and rendering-stability work. Provider APK internal versions are incremented, so matching Provider modules should be updated together with the Bridge. Release assets include `LyricProvider-v3.0.2.zip` for installing all bundled provider APKs together.
+v3.0.3 fixes a SystemUI startup ANR reported on some ColorOS 16 builds, including SystemUI 16.0.9.401. It removes the global ClassLoader loadClass hook, targets the OPlus plugin ClassLoader instead, prevents duplicate lyric hooks, and preserves the verified AOD transition timing. LyricProvider code and internal versions are unchanged, so existing Provider installations do not need to be reinstalled. Release assets include `LyricProvider-v3.0.3.zip` for installing all bundled provider APKs together.
 
 ## 简体中文
 
