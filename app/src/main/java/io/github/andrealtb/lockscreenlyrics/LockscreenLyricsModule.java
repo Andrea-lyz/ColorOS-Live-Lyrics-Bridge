@@ -7055,7 +7055,9 @@ public final class LockscreenLyricsModule extends XposedModule {
                 || lyricUiLineTimedProgressEnabled) {
             return true;
         }
-        return lyricUiScrollScaleEnabled || lyricUiInactiveBlurEnabled;
+        return line.passiveLinePanEligible
+                || lyricUiScrollScaleEnabled
+                || lyricUiInactiveBlurEnabled;
     }
 
     private void refreshActiveLyricTextView() {
@@ -15246,7 +15248,12 @@ public final class LockscreenLyricsModule extends XposedModule {
             float layoutTranslationAmount = hasTranslation
                     ? resolveTranslationLayoutAmount(translationAmount)
                     : 0f;
-            TranslatedLineWindow lineWindow = hasTranslation
+            boolean passiveLineWindow = shouldUsePassiveLineWindow(line, drawLines.size());
+            // A recycled inactive holder can draw after the active holder for the same
+            // WordLine. Keep this structural so that holder draw order cannot lower the
+            // refresh rate while the active row is panning.
+            line.passiveLinePanEligible = passiveLineWindow;
+            TranslatedLineWindow lineWindow = hasTranslation && !passiveLineWindow
                     ? resolveTranslatedMainLineWindow(
                     model,
                     line,
@@ -15255,7 +15262,9 @@ public final class LockscreenLyricsModule extends XposedModule {
                     availableWidth,
                     position)
                     : null;
-            int visibleMainLineCount = lineWindow == null ? drawLines.size() : lineWindow.count;
+            int visibleMainLineCount = passiveLineWindow
+                    ? Math.min(MAX_TRANSLATED_MAIN_DRAW_LINES, drawLines.size())
+                    : (lineWindow == null ? drawLines.size() : lineWindow.count);
 
             inactivePaint.getFontMetrics(mainFontMetrics);
             Paint.FontMetrics mainMetrics = mainFontMetrics;
@@ -15335,6 +15344,43 @@ public final class LockscreenLyricsModule extends XposedModule {
                         focusAmount,
                         layoutTranslationAmount);
                 textView.postInvalidateOnAnimation();
+            } else if (passiveLineWindow && activeLine) {
+                float lineProgress = resolveLineElapsedProgress(model, line, position);
+                float panProgress = LockscreenIntegrationPolicy.passiveLinePanProgress(lineProgress);
+                float lineAdvance = lineHeight + lineGap;
+                float maxPan = Math.max(
+                        0f,
+                        (drawLines.size() - visibleMainLineCount) * lineAdvance);
+                int passiveClipSave = canvas.save();
+                canvas.clipRect(
+                        textView.getPaddingLeft(),
+                        top,
+                        textView.getWidth() - textView.getPaddingRight(),
+                        top + mainHeight);
+                drawMainLineWindow(
+                        canvas,
+                        textView,
+                        model,
+                        line,
+                        text,
+                        activeWord,
+                        wordIndex,
+                        glowActiveWord,
+                        glowWordIndex,
+                        y - maxPan * panProgress,
+                        lineHeight,
+                        lineGap,
+                        availableWidth,
+                        position,
+                        glowPosition,
+                        activeLine,
+                        drawProgress,
+                        fullLineOverlayAmount,
+                        0,
+                        drawLines.size(),
+                        focusAmount,
+                        1f);
+                canvas.restoreToCount(passiveClipSave);
             } else if (lineWindow != null && lineWindow.animating) {
                 float slide = dp(textView.getContext(), TRANSLATED_WINDOW_SLIDE_DP);
                 float direction = lineWindow.currentStart >= lineWindow.previousStart ? 1f : -1f;
@@ -15467,6 +15513,14 @@ public final class LockscreenLyricsModule extends XposedModule {
             if (inactivePaint.getTextSize() != originalSize) {
                 setTextSize(originalSize);
             }
+        }
+
+        private boolean shouldUsePassiveLineWindow(WordLine line, int totalLines) {
+            return line != null
+                    && line.timingMode == LyricTimingMode.LINE_TIMED
+                    && !lineTimedProgressEnabled
+                    && !aodLowFrameRateMode
+                    && totalLines > MAX_TRANSLATED_MAIN_DRAW_LINES;
         }
 
         private static float clampTopWithinSlot(
@@ -17815,6 +17869,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         int translatedWindowStart;
         int translatedWindowPreviousStart;
         long translatedWindowChangedAtMs;
+        volatile boolean passiveLinePanEligible;
         int focusedVisualActiveIndex = Integer.MIN_VALUE;
         long focusedVisualStartElapsedMs;
         boolean rowVisualScaleInitialized;

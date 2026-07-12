@@ -201,6 +201,15 @@ public class LockscreenIntegrationPolicyTest {
     }
 
     @Test
+    public void passiveLinePanHoldsThenSmoothlyMovesAcrossTheMiddleOfTheLine() {
+        assertEquals(0f, LockscreenIntegrationPolicy.passiveLinePanProgress(0f), 0.0001f);
+        assertEquals(0f, LockscreenIntegrationPolicy.passiveLinePanProgress(0.215f), 0.0001f);
+        assertEquals(0.5f, LockscreenIntegrationPolicy.passiveLinePanProgress(0.5f), 0.0001f);
+        assertEquals(1f, LockscreenIntegrationPolicy.passiveLinePanProgress(0.785f), 0.0001f);
+        assertEquals(1f, LockscreenIntegrationPolicy.passiveLinePanProgress(1f), 0.0001f);
+    }
+
+    @Test
     public void lineTimedLyricKeepsTheVisibleWindowUntilProgressReachesHiddenLine() {
         assertEquals(0, LockscreenIntegrationPolicy.lineTimedSlidingWindowStart(
                 6_790L,

@@ -251,6 +251,18 @@ final class LockscreenIntegrationPolicy {
                 Math.min(activeSegmentIndex, Math.max(0, totalSegments - visibleSegments)));
     }
 
+    static float passiveLinePanProgress(float lineProgress) {
+        final float startProgress = 0.215f;
+        final float endProgress = 0.785f;
+        float rawProgress = Math.max(
+                0f,
+                Math.min(
+                        1f,
+                        (lineProgress - startProgress) / (endProgress - startProgress)));
+        return rawProgress * rawProgress * rawProgress
+                * (rawProgress * (rawProgress * 6f - 15f) + 10f);
+    }
+
     static int lineTimedSlidingWindowStart(
             long positionMillis,
             long lineStartMillis,
