@@ -80,6 +80,7 @@ public final class LyricUiConfigTest {
     public void codecRoundTripPreservesLineSpacing() {
         LyricUiConfig source = LyricUiConfig.defaults().buildUpon()
                 .lineSpacingTenthsDp(65)
+                .alignment(LyricUiConfig.ALIGN_CENTER)
                 .build();
 
         LyricUiConfig decoded = LyricUiConfigCodec.decode(
@@ -88,6 +89,36 @@ public final class LyricUiConfigTest {
                 false);
 
         assertEquals(65, decoded.lineSpacingTenthsDp);
+        assertEquals(LyricUiConfig.ALIGN_CENTER, decoded.alignment);
+    }
+
+    @Test
+    public void playerTranslationUpdatePreservesTypographyAndAppearance() {
+        LyricUiConfig source = LyricUiConfig.defaults().buildUpon()
+                .alignment(LyricUiConfig.ALIGN_CENTER)
+                .mainFontTenthsSp(260)
+                .lineSpacingTenthsDp(-35)
+                .inactiveOpacityPercent(73)
+                .glowEnabled(false)
+                .defaultTranslationEnabled(true)
+                .build();
+
+        LyricUiConfig updated = LyricUiSettings.withGlobalTranslationDefault(source, false);
+
+        assertFalse(updated.defaultTranslationEnabled);
+        assertEquals(LyricUiConfig.ALIGN_CENTER, updated.alignment);
+        assertEquals(260, updated.mainFontTenthsSp);
+        assertEquals(-35, updated.lineSpacingTenthsDp);
+        assertEquals(73, updated.inactiveOpacityPercent);
+        assertFalse(updated.glowEnabled);
+    }
+
+    @Test
+    public void settingsRevisionIsStrictlyMonotonic() {
+        long first = LyricUiSettings.newSettingsRevision();
+        long second = LyricUiSettings.newSettingsRevision();
+
+        assertTrue(second > first);
     }
 
     @Test

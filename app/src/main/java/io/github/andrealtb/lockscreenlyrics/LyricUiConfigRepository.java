@@ -61,9 +61,29 @@ final class LyricUiConfigRepository {
         return intent;
     }
 
+    static Bundle putSnapshot(Bundle bundle, LyricUiConfig config) {
+        Bundle target = bundle == null ? new Bundle() : bundle;
+        for (Map.Entry<String, Object> entry : LyricUiConfigCodec.encode(config).entrySet()) {
+            Object value = entry.getValue();
+            if (value instanceof Boolean) target.putBoolean(entry.getKey(), (Boolean) value);
+            else if (value instanceof Integer) target.putInt(entry.getKey(), (Integer) value);
+            else target.putString(entry.getKey(), String.valueOf(value));
+        }
+        return target;
+    }
+
     static LyricUiConfig decodePartial(Intent intent, LyricUiConfig baseline) {
         if (intent == null) return baseline;
         Bundle extras = intent.getExtras();
+        if (extras == null) return baseline;
+        LinkedHashMap<String, Object> values = new LinkedHashMap<>();
+        for (String key : LyricUiConfigCodec.encode(baseline).keySet()) {
+            if (extras.containsKey(key)) values.put(key, extras.get(key));
+        }
+        return LyricUiConfigCodec.decode(values, baseline, false);
+    }
+
+    static LyricUiConfig decodeSnapshot(Bundle extras, LyricUiConfig baseline) {
         if (extras == null) return baseline;
         LinkedHashMap<String, Object> values = new LinkedHashMap<>();
         for (String key : LyricUiConfigCodec.encode(baseline).keySet()) {

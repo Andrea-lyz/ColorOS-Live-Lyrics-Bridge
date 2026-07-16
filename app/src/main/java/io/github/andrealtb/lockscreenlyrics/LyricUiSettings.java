@@ -1,6 +1,7 @@
 package io.github.andrealtb.lockscreenlyrics;
 
 final class LyricUiSettings {
+    private static long lastSettingsRevision;
     static final String PREFERENCES_NAME = "lockscreen_lyrics";
     static final String ACTION_STYLE_CHANGED =
             "io.github.andrealtb.lockscreenlyrics.action.LYRIC_UI_STYLE_CHANGED";
@@ -20,13 +21,26 @@ final class LyricUiSettings {
             "player_translation_defaults";
     static final String EXTRA_CLEAR_TRANSLATION_PACKAGES =
             "clear_translation_packages";
+    static final String EXTRA_DEFAULT_TRANSLATION_ENABLED =
+            "default_translation_enabled";
     static final String EXTRA_RESULT_RECEIVER = "result_receiver";
+    static final String EXTRA_CONFIG_REVISION = "config_revision";
+    static final String EXTRA_SETTINGS_SOURCE = "settings_source";
     static final String EXTRA_CONTENT_CLEANUP_CONFIG = "content_cleanup_config";
     static final String RESULT_TITLE = "title";
     static final String RESULT_ARTIST = "artist";
     static final String RESULT_ALBUM = "album";
     static final String RESULT_TRACK_KEY = "track_key";
     static final String RESULT_RAW_LYRIC = "raw_lyric";
+    static final String RESULT_APPLIED = "applied";
+    static final String RESULT_CONFIG_REVISION = "config_revision";
+    static final String RESULT_ALIGNMENT = "alignment";
+    static final String RESULT_PROCESS = "process";
+    static final String RESULT_REASON = "reason";
+    static final int RESULT_SETTINGS_APPLIED = 1;
+    static final int RESULT_SETTINGS_REJECTED = 2;
+    static final String SOURCE_MAIN_SETTINGS = "main-settings";
+    static final String SOURCE_PLAYER_TRANSLATION = "player-translation";
     static final String TRANSLATION_PREFERENCE_KEY = "lyric_info_translation_enabled";
     private static final String TRANSLATION_DEFAULT_KEY = "lyric_info_translation_default";
     static final String EXTRA_SCROLL_SCALE_ENABLED = "scroll_scale_enabled";
@@ -62,6 +76,19 @@ final class LyricUiSettings {
 
     static String translationDefaultKeyForPackage(String packageName) {
         return TRANSLATION_DEFAULT_KEY + "." + packageName;
+    }
+
+    static LyricUiConfig withGlobalTranslationDefault(
+            LyricUiConfig baseline,
+            boolean enabled) {
+        LyricUiConfig base = baseline == null ? LyricUiConfig.defaults() : baseline;
+        return base.buildUpon().defaultTranslationEnabled(enabled).build();
+    }
+
+    static synchronized long newSettingsRevision() {
+        long now = System.currentTimeMillis();
+        lastSettingsRevision = Math.max(now, lastSettingsRevision + 1L);
+        return lastSettingsRevision;
     }
 
     private LyricUiSettings() {

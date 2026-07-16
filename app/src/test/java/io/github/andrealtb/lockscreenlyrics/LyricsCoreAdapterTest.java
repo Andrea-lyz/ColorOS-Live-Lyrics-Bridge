@@ -393,6 +393,32 @@ public final class LyricsCoreAdapterTest {
     }
 
     @Test
+    public void nearbyOpeningCreditsRemainSeparateFromFirstBilingualLyric() {
+        String lrc = "[00:00.00]作词：シャノン\n"
+                + "[00:00.05]作曲：シャノン\n"
+                + "[00:00.10]僕らの最後は死別にしよう\n"
+                + "[00:00.10]用死别当作我们的结局吧\n"
+                + "[00:05.64]嫌いになりそうな日差しの中\n"
+                + "[00:05.64]在几乎令人生厌的阳光下";
+
+        LyricsCoreAdapter.ParsedLyrics parsed = LyricsCoreAdapter.parse(lrc);
+
+        assertEquals(4, parsed.lines.size());
+        assertParsedLine(parsed, 0L, "作词：シャノン", "");
+        assertParsedLine(parsed, 50L, "作曲：シャノン", "");
+        assertParsedLine(
+                parsed,
+                100L,
+                "僕らの最後は死別にしよう",
+                "用死别当作我们的结局吧");
+        assertParsedLine(
+                parsed,
+                5_640L,
+                "嫌いになりそうな日差しの中",
+                "在几乎令人生厌的阳光下");
+    }
+
+    @Test
     public void userReportedEnhancedBilingualFilesKeepPrimaryLinesWhenSupplied() throws Exception {
         String fixtureDir = System.getProperty("lyrics.swap.fixture.dir", "");
         assumeTrue("lyrics.swap.fixture.dir was not supplied", !fixtureDir.isEmpty());

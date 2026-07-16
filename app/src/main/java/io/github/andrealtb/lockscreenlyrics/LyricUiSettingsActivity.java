@@ -11,7 +11,10 @@ import android.graphics.Shader;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Build;
+import android.os.Handler;
+import android.os.ResultReceiver;
 import android.text.InputType;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.Display;
 import android.view.Gravity;
@@ -27,7 +30,6 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
-import android.widget.SeekBar;
 import android.widget.Spinner;
 import android.widget.Switch;
 import android.widget.TextView;
@@ -39,23 +41,26 @@ import java.util.Locale;
 import java.util.regex.Pattern;
 
 public final class LyricUiSettingsActivity extends Activity {
+    private static final String TAG = "LockscreenLyrics";
+    private static final String STATE_DRAFT_CONFIG = "draft_config";
     private static final int BACKGROUND = 0xFFF6F6F8;
     private static final int CARD = 0xFFFFFFFF;
     private static final int TEXT = 0xFF111111;
+    private static final long PREVIEW_SCROLL_LAYER_RELEASE_DELAY_MS = 160L;
     private static final Pattern COLOR_PATTERN = Pattern.compile("#[0-9A-Fa-f]{6}");
 
     private SharedPreferences preferences;
     private boolean binding;
     private LyricUiConfig draft;
     private Spinner presetSpinner;
-    private SeekBar opacity;
+    private LightweightSlider opacity;
     private Switch blurEnabled;
-    private SeekBar blurRadius;
+    private LightweightSlider blurRadius;
     private Switch scaleEnabled;
-    private SeekBar inactiveScale;
+    private LightweightSlider inactiveScale;
     private Switch glowEnabled;
-    private SeekBar glowIntensity;
-    private SeekBar glowRadius;
+    private LightweightSlider glowIntensity;
+    private LightweightSlider glowRadius;
     private EditText primaryColor;
     private EditText glowColor;
     private Spinner motionMode;
@@ -67,11 +72,11 @@ public final class LyricUiSettingsActivity extends Activity {
     private Switch translationProgress;
     private Switch screenTimeout;
     private EditText screenTimeoutSeconds;
-    private SeekBar mainFontSize;
-    private SeekBar translationFontRatio;
+    private LightweightSlider mainFontSize;
+    private LightweightSlider translationFontRatio;
     private Spinner fontWeight;
     private Spinner alignment;
-    private SeekBar lineSpacing;
+    private LightweightSlider lineSpacing;
     private TextView previewMain;
     private LinearLayout previewActiveSlot;
     private TextView previewTranslation;
@@ -83,6 +88,17 @@ public final class LyricUiSettingsActivity extends Activity {
     private TextView previewSecondaryTranslationTwo;
     private FrameLayout previewAnchor;
     private boolean floatingPreviewUpdatePosted;
+    private View scrollCachedPreview;
+    private final Runnable releaseScrollCachedPreview = this::releaseScrollCachedPreviewLayer;
+    private final int[] floatingPreviewRootLocation = new int[2];
+    private final int[] floatingPreviewAnchorLocation = new int[2];
+    private TopUiBoundary cachedTopUiBoundary;
+    private int cachedTopUiBoundaryRootTop = Integer.MIN_VALUE;
+    private View actionBarBoundaryView;
+    private String lastFloatingPreviewGeometryLog = "";
+    private boolean draftListenersReady;
+    private int ignoredPresetSelection = -1;
+    private long pendingSettingsRevision = -1L;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -90,8 +106,42 @@ public final class LyricUiSettingsActivity extends Activity {
         configureWindow();
         preferences = getSharedPreferences(LyricUiSettings.PREFERENCES_NAME, MODE_PRIVATE);
         draft = LyricUiConfigRepository.load(preferences);
-        setContentView(createContent());
+        if (savedInstanceState != null) {
+            LyricUiConfig restored = LyricUiConfigRepository.decodeSnapshot(
+                    savedInstanceState.getBundle(STATE_DRAFT_CONFIG),
+                    draft);
+            if (restored != null) draft = restored;
+        }
+        View content = createContent();
+        setContentView(content);
         bind(draft);
+        getWindow().getDecorView().post(() -> {
+            installDraftListeners();
+            getWindow().getDecorView().post(() -> draftListenersReady = true);
+        });
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        if (outState != null && presetSpinner != null) {
+            draft = readDraft();
+            outState.putBundle(
+                    STATE_DRAFT_CONFIG,
+                    LyricUiConfigRepository.putSnapshot(new Bundle(), draft));
+        }
+        super.onSaveInstanceState(outState);
+    }
+
+    @Override
+    protected void onPause() {
+        releaseScrollCachedPreviewLayer();
+        super.onPause();
+    }
+
+    @Override
+    protected void onDestroy() {
+        releaseScrollCachedPreviewLayer();
+        super.onDestroy();
     }
 
     private void configureWindow() {
@@ -101,6 +151,31 @@ public final class LyricUiSettingsActivity extends Activity {
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         window.getDecorView().setSystemUiVisibility(
                 View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+        configureSettingsWindowRefreshRate(window);
+    }
+
+    private void configureSettingsWindowRefreshRate(Window window) {
+        @SuppressWarnings("deprecation")
+        Display display = getWindowManager().getDefaultDisplay();
+        Display.Mode[] modes = display == null ? null : display.getSupportedModes();
+        float[] supportedRates = modes == null ? new float[0] : new float[modes.length];
+        for (int i = 0; i < supportedRates.length; i++) {
+            supportedRates[i] = modes[i].getRefreshRate();
+        }
+        float preferredRate = SettingsWindowRefreshRatePolicy.choosePreferredRate(supportedRates);
+        if (preferredRate <= 0f) return;
+
+        WindowManager.LayoutParams params = window.getAttributes();
+        // Request the panel's 120 Hz mode without pinning a display mode. On API 35+, the
+        // balanced hint lets LTPO panels lower their physical scan rate while content is idle,
+        // and disabling touch boost avoids a separate 60/120 Hz vote during a gesture.
+        params.preferredDisplayModeId = 0;
+        params.preferredRefreshRate = preferredRate;
+        if (Build.VERSION.SDK_INT >= 35) {
+            params.setFrameRateBoostOnTouchEnabled(false);
+            params.setFrameRatePowerSavingsBalanced(true);
+        }
+        window.setAttributes(params);
     }
 
     private View createContent() {
@@ -193,7 +268,13 @@ public final class LyricUiSettingsActivity extends Activity {
         LinearLayout policy = card();
         buildRefreshRateOptions();
         refreshRate = spinner(refreshRateLabels());
-        policy.addView(row("最大动态刷新率", refreshRate));
+        policy.addView(row("歌词刷新上限", refreshRate));
+        TextView refreshRateHint = text(
+                "仅限制歌词内容重绘，不会强制屏幕升频；系统降至 60 Hz 时歌词也会随之降至 60 帧。",
+                12,
+                0x99000000);
+        refreshRateHint.setPadding(dp(4), 0, dp(4), dp(6));
+        policy.addView(refreshRateHint, matchWrap());
         content.addView(policy, marginBottom(dp(16)));
 
         content.addView(section("兼容与屏幕"));
@@ -237,7 +318,6 @@ public final class LyricUiSettingsActivity extends Activity {
         content.addView(save, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(52)));
 
-        installDraftListeners();
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setClipToPadding(false);
@@ -273,10 +353,47 @@ public final class LyricUiSettingsActivity extends Activity {
             });
         });
         root.addOnLayoutChangeListener((view, left, top, right, bottom,
-                oldLeft, oldTop, oldRight, oldBottom) -> update.run());
-        scroll.setOnScrollChangeListener((view, scrollX, scrollY, oldScrollX, oldScrollY) ->
-                update.run());
+                oldLeft, oldTop, oldRight, oldBottom) -> {
+            cachedTopUiBoundary = null;
+            cachedTopUiBoundaryRootTop = Integer.MIN_VALUE;
+            update.run();
+        });
+        scroll.setOnScrollChangeListener((view, scrollX, scrollY, oldScrollX, oldScrollY) -> {
+            if (scrollY != oldScrollY) {
+                holdPreviewHardwareLayerDuringScroll(preview);
+            }
+            update.run();
+        });
         update.run();
+    }
+
+    private void holdPreviewHardwareLayerDuringScroll(View preview) {
+        if (preview == null) return;
+        View previous = scrollCachedPreview;
+        if (previous != null && previous != preview) {
+            previous.removeCallbacks(releaseScrollCachedPreview);
+            if (previous.getLayerType() == View.LAYER_TYPE_HARDWARE) {
+                previous.setLayerType(View.LAYER_TYPE_NONE, null);
+            }
+        }
+        scrollCachedPreview = preview;
+        preview.removeCallbacks(releaseScrollCachedPreview);
+        if (preview.getLayerType() != View.LAYER_TYPE_HARDWARE) {
+            preview.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+        }
+        preview.postDelayed(
+                releaseScrollCachedPreview,
+                PREVIEW_SCROLL_LAYER_RELEASE_DELAY_MS);
+    }
+
+    private void releaseScrollCachedPreviewLayer() {
+        View preview = scrollCachedPreview;
+        scrollCachedPreview = null;
+        if (preview == null) return;
+        preview.removeCallbacks(releaseScrollCachedPreview);
+        if (preview.getLayerType() == View.LAYER_TYPE_HARDWARE) {
+            preview.setLayerType(View.LAYER_TYPE_NONE, null);
+        }
     }
 
     private void scheduleFloatingPreviewUpdate(
@@ -287,7 +404,7 @@ public final class LyricUiSettingsActivity extends Activity {
             return;
         }
         floatingPreviewUpdatePosted = true;
-        root.post(() -> {
+        root.postOnAnimation(() -> {
             floatingPreviewUpdatePosted = false;
             if (root.isInLayout() || anchor.isInLayout()) {
                 scheduleFloatingPreviewUpdate(root, anchor, preview);
@@ -304,15 +421,21 @@ public final class LyricUiSettingsActivity extends Activity {
         if (root.getHeight() <= 0 || anchor.getHeight() <= 0 || preview.getHeight() <= 0) {
             return;
         }
-        int[] rootLocation = new int[2];
-        int[] anchorLocation = new int[2];
-        root.getLocationOnScreen(rootLocation);
-        anchor.getLocationOnScreen(anchorLocation);
-        float naturalTop = anchorLocation[1] - rootLocation[1];
-        float stickyTop = Math.max(
-                5f,
-                resolveTopUiBoundaryOnScreen() - rootLocation[1] + 5f);
+        root.getLocationOnScreen(floatingPreviewRootLocation);
+        anchor.getLocationOnScreen(floatingPreviewAnchorLocation);
+        float naturalTop = floatingPreviewAnchorLocation[1] - floatingPreviewRootLocation[1];
+        TopUiBoundary topUiBoundary = resolveCachedTopUiBoundaryOnScreen(
+                floatingPreviewRootLocation[1]);
+        float stickyTop = LyricUiLayoutPolicy.floatingPreviewTopInRoot(
+                topUiBoundary.bottomOnScreen,
+                floatingPreviewRootLocation[1],
+                5f);
         boolean floating = naturalTop <= stickyTop;
+        logFloatingPreviewGeometry(
+                topUiBoundary,
+                floatingPreviewRootLocation[1],
+                Math.round(stickyTop),
+                floating);
         ViewParent previewParent = preview.getParent();
         // Keep the preview inside the ScrollView until it actually becomes sticky. This lets
         // Android's overscroll stretch and rebound transform the preview together with the page.
@@ -325,36 +448,68 @@ public final class LyricUiSettingsActivity extends Activity {
                     FrameLayout.LayoutParams.WRAP_CONTENT);
             params.leftMargin = dp(20);
             params.rightMargin = dp(20);
-            preview.setTranslationY(stickyTop);
+            setTranslationYIfChanged(preview, stickyTop);
             root.addView(preview, params);
         } else if (!floating && previewParent != anchor) {
             if (previewParent instanceof ViewGroup) {
                 ((ViewGroup) previewParent).removeView(preview);
             }
-            preview.setTranslationY(0f);
+            setTranslationYIfChanged(preview, 0f);
             anchor.addView(preview, new FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT,
                     FrameLayout.LayoutParams.WRAP_CONTENT));
         } else {
-            preview.setTranslationY(floating ? stickyTop : 0f);
+            setTranslationYIfChanged(preview, floating ? stickyTop : 0f);
         }
         float transitionDistance = dp(32);
         float floatingAmount = 1f - Math.max(
                 0f,
                 Math.min(1f, (naturalTop - stickyTop) / transitionDistance));
-        preview.setElevation(dp(8) * floatingAmount);
+        setElevationIfChanged(preview, dp(8) * floatingAmount);
         if (preview.getVisibility() != View.VISIBLE) {
             preview.setVisibility(View.VISIBLE);
         }
     }
 
-    private int resolveTopUiBoundaryOnScreen() {
+    private TopUiBoundary resolveCachedTopUiBoundaryOnScreen(int rootTopOnScreen) {
+        if (cachedTopUiBoundary == null
+                || cachedTopUiBoundaryRootTop != rootTopOnScreen) {
+            cachedTopUiBoundary = resolveTopUiBoundaryOnScreen(rootTopOnScreen);
+            cachedTopUiBoundaryRootTop = rootTopOnScreen;
+        }
+        return cachedTopUiBoundary;
+    }
+
+    private static void setTranslationYIfChanged(View view, float translationY) {
+        if (Math.abs(view.getTranslationY() - translationY) > 0.25f) {
+            view.setTranslationY(translationY);
+        }
+    }
+
+    private static void setElevationIfChanged(View view, float elevation) {
+        if (Math.abs(view.getElevation() - elevation) > 0.25f) {
+            view.setElevation(elevation);
+        }
+    }
+
+    private TopUiBoundary resolveTopUiBoundaryOnScreen(int rootTopOnScreen) {
         View decor = getWindow().getDecorView();
+        View boundaryView = resolveActionBarBoundaryView(decor);
+        if (isUsableTopBoundary(boundaryView)) {
+            int[] location = new int[2];
+            boundaryView.getLocationOnScreen(location);
+            return new TopUiBoundary(
+                    location[1] + boundaryView.getHeight(),
+                    resourceEntryName(boundaryView));
+        }
+
         View content = decor.findViewById(android.R.id.content);
         if (content != null && content.getVisibility() == View.VISIBLE) {
             int[] location = new int[2];
             content.getLocationOnScreen(location);
-            if (location[1] > 0) return location[1];
+            if (location[1] > rootTopOnScreen) {
+                return new TopUiBoundary(location[1], "android-content");
+            }
         }
 
         int actionBarHeight = 0;
@@ -375,12 +530,101 @@ public final class LyricUiSettingsActivity extends Activity {
         }
         Rect visibleFrame = new Rect();
         decor.getWindowVisibleDisplayFrame(visibleFrame);
-        return Math.max(0, visibleFrame.top) + actionBarHeight;
+        return new TopUiBoundary(
+                Math.max(rootTopOnScreen, visibleFrame.top) + actionBarHeight,
+                "actionbar-fallback");
+    }
+
+    private View resolveActionBarBoundaryView(View decor) {
+        if (isUsableTopBoundary(actionBarBoundaryView)) {
+            return actionBarBoundaryView;
+        }
+        int systemId = getResources().getIdentifier(
+                "action_bar_container",
+                "id",
+                "android");
+        if (systemId != 0) {
+            View candidate = decor.findViewById(systemId);
+            if (candidate != null) {
+                actionBarBoundaryView = candidate;
+                return candidate;
+            }
+        }
+        View candidate = findViewByResourceEntryName(decor, "action_bar_container");
+        if (candidate == null) {
+            candidate = findViewByResourceEntryName(decor, "action_bar");
+        }
+        if (candidate != null) {
+            actionBarBoundaryView = candidate;
+        }
+        return candidate;
+    }
+
+    private View findViewByResourceEntryName(View view, String expectedName) {
+        if (view == null) return null;
+        if (expectedName.equals(resourceEntryName(view))) {
+            return view;
+        }
+        if (!(view instanceof ViewGroup)) return null;
+        ViewGroup group = (ViewGroup) view;
+        for (int index = 0; index < group.getChildCount(); index++) {
+            View match = findViewByResourceEntryName(group.getChildAt(index), expectedName);
+            if (match != null) return match;
+        }
+        return null;
+    }
+
+    private String resourceEntryName(View view) {
+        if (view == null || view.getId() == View.NO_ID) return "unknown";
+        try {
+            return view.getResources().getResourceEntryName(view.getId());
+        } catch (android.content.res.Resources.NotFoundException ignored) {
+            return "unknown";
+        }
+    }
+
+    private static boolean isUsableTopBoundary(View view) {
+        return view != null
+                && view.getVisibility() == View.VISIBLE
+                && view.getHeight() > 0
+                && view.isAttachedToWindow();
+    }
+
+    private void logFloatingPreviewGeometry(
+            TopUiBoundary boundary,
+            int rootTop,
+            int stickyTop,
+            boolean floating) {
+        if (!Log.isLoggable(TAG, Log.DEBUG)) return;
+        String signature = boundary.source
+                + ':' + boundary.bottomOnScreen
+                + ':' + rootTop
+                + ':' + stickyTop
+                + ':' + floating;
+        if (signature.equals(lastFloatingPreviewGeometryLog)) return;
+        lastFloatingPreviewGeometryLog = signature;
+        Log.d(TAG, LyricLogFormatter.format(
+                getPackageName(),
+                LyricLogFormatter.Area.SETTINGS,
+                "preview-geometry",
+                "Floating preview geometry, source=" + boundary.source
+                        + ", boundaryBottom=" + boundary.bottomOnScreen
+                        + ", rootTop=" + rootTop
+                        + ", stickyTop=" + stickyTop
+                        + ", floating=" + floating));
     }
 
     private void installDraftListeners() {
         presetSpinner.setOnItemSelectedListener(new SimpleItemSelectedListener(position -> {
-            if (binding || position >= LyricUiPreset.CUSTOM.ordinal()) return;
+            if (binding || !draftListenersReady
+                    || position != presetSpinner.getSelectedItemPosition()) {
+                return;
+            }
+            if (position == ignoredPresetSelection) {
+                ignoredPresetSelection = -1;
+                return;
+            }
+            if (position >= LyricUiPreset.CUSTOM.ordinal()) return;
             bind(LyricUiPreset.values()[position].apply(readDraft()));
         }));
         View.OnClickListener changed = view -> onDraftChanged();
@@ -389,14 +633,12 @@ public final class LyricUiSettingsActivity extends Activity {
                 lineTimedProgress, translationProgress, screenTimeout}) {
             toggle.setOnClickListener(changed);
         }
-        for (SeekBar seekBar : new SeekBar[]{opacity, blurRadius, inactiveScale,
-                glowIntensity, glowRadius, mainFontSize, translationFontRatio,
-                lineSpacing}) {
-            seekBar.setOnSeekBarChangeListener(new SimpleSeekListener(() -> {
-                Object tag = seekBar.getTag();
+        for (LightweightSlider slider : valueSeekBars()) {
+            slider.setOnProgressChangedListener((view, progress, fromUser) -> {
+                Object tag = slider.getTag();
                 if (tag instanceof SeekValueLabel) ((SeekValueLabel) tag).update();
                 onDraftChanged();
-            }));
+            });
         }
         motionMode.setOnItemSelectedListener(new SimpleItemSelectedListener(p -> onDraftChanged()));
         refreshRate.setOnItemSelectedListener(new SimpleItemSelectedListener(p -> onDraftChanged()));
@@ -470,9 +712,26 @@ public final class LyricUiSettingsActivity extends Activity {
         fontWeight.setSelection(config.fontWeight);
         alignment.setSelection(config.alignment);
         lineSpacing.setProgress(config.lineSpacingTenthsDp / 5);
-        presetSpinner.setSelection(LyricUiPreset.detect(config).ordinal());
+        updateSeekValueLabels();
+        ignoredPresetSelection = LyricUiPreset.detect(config).ordinal();
+        presetSpinner.setSelection(ignoredPresetSelection);
         binding = false;
         bindPreview(config);
+    }
+
+    private void updateSeekValueLabels() {
+        for (LightweightSlider slider : valueSeekBars()) {
+            Object tag = slider.getTag();
+            if (tag instanceof SeekValueLabel) {
+                ((SeekValueLabel) tag).update();
+            }
+        }
+    }
+
+    private LightweightSlider[] valueSeekBars() {
+        return new LightweightSlider[]{opacity, blurRadius, inactiveScale,
+                glowIntensity, glowRadius, mainFontSize, translationFontRatio,
+                lineSpacing};
     }
 
     private void bindPreview(LyricUiConfig config) {
@@ -685,16 +944,84 @@ public final class LyricUiSettingsActivity extends Activity {
         }
         LyricUiConfig config = readDraft();
         LyricUiConfigRepository.save(preferences, config);
+        long revision = LyricUiSettings.newSettingsRevision();
+        pendingSettingsRevision = revision;
         Intent intent = LyricUiConfigRepository.putSnapshot(
                 new Intent(LyricUiSettings.ACTION_STYLE_CHANGED)
-                        .setPackage("com.android.systemui"),
+                        .setPackage("com.android.systemui")
+                        .putExtra(LyricUiSettings.EXTRA_CONFIG_REVISION, revision)
+                        .putExtra(
+                                LyricUiSettings.EXTRA_SETTINGS_SOURCE,
+                                LyricUiSettings.SOURCE_MAIN_SETTINGS)
+                        .putExtra(
+                                LyricUiSettings.EXTRA_RESULT_RECEIVER,
+                                createApplyResultReceiver(revision)),
                 config);
         // SystemUI registers its dynamic receiver with CHANGE_SETTINGS_PERMISSION, which
         // authenticates this sender. Passing the same value as receiverPermission would
         // instead require SystemUI to hold our signature permission and drop the broadcast.
         sendBroadcast(intent);
         draft = config;
-        Toast.makeText(this, "已保存并应用", Toast.LENGTH_SHORT).show();
+        logSettingsEvent(
+                "settings-send",
+                "Sent lyric UI settings"
+                        + " | source=" + LyricUiSettings.SOURCE_MAIN_SETTINGS
+                        + ", revision=" + revision
+                        + ", alignment=" + config.alignment
+                        + ", fontSp10=" + config.mainFontTenthsSp
+                        + ", lineSpacingDp10=" + config.lineSpacingTenthsDp);
+        Toast.makeText(this, "已保存，等待 SystemUI 确认", Toast.LENGTH_SHORT).show();
+        getWindow().getDecorView().postDelayed(() -> {
+            if (pendingSettingsRevision != revision) return;
+            pendingSettingsRevision = -1L;
+            Toast.makeText(
+                    this,
+                    "已保存，但 SystemUI 未确认应用，请检查模块是否已启用",
+                    Toast.LENGTH_LONG).show();
+        }, 2_500L);
+    }
+
+    private ResultReceiver createApplyResultReceiver(long revision) {
+        return new ResultReceiver(new Handler(getMainLooper())) {
+            @Override
+            protected void onReceiveResult(int resultCode, Bundle resultData) {
+                if (pendingSettingsRevision != revision || resultData == null) return;
+                if (resultData.getLong(LyricUiSettings.RESULT_CONFIG_REVISION, -1L)
+                        != revision) {
+                    return;
+                }
+                pendingSettingsRevision = -1L;
+                boolean applied = resultCode == LyricUiSettings.RESULT_SETTINGS_APPLIED
+                        && resultData.getBoolean(LyricUiSettings.RESULT_APPLIED, false);
+                int appliedAlignment = resultData.getInt(
+                        LyricUiSettings.RESULT_ALIGNMENT,
+                        -1);
+                String process = resultData.getString(LyricUiSettings.RESULT_PROCESS, "unknown");
+                String reason = resultData.getString(LyricUiSettings.RESULT_REASON, "");
+                logSettingsEvent(
+                        applied ? "settings-ack" : "settings-rejected",
+                        "Received SystemUI settings acknowledgement"
+                                + " | source=" + LyricUiSettings.SOURCE_MAIN_SETTINGS
+                                + ", revision=" + revision
+                                + ", process=" + process
+                                + ", alignment=" + appliedAlignment
+                                + ", applied=" + applied
+                                + ", reason=" + reason);
+                Toast.makeText(
+                        LyricUiSettingsActivity.this,
+                        applied ? "已保存并应用" : "SystemUI 拒绝了设置：" + reason,
+                        applied ? Toast.LENGTH_SHORT : Toast.LENGTH_LONG).show();
+            }
+        };
+    }
+
+    private void logSettingsEvent(String event, String message) {
+        if (!Log.isLoggable(TAG, Log.DEBUG)) return;
+        Log.i(TAG, LyricLogFormatter.format(
+                getPackageName(),
+                LyricLogFormatter.Area.SETTINGS,
+                event,
+                message));
     }
 
     private Typeface resolvePreviewTypeface(int weight) {
@@ -791,43 +1118,49 @@ public final class LyricUiSettingsActivity extends Activity {
         return row;
     }
 
-    private View labeledSeek(String label, SeekBar seekBar, String suffix, int base) {
+    private View labeledSeek(
+            String label,
+            LightweightSlider slider,
+            String suffix,
+            int base) {
         LinearLayout group = new LinearLayout(this);
         group.setOrientation(LinearLayout.VERTICAL);
         TextView title = text(label, 15, TEXT);
         TextView value = text("", 13, 0x99000000);
         group.addView(title);
         group.addView(value);
-        group.addView(seekBar, matchWrap());
+        slider.setContentDescription(label);
+        group.addView(slider, matchWrap());
         Runnable update = () -> value.setText(String.format(
-                Locale.ROOT, "%d%s", seekBar.getProgress(), suffix));
-        seekBar.setTag(new SeekValueLabel(update));
+                Locale.ROOT, "%d%s", slider.getProgress(), suffix));
+        slider.setTag(new SeekValueLabel(update));
         update.run();
         return group;
     }
 
-    private View labeledHalfDpSeek(String label, SeekBar seekBar) {
+    private View labeledHalfDpSeek(String label, LightweightSlider slider) {
         LinearLayout group = new LinearLayout(this);
         group.setOrientation(LinearLayout.VERTICAL);
         TextView title = text(label, 15, TEXT);
         TextView value = text("", 13, 0x99000000);
         group.addView(title);
         group.addView(value);
-        group.addView(seekBar, matchWrap());
+        slider.setContentDescription(label);
+        group.addView(slider, matchWrap());
         Runnable update = () -> value.setText(String.format(
                 Locale.ROOT,
                 "%.1f dp",
-                seekBar.getProgress() * 0.5f));
-        seekBar.setTag(new SeekValueLabel(update));
+                slider.getProgress() * 0.5f));
+        slider.setTag(new SeekValueLabel(update));
         update.run();
         return group;
     }
 
-    private SeekBar seek(int min, int max) {
-        SeekBar seek = new SeekBar(this);
-        seek.setMin(min);
-        seek.setMax(max);
-        return seek;
+    private LightweightSlider seek(int min, int max) {
+        LightweightSlider slider = new LightweightSlider(this);
+        slider.setMin(min);
+        slider.setMax(max);
+        return slider;
     }
 
     private Switch toggle(String label, boolean checked) {
@@ -982,12 +1315,14 @@ public final class LyricUiSettingsActivity extends Activity {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
-    private static final class SimpleSeekListener implements SeekBar.OnSeekBarChangeListener {
-        private final Runnable changed;
-        SimpleSeekListener(Runnable changed) { this.changed = changed; }
-        @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) { changed.run(); }
-        @Override public void onStartTrackingTouch(SeekBar seekBar) { }
-        @Override public void onStopTrackingTouch(SeekBar seekBar) { }
+    private static final class TopUiBoundary {
+        final int bottomOnScreen;
+        final String source;
+
+        TopUiBoundary(int bottomOnScreen, String source) {
+            this.bottomOnScreen = Math.max(0, bottomOnScreen);
+            this.source = source == null || source.isEmpty() ? "unknown" : source;
+        }
     }
 
     private static final class SeekValueLabel {

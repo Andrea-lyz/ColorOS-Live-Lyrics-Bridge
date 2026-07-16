@@ -103,4 +103,14 @@ public final class LyricUiLayoutPolicyTest {
         assertEquals(125f, LyricUiLayoutPolicy.opticallyCenteredBaselineX(
                 20f, 300f, -5f, 95f), 0.0001f);
     }
+
+    @Test
+    public void floatingPreviewUsesTheBoundaryInRootCoordinates() {
+        assertEquals(420f, LyricUiLayoutPolicy.floatingPreviewTopInRoot(
+                415f, 0f, 5f), 0.0001f);
+        assertEquals(320f, LyricUiLayoutPolicy.floatingPreviewTopInRoot(
+                415f, 100f, 5f), 0.0001f);
+        assertEquals(5f, LyricUiLayoutPolicy.floatingPreviewTopInRoot(
+                80f, 100f, 5f), 0.0001f);
+    }
 }

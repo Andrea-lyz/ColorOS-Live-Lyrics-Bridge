@@ -7,6 +7,9 @@ import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.ResultReceiver;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
 import android.view.Window;
@@ -23,6 +26,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 
 public final class PlayerTranslationSettingsActivity extends Activity {
+    private static final String TAG = "LockscreenLyrics";
     private static final int BACKGROUND = 0xFFF6F6F8;
     private static final int CARD = 0xFFFFFFFF;
     private static final int TEXT = 0xFF111111;
@@ -30,6 +34,7 @@ public final class PlayerTranslationSettingsActivity extends Activity {
     private final LinkedHashSet<String> clearRequestedPackages = new LinkedHashSet<>();
     private SharedPreferences preferences;
     private Switch fallbackDefault;
+    private long pendingSettingsRevision = -1L;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -121,10 +126,10 @@ public final class PlayerTranslationSettingsActivity extends Activity {
     }
 
     private void save() {
-        LyricUiConfig config = LyricUiConfigRepository.load(preferences)
-                .buildUpon()
-                .defaultTranslationEnabled(fallbackDefault.isChecked())
-                .build();
+        boolean globalDefaultEnabled = fallbackDefault.isChecked();
+        LyricUiConfig config = LyricUiSettings.withGlobalTranslationDefault(
+                LyricUiConfigRepository.load(preferences),
+                globalDefaultEnabled);
         LyricUiConfigRepository.save(preferences, config);
 
         ArrayList<String> packages = new ArrayList<>();
@@ -145,22 +150,87 @@ public final class PlayerTranslationSettingsActivity extends Activity {
 
         boolean[] defaultValues = new boolean[defaults.size()];
         for (int i = 0; i < defaults.size(); i++) defaultValues[i] = defaults.get(i);
-        Intent intent = LyricUiConfigRepository.putSnapshot(
-                new Intent(LyricUiSettings.ACTION_PLAYER_TRANSLATION_SETTINGS_CHANGED)
-                        .setPackage("com.android.systemui")
-                        .putExtra(
-                                LyricUiSettings.EXTRA_PLAYER_TRANSLATION_PACKAGES,
-                                packages.toArray(new String[0]))
-                        .putExtra(
-                                LyricUiSettings.EXTRA_PLAYER_TRANSLATION_DEFAULTS,
-                                defaultValues)
-                        .putExtra(
-                                LyricUiSettings.EXTRA_CLEAR_TRANSLATION_PACKAGES,
-                                clearRequestedPackages.toArray(new String[0])),
-                config);
+        long revision = LyricUiSettings.newSettingsRevision();
+        pendingSettingsRevision = revision;
+        Intent intent = new Intent(LyricUiSettings.ACTION_PLAYER_TRANSLATION_SETTINGS_CHANGED)
+                .setPackage("com.android.systemui")
+                .putExtra(
+                        LyricUiSettings.EXTRA_DEFAULT_TRANSLATION_ENABLED,
+                        globalDefaultEnabled)
+                .putExtra(
+                        LyricUiSettings.EXTRA_PLAYER_TRANSLATION_PACKAGES,
+                        packages.toArray(new String[0]))
+                .putExtra(
+                        LyricUiSettings.EXTRA_PLAYER_TRANSLATION_DEFAULTS,
+                        defaultValues)
+                .putExtra(
+                        LyricUiSettings.EXTRA_CLEAR_TRANSLATION_PACKAGES,
+                        clearRequestedPackages.toArray(new String[0]))
+                .putExtra(LyricUiSettings.EXTRA_CONFIG_REVISION, revision)
+                .putExtra(
+                        LyricUiSettings.EXTRA_SETTINGS_SOURCE,
+                        LyricUiSettings.SOURCE_PLAYER_TRANSLATION)
+                .putExtra(
+                        LyricUiSettings.EXTRA_RESULT_RECEIVER,
+                        createApplyResultReceiver(revision));
         sendBroadcast(intent);
         clearRequestedPackages.clear();
-        Toast.makeText(this, "播放器翻译设置已应用", Toast.LENGTH_SHORT).show();
+        logSettingsEvent(
+                "settings-send",
+                "Sent player translation settings"
+                        + " | source=" + LyricUiSettings.SOURCE_PLAYER_TRANSLATION
+                        + ", revision=" + revision
+                        + ", alignment=" + config.alignment
+                        + ", globalDefault=" + globalDefaultEnabled
+                        + ", players=" + packages.size());
+        Toast.makeText(this, "已保存，等待 SystemUI 确认", Toast.LENGTH_SHORT).show();
+        getWindow().getDecorView().postDelayed(() -> {
+            if (pendingSettingsRevision != revision) return;
+            pendingSettingsRevision = -1L;
+            Toast.makeText(
+                    this,
+                    "已保存，但 SystemUI 未确认应用，请检查模块是否已启用",
+                    Toast.LENGTH_LONG).show();
+        }, 2_500L);
+    }
+
+    private ResultReceiver createApplyResultReceiver(long revision) {
+        return new ResultReceiver(new Handler(getMainLooper())) {
+            @Override
+            protected void onReceiveResult(int resultCode, Bundle resultData) {
+                if (pendingSettingsRevision != revision || resultData == null) return;
+                if (resultData.getLong(LyricUiSettings.RESULT_CONFIG_REVISION, -1L)
+                        != revision) {
+                    return;
+                }
+                pendingSettingsRevision = -1L;
+                boolean applied = resultCode == LyricUiSettings.RESULT_SETTINGS_APPLIED
+                        && resultData.getBoolean(LyricUiSettings.RESULT_APPLIED, false);
+                String process = resultData.getString(LyricUiSettings.RESULT_PROCESS, "unknown");
+                String reason = resultData.getString(LyricUiSettings.RESULT_REASON, "");
+                logSettingsEvent(
+                        applied ? "settings-ack" : "settings-rejected",
+                        "Received SystemUI settings acknowledgement"
+                                + " | source=" + LyricUiSettings.SOURCE_PLAYER_TRANSLATION
+                                + ", revision=" + revision
+                                + ", process=" + process
+                                + ", applied=" + applied
+                                + ", reason=" + reason);
+                Toast.makeText(
+                        PlayerTranslationSettingsActivity.this,
+                        applied ? "播放器翻译设置已应用" : "SystemUI 拒绝了设置：" + reason,
+                        applied ? Toast.LENGTH_SHORT : Toast.LENGTH_LONG).show();
+            }
+        };
+    }
+
+    private void logSettingsEvent(String event, String message) {
+        if (!Log.isLoggable(TAG, Log.DEBUG)) return;
+        Log.i(TAG, LyricLogFormatter.format(
+                getPackageName(),
+                LyricLogFormatter.Area.SETTINGS,
+                event,
+                message));
     }
 
     @SuppressWarnings("deprecation")

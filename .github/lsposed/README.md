@@ -2,7 +2,7 @@
 
 ## Latest release
 
-v3.1.0 introduces versioned lyric appearance settings, four visual presets, live preview, typography and row-spacing controls, bounded refresh-rate caps, per-player translation defaults, and guided opening-information cleanup without regex or a DSL. Rendering now uses stable adaptive row slots while preserving the verified AOD attach timing and a two-line main-lyric viewport. Accompanist Lyrics Core is upgraded to 0.4.7, logging is structured, and updated LyricProvider builds preserve opening credit rows for Bridge-side cleanup. Release assets include `LyricProvider-v3.1.0.zip` for installing all bundled provider APKs together.
+v3.2.0 hardens the settings-application chain, fixes edge-case word-progress matching and cold-start artwork races, and removes per-frame SystemUI layout churn from custom lyric rendering. The settings page now uses lightweight sliders, stable LTPO-aware refresh-rate hints, and a cached floating preview while scrolling. The verified AOD attach/prime timing remains unchanged. Release assets include `LyricProvider-v3.2.0.zip` for installing all bundled provider APKs together.
 
 ## 简体中文
 

@@ -59,6 +59,9 @@ final class LyricsCoreAdapter {
         }
 
         ParsedLyrics fallback = parsePlainLrc(content);
+        if (!lines.isEmpty() && !fallback.lines.isEmpty()) {
+            lines = restoreCollapsedOpeningInfoLines(lines, fallback.lines);
+        }
         if (lines.isEmpty()
                 || (!fallback.lines.isEmpty()
                 && (lines.size() * 2 < fallback.lines.size()
@@ -69,6 +72,65 @@ final class LyricsCoreAdapter {
         return lines.isEmpty()
                 ? ParsedLyrics.EMPTY
                 : new ParsedLyrics(lines);
+    }
+
+    /**
+     * Accompanist may treat two very close LRC timestamps as one bilingual line. That is useful
+     * for slightly offset translations, but it must not collapse independently timed opening
+     * credits such as {@code 作词} and {@code 作曲}. The official OPlus list keeps those timestamps
+     * as separate rows, so a collapsed parser model shifts every later RecyclerView index.
+     *
+     * <p>Only parser lines that demonstrably absorbed a non-lyric information line are replaced.
+     * All unaffected parsed lines retain their upstream word timing.</p>
+     */
+    private static ArrayList<ParsedLine> restoreCollapsedOpeningInfoLines(
+            List<ParsedLine> parsedLines,
+            List<ParsedLine> fallbackLines) {
+        ArrayList<ParsedLine> restored = new ArrayList<>(parsedLines.size());
+        for (int index = 0; index < parsedLines.size(); index++) {
+            ParsedLine parsed = parsedLines.get(index);
+            long nextParsedStart = index + 1 < parsedLines.size()
+                    ? parsedLines.get(index + 1).startMillis
+                    : Long.MAX_VALUE;
+            ArrayList<ParsedLine> fallbackWindow = new ArrayList<>();
+            boolean containsParsedMain = false;
+            boolean containsAbsorbedTranslation = false;
+            boolean containsOpeningInfo = false;
+            for (ParsedLine fallback : fallbackLines) {
+                if (fallback.startMillis < parsed.startMillis
+                        || fallback.startMillis >= nextParsedStart) {
+                    continue;
+                }
+                fallbackWindow.add(fallback);
+                if (sameCleanText(fallback.text, parsed.text)) {
+                    containsParsedMain = true;
+                }
+                if (!parsed.translation.isEmpty()
+                        && fallback.startMillis != parsed.startMillis
+                        && sameCleanText(fallback.text, parsed.translation)) {
+                    containsAbsorbedTranslation = true;
+                }
+                if (LyricMetadataFilter.isNonLyricInfoLine(
+                        fallback.text,
+                        fallback.startMillis)) {
+                    containsOpeningInfo = true;
+                }
+            }
+            if (fallbackWindow.size() > 1
+                    && containsParsedMain
+                    && containsAbsorbedTranslation
+                    && containsOpeningInfo) {
+                restored.addAll(fallbackWindow);
+            } else {
+                restored.add(parsed);
+            }
+        }
+        restored.sort(Comparator.comparingLong(line -> line.startMillis));
+        return restored;
+    }
+
+    private static boolean sameCleanText(String left, String right) {
+        return cleanLyricText(left).equals(cleanLyricText(right));
     }
 
     private static String normalizeBracketInlineTiming(String content) {

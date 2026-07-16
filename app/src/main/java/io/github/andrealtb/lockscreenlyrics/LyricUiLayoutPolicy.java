@@ -89,4 +89,12 @@ final class LyricUiLayoutPolicy {
                 - (inkLeft + inkRight) / 2f;
     }
 
+    static float floatingPreviewTopInRoot(
+            float visibleUiBottomOnScreen,
+            float rootTopOnScreen,
+            float minimumGap) {
+        float gap = Math.max(0f, minimumGap);
+        return Math.max(gap, visibleUiBottomOnScreen - rootTopOnScreen + gap);
+    }
+
 }
