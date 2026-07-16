@@ -1,1 +1,1 @@
-将支持的音乐播放器时间轴歌词桥接到 ColorOS/OPlus 原生锁屏歌词界面，提供逐字高亮、翻译切换、媒体卡片与后台播放恢复，并包含 SystemUI/AOD 稳定性保护和可选 LyricProvider 模块。
+将受支持播放器的歌词桥接至 ColorOS/OPlus 锁屏，可在设置中自定义各类动效。

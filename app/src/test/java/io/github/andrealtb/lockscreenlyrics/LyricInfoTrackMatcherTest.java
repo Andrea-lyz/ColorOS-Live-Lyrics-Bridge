@@ -78,6 +78,28 @@ public final class LyricInfoTrackMatcherTest {
                 true));
     }
 
+    @Test
+    public void moduleEnvelopeUsesOriginalTrackKeyAfterDisplayCleanup() {
+        String originalKey = TrackIdentity.buildKey("Song (Live)", "Artist feat. Guest");
+        LyricInfoContract.Payload payload = new LyricInfoContract.Payload(
+                "Song",
+                "Artist",
+                "Album",
+                "id",
+                "[00:00]line",
+                "[00:00]line",
+                "",
+                LyricInfoContract.MODULE_PROVIDER,
+                originalKey,
+                1L,
+                "test");
+
+        assertTrue(LyricInfoTrackMatcher.payloadMatchesTrack(
+                payload,
+                "Song (Live)",
+                "Artist feat. Guest"));
+    }
+
     private static LyricInfoContract.Payload payload(
             String title,
             String artist,
@@ -86,6 +108,7 @@ public final class LyricInfoTrackMatcherTest {
         return new LyricInfoContract.Payload(
                 title,
                 artist,
+                "",
                 "",
                 rawLyric,
                 rawLyric,

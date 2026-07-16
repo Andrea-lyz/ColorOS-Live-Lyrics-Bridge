@@ -12,9 +12,9 @@ public final class LyricLineBreakPolicyTest {
 
     @Test
     public void japaneseSentenceWithoutSpacesWrapsAtCharacterBoundary() {
-        String text = "\u805e\u3044\u3066\u3001\u79c1\u3055\u3001"
-                + "\u3053\u306e\u524d\u81ea\u8ee2\u8eca\u306b"
-                + "\u3076\u3064\u304b\u308a\u305d\u3046\u306b\u306a\u3063\u305f\u306e\u3002";
+        String text = "聞いて、私さ、"
+                + "この前自転車に"
+                + "ぶつかりそうになったの。";
 
         int end = LyricLineBreakPolicy.chooseWrapEnd(
                 text,
@@ -81,7 +81,7 @@ public final class LyricLineBreakPolicyTest {
 
     @Test
     public void cjkClosingPunctuationDoesNotStartNextLine() {
-        String text = "\u805e\u3044\u3066\u79c1\u3055\u3001\u3053\u306e\u524d";
+        String text = "聞いて私さ、この前";
 
         int end = LyricLineBreakPolicy.chooseWrapEnd(
                 text,
@@ -90,13 +90,13 @@ public final class LyricLineBreakPolicyTest {
                 5f,
                 CODE_UNIT_WIDTH);
 
-        assertEquals("\u805e\u3044\u3066\u79c1", text.substring(0, end));
-        assertFalse(text.substring(end).startsWith("\u3001"));
+        assertEquals("聞いて私", text.substring(0, end));
+        assertFalse(text.substring(end).startsWith("、"));
     }
 
     @Test
     public void surrogatePairIsNeverSplit() {
-        String text = "\u751f\u304d\u3066\u308b\ud83c\udf38\u3060\u3051\u3067";
+        String text = "生きてる🌸だけで";
 
         int end = LyricLineBreakPolicy.chooseWrapEnd(
                 text,

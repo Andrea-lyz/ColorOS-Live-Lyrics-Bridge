@@ -1,5 +1,6 @@
 package io.github.andrealtb.lockscreenlyrics;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.media.MediaMetadata;
 import android.media.session.MediaController;
@@ -19,6 +20,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Predicate;
 
+@SuppressLint("PrivateApi") // This resolver only targets LSPosed-hosted vendor SystemUI classes.
 final class SystemUiDexKitAdapter {
     private static final Object DEXKIT_LOAD_LOCK = new Object();
 
@@ -27,10 +29,12 @@ final class SystemUiDexKitAdapter {
     private SystemUiDexKitAdapter() {
     }
 
+    @SuppressLint({"DuplicateCreateDexKit", "PrivateApi"})
     static Targets resolve(ClassLoader classLoader) throws ReflectiveOperationException {
         ensureDexKitLoaded();
         // Resolution is cached by LockscreenLyricsModule; the bridge only lives for this
         // one initialization transaction.
+        //noinspection DuplicateCreateDexKit -- all targets resolve in one initialization transaction.
         try (DexKitBridge bridge = DexKitBridge.create(classLoader, true)) {
             Class<?> rusManagerClass = findSingleClass(
                     bridge,

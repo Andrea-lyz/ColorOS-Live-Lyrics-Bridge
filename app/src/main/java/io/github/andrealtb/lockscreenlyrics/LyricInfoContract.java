@@ -16,6 +16,7 @@ public final class LyricInfoContract {
     public static final int EXTERNAL_PROTOCOL_VERSION_PROVIDER_DECLARATION = 2;
     public static final String JSON_SONG_NAME = "songName";
     public static final String JSON_ARTIST = "artist";
+    public static final String JSON_ALBUM = "album";
     public static final String JSON_SONG_ID = "songId";
     public static final String JSON_LYRIC = "lyric";
     public static final String JSON_RAW_LYRIC = "rawLyric";
@@ -94,6 +95,7 @@ public final class LyricInfoContract {
             return new Payload(
                     object.optString(JSON_SONG_NAME, ""),
                     object.optString(JSON_ARTIST, ""),
+                    object.optString(JSON_ALBUM, ""),
                     object.optString(JSON_SONG_ID, ""),
                     lyric,
                     object.optString(JSON_RAW_LYRIC, ""),
@@ -137,6 +139,11 @@ public final class LyricInfoContract {
         }
     }
 
+    /** Parses without normalizing lanes so display cleanup can run on complete candidates first. */
+    static NormalizedPayload parseLyricInfo(String value) {
+        return new NormalizedPayload(value, parse(value), false);
+    }
+
     public static boolean containsTimedLrc(String value) {
         return value != null && TIMED_LRC_TAG.matcher(value).find();
     }
@@ -151,9 +158,16 @@ public final class LyricInfoContract {
         return "";
     }
 
+    static void replaceTranslationLyric(JSONObject object, String value) throws Exception {
+        if (object == null) return;
+        for (String key : TRANSLATION_KEYS) object.remove(key);
+        if (containsTimedLrc(value)) object.put(JSON_TRANSLATION_LYRIC, value);
+    }
+
     public static final class Payload {
         public final String songName;
         public final String artist;
+        public final String album;
         public final String songId;
         public final String lyric;
         public final String rawLyric;
@@ -166,6 +180,7 @@ public final class LyricInfoContract {
         Payload(
                 String songName,
                 String artist,
+                String album,
                 String songId,
                 String lyric,
                 String rawLyric,
@@ -176,6 +191,7 @@ public final class LyricInfoContract {
                 String source) {
             this.songName = songName;
             this.artist = artist;
+            this.album = album;
             this.songId = songId;
             this.lyric = lyric;
             this.rawLyric = rawLyric;

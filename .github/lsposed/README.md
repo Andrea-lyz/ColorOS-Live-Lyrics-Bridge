@@ -2,7 +2,7 @@
 
 ## Latest release
 
-v3.0.4 improves long line-timed lyrics when pseudo word progress is disabled. Lyrics that wrap to three lines now stay inside a fixed two-line viewport and pan smoothly from the first two lines to the last two according to the line playback position, without fabricating word timing or changing RecyclerView geometry. The verified AOD attach and low-frame-rate behavior remains unchanged. LyricProvider code and internal versions are unchanged, so existing Provider installations do not need to be reinstalled. Release assets include `LyricProvider-v3.0.4.zip` for installing all bundled provider APKs together.
+v3.1.0 introduces versioned lyric appearance settings, four visual presets, live preview, typography and row-spacing controls, bounded refresh-rate caps, per-player translation defaults, and guided opening-information cleanup without regex or a DSL. Rendering now uses stable adaptive row slots while preserving the verified AOD attach timing and a two-line main-lyric viewport. Accompanist Lyrics Core is upgraded to 0.4.7, logging is structured, and updated LyricProvider builds preserve opening credit rows for Bridge-side cleanup. Release assets include `LyricProvider-v3.1.0.zip` for installing all bundled provider APKs together.
 
 ## 简体中文
 
@@ -14,7 +14,7 @@ v3.0.4 improves long line-timed lyrics when pseudo word progress is disabled. Ly
 - 支持播放器通过 `MediaMetadata["lyricInfo"]` 主动接入，无需依赖模块 APK。
 - Release 附带可选 LyricProvider APK，可分别适配 QQ 音乐、网易云音乐/荣耀版、Apple Music、Poweramp、Spotify、汽水音乐和酷狗音乐/概念版；Spotify Provider 当前仅支持原文歌词，暂不支持翻译。
 - 支持逐行 LRC、逐字 `rawLyric`、翻译行识别和重复歌词稳定定位；关闭普通逐行伪逐字时，三行长歌词会在固定两行视窗内随整句进度平滑移动。
-- 提供歌词界面设置，可控制普通逐行伪逐字、翻译逐字高亮、滚动放大、非实时行模糊和锁屏屏幕保活时长。
+- 提供版本化歌词界面设置、四种外观预设和动态预览，可调透明度、模糊、缩放、光晕、颜色、动效、字号、翻译比例、字重、对齐、行距、长文本浏览与内容刷新上限；播放器翻译默认值和歌词开头信息清理使用独立二级页面。
 - 通过通用歌词事务层隔离异步回调，避免有歌词/无歌词曲目连续切换时歌词错绑或后续持续显示无歌词。
 - 长日语、中文歌词按 Unicode 字符边界换行，避免无空格长句被自动缩小。
 - 保留播放器原始媒体 action 语义，仅通过 OPlus Rule0 提供翻译按钮，避免上一首、播放/暂停、下一首错位。
@@ -73,7 +73,7 @@ Bridges timed lyrics from supported music players into the native ColorOS/OPlus 
 - Optional LyricProvider APKs in Releases for QQ Music, NetEase Cloud Music/Honor, Apple Music, Poweramp, Spotify, QiShui Music, and KuGou Music/Concept. The Spotify Provider currently supports original lyrics only, without translations.
 - Line-timed LRC, word-timed `rawLyric`, translation detection, and stable repeated-line matching; three-line lyrics pan inside a fixed two-line viewport when line-timed pseudo word progress is disabled.
 - Compact dynamic lock-screen lyric layout with smoother translation toggles and AOD/highlight transition stabilization.
-- Lyric UI settings for line-timed pseudo word progress, translation progress, scroll scaling, inactive-line blur, and lock-screen keep-awake duration.
+- Versioned lyric UI settings with four visual presets and a live preview, covering opacity, blur, scaling, glow, colors, motion, typography, alignment, row spacing, long-text browsing, and redraw caps; player translation defaults and guided opening-information cleanup use dedicated secondary pages.
 - A generic lyric transaction layer prevents stale asynchronous callbacks from binding across tracks, including sequences that contain instrumentals or no-lyric tracks.
 - Long Japanese and Chinese lyric lines wrap at Unicode character boundaries instead of being reduced to tiny text.
 - Preserves the player's original media-action semantics and exposes translation only through OPlus Rule0, preventing previous/play-pause/next slot corruption.

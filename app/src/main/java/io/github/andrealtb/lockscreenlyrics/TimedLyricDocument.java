@@ -271,7 +271,7 @@ final class TimedLyricDocument {
                 nullToEmpty(primaryText)).trim();
         if (isEmpty(candidate)
                 || candidate.equals(primary)
-                || LyricMetadataFilter.isNonLyricInfoLine(candidate, -1L)
+                || LyricMetadataFilter.isParsingProtectedLine(candidate)
                 || LockscreenIntegrationPolicy.sameLyricVariant(primary, candidate)
                 || LyricLineVariantSelector.isLikelyJapaneseRomanization(primary, candidate)) {
             return false;

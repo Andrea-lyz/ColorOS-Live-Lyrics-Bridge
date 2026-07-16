@@ -6,7 +6,7 @@ val releaseStoreFilePath = providers.environmentVariable("SIGNING_STORE_FILE").o
 val releaseStorePassword = providers.environmentVariable("KEY_STORE_PASSWORD").orNull
 val releaseKeyAlias = providers.environmentVariable("KEY_ALIAS").orNull
 val releaseKeyPassword = providers.environmentVariable("KEY_PASSWORD").orNull
-val defaultVersionName = "3.0.4"
+val defaultVersionName = "3.1.0"
 val releaseVersionName = providers.gradleProperty("releaseTag")
     .orElse(providers.environmentVariable("RELEASE_TAG"))
     .map { tag ->
@@ -38,7 +38,7 @@ android {
         applicationId = "io.github.andrealtb.lockscreenlyrics"
         minSdk = 26
         targetSdk = 35
-        versionCode = 118
+        versionCode = 119
         versionName = releaseVersionName.get()
     }
 
@@ -74,12 +74,17 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    tasks.withType<JavaCompile>().configureEach {
+        options.encoding = "UTF-8"
+    }
 }
 
 dependencies {
     compileOnly(project(":libxposed-api-stubs"))
-    implementation("com.mocharealm.accompanist:lyrics-core-jvm:0.4.5")
+    implementation("com.mocharealm.accompanist:lyrics-core-jvm:0.4.7")
     implementation("org.jetbrains.kotlin:kotlin-stdlib:2.3.0")
     implementation("org.luckypray:dexkit:2.2.0")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20260522")
 }

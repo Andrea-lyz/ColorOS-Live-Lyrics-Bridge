@@ -1,27 +1,9 @@
 <resources>
     <string name="app_name">ColorOS Live Lyrics Bridge</string>
-    <string name="module_description">将受支持播放器的歌词桥接至 ColorOS/OPlus 锁屏；Spotify Provider 暂不支持翻译歌词。</string>
+    <string name="module_description">将受支持播放器的歌词桥接至 ColorOS/OPlus 锁屏，可在设置中自定义各类动效。</string>
     <string name="lyric_ui_settings_title">歌词界面</string>
-    <string name="lyric_ui_effects_section">显示效果</string>
-    <string name="lyric_ui_restart_notice_title">需要重启播放器</string>
-    <string name="lyric_ui_restart_notice_summary">修改后请重启正在播放音乐的应用，新的歌词界面效果才会完整生效。</string>
-    <string name="lyric_ui_default_style">默认样式</string>
-    <string name="lyric_ui_default_style_summary">使用默认的歌词显示方式。</string>
-    <string name="lyric_ui_line_timed_progress">普通逐行伪逐字</string>
-    <string name="lyric_ui_line_timed_progress_summary">普通逐行歌词按整行时间平滑推进高亮；关闭后只有真逐字歌词显示逐字高亮。</string>
-    <string name="lyric_ui_translation_progress">翻译逐字高亮</string>
-    <string name="lyric_ui_translation_progress_summary">翻译行按当前歌词实时进度平滑推进高亮；普通逐行歌词的翻译伪逐字仍受上方开关限制。</string>
-    <string name="lyric_ui_scroll_scale">滚动放大</string>
-    <string name="lyric_ui_scroll_scale_summary">当前行按官方定位模型缩放显示。</string>
-    <string name="lyric_ui_inactive_blur">非实时行模糊</string>
-    <string name="lyric_ui_inactive_blur_summary">实时行保持清晰，其余歌词轻微模糊。</string>
-    <string name="lyric_ui_screen_section">锁屏屏幕</string>
-    <string name="lyric_ui_screen_timeout">屏幕智能超时</string>
-    <string name="lyric_ui_screen_timeout_summary">播放锁屏歌词时保持屏幕亮起；关闭后跟随系统锁屏超时。</string>
-    <string name="lyric_ui_screen_timeout_seconds">亮屏保持时间</string>
-    <string name="lyric_ui_screen_timeout_seconds_summary">填写秒数后，到时停止续亮；留空或 0 表示不熄屏。</string>
-    <string name="lyric_ui_screen_timeout_seconds_hint">留空</string>
-    <string name="lyric_ui_seconds_unit">秒</string>
-    <string name="lyric_ui_save">保存</string>
-    <string name="lyric_ui_saved_toast">保存成功</string>
+    <string name="cleanup_current_song_artist">%1$s\n%2$s</string>
+    <string name="cleanup_hidden_count">模块当前会隐藏 %1$d 行。点击一行，将它设为这首歌第一句正式歌词。</string>
+    <string name="cleanup_learn_similar">以后也隐藏类似格式：%1$s</string>
+    <string name="cleanup_loading_current_lyrics">正在读取 SystemUI 中的当前歌词…</string>
 </resources>

@@ -1,5 +1,6 @@
 package io.github.andrealtb.lockscreenlyrics;
 
+import android.annotation.SuppressLint;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -81,6 +82,7 @@ final class SaltPlayerAdapter implements PlayerAdapter {
     }
 
     @Override
+    @SuppressLint("DuplicateCreateDexKit") // One bridge for the one-time Salt resolver transaction.
     public void installLyricSourceHooks(LockscreenLyricsModule module, ClassLoader classLoader) {
         // Reuse an existing custom-action channel for the public translation toggle when present.
         // Do not create a new custom-action bucket for builds that publish none.
@@ -96,6 +98,7 @@ final class SaltPlayerAdapter implements PlayerAdapter {
 
         // This adapter resolves once when the player process becomes ready, then closes the
         // bridge after all related queries.
+        //noinspection DuplicateCreateDexKit -- the bridge is closed after this one-time resolver.
         try (DexKitBridge bridge = DexKitBridge.create(classLoader, true)) {
             ClassData sourceEnum = findSingleClassUsingStrings(
                     bridge,

@@ -11,7 +11,7 @@ public final class LyricTextSanitizerTest {
         assertEquals(
                 "main translation",
                 LyricTextSanitizer.removeIgnorableCharacters(
-                        "\uFEFFmain\u200B translation\u2060"));
+                        "" + LyricTextSanitizer.codePointString(LyricTextSanitizer.BYTE_ORDER_MARK_CODE_POINT) + "main" + LyricTextSanitizer.ZERO_WIDTH_SPACE + " translation" + LyricTextSanitizer.codePointString(LyricTextSanitizer.WORD_JOINER_CODE_POINT) + ""));
     }
 
     @Test

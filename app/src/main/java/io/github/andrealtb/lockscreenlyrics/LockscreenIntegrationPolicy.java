@@ -601,8 +601,8 @@ final class LockscreenIntegrationPolicy {
         String suffix = longer.substring(shorter.length()).trim();
         return suffix.startsWith("(")
                 || suffix.startsWith("[")
-                || suffix.startsWith("\uFF08")
-                || suffix.startsWith("\u3010");
+                || suffix.startsWith("（")
+                || suffix.startsWith("【");
     }
 
     private static boolean isShortLatinTailToken(String token) {
@@ -667,7 +667,7 @@ final class LockscreenIntegrationPolicy {
         String normalized = text.trim();
         int separator = normalized.indexOf(':');
         if (separator < 0) {
-            separator = normalized.indexOf('\uFF1A');
+            separator = normalized.indexOf('：');
         }
         String label = (separator >= 0 ? normalized.substring(0, separator) : normalized)
                 .trim()
@@ -699,35 +699,35 @@ final class LockscreenIntegrationPolicy {
         }
 
         String[] cjkLabels = {
-                "\u4f5c\u8bcd", // 作词
-                "\u4f5c\u66f2", // 作曲
-                "\u7f16\u66f2", // 编曲
-                "\u5236\u4f5c", // 制作
-                "\u6f14\u5531", // 演唱
-                "\u6b4c\u624b", // 歌手
-                "\u539f\u5531", // 原唱
-                "\u7ffb\u5531", // 翻唱
-                "\u6df7\u97f3", // 混音
-                "\u6bcd\u5e26", // 母带
-                "\u5f55\u97f3", // 录音
-                "\u76d1\u5236", // 监制
-                "\u914d\u5531", // 配唱
-                "\u4eba\u58f0", // 人声
-                "\u5409\u4ed6", // 吉他
-                "\u8d1d\u65af", // 贝斯
-                "\u9f13", // 鼓
-                "\u548c\u97f3", // 和音
-                "\u76d1\u68da", // 监棚
-                "\u5f26\u4e50", // 弦乐
-                "\u548c\u58f0", // 和声
-                "\u4e50\u8c31"  // 乐谱
+                "作词", // 作词
+                "作曲", // 作曲
+                "编曲", // 编曲
+                "制作", // 制作
+                "演唱", // 演唱
+                "歌手", // 歌手
+                "原唱", // 原唱
+                "翻唱", // 翻唱
+                "混音", // 混音
+                "母带", // 母带
+                "录音", // 录音
+                "监制", // 监制
+                "配唱", // 配唱
+                "人声", // 人声
+                "吉他", // 吉他
+                "贝斯", // 贝斯
+                "鼓", // 鼓
+                "和音", // 和音
+                "监棚", // 监棚
+                "弦乐", // 弦乐
+                "和声", // 和声
+                "乐谱"  // 乐谱
         };
         for (String candidate : cjkLabels) {
             if (label.contains(candidate)) {
                 return true;
             }
         }
-        return label.equals("\u8bcd") || label.equals("\u66f2"); // 词 / 曲
+        return label.equals("词") || label.equals("曲"); // 词 / 曲
     }
 
     private static boolean containsLetter(String value) {
@@ -809,7 +809,7 @@ final class LockscreenIntegrationPolicy {
 
     private static boolean containsLyricLeadSeparator(String value) {
         return value != null
-                && (value.indexOf(':') >= 0 || value.indexOf('\uFF1A') >= 0);
+                && (value.indexOf(':') >= 0 || value.indexOf('：') >= 0);
     }
 
     private static boolean isAsciiWordLike(char value) {
@@ -832,12 +832,12 @@ final class LockscreenIntegrationPolicy {
 
     private static boolean isTitleArtistSeparator(char value) {
         return value == '-'
-                || value == '\u2010'
-                || value == '\u2011'
-                || value == '\u2012'
-                || value == '\u2013'
-                || value == '\u2014'
-                || value == '\u2212';
+                || value == '‐'
+                || value == '‑'
+                || value == '‒'
+                || value == '–'
+                || value == '—'
+                || value == '−';
     }
 
     private static boolean containsSentenceEndingPunctuation(String text) {
@@ -846,9 +846,9 @@ final class LockscreenIntegrationPolicy {
             if (value == '.'
                     || value == '?'
                     || value == '!'
-                    || value == '\u3002'
-                    || value == '\uFF1F'
-                    || value == '\uFF01') {
+                    || value == '。'
+                    || value == '？'
+                    || value == '！') {
                 return true;
             }
         }

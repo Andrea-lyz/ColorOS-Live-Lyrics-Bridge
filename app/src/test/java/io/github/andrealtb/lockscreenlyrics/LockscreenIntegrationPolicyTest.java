@@ -201,6 +201,14 @@ public class LockscreenIntegrationPolicyTest {
     }
 
     @Test
+    public void longWrappedLyricsCanReachEveryTwoLineWindow() {
+        assertEquals(0, LockscreenIntegrationPolicy.clampSlidingWindowStart(0, 5, 2));
+        assertEquals(2, LockscreenIntegrationPolicy.clampSlidingWindowStart(2, 5, 2));
+        assertEquals(3, LockscreenIntegrationPolicy.clampSlidingWindowStart(4, 5, 2));
+        assertEquals(14, LockscreenIntegrationPolicy.clampSlidingWindowStart(15, 16, 2));
+    }
+
+    @Test
     public void passiveLinePanHoldsThenSmoothlyMovesAcrossTheMiddleOfTheLine() {
         assertEquals(0f, LockscreenIntegrationPolicy.passiveLinePanProgress(0f), 0.0001f);
         assertEquals(0f, LockscreenIntegrationPolicy.passiveLinePanProgress(0.215f), 0.0001f);
@@ -500,34 +508,34 @@ public class LockscreenIntegrationPolicyTest {
     @Test
     public void cjkMainLyricKeepsShortLatinVocalTail() {
         assertTrue(LockscreenIntegrationPolicy.isShortLatinTailAfterMainLyric(
-                "\u719f\u6089\u7684\u4fa7\u8138\u90fd\u91cd\u53e0",
+                "熟悉的侧脸都重叠",
                 "Oh"));
         assertTrue(LockscreenIntegrationPolicy.isShortLatinTailAfterMainLyric(
-                "\u6211\u7684\u660e\u5929\u53eb\u505a\u6628\u5929",
+                "我的明天叫做昨天",
                 "Hoh"));
     }
 
     @Test
     public void cjkMainLyricKeepsUppercaseAcronymTail() {
         assertTrue(LockscreenIntegrationPolicy.isShortLatinTailAfterMainLyric(
-                "\u60aa\u970a\u9000\u6563",
+                "悪霊退散",
                 "ICBM"));
     }
 
     @Test
     public void cjkTranslationStillSplitsBeforeLongEnglishMainLyric() {
         assertFalse(LockscreenIntegrationPolicy.isShortLatinTailAfterMainLyric(
-                "\u4f60\u5bf9\u6211\u7ec5\u58eb\u793c\u8c8c",
+                "你对我绅士礼貌",
                 "Treat me like a lady"));
     }
 
     @Test
     public void ordinaryShortEnglishWordsDoNotTriggerTailProtection() {
         assertFalse(LockscreenIntegrationPolicy.isShortLatinTailAfterMainLyric(
-                "\u964c\u751f\u7684\u60c5\u8282",
+                "陌生的情节",
                 "okey"));
         assertFalse(LockscreenIntegrationPolicy.isShortLatinTailAfterMainLyric(
-                "\u964c\u751f\u7684\u60c5\u8282",
+                "陌生的情节",
                 "OK"));
     }
 

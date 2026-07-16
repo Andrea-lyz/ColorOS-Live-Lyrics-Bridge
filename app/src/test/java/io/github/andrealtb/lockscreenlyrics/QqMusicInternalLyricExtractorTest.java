@@ -48,23 +48,23 @@ public class QqMusicInternalLyricExtractorTest {
     @Test
     public void preservesFullChineseLineTextWhenWordFragmentsArePartial() {
         Lyric lyric = new Lyric(new Line(
-                "\u8bf4\u4e3a\u4ec0\u4e48\u6ca1\u5173\u7cfb",
+                "说为什么没关系",
                 3_000L,
                 2_000L,
                 Arrays.asList(
-                        new Word(0L, 300L, "\u8bf4"),
-                        new Word(400L, 600L, "\u4e3a\u4ec0\u4e48"))));
+                        new Word(0L, 300L, "说"),
+                        new Word(400L, 600L, "为什么"))));
 
         TimedLyricDocument document = QqMusicInternalLyricExtractor.extract(lyric);
 
         assertEquals(1, document.lineCount());
-        assertEquals("[00:03.000]<00:03.000>\u8bf4<00:03.400>"
-                        + "\u4e3a\u4ec0\u4e48\u6ca1\u5173\u7cfb<00:05.000>\n",
+        assertEquals("[00:03.000]<00:03.000>说<00:03.400>"
+                        + "为什么没关系<00:05.000>\n",
                 document.toEnhancedLrc());
     }
 
     @Test
-    public void filtersQqCreditLinesBeforeDisplayLyrics() {
+    public void preservesQqCreditCandidatesForSystemUiCleanup() {
         Lyric lyric = new Lyric(Arrays.asList(
                 new Line(
                         "The Road Not Taken - HOYO-MiX/Aimer",
@@ -77,15 +77,15 @@ public class QqMusicInternalLyricExtractorTest {
                         500L,
                         Collections.singletonList(new Word(420L, 500L, "HOYO-MiX"))),
                 new Line(
-                        "\u4e50\u961f Orchestra\uff1aBudapest Scoring Orchestra / \u9f99\u4e4b\u827a\u4ea4\u54cd\u4e50\u56e2",
+                        "乐队 Orchestra：Budapest Scoring Orchestra / 龙之艺交响乐团",
                         487L,
                         500L,
-                        Collections.singletonList(new Word(487L, 500L, "\u4e50\u961f"))),
+                        Collections.singletonList(new Word(487L, 500L, "乐队"))),
                 new Line(
-                        "\u624b\u98ce\u7434 Accordion\uff1a\u674e\u695a\u7136 Churan Li",
+                        "手风琴 Accordion：李楚然 Churan Li",
                         720L,
                         500L,
-                        Collections.singletonList(new Word(720L, 500L, "\u624b\u98ce\u7434"))),
+                        Collections.singletonList(new Word(720L, 500L, "手风琴"))),
                 new Line(
                         "Cello: Ping Zhang",
                         1_020L,
@@ -107,10 +107,13 @@ public class QqMusicInternalLyricExtractorTest {
 
         TimedLyricDocument document = QqMusicInternalLyricExtractor.extract(lyric);
 
-        assertEquals(1, document.lineCount());
-        assertEquals("[00:06.940]<00:06.940>I <00:07.500>"
-                        + "feel you in the last blow of wind.<00:09.940>\n",
-                document.toEnhancedLrc());
+        assertEquals(7, document.lineCount());
+        assertTrue(document.toEnhancedLrc().contains(
+                "[00:00.000]<00:00.000>The"));
+        assertTrue(document.toEnhancedLrc().contains(
+                "Produced by HOYO-MiX"));
+        assertTrue(document.toEnhancedLrc().contains("[00:06.940]<00:06.940>I <00:07.500>"
+                + "feel you in the last blow of wind.<00:09.940>\n"));
     }
 
     @Test
@@ -122,7 +125,7 @@ public class QqMusicInternalLyricExtractorTest {
                         2_000L,
                         Collections.singletonList(new Word(0L, 1_000L, "Hello"))),
                 new Line(
-                        "\u4f60\u597d",
+                        "你好",
                         1_020L,
                         2_000L,
                         Collections.emptyList()));
@@ -130,7 +133,7 @@ public class QqMusicInternalLyricExtractorTest {
         TimedLyricDocument document = QqMusicInternalLyricExtractor.extract(lyric);
 
         assertEquals("[00:01.000]<00:01.000>Hello<00:03.000>\n"
-                        + "[00:01.000]\u4f60\u597d\n",
+                        + "[00:01.000]你好\n",
                 document.toEnhancedLrc());
     }
 
@@ -159,32 +162,32 @@ public class QqMusicInternalLyricExtractorTest {
     @Test
     public void restoresQqInternalUtf8TextMisdecodedAsGb18030() {
         Lyric lyric = new Lyric(new Line(
-                utf8AsGb18030("\u5e0c\u671b\u6709\u7fbd\u6bdb\u548c\u7fc5\u8180"),
+                utf8AsGb18030("希望有羽毛和翅膀"),
                 1_000L,
                 1_500L,
                 Arrays.asList(
-                        new Word(0L, 500L, utf8AsGb18030("\u5e0c\u671b"), 0, 2),
-                        new Word(500L, 700L, utf8AsGb18030("\u6709\u7fbd\u6bdb"), 2, 5),
-                        new Word(1_200L, 300L, utf8AsGb18030("\u548c\u7fc5\u8180"), 5, 8))));
+                        new Word(0L, 500L, utf8AsGb18030("希望"), 0, 2),
+                        new Word(500L, 700L, utf8AsGb18030("有羽毛"), 2, 5),
+                        new Word(1_200L, 300L, utf8AsGb18030("和翅膀"), 5, 8))));
 
         TimedLyricDocument document = QqMusicInternalLyricExtractor.extract(lyric);
 
-        assertEquals("[00:01.000]<00:01.000>\u5e0c\u671b<00:01.500>"
-                        + "\u6709\u7fbd\u6bdb<00:02.200>\u548c\u7fc5\u8180<00:02.500>\n",
+        assertEquals("[00:01.000]<00:01.000>希望<00:01.500>"
+                        + "有羽毛<00:02.200>和翅膀<00:02.500>\n",
                 document.toEnhancedLrc());
     }
 
     @Test
     public void doesNotRewriteNormalChineseTextThatLooksLegitimate() {
         Lyric lyric = new Lyric(new Line(
-                "\u6d93\u6d41\u5165\u6d77",
+                "涓流入海",
                 1_000L,
                 1_000L,
-                Collections.singletonList(new Word(0L, 1_000L, "\u6d93\u6d41\u5165\u6d77"))));
+                Collections.singletonList(new Word(0L, 1_000L, "涓流入海"))));
 
         TimedLyricDocument document = QqMusicInternalLyricExtractor.extract(lyric);
 
-        assertEquals("[00:01.000]<00:01.000>\u6d93\u6d41\u5165\u6d77<00:02.000>\n",
+        assertEquals("[00:01.000]<00:01.000>涓流入海<00:02.000>\n",
                 document.toEnhancedLrc());
     }
 
@@ -194,7 +197,7 @@ public class QqMusicInternalLyricExtractorTest {
                 new TimedLyricDocument.Line(
                         43_688L,
                         46_584L,
-                        "\u60aa\u970a\u9000\u6563 ICBM",
+                        "悪霊退散 ICBM",
                         "",
                         Collections.emptyList())));
         TimedLyricDocument romaji = new TimedLyricDocument(Collections.singletonList(
@@ -208,7 +211,7 @@ public class QqMusicInternalLyricExtractorTest {
                 new TimedLyricDocument.Line(
                         43_700L,
                         46_584L,
-                        "\u6076\u7075\u9000\u6563 ICBM",
+                        "恶灵退散 ICBM",
                         "",
                         Collections.emptyList())));
 
@@ -216,8 +219,8 @@ public class QqMusicInternalLyricExtractorTest {
         TimedLyricDocument merged = base.withUsableTranslationsFrom(translation, 1_500L);
 
         assertEquals(1, merged.translationCount());
-        assertEquals("[00:43.688]\u60aa\u970a\u9000\u6563 ICBM\n"
-                        + "[00:43.688]\u6076\u7075\u9000\u6563 ICBM\n",
+        assertEquals("[00:43.688]悪霊退散 ICBM\n"
+                        + "[00:43.688]恶灵退散 ICBM\n",
                 merged.toEnhancedLrc());
     }
 

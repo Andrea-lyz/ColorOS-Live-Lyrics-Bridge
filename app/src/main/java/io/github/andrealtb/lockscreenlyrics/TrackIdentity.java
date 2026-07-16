@@ -9,41 +9,41 @@ import java.util.regex.Pattern;
 final class TrackIdentity {
     private static final String[] SALT_RELAY_SEPARATORS = {
             " - ",
-            " \u2013 ",
-            " \u2014 "
+            " – ",
+            " — "
     };
 
     private static final Pattern CONTENT_RATING_SUFFIX = Pattern.compile(
-            "(?i)\\s*[\\[\\(\\uFF08\\u3010]\\s*(?:explicit|clean)"
-                    + "\\s*[\\]\\)\\uFF09\\u3011]\\s*$");
+            "(?i)\\s*[\\[\\(（【]\\s*(?:explicit|clean)"
+                    + "\\s*[\\]\\)）】]\\s*$");
     private static final Pattern SAME_RECORDING_EDITION_SUFFIX = Pattern.compile(
-            "(?i)\\s*[\\(\\uFF08]\\s*from\\s+the\\s+vault"
-                    + "\\s*[\\)\\uFF09]\\s*$");
+            "(?i)\\s*[\\(（]\\s*from\\s+the\\s+vault"
+                    + "\\s*[\\)）]\\s*$");
     private static final Pattern BRACKETED_FEATURE_SUFFIX = Pattern.compile(
-            "(?i)\\s*[\\[\\(\\uFF08\\u3010]\\s*"
+            "(?i)\\s*[\\[\\(（【]\\s*"
                     + "(?:feat(?:uring)?|ft)\\.?\\s+.*"
-                    + "[\\]\\)\\uFF09\\u3011]\\s*$");
+                    + "[\\]\\)）】]\\s*$");
     private static final Pattern BARE_FEATURE_SUFFIX = Pattern.compile(
             "(?i)\\s+(?:feat(?:uring)?|ft)\\.?\\s+.*$");
     private static final Pattern FEATURED_ARTIST_SUFFIX = Pattern.compile(
-            "(?i)\\s*[\\[\\(\\uFF08\\u3010]\\s*"
+            "(?i)\\s*[\\[\\(（【]\\s*"
                     + "(?:feat(?:uring)?|ft)\\.?\\s+(.+?)"
-                    + "[\\]\\)\\uFF09\\u3011]\\s*$");
+                    + "[\\]\\)）】]\\s*$");
     private static final Pattern ARTIST_FEATURE_SEPARATOR = Pattern.compile(
             "(?i)\\s+(?:feat(?:uring)?|ft)\\.?\\s+");
     private static final Pattern ARTIST_SEPARATOR = Pattern.compile(
-            "\\s*[/,&;\\u00B7\\u2022\\u2027\\u2219\\u22C5\\u30FB"
-                    + "\\uFF0C\\uFF1B\\u3001]\\s*");
+            "\\s*[/,&;·•‧∙⋅・"
+                    + "，；、]\\s*");
     private static final Pattern TRANSLATED_TITLE_SUFFIX = Pattern.compile(
-            "^(.*?)[\\(\\uFF08]([^\\)\\uFF09]+)[\\)\\uFF09]\\s*$");
+            "^(.*?)[\\(（]([^\\)）]+)[\\)）]\\s*$");
     private static final Pattern TIME_OF_DAY_TITLE_SEPARATOR = Pattern.compile(
             "(?i)(?<!\\d)(\\d{1,2})\\s*:\\s*(\\d{2})(?=\\s*(?:a\\.?m\\.?|p\\.?m\\.?)\\b)");
     private static final Pattern VERSION_MARKER = Pattern.compile(
             "(?i)(?:live|remix|remaster(?:ed)?|version|edit|acoustic|demo|"
                     + "instrumental|karaoke|cover|sped\\s*up|slowed|reverb|radio|"
-                    + "\\u73b0\\u573a|\\u7248\\u672c|\\u91cd\\u5236|\\u6df7\\u97f3|"
-                    + "\\u4f34\\u594f|\\u7eaf\\u97f3\\u4e50|\\u7ffb\\u5531|"
-                    + "\\u30ab\\u30d0\\u30fc)");
+                    + "现场|版本|重制|混音|"
+                    + "伴奏|纯音乐|翻唱|"
+                    + "カバー)");
 
     private TrackIdentity() {
     }
@@ -198,11 +198,12 @@ final class TrackIdentity {
     }
 
     private static boolean containsJapaneseKana(String value) {
+        final int hiraganaBlockStartCodePoint = 0x3040;
         for (int i = 0; i < value.length(); i++) {
             char ch = value.charAt(i);
-            if ((ch >= '\u3040' && ch <= '\u309f')
-                    || (ch >= '\u30a0' && ch <= '\u30ff')
-                    || (ch >= '\uff66' && ch <= '\uff9d')) {
+            if ((ch >= hiraganaBlockStartCodePoint && ch <= 'ゟ')
+                    || (ch >= '゠' && ch <= 'ヿ')
+                    || (ch >= 'ｦ' && ch <= 'ﾝ')) {
                 return true;
             }
         }
@@ -291,10 +292,10 @@ final class TrackIdentity {
         boolean inWhitespace = false;
         for (int i = 0; i < trimmed.length(); i++) {
             char character = trimmed.charAt(i);
-            if (character == '\u2018'
-                    || character == '\u2019'
-                    || character == '\u02bc'
-                    || character == '\uff07') {
+            if (character == '‘'
+                    || character == '’'
+                    || character == 'ʼ'
+                    || character == '＇') {
                 character = '\'';
             }
             boolean whitespace = character == ' ' || character == '\t';

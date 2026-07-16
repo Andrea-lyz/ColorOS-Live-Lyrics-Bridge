@@ -10,7 +10,7 @@ final class LyricInfoTrackMatcher {
     private static final Pattern LRC_ARTIST_TAG = Pattern.compile(
             "(?im)^\\s*\\[ar\\s*:(.*?)]\\s*$");
     private static final Pattern TITLE_ARTIST_SEPARATOR = Pattern.compile(
-            "\\s+[-\\u2013\\u2014]\\s+");
+            "\\s+[-–—]\\s+");
 
     private LyricInfoTrackMatcher() {
     }
@@ -23,6 +23,9 @@ final class LyricInfoTrackMatcher {
             return false;
         }
         String actualKey = TrackIdentity.buildKey(title, artist);
+        if (payload.isModuleEnvelope() && !isEmpty(payload.trackKey)) {
+            return TrackIdentity.matchesHintKey(payload.trackKey, actualKey);
+        }
         if (!isEmpty(payload.trackKey)
                 && !TrackIdentity.matchesHintKey(payload.trackKey, actualKey)) {
             return false;
@@ -108,7 +111,7 @@ final class LyricInfoTrackMatcher {
             }
             String title = text.substring(0, separator.start()).trim();
             String artist = text.substring(separator.end()).trim();
-            artist = artist.replaceFirst("\\s*[\\(\\uff08].*$", "").trim();
+            artist = artist.replaceFirst("\\s*[\\(（].*$", "").trim();
             if (!isEmpty(title) && !isEmpty(artist)) {
                 return TrackIdentity.buildKey(title, artist);
             }

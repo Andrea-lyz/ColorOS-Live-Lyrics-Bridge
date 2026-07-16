@@ -13,6 +13,30 @@ import java.nio.file.Paths;
 
 public final class LyricsCoreAdapterTest {
     @Test
+    public void parsesYrcWordTimingRegression() {
+        String yrc = "[1200,2400](1200,600,0)逐(1800,600,0)字"
+                + "(2400,600,0)歌(3000,600,0)词\n"
+                + "[4200,1200](4200,600,0)安(4800,600,0)全";
+
+        LyricsCoreAdapter.ParsedLyrics parsed = LyricsCoreAdapter.parse(yrc);
+
+        assertEquals(2, parsed.lines.size());
+        LyricsCoreAdapter.ParsedLine first = parsed.lines.get(0);
+        assertEquals(1_200L, first.startMillis);
+        assertEquals(3_600L, first.endMillis);
+        assertEquals("逐字歌词", first.text);
+        assertEquals(4, first.syllables.size());
+        assertEquals(1_200L, first.syllables.get(0).startMillis);
+        assertEquals(1_800L, first.syllables.get(0).endMillis);
+        assertEquals(0, first.syllables.get(0).start);
+        assertEquals(1, first.syllables.get(0).end);
+        assertEquals(3_000L, first.syllables.get(3).startMillis);
+        assertEquals(3_600L, first.syllables.get(3).endMillis);
+        assertEquals(3, first.syllables.get(3).start);
+        assertEquals(4, first.syllables.get(3).end);
+    }
+
+    @Test
     public void parsesSameTimestampBilingualLrc() {
         String lrc = "[00:00.00]One two（ワン　ツー）\n"
                 + "[00:12.90]エマージェンシー　0時　奴らは\n"
@@ -90,40 +114,40 @@ public final class LyricsCoreAdapterTest {
     @Test
     public void plainLrcFallbackSkipsLyricTranslationProviderCredit() {
         String lrc = "[00:01.00]He did it\n"
-                + "[00:01.00]\u4ed6\u80cc\u53db\u4e86\u6211\n"
-                + "[00:01.00]\u4ee5\u4e0b\u6b4c\u8bcd\u7ffb\u8bd1\u7531 Salt Player \u63d0\u4f9b\n"
+                + "[00:01.00]他背叛了我\n"
+                + "[00:01.00]以下歌词翻译由 Salt Player 提供\n"
                 + "[00:04.00]No, no body, no crime";
 
         LyricsCoreAdapter.ParsedLyrics parsed = LyricsCoreAdapter.parsePlainLrc(lrc);
 
         assertEquals(2, parsed.lines.size());
         assertEquals("He did it", parsed.lines.get(0).text);
-        assertEquals("\u4ed6\u80cc\u53db\u4e86\u6211", parsed.lines.get(0).translation);
+        assertEquals("他背叛了我", parsed.lines.get(0).translation);
         assertEquals("No, no body, no crime", parsed.lines.get(1).text);
         assertEquals("", parsed.lines.get(1).translation);
     }
 
     @Test
     public void plainLrcFallbackIgnoresJapaneseRomajiVariant() {
-        String lrc = "[00:30.436]\u3053\u3093\u306a\u79c1\u306e\u672a\u719f\u306a\u3046\u305f\u3092\n"
-                + "[00:30.436]\u611f\u8c22\u4f60\u613f\u610f\u8046\u542c\n"
+        String lrc = "[00:30.436]こんな私の未熟なうたを\n"
+                + "[00:30.436]感谢你愿意聆听\n"
                 + "[00:30.436]ko n na wa ta shi no mi ju ku na u ta wo";
 
         LyricsCoreAdapter.ParsedLyrics parsed = LyricsCoreAdapter.parsePlainLrc(lrc);
 
         assertEquals(1, parsed.lines.size());
-        assertEquals("\u3053\u3093\u306a\u79c1\u306e\u672a\u719f\u306a\u3046\u305f\u3092", parsed.lines.get(0).text);
-        assertEquals("\u611f\u8c22\u4f60\u613f\u610f\u8046\u542c", parsed.lines.get(0).translation);
+        assertEquals("こんな私の未熟なうたを", parsed.lines.get(0).text);
+        assertEquals("感谢你愿意聆听", parsed.lines.get(0).translation);
     }
 
     @Test
     public void plainLrcFallbackIgnoresCantonesePhoneticVariant() {
-        String lrc = "[00:03.909]\u7f20[00:04.085]\u7ef5[00:04.261]\u7684"
-                + "[00:04.429]\u665a[00:04.669]\u98ce [00:06.189]\u5439"
-                + "[00:06.413]\u7184[00:06.749]\u7231[00:06.957]\u7684"
-                + "[00:07.317]\u68a6[00:07.685]\n"
+        String lrc = "[00:03.909]缠[00:04.085]绵[00:04.261]的"
+                + "[00:04.429]晚[00:04.669]风 [00:06.189]吹"
+                + "[00:06.413]熄[00:06.749]爱[00:06.957]的"
+                + "[00:07.317]梦[00:07.685]\n"
                 + "[00:03.909]cin min di man fong  cui si oi di mong \n"
-                + "[00:08.637]\u4e3a[00:08.821]\u4f55[00:09.005]love "
+                + "[00:08.637]为[00:08.821]何[00:09.005]love "
                 + "[00:09.237]is [00:09.405]gone [00:10.013]gone "
                 + "[00:10.557]gone[00:10.853]\n"
                 + "[00:08.637]wai ho love is gone gone gone";
@@ -131,20 +155,20 @@ public final class LyricsCoreAdapterTest {
         LyricsCoreAdapter.ParsedLyrics parsed = LyricsCoreAdapter.parsePlainLrc(lrc);
 
         assertEquals(2, parsed.lines.size());
-        assertEquals("\u7f20\u7ef5\u7684\u665a\u98ce \u5439\u7184\u7231\u7684\u68a6",
+        assertEquals("缠绵的晚风 吹熄爱的梦",
                 parsed.lines.get(0).text);
         assertEquals("", parsed.lines.get(0).translation);
-        assertEquals("\u4e3a\u4f55love is gone gone gone", parsed.lines.get(1).text);
+        assertEquals("为何love is gone gone gone", parsed.lines.get(1).text);
         assertEquals("", parsed.lines.get(1).translation);
     }
 
     @Test
     public void keepsJapaneseMainLineWhenRomajiIsMissingForOneTimestamp() {
-        String lrc = "[00:00.850]\u3042\u306e\u4e00\u7b49\u661f\u306e\u3055\u3093\u3056\u3081\u304f\u5149\u3067\n"
+        String lrc = "[00:00.850]あの一等星のさんざめく光で\n"
                 + "[00:00.850]a no i tto u se i no sa n za me ku hi ka ri de\n"
-                + "[00:00.850]\u5728\u90a3\u4e00\u7b49\u661f\u7684\u55a7\u56a3\u5149\u8292\u4e4b\u4e0b\n"
-                + "[00:07.230]\u6211\u304c\u592a\u967d\u7cfb\u306e\u9f13\u52d5\u306b\u5408\u308f\u305b\u3066\n"
-                + "[00:07.230]\u8ba9\u6211\u4eec\u6765\u4f34\u7740 \u592a\u9633\u7cfb\u7684\u8109\u52a8";
+                + "[00:00.850]在那一等星的喧嚣光芒之下\n"
+                + "[00:07.230]我が太陽系の鼓動に合わせて\n"
+                + "[00:07.230]让我们来伴着 太阳系的脉动";
 
         LyricsCoreAdapter.ParsedLyrics parsed = LyricsCoreAdapter.parse(lrc);
 
@@ -152,42 +176,42 @@ public final class LyricsCoreAdapterTest {
                 .filter(candidate -> candidate.startMillis == 7_230L)
                 .findFirst()
                 .orElseThrow();
-        assertEquals("\u6211\u304c\u592a\u967d\u7cfb\u306e\u9f13\u52d5\u306b\u5408\u308f\u305b\u3066", line.text);
-        assertEquals("\u8ba9\u6211\u4eec\u6765\u4f34\u7740 \u592a\u9633\u7cfb\u7684\u8109\u52a8",
+        assertEquals("我が太陽系の鼓動に合わせて", line.text);
+        assertEquals("让我们来伴着 太阳系的脉动",
                 line.translation);
     }
 
     @Test
     public void prefersChineseTranslationOverJapaneseRomajiLane() {
-        String lrc = "[00:37.447]\u78ca[00:37.825]\u3005[00:38.223]\u843d"
-                + "[00:38.600]\u3005[00:39.023] [00:39.023]\u53cd"
-                + "[00:39.415]\u6226[00:39.799]\u56fd[00:40.151]\u5bb6"
+        String lrc = "[00:37.447]磊[00:37.825]々[00:38.223]落"
+                + "[00:38.600]々[00:39.023] [00:39.023]反"
+                + "[00:39.415]戦[00:39.799]国[00:40.151]家"
                 + "[00:40.351]\n"
                 + "[00:37.447]ra i ra i ra ku ra ku   ha n se n ko 'k ka \n"
-                + "[00:37.447]\u5149\u660e\u78ca\u843d\u53cd\u6218\u56fd\u5bb6";
+                + "[00:37.447]光明磊落反战国家";
 
         LyricsCoreAdapter.ParsedLyrics parsed = LyricsCoreAdapter.parse(lrc);
 
         assertEquals(1, parsed.lines.size());
-        assertEquals("\u78ca\u3005\u843d\u3005 \u53cd\u6226\u56fd\u5bb6",
+        assertEquals("磊々落々 反戦国家",
                 parsed.lines.get(0).text);
-        assertEquals("\u5149\u660e\u78ca\u843d\u53cd\u6218\u56fd\u5bb6",
+        assertEquals("光明磊落反战国家",
                 parsed.lines.get(0).translation);
     }
 
     @Test
     public void keepsKanjiMainLineWhenRomajiLaneSharesTrailingLatinAcronym() {
-        String lrc = "[00:43.688]\u60aa[00:44.088]\u970a[00:44.423]\u9000"
-                + "[00:44.871]\u6563[00:45.111] [00:45.231]ICBM"
+        String lrc = "[00:43.688]悪[00:44.088]霊[00:44.423]退"
+                + "[00:44.871]散[00:45.111] [00:45.231]ICBM"
                 + "[00:46.584]\n"
                 + "[00:43.688]a ku ryo u ta i sa n ICBM \n"
-                + "[00:43.688]\u6076\u7075\u9000\u6563 ICBM";
+                + "[00:43.688]恶灵退散 ICBM";
 
         LyricsCoreAdapter.ParsedLyrics parsed = LyricsCoreAdapter.parse(lrc);
 
         assertEquals(1, parsed.lines.size());
-        assertEquals("\u60aa\u970a\u9000\u6563 ICBM", parsed.lines.get(0).text);
-        assertEquals("\u6076\u7075\u9000\u6563 ICBM", parsed.lines.get(0).translation);
+        assertEquals("悪霊退散 ICBM", parsed.lines.get(0).text);
+        assertEquals("恶灵退散 ICBM", parsed.lines.get(0).translation);
     }
 
     @Test
@@ -204,17 +228,17 @@ public final class LyricsCoreAdapterTest {
                 .filter(candidate -> candidate.startMillis == 43_688L)
                 .findFirst()
                 .orElseThrow();
-        assertEquals("\u60aa\u970a\u9000\u6563 ICBM", line.text);
-        assertEquals("\u6076\u7075\u9000\u6563 ICBM", line.translation);
+        assertEquals("悪霊退散 ICBM", line.text);
+        assertEquals("恶灵退散 ICBM", line.translation);
     }
 
     @Test
     public void ignoresZeroWidthSpacerBeforeBilingualLine() {
         String lrc = "[00:30.00]Before\n"
-                + "[00:38.13]\u200B\n"
+                + "[00:38.13]" + LyricTextSanitizer.ZERO_WIDTH_SPACE + "\n"
                 + "[00:38.15]And all of the foes and all of the friends\n"
-                + "[00:38.15]\u6240\u6709\u7684\u5bf9\u624b "
-                + "\u6240\u6709\u7684\u670b\u53cb\u200B";
+                + "[00:38.15]所有的对手 "
+                + "所有的朋友" + LyricTextSanitizer.ZERO_WIDTH_SPACE + "";
 
         LyricsCoreAdapter.ParsedLyrics parsed = LyricsCoreAdapter.parse(lrc);
 
@@ -224,7 +248,7 @@ public final class LyricsCoreAdapterTest {
                 .findFirst()
                 .orElseThrow();
         assertEquals("And all of the foes and all of the friends", line.text);
-        assertEquals("\u6240\u6709\u7684\u5bf9\u624b \u6240\u6709\u7684\u670b\u53cb",
+        assertEquals("所有的对手 所有的朋友",
                 line.translation);
     }
 
@@ -283,11 +307,11 @@ public final class LyricsCoreAdapterTest {
                         + "<00:44.115>like <00:44.307>a <00:44.480>lady "
                         + "<00:45.636>all <00:45.838>that <00:46.035>I "
                         + "<00:46.226>can <00:46.395>say <00:46.835>is<00:47.387>\n"
-                        + "[00:43.734]\u4f60\u5bf9\u6211\u7ec5\u58eb\u793c\u8c8c "
-                        + "\u5bf9\u6b64\u6211\u53ea\u80fd\u8bf4",
+                        + "[00:43.734]你对我绅士礼貌 "
+                        + "对此我只能说",
                 43_734L,
                 "Treat me like a lady all that I can say is",
-                "\u4f60\u5bf9\u6211\u7ec5\u58eb\u793c\u8c8c \u5bf9\u6b64\u6211\u53ea\u80fd\u8bf4");
+                "你对我绅士礼貌 对此我只能说");
     }
 
     @Test
@@ -297,11 +321,11 @@ public final class LyricsCoreAdapterTest {
                         + "<01:24.936>seen <01:25.343>a <01:25.555>love "
                         + "<01:26.011>as <01:26.167>pure <01:26.555>as "
                         + "<01:26.770>it<01:27.604>\n"
-                        + "[01:24.350]\u672a\u66fe\u611f\u53d7\u8fc7"
-                        + "\u5982\u6b64\u771f\u5207\u7684\u7231",
+                        + "[01:24.350]未曾感受过"
+                        + "如此真切的爱",
                 84_350L,
                 "Had never seen a love as pure as it",
-                "\u672a\u66fe\u611f\u53d7\u8fc7\u5982\u6b64\u771f\u5207\u7684\u7231");
+                "未曾感受过如此真切的爱");
     }
 
     @Test
@@ -310,11 +334,11 @@ public final class LyricsCoreAdapterTest {
                 "[00:50.093] <00:50.093>Is <00:50.317>a "
                         + "<00:50.501>beauty <00:51.461>and <00:51.973>a "
                         + "<00:52.181>beat<00:53.917>\n"
-                        + "[00:50.093]\u5c31\u662f\u4e00\u4e2a\u7f8e\u4eba"
-                        + "\u548c\u4e00\u9996\u5e26\u611f\u7684\u6b4c",
+                        + "[00:50.093]就是一个美人"
+                        + "和一首带感的歌",
                 50_093L,
                 "Is a beauty and a beat",
-                "\u5c31\u662f\u4e00\u4e2a\u7f8e\u4eba\u548c\u4e00\u9996\u5e26\u611f\u7684\u6b4c");
+                "就是一个美人和一首带感的歌");
     }
 
     @Test
@@ -322,50 +346,50 @@ public final class LyricsCoreAdapterTest {
         assertEnhancedBilingualLine(
                 "[00:26.609]But [00:26.793]I [00:27.041]can "
                         + "[00:27.345]see [00:27.689]us[00:27.995]\n"
-                        + "[00:26.609]\u4f46\u6211\u770b\u89c1\u6211\u4eec",
+                        + "[00:26.609]但我看见我们",
                 26_609L,
                 "But I can see us",
-                "\u4f46\u6211\u770b\u89c1\u6211\u4eec");
+                "但我看见我们");
     }
 
     @Test
     public void userReportedNoBodyNoCrimeShortEnhancedLineKeepsPrimaryAndTranslation() {
         String lrc = "[00:06.490]He [00:06.850]did [00:07.390]it[00:07.630]\n"
-                + "[00:06.490]\u4ed6\u80cc\u53db\u4e86\u6211\n"
+                + "[00:06.490]他背叛了我\n"
                 + "[00:09.400]He [00:09.760]did [00:25.060]it[00:25.540]\n"
-                + "[00:09.400]\u4ed6\u80cc\u53db\u4e86\u6211";
+                + "[00:09.400]他背叛了我";
 
         assertEnhancedBilingualLine(
                 lrc,
                 6_490L,
                 "He did it",
-                "\u4ed6\u80cc\u53db\u4e86\u6211");
+                "他背叛了我");
         assertParsedLine(
                 LyricsCoreAdapter.parse(lrc),
                 9_400L,
                 "He did it",
-                "\u4ed6\u80cc\u53db\u4e86\u6211");
+                "他背叛了我");
         TimedLyricDocument document = TimedLyricDocument.fromRawLrc(lrc);
-        assertDocumentLine(document, 9_400L, "He did it", "\u4ed6\u80cc\u53db\u4e86\u6211");
+        assertDocumentLine(document, 9_400L, "He did it", "他背叛了我");
         assertDocumentWordCount(document, 9_400L, 1);
     }
 
     @Test
-    public void userReportedDeathByAThousandCutsOpeningKeepsEnglishMainAfterCredits() {
+    public void userReportedDeathByAThousandCutsPreservesCreditsForLaterCleanup() {
         String lrc = "[by:Trap_Girl]\n"
-                + "[00:00.00]\u4f5c\u8bcd : Taylor Swift/Jack Antonoff\n"
-                + "[00:00.09]\u4f5c\u66f2 : Taylor Swift/Jack Antonoff\n"
+                + "[00:00.00]作词 : Taylor Swift/Jack Antonoff\n"
+                + "[00:00.09]作曲 : Taylor Swift/Jack Antonoff\n"
                 + "[00:00.18]My, my, my, my\n"
-                + "[00:00.18]\u53ea\u5c5e\u4e8e\u6211\n";
+                + "[00:00.18]只属于我\n";
 
         LyricsCoreAdapter.ParsedLyrics parsed = LyricsCoreAdapter.parse(lrc);
         String official = OplusLyricNormalizer.normalizeForOfficialList(lrc);
 
-        assertParsedLine(parsed, 180L, "My, my, my, my", "\u53ea\u5c5e\u4e8e\u6211");
+        assertParsedLine(parsed, 180L, "My, my, my, my", "只属于我");
         assertTrue("official=" + official, official.contains("My, my, my, my"));
-        assertFalse(official.contains("\u4f5c\u8bcd"));
-        assertFalse(official.contains("\u4f5c\u66f2"));
-        assertFalse(official.contains("\u53ea\u5c5e\u4e8e\u6211"));
+        assertTrue(official.contains("作词"));
+        assertTrue(official.contains("作曲"));
+        assertFalse(official.contains("只属于我"));
     }
 
     @Test
@@ -378,25 +402,25 @@ public final class LyricsCoreAdapterTest {
                 "01. Taylor Swift - All Of The Girls You Loved Before.lrc",
                 43_734L,
                 "Treat me like a lady all that I can say is",
-                "\u4f60\u5bf9\u6211\u7ec5\u58eb\u793c\u8c8c \u5bf9\u6b64\u6211\u53ea\u80fd\u8bf4");
+                "你对我绅士礼貌 对此我只能说");
         assertFileLine(
                 fixtureDir,
                 "Taylor Swift - gold rush.lrc",
                 84_350L,
                 "Had never seen a love as pure as it",
-                "\u672a\u66fe\u611f\u53d7\u8fc7\u5982\u6b64\u771f\u5207\u7684\u7231");
+                "未曾感受过如此真切的爱");
         assertFileLine(
                 fixtureDir,
                 "Justin Bieber&Nicki Minaj - Beauty And A Beat.lrc",
                 50_093L,
                 "Is a beauty and a beat",
-                "\u5c31\u662f\u4e00\u4e2a\u7f8e\u4eba\u548c\u4e00\u9996\u5e26\u611f\u7684\u6b4c");
+                "就是一个美人和一首带感的歌");
         assertFileLine(
                 fixtureDir,
                 "08 - Taylor Swift - august.lrc",
                 26_609L,
                 "But I can see us",
-                "\u4f46\u6211\u770b\u89c1\u6211\u4eec");
+                "但我看见我们");
     }
 
     private static void assertEnhancedBilingualLine(

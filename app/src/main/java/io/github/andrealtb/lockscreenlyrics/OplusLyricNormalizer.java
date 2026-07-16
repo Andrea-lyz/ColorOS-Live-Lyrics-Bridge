@@ -40,7 +40,7 @@ final class OplusLyricNormalizer {
 
                 long timeMillis = parseLrcTimeMillis(firstTag.group(1));
                 String text = cleanPlainLyricText(line.substring(firstTag.end()));
-                if (text.isEmpty() || isNonLyricInfoLine(text, timeMillis)) {
+                if (text.isEmpty() || isParsingProtectedLine(text)) {
                     continue;
                 }
 
@@ -77,6 +77,10 @@ final class OplusLyricNormalizer {
         return LyricMetadataFilter.isNonLyricInfoLine(text, timeMillis);
     }
 
+    private static boolean isParsingProtectedLine(String text) {
+        return LyricMetadataFilter.isParsingProtectedLine(text);
+    }
+
     private static void appendGroupedLyricLine(StringBuilder out, TimedLyricGroup group) {
         if (group == null || group.texts.isEmpty()) {
             return;
@@ -108,7 +112,10 @@ final class OplusLyricNormalizer {
         if (last == null) {
             return;
         }
-        appendLyricLine(out, last.timeMillis + TAIL_SPACER_DELAY_MS, "\u200B");
+        appendLyricLine(
+                out,
+                last.timeMillis + TAIL_SPACER_DELAY_MS,
+                LyricTextSanitizer.ZERO_WIDTH_SPACE);
     }
 
     private static String cleanPlainLyricText(String text) {

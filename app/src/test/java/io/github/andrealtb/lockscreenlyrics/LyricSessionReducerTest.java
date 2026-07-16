@@ -104,7 +104,7 @@ public final class LyricSessionReducerTest {
 
         LyricSessionReducer.TrackSnapshot next =
                 new LyricSessionReducer.TrackSnapshot(
-                        "You\u2019re Losing Me (From The Vault)",
+                        "You’re Losing Me (From The Vault)",
                         "Taylor Swift",
                         277_832L,
                         "");

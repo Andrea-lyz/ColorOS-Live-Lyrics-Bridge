@@ -6,174 +6,890 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Rect;
+import android.graphics.RenderEffect;
+import android.graphics.Shader;
 import android.graphics.Typeface;
-import android.graphics.drawable.GradientDrawable;
-import android.os.Build;
 import android.os.Bundle;
+import android.os.Build;
 import android.text.InputType;
 import android.util.TypedValue;
+import android.view.Display;
 import android.view.Gravity;
 import android.view.View;
-import android.view.ViewTreeObserver;
+import android.view.ViewGroup;
+import android.view.ViewParent;
 import android.view.Window;
 import android.view.WindowManager;
+import android.view.ViewTreeObserver;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
-import android.widget.CompoundButton;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
-import android.widget.Space;
+import android.widget.SeekBar;
+import android.widget.Spinner;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.regex.Pattern;
+
 public final class LyricUiSettingsActivity extends Activity {
-    private static final int COLOR_BACKGROUND = 0xFFF6F6F8;
-    private static final int COLOR_CARD = 0xFFFFFFFF;
-    private static final int COLOR_TEXT_PRIMARY = 0xFF111111;
-    private static final int COLOR_TEXT_SECONDARY = 0x99000000;
-    private static final int COLOR_TEXT_TERTIARY = 0x66000000;
-    private static final int COLOR_DIVIDER = 0x14000000;
-    private static final int COLOR_NOTICE_BACKGROUND = 0xFFFFF4DE;
-    private static final int COLOR_NOTICE_TITLE = 0xFF7A4C00;
-    private static final int COLOR_NOTICE_SUMMARY = 0xB27A4C00;
-    private static final float CONTENT_TOP_GAP_DP = 16f;
+    private static final int BACKGROUND = 0xFFF6F6F8;
+    private static final int CARD = 0xFFFFFFFF;
+    private static final int TEXT = 0xFF111111;
+    private static final Pattern COLOR_PATTERN = Pattern.compile("#[0-9A-Fa-f]{6}");
 
     private SharedPreferences preferences;
-    private Switch defaultSwitch;
-    private Switch lineTimedProgressSwitch;
-    private Switch translationProgressSwitch;
-    private Switch scrollScaleSwitch;
-    private Switch inactiveBlurSwitch;
-    private Switch screenTimeoutSwitch;
-    private EditText screenTimeoutSecondsInput;
     private boolean binding;
+    private LyricUiConfig draft;
+    private Spinner presetSpinner;
+    private SeekBar opacity;
+    private Switch blurEnabled;
+    private SeekBar blurRadius;
+    private Switch scaleEnabled;
+    private SeekBar inactiveScale;
+    private Switch glowEnabled;
+    private SeekBar glowIntensity;
+    private SeekBar glowRadius;
+    private EditText primaryColor;
+    private EditText glowColor;
+    private Spinner motionMode;
+    private Switch passiveVerticalPan;
+    private Switch translationMarquee;
+    private Spinner refreshRate;
+    private int[] refreshRateValues;
+    private Switch lineTimedProgress;
+    private Switch translationProgress;
+    private Switch screenTimeout;
+    private EditText screenTimeoutSeconds;
+    private SeekBar mainFontSize;
+    private SeekBar translationFontRatio;
+    private Spinner fontWeight;
+    private Spinner alignment;
+    private SeekBar lineSpacing;
+    private TextView previewMain;
+    private LinearLayout previewActiveSlot;
+    private TextView previewTranslation;
+    private LinearLayout previewSecondarySlotOne;
+    private TextView previewSecondaryOne;
+    private TextView previewSecondaryTranslationOne;
+    private LinearLayout previewSecondarySlotTwo;
+    private TextView previewSecondaryTwo;
+    private TextView previewSecondaryTranslationTwo;
+    private FrameLayout previewAnchor;
+    private boolean floatingPreviewUpdatePosted;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         configureWindow();
         preferences = getSharedPreferences(LyricUiSettings.PREFERENCES_NAME, MODE_PRIVATE);
-        setContentView(createContentView());
-        bindSwitchesFromPreferences();
-        broadcastCurrentSettings();
+        draft = LyricUiConfigRepository.load(preferences);
+        setContentView(createContent());
+        bind(draft);
     }
 
     private void configureWindow() {
         Window window = getWindow();
-        window.setStatusBarColor(COLOR_BACKGROUND);
-        window.setNavigationBarColor(COLOR_BACKGROUND);
+        window.setStatusBarColor(BACKGROUND);
+        window.setNavigationBarColor(BACKGROUND);
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            int flags = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+        window.getDecorView().setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+    }
+
+    private View createContent() {
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(20), dp(20), dp(20), dp(32));
+        content.setBackgroundColor(BACKGROUND);
+        disableAutofill(content);
+        installInsets(content);
+
+        TextView notice = text("修改期间仅更新本页预览；点击保存后一次校验并应用。", 14, 0xFF7A4C00);
+        notice.setPadding(dp(14), dp(12), dp(14), dp(12));
+        notice.setBackgroundColor(0xFFFFF4DE);
+        content.addView(notice, marginBottom(dp(18)));
+
+        content.addView(section("外观预设"));
+        LinearLayout presetCard = card();
+        presetSpinner = spinner(new String[]{"默认", "柔和", "醒目", "极简", "自定义"});
+        presetCard.addView(row("风格预设", presetSpinner));
+        Button reset = button("恢复默认外观");
+        reset.setOnClickListener(view -> bind(readDraft().resetAppearance()));
+        presetCard.addView(reset, matchWrap());
+        content.addView(presetCard, marginBottom(dp(16)));
+
+        content.addView(section("预览"));
+        LinearLayout preview = card();
+        previewAnchor = new FrameLayout(this);
+        previewActiveSlot = new LinearLayout(this);
+        previewActiveSlot.setOrientation(LinearLayout.VERTICAL);
+        previewActiveSlot.setGravity(Gravity.CENTER_VERTICAL);
+        previewSecondarySlotOne = new LinearLayout(this);
+        previewSecondarySlotOne.setOrientation(LinearLayout.VERTICAL);
+        previewSecondarySlotOne.setGravity(Gravity.CENTER_VERTICAL);
+        previewSecondarySlotTwo = new LinearLayout(this);
+        previewSecondarySlotTwo.setOrientation(LinearLayout.VERTICAL);
+        previewSecondarySlotTwo.setGravity(Gravity.CENTER_VERTICAL);
+        previewMain = text("正在播放的主歌词", 22, Color.WHITE);
+        previewTranslation = text("Current translation preview", 15, Color.WHITE);
+        previewSecondaryOne = text("下一行歌词预览", 22, Color.WHITE);
+        previewSecondaryTranslationOne = text("Next translation preview", 15, Color.WHITE);
+        previewSecondaryTwo = text("再下一行歌词预览", 22, Color.WHITE);
+        previewSecondaryTranslationTwo = text("Following translation preview", 15, Color.WHITE);
+        previewMain.setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+        preview.setBackgroundColor(0xFF202124);
+        previewActiveSlot.addView(previewMain, matchWrap());
+        previewActiveSlot.addView(previewTranslation, matchWrap());
+        preview.addView(previewActiveSlot, matchWrap());
+        previewSecondarySlotOne.addView(previewSecondaryOne, matchWrap());
+        previewSecondarySlotOne.addView(previewSecondaryTranslationOne, matchWrap());
+        preview.addView(previewSecondarySlotOne, matchWrap());
+        previewSecondarySlotTwo.addView(previewSecondaryTwo, matchWrap());
+        previewSecondarySlotTwo.addView(previewSecondaryTranslationTwo, matchWrap());
+        preview.addView(previewSecondarySlotTwo, matchWrap());
+        previewAnchor.addView(preview, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT));
+        content.addView(previewAnchor, marginBottom(dp(16)));
+
+        content.addView(section("绘制与动效"));
+        LinearLayout appearance = card();
+        opacity = seek(30, 100);
+        appearance.addView(labeledSeek("非活动歌词不透明度", opacity, "%", 30));
+        blurEnabled = toggle("模糊", false);
+        appearance.addView(blurEnabled);
+        blurRadius = seek(0, 16);
+        appearance.addView(labeledSeek("模糊半径", blurRadius, " × 0.5px", 0));
+        scaleEnabled = toggle("滚动缩放", false);
+        appearance.addView(scaleEnabled);
+        inactiveScale = seek(75, 100);
+        appearance.addView(labeledSeek("非活动缩放", inactiveScale, "%", 75));
+        glowEnabled = toggle("光晕", true);
+        appearance.addView(glowEnabled);
+        glowIntensity = seek(0, 100);
+        appearance.addView(labeledSeek("光晕强度", glowIntensity, "%", 0));
+        glowRadius = seek(10, 24);
+        appearance.addView(labeledSeek("光晕半径（字号比例）", glowRadius, "%", 10));
+        primaryColor = colorInput("歌词主色 #RRGGBB");
+        glowColor = colorInput("光晕色 #RRGGBB");
+        appearance.addView(primaryColor, matchWrap());
+        appearance.addView(glowColor, matchWrap());
+        motionMode = spinner(new String[]{"标准", "减少动态", "关闭"});
+        appearance.addView(row("动效", motionMode));
+        passiveVerticalPan = toggle("长歌词自动纵向浏览", true);
+        translationMarquee = toggle("长翻译自动横向滚动", true);
+        appearance.addView(passiveVerticalPan);
+        appearance.addView(translationMarquee);
+        content.addView(appearance, marginBottom(dp(16)));
+
+        content.addView(section("刷新策略"));
+        LinearLayout policy = card();
+        buildRefreshRateOptions();
+        refreshRate = spinner(refreshRateLabels());
+        policy.addView(row("最大动态刷新率", refreshRate));
+        content.addView(policy, marginBottom(dp(16)));
+
+        content.addView(section("兼容与屏幕"));
+        LinearLayout compatibility = card();
+        Button playerTranslationSettings = button("播放器翻译设置");
+        playerTranslationSettings.setOnClickListener(view -> startActivity(
+                new Intent(this, PlayerTranslationSettingsActivity.class)));
+        Button openingCleanupSettings = button("歌词开头信息清理");
+        openingCleanupSettings.setOnClickListener(view -> startActivity(
+                new Intent(this, LyricOpeningCleanupSettingsActivity.class)));
+        lineTimedProgress = toggle("普通逐行歌词进度", false);
+        translationProgress = toggle("翻译进度", false);
+        screenTimeout = toggle("歌词显示时保持屏幕点亮", true);
+        screenTimeoutSeconds = numberInput("自定义秒数（留空则保持常亮）");
+        compatibility.addView(playerTranslationSettings, matchWrap());
+        compatibility.addView(openingCleanupSettings, matchWrap());
+        compatibility.addView(lineTimedProgress);
+        compatibility.addView(translationProgress);
+        compatibility.addView(screenTimeout);
+        compatibility.addView(screenTimeoutSeconds, matchWrap());
+        content.addView(compatibility, marginBottom(dp(16)));
+
+        content.addView(section("高级排版"));
+        LinearLayout typography = card();
+        mainFontSize = seek(18, 26);
+        typography.addView(labeledSeek("主歌词字号", mainFontSize, " sp", 18));
+        translationFontRatio = seek(55, 75);
+        typography.addView(labeledSeek("翻译字号比例", translationFontRatio, "%", 55));
+        fontWeight = spinner(new String[]{"跟随系统", "常规", "中等", "粗体"});
+        typography.addView(row("字重", fontWeight));
+        alignment = spinner(new String[]{"左对齐", "居中", "右对齐"});
+        typography.addView(row("对齐", alignment));
+        lineSpacing = seek(-10, 40);
+        typography.addView(labeledHalfDpSeek("歌词行间距", lineSpacing));
+        content.addView(typography, marginBottom(dp(16)));
+
+        Button save = button("保存并应用");
+        save.setTextColor(Color.WHITE);
+        save.setBackgroundColor(TEXT);
+        save.setOnClickListener(view -> save());
+        content.addView(save, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(52)));
+
+        installDraftListeners();
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setClipToPadding(false);
+        scroll.addView(content);
+        installKeyboardAvoidance(scroll);
+        installKeyboardFocusRecovery(scroll, screenTimeoutSeconds);
+        FrameLayout root = new FrameLayout(this);
+        root.setBackgroundColor(BACKGROUND);
+        root.addView(scroll, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+        installFloatingPreview(root, scroll, previewAnchor, preview);
+        return root;
+    }
+
+    private void installFloatingPreview(
+            FrameLayout root,
+            ScrollView scroll,
+            FrameLayout anchor,
+            View preview) {
+        Runnable update = () -> scheduleFloatingPreviewUpdate(root, anchor, preview);
+        preview.addOnLayoutChangeListener((view, left, top, right, bottom,
+                oldLeft, oldTop, oldRight, oldBottom) -> {
+            int height = bottom - top;
+            if (height <= 0) return;
+            root.post(() -> {
+                ViewGroup.LayoutParams params = anchor.getLayoutParams();
+                if (params != null && params.height != height) {
+                    params.height = height;
+                    anchor.setLayoutParams(params);
+                }
+                update.run();
+            });
+        });
+        root.addOnLayoutChangeListener((view, left, top, right, bottom,
+                oldLeft, oldTop, oldRight, oldBottom) -> update.run());
+        scroll.setOnScrollChangeListener((view, scrollX, scrollY, oldScrollX, oldScrollY) ->
+                update.run());
+        update.run();
+    }
+
+    private void scheduleFloatingPreviewUpdate(
+            FrameLayout root,
+            FrameLayout anchor,
+            View preview) {
+        if (floatingPreviewUpdatePosted) {
+            return;
+        }
+        floatingPreviewUpdatePosted = true;
+        root.post(() -> {
+            floatingPreviewUpdatePosted = false;
+            if (root.isInLayout() || anchor.isInLayout()) {
+                scheduleFloatingPreviewUpdate(root, anchor, preview);
+                return;
             }
-            window.getDecorView().setSystemUiVisibility(flags);
+            updateFloatingPreviewPosition(root, anchor, preview);
+        });
+    }
+
+    private void updateFloatingPreviewPosition(
+            FrameLayout root,
+            FrameLayout anchor,
+            View preview) {
+        if (root.getHeight() <= 0 || anchor.getHeight() <= 0 || preview.getHeight() <= 0) {
+            return;
+        }
+        int[] rootLocation = new int[2];
+        int[] anchorLocation = new int[2];
+        root.getLocationOnScreen(rootLocation);
+        anchor.getLocationOnScreen(anchorLocation);
+        float naturalTop = anchorLocation[1] - rootLocation[1];
+        float stickyTop = Math.max(
+                5f,
+                resolveTopUiBoundaryOnScreen() - rootLocation[1] + 5f);
+        boolean floating = naturalTop <= stickyTop;
+        ViewParent previewParent = preview.getParent();
+        // Keep the preview inside the ScrollView until it actually becomes sticky. This lets
+        // Android's overscroll stretch and rebound transform the preview together with the page.
+        if (floating && previewParent != root) {
+            if (previewParent instanceof ViewGroup) {
+                ((ViewGroup) previewParent).removeView(preview);
+            }
+            FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT);
+            params.leftMargin = dp(20);
+            params.rightMargin = dp(20);
+            preview.setTranslationY(stickyTop);
+            root.addView(preview, params);
+        } else if (!floating && previewParent != anchor) {
+            if (previewParent instanceof ViewGroup) {
+                ((ViewGroup) previewParent).removeView(preview);
+            }
+            preview.setTranslationY(0f);
+            anchor.addView(preview, new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT));
+        } else {
+            preview.setTranslationY(floating ? stickyTop : 0f);
+        }
+        float transitionDistance = dp(32);
+        float floatingAmount = 1f - Math.max(
+                0f,
+                Math.min(1f, (naturalTop - stickyTop) / transitionDistance));
+        preview.setElevation(dp(8) * floatingAmount);
+        if (preview.getVisibility() != View.VISIBLE) {
+            preview.setVisibility(View.VISIBLE);
         }
     }
 
-    private View createContentView() {
-        LinearLayout content = new LinearLayout(this);
-        content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(24), getTopContentPadding(), dp(24), dp(28));
-        content.setBackgroundColor(COLOR_BACKGROUND);
+    private int resolveTopUiBoundaryOnScreen() {
+        View decor = getWindow().getDecorView();
+        View content = decor.findViewById(android.R.id.content);
+        if (content != null && content.getVisibility() == View.VISIBLE) {
+            int[] location = new int[2];
+            content.getLocationOnScreen(location);
+            if (location[1] > 0) return location[1];
+        }
 
-        content.addView(createNoticeCard(), matchWrapWithBottomMargin(dp(18)));
-
-        TextView sectionTitle = new TextView(this);
-        sectionTitle.setText(getString(R.string.lyric_ui_effects_section));
-        sectionTitle.setTextColor(COLOR_TEXT_TERTIARY);
-        sectionTitle.setTextSize(13f);
-        sectionTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        sectionTitle.setPadding(dp(4), 0, 0, dp(8));
-        content.addView(sectionTitle, matchWrap());
-
-        LinearLayout card = createCard();
-        defaultSwitch = addSwitchPreference(
-                card,
-                getString(R.string.lyric_ui_default_style),
-                getString(R.string.lyric_ui_default_style_summary),
-                true);
-        lineTimedProgressSwitch = addSwitchPreference(
-                card,
-                getString(R.string.lyric_ui_line_timed_progress),
-                getString(R.string.lyric_ui_line_timed_progress_summary),
-                true);
-        translationProgressSwitch = addSwitchPreference(
-                card,
-                getString(R.string.lyric_ui_translation_progress),
-                getString(R.string.lyric_ui_translation_progress_summary),
-                true);
-        scrollScaleSwitch = addSwitchPreference(
-                card,
-                getString(R.string.lyric_ui_scroll_scale),
-                getString(R.string.lyric_ui_scroll_scale_summary),
-                true);
-        inactiveBlurSwitch = addSwitchPreference(
-                card,
-                getString(R.string.lyric_ui_inactive_blur),
-                getString(R.string.lyric_ui_inactive_blur_summary),
-                false);
-        content.addView(card, matchWrapWithBottomMargin(dp(18)));
-
-        TextView screenSectionTitle = new TextView(this);
-        screenSectionTitle.setText(getString(R.string.lyric_ui_screen_section));
-        screenSectionTitle.setTextColor(COLOR_TEXT_TERTIARY);
-        screenSectionTitle.setTextSize(13f);
-        screenSectionTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        screenSectionTitle.setPadding(dp(4), 0, 0, dp(8));
-        content.addView(screenSectionTitle, matchWrap());
-
-        LinearLayout screenCard = createCard();
-        screenTimeoutSwitch = addSwitchPreference(
-                screenCard,
-                getString(R.string.lyric_ui_screen_timeout),
-                getString(R.string.lyric_ui_screen_timeout_summary),
-                true);
-        screenTimeoutSecondsInput = addNumberPreference(
-                screenCard,
-                getString(R.string.lyric_ui_screen_timeout_seconds),
-                getString(R.string.lyric_ui_screen_timeout_seconds_summary),
-                getString(R.string.lyric_ui_screen_timeout_seconds_hint),
-                getString(R.string.lyric_ui_seconds_unit));
-        content.addView(screenCard, matchWrapWithBottomMargin(dp(18)));
-
-        Button saveButton = new Button(this);
-        saveButton.setText(getString(R.string.lyric_ui_save));
-        saveButton.setAllCaps(false);
-        saveButton.setTextSize(16f);
-        saveButton.setTextColor(Color.WHITE);
-        saveButton.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        saveButton.setBackground(roundedDrawable(COLOR_TEXT_PRIMARY, 18));
-        saveButton.setMinHeight(dp(52));
-        saveButton.setOnClickListener(v -> saveCurrentSettings());
-        content.addView(saveButton, matchWrap());
-
-        CompoundButton.OnCheckedChangeListener listener = this::onSwitchChanged;
-        defaultSwitch.setOnCheckedChangeListener(listener);
-        lineTimedProgressSwitch.setOnCheckedChangeListener(listener);
-        translationProgressSwitch.setOnCheckedChangeListener(listener);
-        scrollScaleSwitch.setOnCheckedChangeListener(listener);
-        inactiveBlurSwitch.setOnCheckedChangeListener(listener);
-        screenTimeoutSwitch.setOnCheckedChangeListener(listener);
-
-        Space bottomSpace = new Space(this);
-        content.addView(bottomSpace, new LinearLayout.LayoutParams(1, dp(28)));
-
-        ScrollView scrollView = new ScrollView(this);
-        scrollView.setFillViewport(true);
-        scrollView.setClipToPadding(false);
-        scrollView.setBackgroundColor(COLOR_BACKGROUND);
-        scrollView.addView(content);
-        installKeyboardAvoidance(scrollView);
-        screenTimeoutSecondsInput.setOnFocusChangeListener((v, hasFocus) -> {
-            if (hasFocus) {
-                scrollView.postDelayed(() -> scrollFocusedInputIntoView(scrollView), 120L);
-                scrollView.postDelayed(() -> scrollFocusedInputIntoView(scrollView), 320L);
+        int actionBarHeight = 0;
+        ActionBar actionBar = getActionBar();
+        if (actionBar != null) {
+            actionBarHeight = actionBar.getHeight();
+        }
+        if (actionBarHeight <= 0) {
+            TypedValue actionBarSize = new TypedValue();
+            if (getTheme().resolveAttribute(
+                    android.R.attr.actionBarSize,
+                    actionBarSize,
+                    true)) {
+                actionBarHeight = TypedValue.complexToDimensionPixelSize(
+                        actionBarSize.data,
+                        getResources().getDisplayMetrics());
             }
-        });
-        return scrollView;
+        }
+        Rect visibleFrame = new Rect();
+        decor.getWindowVisibleDisplayFrame(visibleFrame);
+        return Math.max(0, visibleFrame.top) + actionBarHeight;
+    }
+
+    private void installDraftListeners() {
+        presetSpinner.setOnItemSelectedListener(new SimpleItemSelectedListener(position -> {
+            if (binding || position >= LyricUiPreset.CUSTOM.ordinal()) return;
+            bind(LyricUiPreset.values()[position].apply(readDraft()));
+        }));
+        View.OnClickListener changed = view -> onDraftChanged();
+        for (Switch toggle : new Switch[]{blurEnabled, scaleEnabled, glowEnabled,
+                passiveVerticalPan, translationMarquee,
+                lineTimedProgress, translationProgress, screenTimeout}) {
+            toggle.setOnClickListener(changed);
+        }
+        for (SeekBar seekBar : new SeekBar[]{opacity, blurRadius, inactiveScale,
+                glowIntensity, glowRadius, mainFontSize, translationFontRatio,
+                lineSpacing}) {
+            seekBar.setOnSeekBarChangeListener(new SimpleSeekListener(() -> {
+                Object tag = seekBar.getTag();
+                if (tag instanceof SeekValueLabel) ((SeekValueLabel) tag).update();
+                onDraftChanged();
+            }));
+        }
+        motionMode.setOnItemSelectedListener(new SimpleItemSelectedListener(p -> onDraftChanged()));
+        refreshRate.setOnItemSelectedListener(new SimpleItemSelectedListener(p -> onDraftChanged()));
+        fontWeight.setOnItemSelectedListener(new SimpleItemSelectedListener(p -> onDraftChanged()));
+        alignment.setOnItemSelectedListener(new SimpleItemSelectedListener(p -> onDraftChanged()));
+        primaryColor.addTextChangedListener(new SimpleTextWatcher(this::onDraftChanged));
+        glowColor.addTextChangedListener(new SimpleTextWatcher(this::onDraftChanged));
+    }
+
+    private void onDraftChanged() {
+        if (!binding) bindPreview(readDraft());
+    }
+
+    private LyricUiConfig readDraft() {
+        int refreshIndex = refreshRate == null ? 0 : refreshRate.getSelectedItemPosition();
+        int refresh = refreshIndex >= 0 && refreshIndex < refreshRateValues.length
+                ? refreshRateValues[refreshIndex] : 0;
+        return draft.buildUpon()
+                .inactiveOpacityPercent(opacity.getProgress())
+                .blurEnabled(blurEnabled.isChecked())
+                .blurRadiusTenthsPx(blurRadius.getProgress() * 5)
+                .scaleEnabled(scaleEnabled.isChecked())
+                .inactiveScalePercent(inactiveScale.getProgress())
+                .glowEnabled(glowEnabled.isChecked())
+                .glowIntensityPercent(glowIntensity.getProgress())
+                .glowRadiusPercent(glowRadius.getProgress())
+                .primaryColor(primaryColor.getText().toString())
+                .glowColor(glowColor.getText().toString())
+                .motionMode(motionMode.getSelectedItemPosition())
+                .passiveVerticalPanEnabled(passiveVerticalPan.isChecked())
+                .translationMarqueeEnabled(translationMarquee.isChecked())
+                .maxRefreshRateHz(refresh)
+                .defaultTranslationEnabled(LyricUiConfigRepository.load(
+                        preferences).defaultTranslationEnabled)
+                .lineTimedProgressEnabled(lineTimedProgress.isChecked())
+                .translationProgressEnabled(translationProgress.isChecked())
+                .screenTimeoutEnabled(screenTimeout.isChecked())
+                .screenTimeoutSeconds(readInt(screenTimeoutSeconds))
+                .mainFontTenthsSp(mainFontSize.getProgress() * 10)
+                .translationFontRatioPercent(translationFontRatio.getProgress())
+                .fontWeight(fontWeight.getSelectedItemPosition())
+                .alignment(alignment.getSelectedItemPosition())
+                .lineSpacingTenthsDp(lineSpacing.getProgress() * 5)
+                .build();
+    }
+
+    private void bind(LyricUiConfig config) {
+        draft = config;
+        binding = true;
+        opacity.setProgress(config.inactiveOpacityPercent);
+        blurEnabled.setChecked(config.blurEnabled);
+        blurRadius.setProgress(config.blurRadiusTenthsPx / 5);
+        scaleEnabled.setChecked(config.scaleEnabled);
+        inactiveScale.setProgress(config.inactiveScalePercent);
+        glowEnabled.setChecked(config.glowEnabled);
+        glowIntensity.setProgress(config.glowIntensityPercent);
+        glowRadius.setProgress(config.glowRadiusPercent);
+        primaryColor.setText(config.primaryColor);
+        glowColor.setText(config.glowColor);
+        motionMode.setSelection(config.motionMode);
+        passiveVerticalPan.setChecked(config.passiveVerticalPanEnabled);
+        translationMarquee.setChecked(config.translationMarqueeEnabled);
+        refreshRate.setSelection(indexOfRefresh(config.maxRefreshRateHz));
+        lineTimedProgress.setChecked(config.lineTimedProgressEnabled);
+        translationProgress.setChecked(config.translationProgressEnabled);
+        screenTimeout.setChecked(config.screenTimeoutEnabled);
+        screenTimeoutSeconds.setText(config.screenTimeoutSeconds <= 0
+                ? "" : Integer.toString(config.screenTimeoutSeconds));
+        mainFontSize.setProgress(config.mainFontTenthsSp / 10);
+        translationFontRatio.setProgress(config.translationFontRatioPercent);
+        fontWeight.setSelection(config.fontWeight);
+        alignment.setSelection(config.alignment);
+        lineSpacing.setProgress(config.lineSpacingTenthsDp / 5);
+        presetSpinner.setSelection(LyricUiPreset.detect(config).ordinal());
+        binding = false;
+        bindPreview(config);
+    }
+
+    private void bindPreview(LyricUiConfig config) {
+        int color = Color.parseColor(LyricUiConfig.sanitizeColor(config.primaryColor, "#FFFFFF"));
+        previewMain.setTextColor(color);
+        previewMain.setAlpha(1f);
+        previewTranslation.setTextColor(LyricUiColors.translationBase(config, false, 1f));
+        previewTranslation.setAlpha(1f);
+        previewSecondaryOne.setTextColor(color);
+        previewSecondaryTwo.setTextColor(color);
+        previewSecondaryOne.setAlpha(config.inactiveOpacityPercent / 100f);
+        previewSecondaryTwo.setAlpha(config.inactiveOpacityPercent / 100f);
+        int inactiveTranslationColor = LyricUiColors.translationBase(config, false, 0f);
+        previewSecondaryTranslationOne.setTextColor(inactiveTranslationColor);
+        previewSecondaryTranslationTwo.setTextColor(inactiveTranslationColor);
+        previewSecondaryTranslationOne.setAlpha(1f);
+        previewSecondaryTranslationTwo.setAlpha(1f);
+        float mainTextSizeSp = config.mainFontTenthsSp / 10f;
+        previewMain.setTextSize(mainTextSizeSp);
+        previewTranslation.setTextSize(
+                mainTextSizeSp * config.translationFontRatioPercent / 100f);
+        float translationTextSizeSp =
+                mainTextSizeSp * config.translationFontRatioPercent / 100f;
+        previewSecondaryOne.setTextSize(mainTextSizeSp);
+        previewSecondaryTranslationOne.setTextSize(translationTextSizeSp);
+        previewSecondaryTwo.setTextSize(mainTextSizeSp);
+        previewSecondaryTranslationTwo.setTextSize(translationTextSizeSp);
+        previewMain.setTypeface(resolvePreviewTypeface(config.fontWeight));
+        previewTranslation.setTypeface(resolvePreviewTypeface(config.fontWeight));
+        previewSecondaryOne.setTypeface(resolvePreviewTypeface(config.fontWeight));
+        previewSecondaryTranslationOne.setTypeface(resolvePreviewTypeface(config.fontWeight));
+        previewSecondaryTwo.setTypeface(resolvePreviewTypeface(config.fontWeight));
+        previewSecondaryTranslationTwo.setTypeface(resolvePreviewTypeface(config.fontWeight));
+        float inactiveScale = config.scaleEnabled
+                ? config.inactiveScalePercent / 100f
+                : 1f;
+        for (LinearLayout secondary : new LinearLayout[]{
+                previewSecondarySlotOne,
+                previewSecondarySlotTwo}) {
+            secondary.setScaleX(inactiveScale);
+            secondary.setScaleY(inactiveScale);
+            updatePreviewScalePivot(secondary, config.alignment);
+            applyPreviewBlur(
+                    secondary,
+                    config.blurEnabled,
+                    config.blurRadiusTenthsPx / 10f);
+        }
+        if (config.glowEnabled && config.glowIntensityPercent > 0) {
+            float mainTextSizePx = mainTextSizeSp
+                    * getResources().getDisplayMetrics().scaledDensity;
+            previewMain.setShadowLayer(
+                    Math.max(1f, mainTextSizePx * config.glowRadiusPercent / 100f),
+                    0f,
+                    0f,
+                    LyricUiColors.glowShadow(config));
+        } else {
+            previewMain.setShadowLayer(0f, 0f, 0f, Color.TRANSPARENT);
+        }
+        int gravity = config.alignment == LyricUiConfig.ALIGN_CENTER
+                ? Gravity.CENTER_HORIZONTAL
+                : config.alignment == LyricUiConfig.ALIGN_END ? Gravity.END : Gravity.START;
+        previewMain.setGravity(gravity);
+        previewTranslation.setGravity(gravity);
+        previewSecondaryOne.setGravity(gravity);
+        previewSecondaryTranslationOne.setGravity(gravity);
+        previewSecondaryTwo.setGravity(gravity);
+        previewSecondaryTranslationTwo.setGravity(gravity);
+        for (TextView line : new TextView[]{
+                previewMain,
+                previewTranslation,
+                previewSecondaryOne,
+                previewSecondaryTranslationOne,
+                previewSecondaryTwo,
+                previewSecondaryTranslationTwo}) {
+            updatePreviewOpticalCenter(line, config.alignment);
+        }
+        int previewSpacing = dp(
+                LyricUiLayoutPolicy.lineSpacingTenthsDp(config) / 10f);
+        previewMain.setIncludeFontPadding(false);
+        previewTranslation.setIncludeFontPadding(false);
+        previewSecondaryOne.setIncludeFontPadding(false);
+        previewSecondaryTranslationOne.setIncludeFontPadding(false);
+        previewSecondaryTwo.setIncludeFontPadding(false);
+        previewSecondaryTranslationTwo.setIncludeFontPadding(false);
+        setBottomMargin(previewMain, dp(2f));
+        setBottomMargin(previewTranslation, 0);
+        setBottomMargin(previewSecondaryOne, dp(2f));
+        setBottomMargin(previewSecondaryTranslationOne, 0);
+        setBottomMargin(previewSecondaryTwo, dp(2f));
+        setBottomMargin(previewSecondaryTranslationTwo, 0);
+        setPreviewSlotHeight(
+                previewActiveSlot,
+                previewTranslatedSlotHeight(config, previewMain, previewTranslation));
+        setPreviewSlotHeight(
+                previewSecondarySlotOne,
+                previewTranslatedSlotHeight(
+                        config,
+                        previewSecondaryOne,
+                        previewSecondaryTranslationOne));
+        setPreviewSlotHeight(
+                previewSecondarySlotTwo,
+                previewTranslatedSlotHeight(
+                        config,
+                        previewSecondaryTwo,
+                        previewSecondaryTranslationTwo));
+        setBottomMargin(previewActiveSlot, previewSpacing);
+        setBottomMargin(previewSecondarySlotOne, previewSpacing);
+        setBottomMargin(previewSecondarySlotTwo, 0);
+        LyricUiPreset preset = LyricUiPreset.detect(config);
+        if (!binding) {
+            binding = true;
+            presetSpinner.setSelection(preset.ordinal());
+            binding = false;
+        }
+    }
+
+    private void updatePreviewOpticalCenter(TextView view, int alignmentMode) {
+        if (alignmentMode != LyricUiConfig.ALIGN_CENTER || view == null) {
+            if (view != null) view.setTranslationX(0f);
+            return;
+        }
+        String text = view.getText() == null ? "" : view.getText().toString();
+        if (text.isEmpty()) {
+            view.setTranslationX(0f);
+            return;
+        }
+        Rect bounds = new Rect();
+        view.getPaint().getTextBounds(text, 0, text.length(), bounds);
+        if (bounds.isEmpty()) {
+            view.setTranslationX(0f);
+            return;
+        }
+        float advanceWidth = view.getPaint().measureText(text);
+        view.setTranslationX(LyricUiLayoutPolicy.opticallyCenteredBaselineX(
+                0f,
+                advanceWidth,
+                bounds.left,
+                bounds.right));
+    }
+
+    private void updatePreviewScalePivot(View view, int alignmentMode) {
+        Runnable update = () -> {
+            int width = view.getWidth();
+            if (width <= 0) return;
+            boolean rtl = view.getLayoutDirection() == View.LAYOUT_DIRECTION_RTL;
+            view.setPivotX(LyricUiLayoutPolicy.horizontalScalePivot(
+                    alignmentMode,
+                    rtl,
+                    0f,
+                    width));
+            view.setPivotY(view.getHeight() / 2f);
+        };
+        if (view.getWidth() > 0) {
+            update.run();
+        } else {
+            view.post(update);
+        }
+    }
+
+    private int previewTranslatedSlotHeight(
+            LyricUiConfig config,
+            TextView main,
+            TextView translation) {
+        android.graphics.Paint.FontMetrics mainMetrics = main.getPaint().getFontMetrics();
+        android.graphics.Paint.FontMetrics translationMetrics =
+                translation.getPaint().getFontMetrics();
+        float groupHeight = LyricUiLayoutPolicy.fontOuterHeight(
+                mainMetrics.top,
+                mainMetrics.bottom)
+                + dp(2f)
+                + LyricUiLayoutPolicy.fontOuterHeight(
+                translationMetrics.top,
+                translationMetrics.bottom);
+        return previewSlotHeight(config, groupHeight, main.getPaint().getTextSize());
+    }
+
+    private int previewSlotHeight(
+            LyricUiConfig config,
+            float groupHeight,
+            float mainTextSizePx) {
+        int verticalPadding = dp(12f);
+        if (config.glowEnabled) {
+            verticalPadding = Math.max(
+                    verticalPadding,
+                    Math.round(mainTextSizePx * config.glowRadiusPercent / 50f) + dp(2f));
+        }
+        return LyricUiLayoutPolicy.requiredSlotHeight(
+                groupHeight,
+                verticalPadding,
+                dp(1f),
+                dp(56f));
+    }
+
+    private static void setPreviewSlotHeight(View view, int height) {
+        if (view == null || !(view.getLayoutParams() instanceof LinearLayout.LayoutParams)) {
+            return;
+        }
+        LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) view.getLayoutParams();
+        if (params.height == height) return;
+        params.height = height;
+        view.setLayoutParams(params);
+    }
+
+    private void save() {
+        String primary = primaryColor.getText().toString().trim();
+        String glow = glowColor.getText().toString().trim();
+        if (!COLOR_PATTERN.matcher(primary).matches() || !COLOR_PATTERN.matcher(glow).matches()) {
+            Toast.makeText(this, "颜色必须为 #RRGGBB", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        LyricUiConfig config = readDraft();
+        LyricUiConfigRepository.save(preferences, config);
+        Intent intent = LyricUiConfigRepository.putSnapshot(
+                new Intent(LyricUiSettings.ACTION_STYLE_CHANGED)
+                        .setPackage("com.android.systemui"),
+                config);
+        // SystemUI registers its dynamic receiver with CHANGE_SETTINGS_PERMISSION, which
+        // authenticates this sender. Passing the same value as receiverPermission would
+        // instead require SystemUI to hold our signature permission and drop the broadcast.
+        sendBroadcast(intent);
+        draft = config;
+        Toast.makeText(this, "已保存并应用", Toast.LENGTH_SHORT).show();
+    }
+
+    private Typeface resolvePreviewTypeface(int weight) {
+        if (weight == LyricUiConfig.WEIGHT_BOLD) return Typeface.DEFAULT_BOLD;
+        if (weight == LyricUiConfig.WEIGHT_MEDIUM && Build.VERSION.SDK_INT >= 28) {
+            return Typeface.create(Typeface.DEFAULT, 500, false);
+        }
+        return Typeface.DEFAULT;
+    }
+
+    private static void applyPreviewBlur(View view, boolean enabled, float radiusPx) {
+        if (Build.VERSION.SDK_INT < 31 || view == null) return;
+        if (enabled && radiusPx > 0f) {
+            view.setRenderEffect(RenderEffect.createBlurEffect(
+                    radiusPx,
+                    radiusPx,
+                    Shader.TileMode.CLAMP));
+        } else {
+            view.setRenderEffect(null);
+        }
+    }
+
+    private static void setBottomMargin(View view, int margin) {
+        if (view == null || !(view.getLayoutParams() instanceof LinearLayout.LayoutParams)) {
+            return;
+        }
+        LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) view.getLayoutParams();
+        if (params.bottomMargin == margin) return;
+        params.bottomMargin = margin;
+        view.setLayoutParams(params);
+    }
+
+    private static String nonEmpty(String value, String fallback) {
+        return value == null || value.isEmpty() ? fallback : value;
+    }
+
+    private void buildRefreshRateOptions() {
+        boolean has60 = false, has90 = false, has120 = false;
+        @SuppressWarnings("deprecation")
+        Display display = getWindowManager().getDefaultDisplay();
+        if (display != null) {
+            for (Display.Mode mode : display.getSupportedModes()) {
+                int rate = Math.round(mode.getRefreshRate());
+                has60 |= Math.abs(rate - 60) <= 1;
+                has90 |= Math.abs(rate - 90) <= 1;
+                has120 |= Math.abs(rate - 120) <= 1;
+            }
+        }
+        List<Integer> rates = new ArrayList<>();
+        rates.add(0);
+        if (has60) rates.add(60);
+        if (has90) rates.add(90);
+        if (has120) rates.add(120);
+        refreshRateValues = new int[rates.size()];
+        for (int i = 0; i < rates.size(); i++) refreshRateValues[i] = rates.get(i);
+    }
+
+    private String[] refreshRateLabels() {
+        String[] labels = new String[refreshRateValues.length];
+        for (int i = 0; i < labels.length; i++) {
+            labels[i] = refreshRateValues[i] == 0 ? "跟随屏幕" : refreshRateValues[i] + " Hz";
+        }
+        return labels;
+    }
+
+    private int indexOfRefresh(int value) {
+        for (int i = 0; i < refreshRateValues.length; i++) if (refreshRateValues[i] == value) return i;
+        return 0;
+    }
+
+    private LinearLayout card() {
+        LinearLayout view = new LinearLayout(this);
+        view.setOrientation(LinearLayout.VERTICAL);
+        view.setPadding(dp(14), dp(10), dp(14), dp(12));
+        view.setBackgroundColor(CARD);
+        return view;
+    }
+
+    private TextView section(String title) {
+        TextView view = text(title, 13, 0x99000000);
+        view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        view.setPadding(dp(4), dp(4), 0, dp(8));
+        return view;
+    }
+
+    private LinearLayout row(String label, View control) {
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        TextView text = text(label, 16, TEXT);
+        text.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
+        text.setIncludeFontPadding(false);
+        row.addView(text, new LinearLayout.LayoutParams(0, dp(54), 1f));
+        row.addView(control, new LinearLayout.LayoutParams(dp(150), dp(54)));
+        return row;
+    }
+
+    private View labeledSeek(String label, SeekBar seekBar, String suffix, int base) {
+        LinearLayout group = new LinearLayout(this);
+        group.setOrientation(LinearLayout.VERTICAL);
+        TextView title = text(label, 15, TEXT);
+        TextView value = text("", 13, 0x99000000);
+        group.addView(title);
+        group.addView(value);
+        group.addView(seekBar, matchWrap());
+        Runnable update = () -> value.setText(String.format(
+                Locale.ROOT, "%d%s", seekBar.getProgress(), suffix));
+        seekBar.setTag(new SeekValueLabel(update));
+        update.run();
+        return group;
+    }
+
+    private View labeledHalfDpSeek(String label, SeekBar seekBar) {
+        LinearLayout group = new LinearLayout(this);
+        group.setOrientation(LinearLayout.VERTICAL);
+        TextView title = text(label, 15, TEXT);
+        TextView value = text("", 13, 0x99000000);
+        group.addView(title);
+        group.addView(value);
+        group.addView(seekBar, matchWrap());
+        Runnable update = () -> value.setText(String.format(
+                Locale.ROOT,
+                "%.1f dp",
+                seekBar.getProgress() * 0.5f));
+        seekBar.setTag(new SeekValueLabel(update));
+        update.run();
+        return group;
+    }
+
+    private SeekBar seek(int min, int max) {
+        SeekBar seek = new SeekBar(this);
+        seek.setMin(min);
+        seek.setMax(max);
+        return seek;
+    }
+
+    private Switch toggle(String label, boolean checked) {
+        Switch view = new Switch(this);
+        view.setText(label);
+        view.setTextSize(16);
+        view.setTextColor(TEXT);
+        view.setChecked(checked);
+        view.setGravity(Gravity.CENTER_VERTICAL);
+        view.setIncludeFontPadding(false);
+        view.setMinHeight(dp(54));
+        return view;
+    }
+
+    private Spinner spinner(String[] values) {
+        Spinner spinner = new Spinner(this);
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(
+                this,
+                android.R.layout.simple_spinner_item,
+                values);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spinner.setAdapter(adapter);
+        spinner.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
+        return spinner;
+    }
+
+    private EditText colorInput(String hint) {
+        EditText input = new EditText(this);
+        disableAutofill(input);
+        input.setHint(hint);
+        input.setSingleLine(true);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS);
+        return input;
+    }
+
+    private EditText numberInput(String hint) {
+        EditText input = new EditText(this);
+        disableAutofill(input);
+        input.setHint(hint);
+        input.setSingleLine(true);
+        input.setInputType(InputType.TYPE_CLASS_NUMBER);
+        return input;
+    }
+
+    private Button button(String label) {
+        Button button = new Button(this);
+        button.setText(label);
+        button.setAllCaps(false);
+        return button;
+    }
+
+    private TextView text(String value, float size, int color) {
+        TextView text = new TextView(this);
+        text.setText(value);
+        text.setTextSize(size);
+        text.setTextColor(color);
+        return text;
+    }
+
+    private int readInt(EditText input) {
+        try { return Integer.parseInt(input.getText().toString().trim()); }
+        catch (RuntimeException ignored) { return 0; }
     }
 
     private void installKeyboardAvoidance(ScrollView scrollView) {
@@ -195,7 +911,8 @@ public final class LyricUiSettingsActivity extends Activity {
                                     scrollView.getPaddingRight(),
                                     bottomPadding);
                         }
-                        if (keyboardVisible && screenTimeoutSecondsInput.hasFocus()) {
+                        View focused = getCurrentFocus();
+                        if (keyboardVisible && focused == screenTimeoutSeconds) {
                             scrollView.postDelayed(
                                     () -> scrollFocusedInputIntoView(scrollView),
                                     80L);
@@ -204,11 +921,18 @@ public final class LyricUiSettingsActivity extends Activity {
                 });
     }
 
+    private void installKeyboardFocusRecovery(ScrollView scrollView, View input) {
+        if (input == null) return;
+        input.setOnFocusChangeListener((view, hasFocus) -> {
+            if (!hasFocus) return;
+            scrollView.postDelayed(() -> scrollFocusedInputIntoView(scrollView), 120L);
+            scrollView.postDelayed(() -> scrollFocusedInputIntoView(scrollView), 320L);
+        });
+    }
+
     private void scrollFocusedInputIntoView(ScrollView scrollView) {
         View focused = getCurrentFocus();
-        if (focused == null) {
-            return;
-        }
+        if (focused == null) return;
         int[] focusedLocation = new int[2];
         int[] scrollLocation = new int[2];
         focused.getLocationOnScreen(focusedLocation);
@@ -224,376 +948,22 @@ public final class LyricUiSettingsActivity extends Activity {
         }
     }
 
-    private LinearLayout createNoticeCard() {
-        LinearLayout card = createCard();
-        card.setBackground(roundedDrawable(COLOR_NOTICE_BACKGROUND, 18));
-        card.setPadding(dp(18), dp(15), dp(18), dp(15));
-
-        TextView title = new TextView(this);
-        title.setText(getString(R.string.lyric_ui_restart_notice_title));
-        title.setTextColor(COLOR_NOTICE_TITLE);
-        title.setTextSize(16f);
-        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        title.setIncludeFontPadding(false);
-        card.addView(title, matchWrap());
-
-        TextView summary = new TextView(this);
-        summary.setText(getString(R.string.lyric_ui_restart_notice_summary));
-        summary.setTextColor(COLOR_NOTICE_SUMMARY);
-        summary.setTextSize(13f);
-        summary.setLineSpacing(dp(2), 1f);
-        summary.setPadding(0, dp(7), 0, 0);
-        card.addView(summary, matchWrap());
-        return card;
-    }
-
-    private LinearLayout createCard() {
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setBackground(roundedDrawable(COLOR_CARD, 22));
-        card.setClipToOutline(false);
-        return card;
-    }
-
-    private Switch addSwitchPreference(
-            LinearLayout card,
-            String title,
-            String summary,
-            boolean withDivider) {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setMinimumHeight(dp(78));
-        row.setPadding(dp(18), dp(12), dp(14), dp(12));
-
-        LinearLayout labels = new LinearLayout(this);
-        labels.setOrientation(LinearLayout.VERTICAL);
-        labels.setGravity(Gravity.CENTER_VERTICAL);
-
-        TextView titleView = new TextView(this);
-        titleView.setText(title);
-        titleView.setTextColor(COLOR_TEXT_PRIMARY);
-        titleView.setTextSize(16f);
-        titleView.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        titleView.setIncludeFontPadding(false);
-        labels.addView(titleView, matchWrap());
-
-        TextView summaryView = new TextView(this);
-        summaryView.setText(summary);
-        summaryView.setTextColor(COLOR_TEXT_SECONDARY);
-        summaryView.setTextSize(13f);
-        summaryView.setLineSpacing(dp(2), 1f);
-        summaryView.setPadding(0, dp(7), dp(16), 0);
-        labels.addView(summaryView, matchWrap());
-
-        Switch switchView = new Switch(this);
-        row.addView(labels, new LinearLayout.LayoutParams(
-                0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                1f));
-        row.addView(switchView, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
-        row.setOnClickListener(v -> switchView.setChecked(!switchView.isChecked()));
-
-        card.addView(row, matchWrap());
-        if (withDivider) {
-            View divider = new View(this);
-            divider.setBackgroundColor(COLOR_DIVIDER);
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    Math.max(1, dp(0.5f)));
-            params.leftMargin = dp(18);
-            card.addView(divider, params);
-        }
-        return switchView;
-    }
-
-    private EditText addNumberPreference(
-            LinearLayout card,
-            String title,
-            String summary,
-            String hint,
-            String unit) {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setMinimumHeight(dp(78));
-        row.setPadding(dp(18), dp(12), dp(14), dp(12));
-
-        LinearLayout labels = new LinearLayout(this);
-        labels.setOrientation(LinearLayout.VERTICAL);
-        labels.setGravity(Gravity.CENTER_VERTICAL);
-
-        TextView titleView = new TextView(this);
-        titleView.setText(title);
-        titleView.setTextColor(COLOR_TEXT_PRIMARY);
-        titleView.setTextSize(16f);
-        titleView.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        titleView.setIncludeFontPadding(false);
-        labels.addView(titleView, matchWrap());
-
-        TextView summaryView = new TextView(this);
-        summaryView.setText(summary);
-        summaryView.setTextColor(COLOR_TEXT_SECONDARY);
-        summaryView.setTextSize(13f);
-        summaryView.setLineSpacing(dp(2), 1f);
-        summaryView.setPadding(0, dp(7), dp(16), 0);
-        labels.addView(summaryView, matchWrap());
-
-        EditText input = new EditText(this);
-        input.setSingleLine(true);
-        input.setInputType(InputType.TYPE_CLASS_NUMBER);
-        input.setHint(hint);
-        input.setTextColor(COLOR_TEXT_PRIMARY);
-        input.setHintTextColor(COLOR_TEXT_TERTIARY);
-        input.setTextSize(16f);
-        input.setGravity(Gravity.CENTER);
-        input.setSelectAllOnFocus(true);
-
-        TextView unitView = new TextView(this);
-        unitView.setText(unit);
-        unitView.setTextColor(COLOR_TEXT_PRIMARY);
-        unitView.setTextSize(15f);
-        unitView.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        unitView.setPadding(dp(8), 0, 0, 0);
-
-        LinearLayout inputGroup = new LinearLayout(this);
-        inputGroup.setOrientation(LinearLayout.HORIZONTAL);
-        inputGroup.setGravity(Gravity.CENTER_VERTICAL);
-        inputGroup.addView(input, new LinearLayout.LayoutParams(
-                dp(82),
-                LinearLayout.LayoutParams.WRAP_CONTENT));
-        inputGroup.addView(unitView, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        row.addView(labels, new LinearLayout.LayoutParams(
-                0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                1f));
-        row.addView(inputGroup, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
-        card.addView(row, matchWrap());
-        return input;
-    }
-
-    private void onSwitchChanged(CompoundButton button, boolean checked) {
-        if (binding) {
-            return;
-        }
-        boolean scrollScale = scrollScaleSwitch.isChecked();
-        boolean inactiveBlur = inactiveBlurSwitch.isChecked();
-        boolean lineTimedProgress = lineTimedProgressSwitch.isChecked();
-        boolean translationProgress = translationProgressSwitch.isChecked();
-        boolean screenTimeoutEnabled = screenTimeoutSwitch.isChecked();
-        int screenTimeoutSeconds = readScreenTimeoutSecondsFromInput();
-        if (button == defaultSwitch && checked) {
-            scrollScale = false;
-            inactiveBlur = false;
-            lineTimedProgress = LyricUiSettings.DEFAULT_LINE_TIMED_PROGRESS_ENABLED;
-            translationProgress = LyricUiSettings.DEFAULT_TRANSLATION_PROGRESS_ENABLED;
-        }
-        if (button == scrollScaleSwitch) {
-            scrollScale = checked;
-        } else if (button == inactiveBlurSwitch) {
-            inactiveBlur = checked;
-        } else if (button == lineTimedProgressSwitch) {
-            lineTimedProgress = checked;
-        } else if (button == translationProgressSwitch) {
-            translationProgress = checked;
-        } else if (button == screenTimeoutSwitch) {
-            screenTimeoutEnabled = checked;
-        }
-        saveAndBroadcast(
-                scrollScale,
-                inactiveBlur,
-                lineTimedProgress,
-                translationProgress,
-                screenTimeoutEnabled,
-                screenTimeoutSeconds);
-    }
-
-    private void saveCurrentSettings() {
-        saveAndBroadcast(
-                scrollScaleSwitch.isChecked(),
-                inactiveBlurSwitch.isChecked(),
-                lineTimedProgressSwitch.isChecked(),
-                translationProgressSwitch.isChecked(),
-                screenTimeoutSwitch.isChecked(),
-                readScreenTimeoutSecondsFromInput());
-        Toast.makeText(
-                this,
-                getString(R.string.lyric_ui_saved_toast),
-                Toast.LENGTH_SHORT).show();
-    }
-
-    private void bindSwitchesFromPreferences() {
-        boolean scrollScale = preferences.getBoolean(
-                LyricUiSettings.KEY_SCROLL_SCALE_ENABLED,
-                false);
-        boolean inactiveBlur = preferences.getBoolean(
-                LyricUiSettings.KEY_INACTIVE_BLUR_ENABLED,
-                false);
-        boolean lineTimedProgress = preferences.getBoolean(
-                LyricUiSettings.KEY_LINE_TIMED_PROGRESS_ENABLED,
-                LyricUiSettings.DEFAULT_LINE_TIMED_PROGRESS_ENABLED);
-        boolean translationProgress = preferences.getBoolean(
-                LyricUiSettings.KEY_TRANSLATION_PROGRESS_ENABLED,
-                LyricUiSettings.DEFAULT_TRANSLATION_PROGRESS_ENABLED);
-        boolean screenTimeoutEnabled = preferences.getBoolean(
-                LyricUiSettings.KEY_SCREEN_TIMEOUT_ENABLED,
-                LyricUiSettings.DEFAULT_SCREEN_TIMEOUT_ENABLED);
-        int screenTimeoutSeconds = preferences.getInt(
-                LyricUiSettings.KEY_SCREEN_TIMEOUT_SECONDS,
-                LyricUiSettings.DEFAULT_SCREEN_TIMEOUT_SECONDS);
-        bindSwitches(
-                scrollScale,
-                inactiveBlur,
-                lineTimedProgress,
-                translationProgress,
-                screenTimeoutEnabled,
-                screenTimeoutSeconds);
-    }
-
-    private void saveAndBroadcast(
-            boolean scrollScale,
-            boolean inactiveBlur,
-            boolean lineTimedProgress,
-            boolean translationProgress,
-            boolean screenTimeoutEnabled,
-            int screenTimeoutSeconds) {
-        int sanitizedScreenTimeoutSeconds =
-                LyricUiSettings.sanitizeScreenTimeoutSeconds(screenTimeoutSeconds);
-        preferences.edit()
-                .putBoolean(LyricUiSettings.KEY_SCROLL_SCALE_ENABLED, scrollScale)
-                .putBoolean(LyricUiSettings.KEY_INACTIVE_BLUR_ENABLED, inactiveBlur)
-                .putBoolean(LyricUiSettings.KEY_LINE_TIMED_PROGRESS_ENABLED, lineTimedProgress)
-                .putBoolean(LyricUiSettings.KEY_TRANSLATION_PROGRESS_ENABLED, translationProgress)
-                .putBoolean(LyricUiSettings.KEY_SCREEN_TIMEOUT_ENABLED, screenTimeoutEnabled)
-                .putInt(
-                        LyricUiSettings.KEY_SCREEN_TIMEOUT_SECONDS,
-                        sanitizedScreenTimeoutSeconds)
-                .apply();
-        bindSwitches(
-                scrollScale,
-                inactiveBlur,
-                lineTimedProgress,
-                translationProgress,
-                screenTimeoutEnabled,
-                sanitizedScreenTimeoutSeconds);
-        broadcastSettings(
-                scrollScale,
-                inactiveBlur,
-                lineTimedProgress,
-                translationProgress,
-                screenTimeoutEnabled,
-                sanitizedScreenTimeoutSeconds);
-    }
-
-    private void bindSwitches(
-            boolean scrollScale,
-            boolean inactiveBlur,
-            boolean lineTimedProgress,
-            boolean translationProgress,
-            boolean screenTimeoutEnabled,
-            int screenTimeoutSeconds) {
-        int sanitizedScreenTimeoutSeconds =
-                LyricUiSettings.sanitizeScreenTimeoutSeconds(screenTimeoutSeconds);
-        binding = true;
-        defaultSwitch.setChecked(!scrollScale
-                && !inactiveBlur
-                && lineTimedProgress == LyricUiSettings.DEFAULT_LINE_TIMED_PROGRESS_ENABLED
-                && translationProgress == LyricUiSettings.DEFAULT_TRANSLATION_PROGRESS_ENABLED);
-        lineTimedProgressSwitch.setChecked(lineTimedProgress);
-        translationProgressSwitch.setChecked(translationProgress);
-        scrollScaleSwitch.setChecked(scrollScale);
-        inactiveBlurSwitch.setChecked(inactiveBlur);
-        screenTimeoutSwitch.setChecked(screenTimeoutEnabled);
-        String secondsText = sanitizedScreenTimeoutSeconds <= 0
-                ? ""
-                : Integer.toString(sanitizedScreenTimeoutSeconds);
-        if (!screenTimeoutSecondsInput.getText().toString().equals(secondsText)) {
-            screenTimeoutSecondsInput.setText(secondsText);
-            screenTimeoutSecondsInput.setSelection(screenTimeoutSecondsInput.getText().length());
-        }
-        screenTimeoutSecondsInput.setEnabled(screenTimeoutEnabled);
-        screenTimeoutSecondsInput.setAlpha(screenTimeoutEnabled ? 1f : 0.45f);
-        binding = false;
-    }
-
-    private void broadcastCurrentSettings() {
-        boolean scrollScale = preferences.getBoolean(
-                LyricUiSettings.KEY_SCROLL_SCALE_ENABLED,
-                false);
-        boolean inactiveBlur = preferences.getBoolean(
-                LyricUiSettings.KEY_INACTIVE_BLUR_ENABLED,
-                false);
-        boolean lineTimedProgress = preferences.getBoolean(
-                LyricUiSettings.KEY_LINE_TIMED_PROGRESS_ENABLED,
-                LyricUiSettings.DEFAULT_LINE_TIMED_PROGRESS_ENABLED);
-        boolean translationProgress = preferences.getBoolean(
-                LyricUiSettings.KEY_TRANSLATION_PROGRESS_ENABLED,
-                LyricUiSettings.DEFAULT_TRANSLATION_PROGRESS_ENABLED);
-        boolean screenTimeoutEnabled = preferences.getBoolean(
-                LyricUiSettings.KEY_SCREEN_TIMEOUT_ENABLED,
-                LyricUiSettings.DEFAULT_SCREEN_TIMEOUT_ENABLED);
-        int screenTimeoutSeconds = preferences.getInt(
-                LyricUiSettings.KEY_SCREEN_TIMEOUT_SECONDS,
-                LyricUiSettings.DEFAULT_SCREEN_TIMEOUT_SECONDS);
-        broadcastSettings(
-                scrollScale,
-                inactiveBlur,
-                lineTimedProgress,
-                translationProgress,
-                screenTimeoutEnabled,
-                LyricUiSettings.sanitizeScreenTimeoutSeconds(screenTimeoutSeconds));
-    }
-
-    private void broadcastSettings(
-            boolean scrollScale,
-            boolean inactiveBlur,
-            boolean lineTimedProgress,
-            boolean translationProgress,
-            boolean screenTimeoutEnabled,
-            int screenTimeoutSeconds) {
-        Intent intent = new Intent(LyricUiSettings.ACTION_STYLE_CHANGED)
-                .setPackage("com.android.systemui")
-                .putExtra(LyricUiSettings.EXTRA_SCROLL_SCALE_ENABLED, scrollScale)
-                .putExtra(LyricUiSettings.EXTRA_INACTIVE_BLUR_ENABLED, inactiveBlur)
-                .putExtra(
-                        LyricUiSettings.EXTRA_LINE_TIMED_PROGRESS_ENABLED,
-                        lineTimedProgress)
-                .putExtra(
-                        LyricUiSettings.EXTRA_TRANSLATION_PROGRESS_ENABLED,
-                        translationProgress)
-                .putExtra(
-                        LyricUiSettings.EXTRA_SCREEN_TIMEOUT_ENABLED,
-                        screenTimeoutEnabled)
-                .putExtra(
-                        LyricUiSettings.EXTRA_SCREEN_TIMEOUT_SECONDS,
-                        LyricUiSettings.sanitizeScreenTimeoutSeconds(screenTimeoutSeconds));
-        sendBroadcast(intent);
-    }
-
-    private int readScreenTimeoutSecondsFromInput() {
-        String value = screenTimeoutSecondsInput.getText().toString().trim();
-        if (value.isEmpty()) {
-            return LyricUiSettings.DEFAULT_SCREEN_TIMEOUT_SECONDS;
-        }
-        try {
-            return LyricUiSettings.sanitizeScreenTimeoutSeconds(Integer.parseInt(value));
-        } catch (NumberFormatException ignored) {
-            return LyricUiSettings.DEFAULT_SCREEN_TIMEOUT_SECONDS;
+    private static void disableAutofill(View view) {
+        if (view == null) return;
+        view.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
+        if (view instanceof EditText) {
+            ((EditText) view).setAutofillHints((String[]) null);
         }
     }
 
-    private GradientDrawable roundedDrawable(int color, float radiusDp) {
-        GradientDrawable drawable = new GradientDrawable();
-        drawable.setColor(color);
-        drawable.setCornerRadius(dp(radiusDp));
-        return drawable;
+    @SuppressWarnings("deprecation")
+    private void installInsets(View content) {
+        int base = content.getPaddingTop();
+        content.setOnApplyWindowInsetsListener((view, insets) -> {
+            view.setPadding(view.getPaddingLeft(), base + insets.getSystemWindowInsetTop(),
+                    view.getPaddingRight(), view.getPaddingBottom());
+            return insets;
+        });
     }
 
     private LinearLayout.LayoutParams matchWrap() {
@@ -602,39 +972,43 @@ public final class LyricUiSettingsActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT);
     }
 
-    private LinearLayout.LayoutParams matchWrapWithBottomMargin(int marginBottom) {
+    private LinearLayout.LayoutParams marginBottom(int margin) {
         LinearLayout.LayoutParams params = matchWrap();
-        params.bottomMargin = marginBottom;
+        params.bottomMargin = margin;
         return params;
-    }
-
-    private int getTopContentPadding() {
-        return getStatusBarHeight() + getActionBarHeight() + dp(CONTENT_TOP_GAP_DP);
-    }
-
-    private int getActionBarHeight() {
-        ActionBar actionBar = getActionBar();
-        if (actionBar != null && actionBar.getHeight() > 0) {
-            return actionBar.getHeight();
-        }
-        TypedValue actionBarSize = new TypedValue();
-        if (getTheme().resolveAttribute(android.R.attr.actionBarSize, actionBarSize, true)) {
-            return TypedValue.complexToDimensionPixelSize(
-                    actionBarSize.data,
-                    getResources().getDisplayMetrics());
-        }
-        return dp(56);
-    }
-
-    private int getStatusBarHeight() {
-        int resourceId = getResources().getIdentifier("status_bar_height", "dimen", "android");
-        if (resourceId > 0) {
-            return getResources().getDimensionPixelSize(resourceId);
-        }
-        return 0;
     }
 
     private int dp(float value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private static final class SimpleSeekListener implements SeekBar.OnSeekBarChangeListener {
+        private final Runnable changed;
+        SimpleSeekListener(Runnable changed) { this.changed = changed; }
+        @Override public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) { changed.run(); }
+        @Override public void onStartTrackingTouch(SeekBar seekBar) { }
+        @Override public void onStopTrackingTouch(SeekBar seekBar) { }
+    }
+
+    private static final class SeekValueLabel {
+        private final Runnable updater;
+        SeekValueLabel(Runnable updater) { this.updater = updater; }
+        void update() { updater.run(); }
+    }
+
+    private static final class SimpleItemSelectedListener
+            implements android.widget.AdapterView.OnItemSelectedListener {
+        private final java.util.function.IntConsumer selected;
+        SimpleItemSelectedListener(java.util.function.IntConsumer selected) { this.selected = selected; }
+        @Override public void onItemSelected(android.widget.AdapterView<?> parent, View view, int position, long id) { selected.accept(position); }
+        @Override public void onNothingSelected(android.widget.AdapterView<?> parent) { }
+    }
+
+    private static final class SimpleTextWatcher implements android.text.TextWatcher {
+        private final Runnable changed;
+        SimpleTextWatcher(Runnable changed) { this.changed = changed; }
+        @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+        @Override public void onTextChanged(CharSequence s, int start, int before, int count) { changed.run(); }
+        @Override public void afterTextChanged(android.text.Editable editable) { }
     }
 }

@@ -48,85 +48,85 @@ final class QqMusicInternalLyricExtractor {
             "copyright",
             "op",
             "sp",
-            "\u4f5c\u8bcd",
-            "\u4f5c\u8a5e",
-            "\u4f5c\u66f2",
-            "\u7f16\u66f2",
-            "\u7de8\u66f2",
-            "\u5236\u4f5c",
-            "\u88fd\u4f5c",
-            "\u51fa\u54c1",
-            "\u76d1\u5236",
-            "\u76e3\u88fd",
-            "\u6df7\u97f3",
-            "\u6bcd\u5e26",
-            "\u6bcd\u5e36",
-            "\u5f55\u97f3",
-            "\u9304\u97f3",
-            "\u548c\u58f0",
-            "\u548c\u8072",
-            "\u4eba\u58f0",
-            "\u4eba\u8072",
-            "\u4e50\u961f",
-            "\u6a02\u968a",
-            "\u7ba1\u5f26\u4e50",
-            "\u7ba1\u5f26\u6a02",
-            "\u4ea4\u54cd\u4e50\u56e2",
-            "\u4ea4\u97ff\u6a02\u5718",
-            "\u5408\u5531",
-            "\u6307\u6325",
-            "\u6307\u63ee",
-            "\u624b\u98ce\u7434",
-            "\u624b\u98a8\u7434",
-            "\u5409\u4ed6",
-            "\u8d1d\u65af",
-            "\u8c9d\u65af",
-            "\u9f13\u624b",
-            "\u94a2\u7434",
-            "\u92fc\u7434",
-            "\u5927\u63d0\u7434",
-            "\u5c0f\u63d0\u7434",
-            "\u5f26\u4e50",
-            "\u5f26\u6a02",
-            "\u6f14\u5531",
-            "\u6f14\u594f"
+            "作词",
+            "作詞",
+            "作曲",
+            "编曲",
+            "編曲",
+            "制作",
+            "製作",
+            "出品",
+            "监制",
+            "監製",
+            "混音",
+            "母带",
+            "母帶",
+            "录音",
+            "錄音",
+            "和声",
+            "和聲",
+            "人声",
+            "人聲",
+            "乐队",
+            "樂隊",
+            "管弦乐",
+            "管弦樂",
+            "交响乐团",
+            "交響樂團",
+            "合唱",
+            "指挥",
+            "指揮",
+            "手风琴",
+            "手風琴",
+            "吉他",
+            "贝斯",
+            "貝斯",
+            "鼓手",
+            "钢琴",
+            "鋼琴",
+            "大提琴",
+            "小提琴",
+            "弦乐",
+            "弦樂",
+            "演唱",
+            "演奏"
     };
     private static final String[] UTF8_AS_GB18030_MOJIBAKE_TOKENS = {
-            "\u9287",
-            "\u9286",
-            "\u9288",
-            "\u9289",
-            "\u5010",
-            "\u4edf",
-            "\u4eaa",
-            "\u4e80",
-            "\u6d93",
-            "\u93c4",
-            "\u5bee",
-            "\u940d",
-            "\u752f",
-            "\u5c7e",
-            "\u93c8",
-            "\u7a98",
-            "\u59e3",
-            "\u6d98",
-            "\u7f08",
-            "\u5443",
-            "\u95be",
-            "\u9435",
-            "\u935c",
-            "\u5b95",
-            "\u6f96",
-            "\u93c2",
-            "\u9352",
-            "\u702b",
-            "\u525c",
-            "\u95c4",
-            "\u6f64",
-            "\u6d7c",
-            "\u9438",
-            "\u95c7",
-            "\u95b9"
+            "銇",
+            "銆",
+            "銈",
+            "銉",
+            "倐",
+            "仟",
+            "亪",
+            "亀",
+            "涓",
+            "鏄",
+            "寮",
+            "鐍",
+            "甯",
+            "屾",
+            "鏈",
+            "窘",
+            "姣",
+            "涘",
+            "缈",
+            "呃",
+            "閾",
+            "鐵",
+            "鍜",
+            "宕",
+            "澖",
+            "鏂",
+            "鍒",
+            "瀫",
+            "剜",
+            "闄",
+            "潤",
+            "浼",
+            "鐸",
+            "闇",
+            "閹"
     };
     private static final String[] WORD_TEXT_FIELDS = {
             "e",
@@ -435,19 +435,9 @@ final class QqMusicInternalLyricExtractor {
         if (isEmpty(text)) {
             return true;
         }
-        if (LyricMetadataFilter.isNonLyricInfoLine(text, line.startMillis)) {
-            return true;
-        }
-        if (line.startMillis <= EARLY_METADATA_WINDOW_MS
-                && looksLikeTitleArtistCredit(text)) {
-            return true;
-        }
-        if (looksLikeCreditRoleLine(text)) {
-            return true;
-        }
-        return removedEarlyCredit
-                && line.startMillis <= EARLY_METADATA_WINDOW_MS
-                && looksLikeArtistCreditContinuation(text);
+        // Presentation cleanup now runs once in SystemUI with versioned user settings.
+        // Keep only parsing-protected notices out of the candidate document here.
+        return LyricMetadataFilter.isParsingProtectedLine(text);
     }
 
     private static boolean looksLikeTitleArtistCredit(String text) {
@@ -462,8 +452,8 @@ final class QqMusicInternalLyricExtractor {
         String title = value.substring(0, separator).trim();
         String artist = value.substring(separator + 1).trim();
         if (artist.startsWith("-")
-                || artist.startsWith("\u2013")
-                || artist.startsWith("\u2014")) {
+                || artist.startsWith("–")
+                || artist.startsWith("—")) {
             artist = artist.substring(1).trim();
         }
         return !title.isEmpty()
@@ -476,11 +466,11 @@ final class QqMusicInternalLyricExtractor {
     private static int creditSeparatorIndex(String value) {
         String[] separators = {
                 " - ",
-                " \u2013 ",
-                " \u2014 ",
+                " – ",
+                " — ",
                 "- ",
-                "\u2013 ",
-                "\u2014 "
+                "– ",
+                "— "
         };
         int best = -1;
         for (String separator : separators) {
@@ -522,7 +512,7 @@ final class QqMusicInternalLyricExtractor {
         return (value.indexOf('/') >= 0
                 || value.indexOf('&') >= 0
                 || value.indexOf(',') >= 0
-                || value.indexOf('\u3001') >= 0)
+                || value.indexOf('、') >= 0)
                 && containsLetter(value)
                 && countWhitespaceRuns(value) <= 4;
     }
@@ -739,7 +729,7 @@ final class QqMusicInternalLyricExtractor {
 
     private static int firstColonIndex(String value) {
         int ascii = value.indexOf(':');
-        int fullWidth = value.indexOf('\uff1a');
+        int fullWidth = value.indexOf('：');
         if (ascii < 0) {
             return fullWidth;
         }
@@ -754,7 +744,7 @@ final class QqMusicInternalLyricExtractor {
             String lowerKeyword = keyword.toLowerCase(Locale.ROOT);
             if (lowerValue.equals(lowerKeyword)
                     || lowerValue.startsWith(lowerKeyword + ":")
-                    || lowerValue.startsWith(lowerKeyword + "\uff1a")) {
+                    || lowerValue.startsWith(lowerKeyword + "：")) {
                 return true;
             }
             if (lowerValue.startsWith(lowerKeyword + " by ")
@@ -777,16 +767,16 @@ final class QqMusicInternalLyricExtractor {
                 || "production".equals(lowerKeyword)
                 || "publisher".equals(lowerKeyword)
                 || "copyright".equals(lowerKeyword)
-                || "\u4f5c\u8bcd".equals(lowerKeyword)
-                || "\u4f5c\u8a5e".equals(lowerKeyword)
-                || "\u4f5c\u66f2".equals(lowerKeyword)
-                || "\u7f16\u66f2".equals(lowerKeyword)
-                || "\u7de8\u66f2".equals(lowerKeyword)
-                || "\u5236\u4f5c".equals(lowerKeyword)
-                || "\u88fd\u4f5c".equals(lowerKeyword)
-                || "\u51fa\u54c1".equals(lowerKeyword)
-                || "\u76d1\u5236".equals(lowerKeyword)
-                || "\u76e3\u88fd".equals(lowerKeyword));
+                || "作词".equals(lowerKeyword)
+                || "作詞".equals(lowerKeyword)
+                || "作曲".equals(lowerKeyword)
+                || "编曲".equals(lowerKeyword)
+                || "編曲".equals(lowerKeyword)
+                || "制作".equals(lowerKeyword)
+                || "製作".equals(lowerKeyword)
+                || "出品".equals(lowerKeyword)
+                || "监制".equals(lowerKeyword)
+                || "監製".equals(lowerKeyword));
     }
 
     private static boolean containsCreditRoleKeyword(String lowerValue) {
@@ -820,9 +810,9 @@ final class QqMusicInternalLyricExtractor {
         return last == '.'
                 || last == '!'
                 || last == '?'
-                || last == '\u3002'
-                || last == '\uff01'
-                || last == '\uff1f';
+                || last == '。'
+                || last == '！'
+                || last == '？';
     }
 
     private static int countWhitespaceRuns(String value) {
@@ -881,7 +871,7 @@ final class QqMusicInternalLyricExtractor {
                 index = value.indexOf(token, index + token.length());
             }
         }
-        if (value.indexOf('\uFFFD') >= 0) {
+        if (value.indexOf('�') >= 0) {
             score += 2;
         }
         return score;

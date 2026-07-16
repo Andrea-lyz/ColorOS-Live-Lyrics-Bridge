@@ -188,7 +188,7 @@ final class LyricsCoreAdapter {
                 long timeMillis = parseTimeMillis(firstTag);
                 String text = stripLrcTimeTags(line, firstTag.end());
                 if (!text.isEmpty()
-                        && !LyricMetadataFilter.isNonLyricInfoLine(text, timeMillis)) {
+                        && !LyricMetadataFilter.isParsingProtectedLine(text)) {
                     grouped.computeIfAbsent(timeMillis, ignored -> new ArrayList<>()).add(text);
                 }
             }
@@ -383,7 +383,7 @@ final class LyricsCoreAdapter {
         if (cleanCandidate.isEmpty()) {
             return false;
         }
-        if (LyricMetadataFilter.isNonLyricInfoLine(cleanCandidate, -1L)) {
+        if (LyricMetadataFilter.isParsingProtectedLine(cleanCandidate)) {
             return false;
         }
         String primary = primaryIndex >= 0 && primaryIndex < texts.size()
@@ -476,11 +476,11 @@ final class LyricsCoreAdapter {
                 }
             }
             String cleanText = text.toString();
-            if (LyricMetadataFilter.isNonLyricInfoLine(cleanText, sourceLine.getStart())) {
+            if (LyricMetadataFilter.isParsingProtectedLine(cleanText)) {
                 return null;
             }
             String translation = cleanLyricText(karaokeLine.getTranslation());
-            if (LyricMetadataFilter.isNonLyricInfoLine(translation, sourceLine.getStart())) {
+            if (LyricMetadataFilter.isParsingProtectedLine(translation)) {
                 translation = "";
             }
             return new ParsedLine(
@@ -494,11 +494,11 @@ final class LyricsCoreAdapter {
         if (sourceLine instanceof SyncedLine) {
             SyncedLine syncedLine = (SyncedLine) sourceLine;
             String text = cleanLyricText(syncedLine.getContent());
-            if (LyricMetadataFilter.isNonLyricInfoLine(text, sourceLine.getStart())) {
+            if (LyricMetadataFilter.isParsingProtectedLine(text)) {
                 return null;
             }
             String translation = cleanLyricText(syncedLine.getTranslation());
-            if (LyricMetadataFilter.isNonLyricInfoLine(translation, sourceLine.getStart())) {
+            if (LyricMetadataFilter.isParsingProtectedLine(translation)) {
                 translation = "";
             }
             return new ParsedLine(

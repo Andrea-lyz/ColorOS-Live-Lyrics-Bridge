@@ -1,0 +1,6 @@
+* text=auto
+*.java text working-tree-encoding=UTF-8
+*.kt text working-tree-encoding=UTF-8
+*.kts text working-tree-encoding=UTF-8
+*.xml text working-tree-encoding=UTF-8
+*.md text working-tree-encoding=UTF-8

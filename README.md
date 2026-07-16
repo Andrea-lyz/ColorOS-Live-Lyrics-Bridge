@@ -45,8 +45,8 @@ SystemUI process:
 - Resolves private OPlus media and lyric targets through DexKit, with legacy class-name fallback.
 - Draws inside the official lock-screen lyric `TextView.onDraw(Canvas)` path.
 - Maps official items by timestamp, normalized text, and occurrence order so repeated lyrics and pre-roll lines remain stable.
-- Uses compact dynamic lyric slots with a `56dp` floor and about `12dp` vertical padding, keeps official `6dp` line spacing, uses a moving two-line window for long main lyrics—including passive third-line panning when line-timed pseudo word progress is disabled—and places the active line about `48dp` below the viewport center.
-- Recovers lyric rendering after transient visibility changes without changing item geometry during playback.
+- Uses stable per-line adaptive lyric slots whose height is computed from wrapping, translation, and typography, with a `56dp` floor, about `12dp` vertical drawing room, `1dp` bottom safety, and an `80dp` fallback before width is known. Outward-rounded font `top/bottom` bounds prevent descender clipping. Row spacing is adjustable from `-5–20dp` in `0.5dp` steps, defaults to `0dp` in every preset, and is previewed with the same slot floor and drawing room as the lock screen. Main lyrics always show at most two lines while retaining the complete wrapped-line set for a moving two-line window—including passive long-line panning when line-timed pseudo word progress is disabled—and place the active line about `48dp` below the viewport center. Translation toggles animate all bound row heights from one shared layout amount and compensate the active-row anchor; AOD uses a single endpoint update.
+- Recovers lyric rendering after transient visibility changes. Slot height does not react to word progress, focus, scale, glow, or AOD state; translation visibility is the only bounded user action that animates the measured height.
 - Dynamically recognizes player-provided `lyricInfo` without a hard-coded package name.
 - Keeps the screen from timing out while the recognized provider's lock-screen lyric UI is actively visible.
 
@@ -125,6 +125,10 @@ QiShui Music also requires enabling LSPosed Manager's "Restore inline hooks" opt
 
 ## Compatibility Adapters
 
+The LSPosed settings page saves one versioned UI snapshot. It includes four appearance presets, opacity, blur, scale, glow and colors, motion level, long-text browsing, supported 60/90/120 Hz redraw caps, font size/ratio/weight/alignment, and line spacing. Player translation defaults and remembered overrides live on a separate page: built-in Salt/Cone entries stay available, while provider-backed rows are disabled until their matching LyricProvider APK is installed. Every preset owns the default advanced typography; changing any typography field makes the preset state Custom. Appearance reset preserves screen-timeout, refresh-rate, translation, and lyric-content cleanup policies. Settings broadcasts use a signature permission.
+
+Opening lyric information cleanup has its own secondary page. Common copyright notices, production/instrument credits, and leading “title - artist” rules are simple switches; parsing-protection rules that preserve main/translation lane correctness remain fixed. If recognition is incomplete, the page reads at most the first 80 timed rows of the current SystemUI lyric and lets the user choose the first formal lyric. The correction is bound to the raw `trackKey` and a line fingerprint rather than a fragile row number. Safe prefix or exact-line formats can optionally be learned from unresolved rows without exposing regex or a DSL. Learned rules are limited to the opening 30 seconds/32 candidates and bounded by count and a 4 KiB snapshot.
+
 Compatibility adapters hook legacy players whose native metadata does not expose complete lyric timing through the `lyricInfo` contract.
 
 Built-in compatibility adapters are:
@@ -176,6 +180,8 @@ app\build\outputs\apk\debug\app-debug.apk
 
 JDK 21 is required to compile the Lyrics Core dependency. The helper discovers it from `SALT_LYRIC_JAVA_HOME`, `JAVA_HOME`, or common local JDK locations, and maps the repository to a temporary ASCII drive so Gradle works reliably when the checkout path contains non-ASCII characters. The app itself still targets Java 17 bytecode for Android compatibility.
 
+This feature cycle intentionally keeps `compileSdk` and `targetSdk` at 35. The Android 36 version warnings remain a separate compatibility upgrade and are not hidden by a Lint baseline.
+
 ## GitHub Actions
 
 - `Build Debug APK`: runs on pushes to `main` and pull requests when project source or build files change. The generated debug APK is uploaded as a workflow artifact.
@@ -205,29 +211,23 @@ Enable the module in LSPosed for the target player package, `system`, and System
 Useful logs:
 
 ```powershell
+adb shell setprop log.tag.LockscreenLyrics DEBUG
 adb logcat -v time -s LockscreenLyrics
+adb shell setprop log.tag.LockscreenLyricsParse DEBUG
+adb logcat -v time -s LockscreenLyricsParse
 adb logcat -v time | Select-String -Pattern "LockscreenLyrics|OplusMediaDataManagerEx|loadLyricInBg|Failed to parse lyric data|LyricsRecyclerView|hasLyric"
 ```
+
+INFO/DEBUG output is controlled by the log tag; WARN/ERROR remains available. The main format is `[process][module][event] message | key=value`. Long parser traces use `chunk=n/total`.
 
 Expected module log:
 
 ```text
-LockscreenLyrics: Hooked MediaSession#setMetadata
-LockscreenLyrics: Hooked Salt Player lyric result constructors via DexKit: result=..., source=..., scroll=..., count=2
-LockscreenLyrics: Hooked ConePlayer lyric parser via DexKit: ...
-LockscreenLyrics: Hooked SystemUI official lyric TextView draw hooks
-LockscreenLyrics: Registered SystemUI screen timeout receiver
-LockscreenLyrics: Accepted lyric transaction from EMBEDDED, rawChars=..., oplusChars=..., identity=..., association=...
-LockscreenLyrics: Injected real LRC_FILE lyricInfo for title=...
-LockscreenLyrics: Cached SystemUI word lyric model, lines=...
-LockscreenLyrics: Lockscreen lyric UI keep-awake ON
-LockscreenLyrics: Acquired bright screen timeout wake lock lease=15000ms
-LockscreenLyrics: Pulsed screen timeout user activity without changing lights
-LockscreenLyrics: Hooked LyricsRecyclerView#setCurrentLyric, methods=...
-LockscreenLyrics: LyricsRecyclerView current index=...
-LockscreenLyrics: Seedling playback state=3, playing=true, storedPosition=..., computedPosition=..., speed=...
-LockscreenLyrics: Custom-drew official lyric TextView at position=..., playing=true, focused=true, line=...
-LockscreenLyrics: Refreshed active lyric renderer at position=..., line=...
+LockscreenLyrics: [com.salt.music][Hook][hook-installed] Hooked MediaSession#setMetadata
+LockscreenLyrics: [com.android.systemui][Transaction][accepted] Accepted lyric transaction from EMBEDDED | rawChars=..., oplusChars=...
+LockscreenLyrics: [com.android.systemui][Recycler][attachment] Observed LyricsRecyclerView attachment | alpha=..., size=...
+LockscreenLyrics: [com.android.systemui][Render][row-scale] Official lyric row scale | lineIndex=..., activeIndex=...
+LockscreenLyricsParse: [com.android.systemui][Parser][trace] chunk=1/2 ...
 ```
 
 If you only see `Skip lyricInfo injection because no fresh real lyric is cached`, the adapter has not captured a timed LRC result in the current process yet, or the current song only has untimed lyrics.
@@ -244,7 +244,7 @@ If this project helps you, donations are welcome and appreciated.
 
 Copyright 2026 Andrea-lyz. This project is released under the [Apache License 2.0](LICENSE).
 
-This project uses [Accompanist Lyrics Core](https://github.com/6xingyv/accompanist-lyrics-core) `0.4.5` (`com.mocharealm.accompanist:lyrics-core-jvm`), maintained by [6xingyv](https://github.com/6xingyv), for timed-lyric parsing. Accompanist Lyrics Core is also distributed under the [Apache License 2.0](https://github.com/6xingyv/accompanist-lyrics-core/blob/main/LICENSE).
+This project uses [Accompanist Lyrics Core](https://github.com/6xingyv/accompanist-lyrics-core) `0.4.7` (`com.mocharealm.accompanist:lyrics-core-jvm`), maintained by [6xingyv](https://github.com/6xingyv), for timed-lyric parsing. Accompanist Lyrics Core is also distributed under the [Apache License 2.0](https://github.com/6xingyv/accompanist-lyrics-core/blob/main/LICENSE).
 
 The optional provider APKs are based on the LyricProvider ecosystem by [tomakino/LyricProvider](https://github.com/tomakino/LyricProvider). Thanks to tomakino and LyricProvider contributors for the provider architecture these integrations build on.
 

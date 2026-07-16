@@ -14,8 +14,8 @@ public final class ExternalLyricTextRepairTest {
 
     @Test
     public void restoresLyricProviderUtf8TextMisdecodedAsGb18030() {
-        String lyric = "[00:12.230]I\u2019m not waiting for you\n"
-                + "[00:13.000]\u5e0c\u671b\u6709\u7fbd\u6bdb\u548c\u7fc5\u8180";
+        String lyric = "[00:12.230]I’m not waiting for you\n"
+                + "[00:13.000]希望有羽毛和翅膀";
         String mojibake = utf8AsGb18030(lyric);
 
         String restored = ExternalLyricTextRepair.restoreProviderMojibake(
@@ -27,23 +27,23 @@ public final class ExternalLyricTextRepairTest {
 
     @Test
     public void repairsNeteaseJapaneseEnglishMojibakeEnoughForParsing() {
-        String lyric = "[00:00.020]Chill in the shell \u9589\u3058\u3066\n"
-                + "[00:12.230]I\u2019m not waiting for you";
+        String lyric = "[00:00.020]Chill in the shell 閉じて\n"
+                + "[00:12.230]I’m not waiting for you";
         String mojibake = utf8AsGb18030(lyric);
 
         String restored = ExternalLyricTextRepair.restoreProviderMojibake(
                 "lyricprovider/netease-cloud-music",
                 mojibake);
 
-        assertTrue(restored.contains("Chill in the shell \u9589\u3058"));
-        assertTrue(restored.contains("I\u2019m not waiting for you"));
-        assertFalse(restored.contains("\u95c1\u5908\u4ed2\u9287"));
-        assertFalse(restored.contains("I\u9225\u6a93"));
+        assertTrue(restored.contains("Chill in the shell 閉じ"));
+        assertTrue(restored.contains("I’m not waiting for you"));
+        assertFalse(restored.contains("闁夈仒銇"));
+        assertFalse(restored.contains("I鈥檓"));
     }
 
     @Test
     public void leavesNonProviderTextUntouched() {
-        String lyric = "[00:00.020]\u8717\u7f29\u5728\u8eaf\u58f3\u4e4b\u4e2d";
+        String lyric = "[00:00.020]蜗缩在躯壳之中";
 
         String restored = ExternalLyricTextRepair.restoreProviderMojibake(
                 "systemui",

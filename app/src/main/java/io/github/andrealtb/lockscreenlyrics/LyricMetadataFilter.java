@@ -17,24 +17,71 @@ final class LyricMetadataFilter {
             return false;
         }
 
-        String lower = normalized.toLowerCase(Locale.ROOT);
-        if (containsAny(lower, "copyright", "all rights reserved")
-                || containsAny(
-                normalized,
-                "\u7248\u6743\u6240\u6709",
-                "\u8457\u4f5c\u6743",
-                "\u672a\u7ecf\u8bb8\u53ef",
-                "\u672a\u7ecf\u6388\u6743",
-                "\u7ffb\u8bd1\u4f5c\u54c1")) {
+        if (isCopyrightOrRightsLine(normalized)) {
             return true;
         }
-        if (isLyricTranslationProviderCreditLine(normalized)) {
+        if (isParsingProtectedLine(normalized)) {
             return true;
         }
-        if (LockscreenIntegrationPolicy.isProductionDetailLine(normalized, timeMillis)) {
+        if (isDisplayProductionDetailLine(normalized, timeMillis)) {
             return true;
         }
         return LockscreenIntegrationPolicy.isLikelyTitleArtistCredit(normalized, timeMillis);
+    }
+
+    /**
+     * Lines whose presence would change lane classification rather than only presentation.
+     * These remain fixed and are deliberately not exposed as user-editable cleanup rules.
+     */
+    static boolean isParsingProtectedLine(String text) {
+        String normalized = normalizeLine(text);
+        return !normalized.isEmpty() && isLyricTranslationProviderCreditLine(normalized);
+    }
+
+    static boolean isCopyrightOrRightsLine(String text) {
+        String normalized = normalizeLine(text);
+        if (normalized.isEmpty()) return false;
+        String lower = normalized.toLowerCase(Locale.ROOT);
+        return normalized.startsWith("©")
+                || containsAny(lower, "copyright", "all rights reserved", "used by permission")
+                || containsAny(
+                normalized,
+                "版权所有",
+                "著作权",
+                "未经许可",
+                "未经授权",
+                "翻译作品");
+    }
+
+    static boolean isDisplayProductionDetailLine(String text, long timeMillis) {
+        String normalized = normalizeLine(text);
+        if (normalized.isEmpty()) return false;
+        if (LockscreenIntegrationPolicy.isProductionDetailLine(normalized, timeMillis)) {
+            return true;
+        }
+        if (timeMillis < 0L || timeMillis > 30_000L) return false;
+        String lower = normalized.toLowerCase(Locale.ROOT).replace('：', ':');
+        int separator = lower.indexOf(':');
+        String label = (separator >= 0 ? lower.substring(0, separator) : lower).trim();
+        if (label.isEmpty() || label.length() > 120) return false;
+        String[] roleStarts = {
+                "vocals recorded", "orchestration", "percussion", "synthesizer",
+                "viola", "violin", "piano", "acoustic guitar", "electric guitar",
+                "drum programming", "orchestra", "band", "choir", "conductor",
+                "accordion", "strings", "guitar", "bass", "drums", "cello",
+                "publisher", "乐队", "樂隊", "管弦乐", "管弦樂", "交响乐团",
+                "交響樂團", "合唱", "指挥", "指揮", "手风琴", "手風琴",
+                "钢琴", "鋼琴", "大提琴", "小提琴", "弦乐", "弦樂"
+        };
+        boolean role = false;
+        for (String candidate : roleStarts) {
+            if (label.startsWith(candidate)) {
+                role = true;
+                break;
+            }
+        }
+        if (!role) return false;
+        return separator >= 0 || lower.contains(" by") || lower.contains(" recorded by");
     }
 
     static String normalizeLine(String line) {
@@ -91,15 +138,15 @@ final class LyricMetadataFilter {
 
     private static boolean isLyricTranslationProviderCreditLine(String normalized) {
         String compact = removeWhitespace(normalized);
-        if (compact.isEmpty() || !compact.contains("\u63d0\u4f9b")) {
+        if (compact.isEmpty() || !compact.contains("提供")) {
             return false;
         }
-        return compact.startsWith("\u4ee5\u4e0b\u6b4c\u8bcd\u7ffb\u8bd1\u7531")
-                || compact.startsWith("\u4ee5\u4e0b\u6b4c\u8a5e\u7ffb\u8b6f\u7531")
-                || compact.startsWith("\u672c\u6b4c\u8bcd\u7ffb\u8bd1\u7531")
-                || compact.startsWith("\u672c\u6b4c\u8a5e\u7ffb\u8b6f\u7531")
-                || compact.startsWith("\u6b4c\u8bcd\u7ffb\u8bd1\u7531")
-                || compact.startsWith("\u6b4c\u8a5e\u7ffb\u8b6f\u7531");
+        return compact.startsWith("以下歌词翻译由")
+                || compact.startsWith("以下歌詞翻譯由")
+                || compact.startsWith("本歌词翻译由")
+                || compact.startsWith("本歌詞翻譯由")
+                || compact.startsWith("歌词翻译由")
+                || compact.startsWith("歌詞翻譯由");
     }
 
     private static String removeWhitespace(String value) {

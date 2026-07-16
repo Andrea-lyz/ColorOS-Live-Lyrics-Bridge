@@ -28,7 +28,7 @@ final class LyricLaneClassifier {
         for (int index = 0; index < texts.size(); index++) {
             String clean = clean(texts.get(index));
             cleanTexts.add(clean);
-            if (!clean.isEmpty() && !LyricMetadataFilter.isNonLyricInfoLine(clean, timeMillis)) {
+            if (!clean.isEmpty() && !LyricMetadataFilter.isParsingProtectedLine(clean)) {
                 lyricTexts.add(clean);
                 lyricIndexes.add(index);
             }
@@ -49,7 +49,7 @@ final class LyricLaneClassifier {
         for (int index = 0; index < cleanTexts.size(); index++) {
             String candidate = cleanTexts.get(index);
             if (candidate.isEmpty()
-                    || LyricMetadataFilter.isNonLyricInfoLine(candidate, timeMillis)) {
+                    || LyricMetadataFilter.isParsingProtectedLine(candidate)) {
                 lanes.add(Lane.CREDIT);
             } else if (index == primaryIndex) {
                 lanes.add(Lane.MAIN);

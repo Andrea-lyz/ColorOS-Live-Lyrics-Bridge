@@ -1,5 +1,6 @@
 package io.github.andrealtb.lockscreenlyrics;
 
+import android.annotation.SuppressLint;
 import android.media.MediaMetadata;
 import android.text.TextUtils;
 
@@ -63,6 +64,7 @@ final class QqMusicAdapter extends FirstBatchMediaSessionAdapter {
     }
 
     @Override
+    @SuppressLint("DuplicateCreateDexKit") // One bridge for the one-time QQ resolver transaction.
     public void installLyricSourceHooks(LockscreenLyricsModule module, ClassLoader classLoader) {
         super.installLyricSourceHooks(module, classLoader);
         try {
@@ -71,6 +73,7 @@ final class QqMusicAdapter extends FirstBatchMediaSessionAdapter {
             module.error("Failed to load DexKit for QQ Music internal lyric hook", t);
             return;
         }
+        //noinspection DuplicateCreateDexKit -- the bridge is closed after this one-time resolver.
         try (DexKitBridge bridge = DexKitBridge.create(classLoader, true)) {
             Method mediaSessionUpdate = resolveMediaSessionUpdateMethod(module, bridge, classLoader);
             mediaSessionUpdate.setAccessible(true);
@@ -472,8 +475,8 @@ final class QqMusicAdapter extends FirstBatchMediaSessionAdapter {
                 " - ",
                 "- ",
                 " -",
-                "\u2013",
-                "\u2014"
+                "–",
+                "—"
         };
         int best = -1;
         for (String separator : separators) {

@@ -95,18 +95,18 @@ public final class TrackIdentityTest {
     public void qishuiBulletSeparatedArtistsMatchProviderArtists() {
         assertTrue(TrackIdentity.matchesHintKey(
                 TrackIdentity.buildKey(
-                        "NO BATID\u00C3O",
-                        "PROPHECY/\u68CD\u5723"),
+                        "NO BATIDÃO",
+                        "PROPHECY/棍圣"),
                 TrackIdentity.buildKey(
-                        "NO BATID\u00C3O",
-                        "PROPHECY\u2022 \u68CD\u5723")));
+                        "NO BATIDÃO",
+                        "PROPHECY• 棍圣")));
         assertTrue(TrackIdentity.matchesHintKey(
                 TrackIdentity.buildKey(
                         "Angel",
-                        "\uC724\uBBF8\uB798/Bizzy/Tiger JK"),
+                        "윤미래/Bizzy/Tiger JK"),
                 TrackIdentity.buildKey(
                         "Angel",
-                        "\uC724\uBBF8\uB798\u2022 Bizzy\u2022 Tiger JK")));
+                        "윤미래• Bizzy• Tiger JK")));
     }
 
     @Test
@@ -161,17 +161,17 @@ public final class TrackIdentityTest {
     @Test
     public void japaneseTitleMatchesChineseTranslatedSuffixFromSaltMetadata() {
         assertTrue(TrackIdentity.matchesHintKey(
-                TrackIdentity.buildKey("17\u3055\u3044\u306e\u3046\u305f\u3002", "\u300e\u30e6\u30a4\u30ab\u300f"),
+                TrackIdentity.buildKey("17さいのうた。", "『ユイカ』"),
                 TrackIdentity.buildKey(
-                        "17\u3055\u3044\u306e\u3046\u305f\u3002 (17\u5c81\u7684\u6b4c\u3002)",
-                        "\u300e\u30e6\u30a4\u30ab\u300f")));
+                        "17さいのうた。 (17岁的歌。)",
+                        "『ユイカ』")));
     }
 
     @Test
     public void pureChineseTitleDoesNotTreatBracketedTextAsAnAlias() {
         assertFalse(TrackIdentity.matchesHintKey(
-                TrackIdentity.buildKey("\u6211\u7684\u6b4c", "\u6b4c\u624b"),
-                TrackIdentity.buildKey("\u6211\u7684\u6b4c\uff08\u53e6\u4e00\u4e2a\u540d\u5b57\uff09", "\u6b4c\u624b")));
+                TrackIdentity.buildKey("我的歌", "歌手"),
+                TrackIdentity.buildKey("我的歌（另一个名字）", "歌手")));
     }
 
     @Test
@@ -189,7 +189,7 @@ public final class TrackIdentityTest {
         assertTrue(TrackIdentity.matchesHintKey(
                 TrackIdentity.buildKey("You're Losing Me", "Taylor Swift"),
                 TrackIdentity.buildKey(
-                        "You\u2019re Losing Me (From The Vault)",
+                        "You’re Losing Me (From The Vault)",
                         "Taylor Swift")));
     }
 
