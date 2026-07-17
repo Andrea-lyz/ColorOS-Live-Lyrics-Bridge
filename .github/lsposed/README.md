@@ -2,7 +2,7 @@
 
 ## Latest release
 
-v3.2.1 aligns bright-screen lyric rendering with ColorOS SystemUI ownership: the official RecyclerView now remains the sole owner of active indices, seek positioning, scrolling, page transitions, and row scaling, while the module only draws lyric pixels and applies bounded typography geometry. It fixes intermittent official-renderer fallback after seeking, delayed inactive rows when returning from unlock surfaces, center/right scale pivots, and track-change geometry shifts. New models fade in only after their row geometry is committed, without taking over RecyclerView alpha, and the verified AOD attach/prime path remains unchanged. Release assets include `LyricProvider-v3.2.1.zip` for installing all bundled provider APKs together.
+v3.3.0 improves compatibility with changing ColorOS/SystemUI private lyric layouts and consolidates playback-state, track-switch, and lyric-commit handling across all bundled LyricProviders. It fixes delayed or split lyric appearance during track changes, short repeated word-by-word segments in QQ Music, and several provider timing and identity races. Routine diagnostic logging is quieter, while the verified AOD attach/prime path remains unchanged. Update the Bridge and installed Provider APKs together; release assets include `LyricProvider-v3.3.0.zip`.
 
 ## 简体中文
 
