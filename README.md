@@ -213,12 +213,15 @@ Useful logs:
 ```powershell
 adb shell setprop log.tag.LockscreenLyrics DEBUG
 adb logcat -v time -s LockscreenLyrics
-adb shell setprop log.tag.LockscreenLyricsParse DEBUG
+adb shell setprop log.tag.LockscreenLyricsParse VERBOSE
 adb logcat -v time -s LockscreenLyricsParse
 adb logcat -v time | Select-String -Pattern "LockscreenLyrics|OplusMediaDataManagerEx|loadLyricInBg|Failed to parse lyric data|LyricsRecyclerView|hasLyric"
+# Restore the quiet defaults after capture.
+adb shell setprop log.tag.LockscreenLyrics INFO
+adb shell setprop log.tag.LockscreenLyricsParse INFO
 ```
 
-INFO/DEBUG output is controlled by the log tag; WARN/ERROR remains available. The main format is `[process][module][event] message | key=value`. Long parser traces use `chunk=n/total`.
+INFO/DEBUG output is controlled by the log tag; WARN/ERROR remains available. Use `VERBOSE` on the main tag only when frame-by-frame RecyclerView ownership snapshots are required. Full parser traces deliberately require `LockscreenLyricsParse=VERBOSE` and use `chunk=n/total`. Restore both tags to `INFO` after capture to avoid persistent diagnostic overhead. The main format is `[process][module][event] message | key=value`.
 
 Expected module log:
 

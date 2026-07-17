@@ -213,12 +213,15 @@ adb shell am force-stop com.salt.music
 ```powershell
 adb shell setprop log.tag.LockscreenLyrics DEBUG
 adb logcat -v time -s LockscreenLyrics
-adb shell setprop log.tag.LockscreenLyricsParse DEBUG
+adb shell setprop log.tag.LockscreenLyricsParse VERBOSE
 adb logcat -v time -s LockscreenLyricsParse
 adb logcat -v time | Select-String -Pattern "LockscreenLyrics|OplusMediaDataManagerEx|loadLyricInBg|Failed to parse lyric data|LyricsRecyclerView|hasLyric"
+# 抓取完成后恢复静默默认值。
+adb shell setprop log.tag.LockscreenLyrics INFO
+adb shell setprop log.tag.LockscreenLyricsParse INFO
 ```
 
-INFO/DEBUG 由 log tag 控制，WARN/ERROR 始终保留。主格式为 `[进程][模块][事件] message | key=value`，长解析日志使用 `chunk=n/total`。
+INFO/DEBUG 由 log tag 控制，WARN/ERROR 始终保留。只有需要逐帧 RecyclerView 所有权快照时才将主 Tag 设为 `VERBOSE`；完整解析 trace 明确要求 `LockscreenLyricsParse=VERBOSE`，并使用 `chunk=n/total`。抓取结束后应将两个 Tag 恢复为 `INFO`，避免持续产生诊断开销。主格式为 `[进程][模块][事件] message | key=value`。
 
 预期模块日志示例：
 
