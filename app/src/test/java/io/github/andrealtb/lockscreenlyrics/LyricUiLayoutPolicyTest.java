@@ -97,6 +97,13 @@ public final class LyricUiLayoutPolicyTest {
     }
 
     @Test
+    public void rowScalePivotUsesMeasuredSizeBeforeTheFirstLayout() {
+        assertEquals(320, LyricUiLayoutPolicy.resolvedViewDimension(320, 280));
+        assertEquals(280, LyricUiLayoutPolicy.resolvedViewDimension(0, 280));
+        assertEquals(0, LyricUiLayoutPolicy.resolvedViewDimension(0, -1));
+    }
+
+    @Test
     public void opticalCenterUsesVisibleInkBoundsAroundContentCenter() {
         assertEquals(118f, LyricUiLayoutPolicy.opticallyCenteredBaselineX(
                 20f, 300f, 2f, 102f), 0.0001f);

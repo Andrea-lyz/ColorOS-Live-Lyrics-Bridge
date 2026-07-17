@@ -100,7 +100,39 @@ final class LockscreenIntegrationPolicy {
                 && previousPosition - nextPosition >= 6_000L;
     }
 
-    static boolean shouldRealignAfterPlaybackPositionJump(
+    static boolean shouldPreserveExternalRendererForSameTrackSeek(
+            boolean likelyTrackRestart,
+            boolean hasExternalModel,
+            boolean externalModelReady,
+            boolean mediaStillMatchesModel) {
+        return likelyTrackRestart
+                && hasExternalModel
+                && externalModelReady
+                && mediaStillMatchesModel;
+    }
+
+    static boolean shouldRetainLyricModeForTransientSurfaceMiss(
+            boolean lyricModeActive,
+            boolean hasLyricModel,
+            boolean surfaceReactivationPending,
+            long elapsedSinceSurfaceSignalMillis,
+            long transitionGraceMillis) {
+        if (!lyricModeActive || !hasLyricModel) {
+            return false;
+        }
+        boolean recentSurfaceSignal = elapsedSinceSurfaceSignalMillis >= 0L
+                && elapsedSinceSurfaceSignalMillis <= Math.max(0L, transitionGraceMillis);
+        return surfaceReactivationPending
+                || recentSurfaceSignal;
+    }
+
+    static boolean shouldModulePositionLyricsRecycler(
+            boolean aodLowFrameRateMode,
+            boolean screenInteractive) {
+        return aodLowFrameRateMode || !screenInteractive;
+    }
+
+    static boolean isPlaybackPositionJump(
             int state,
             long previousPosition,
             long nextPosition,
@@ -115,17 +147,42 @@ final class LockscreenIntegrationPolicy {
         return state == 2 || state == 3 || state == 4 || state == 5 || state == 6;
     }
 
-    static boolean shouldPreferProgressScaleForStalePowerampIndex(
-            boolean powerampSource,
-            long officialLineTimeMillis,
-            long activeLineTimeMillis,
-            long positionMillis,
-            long graceMillis) {
-        return powerampSource
-                && officialLineTimeMillis >= 0L
-                && activeLineTimeMillis >= 0L
-                && officialLineTimeMillis < activeLineTimeMillis
-                && positionMillis >= activeLineTimeMillis + Math.max(0L, graceMillis);
+    static boolean shouldSearchAttachedRecyclerForLyricCandidates(
+            int rememberedCandidateCount,
+            int effectivelyVisibleCandidateCount) {
+        return rememberedCandidateCount <= 0 || effectivelyVisibleCandidateCount <= 0;
+    }
+
+    static int chooseOfficialLyricVisualIndex(
+            int officialIndex,
+            int playbackIndex,
+            int fallbackIndex) {
+        if (officialIndex >= 0) {
+            return officialIndex;
+        }
+        return playbackIndex >= 0 ? playbackIndex : fallbackIndex;
+    }
+
+    static float officialInactiveRowScale(boolean scaleEnabled, int inactiveScalePercent) {
+        if (!scaleEnabled) {
+            return 1f;
+        }
+        return Math.max(0.75f, Math.min(1f, inactiveScalePercent / 100f));
+    }
+
+    static boolean shouldDeferBrightLyricPixelsForGeometryCommit(
+            boolean modelGeometryPending,
+            boolean aodLowFrameRateMode) {
+        return modelGeometryPending && !aodLowFrameRateMode;
+    }
+
+    static boolean shouldRevealCommittedBrightLyricModel(
+            boolean hasAttachedBrightSurface,
+            boolean aodLowFrameRateMode,
+            int motionMode) {
+        return hasAttachedBrightSurface
+                && !aodLowFrameRateMode
+                && motionMode != LyricUiConfig.MOTION_OFF;
     }
 
     static boolean shouldPreservePowerampPositionForSameTrackReattach(

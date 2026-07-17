@@ -2,7 +2,7 @@
 
 ## Latest release
 
-v3.2.0 hardens the settings-application chain, fixes edge-case word-progress matching and cold-start artwork races, and removes per-frame SystemUI layout churn from custom lyric rendering. The settings page now uses lightweight sliders, stable LTPO-aware refresh-rate hints, and a cached floating preview while scrolling. The verified AOD attach/prime timing remains unchanged. Release assets include `LyricProvider-v3.2.0.zip` for installing all bundled provider APKs together.
+v3.2.1 aligns bright-screen lyric rendering with ColorOS SystemUI ownership: the official RecyclerView now remains the sole owner of active indices, seek positioning, scrolling, page transitions, and row scaling, while the module only draws lyric pixels and applies bounded typography geometry. It fixes intermittent official-renderer fallback after seeking, delayed inactive rows when returning from unlock surfaces, center/right scale pivots, and track-change geometry shifts. New models fade in only after their row geometry is committed, without taking over RecyclerView alpha, and the verified AOD attach/prime path remains unchanged. Release assets include `LyricProvider-v3.2.1.zip` for installing all bundled provider APKs together.
 
 ## 简体中文
 

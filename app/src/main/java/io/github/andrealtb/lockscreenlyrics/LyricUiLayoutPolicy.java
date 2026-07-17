@@ -80,6 +80,13 @@ final class LyricUiLayoutPolicy {
         return rtl ? contentLeft + width : contentLeft;
     }
 
+    static int resolvedViewDimension(int laidOutDimension, int measuredDimension) {
+        if (laidOutDimension > 0) {
+            return laidOutDimension;
+        }
+        return Math.max(0, measuredDimension);
+    }
+
     static float opticallyCenteredBaselineX(
             float contentLeft,
             float contentWidth,

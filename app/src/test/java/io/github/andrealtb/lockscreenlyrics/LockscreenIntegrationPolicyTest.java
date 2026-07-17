@@ -57,29 +57,111 @@ public class LockscreenIntegrationPolicyTest {
     }
 
     @Test
-    public void pausedAndBufferingPositionJumpsRealignLyrics() {
-        assertTrue(LockscreenIntegrationPolicy.shouldRealignAfterPlaybackPositionJump(
+    public void sameTrackSeekToStartKeepsTheExternalRenderer() {
+        assertTrue(LockscreenIntegrationPolicy.shouldPreserveExternalRendererForSameTrackSeek(
+                true, true, true, true));
+        assertFalse(LockscreenIntegrationPolicy.shouldPreserveExternalRendererForSameTrackSeek(
+                false, true, true, true));
+        assertFalse(LockscreenIntegrationPolicy.shouldPreserveExternalRendererForSameTrackSeek(
+                true, false, true, true));
+        assertFalse(LockscreenIntegrationPolicy.shouldPreserveExternalRendererForSameTrackSeek(
+                true, true, false, true));
+        assertFalse(LockscreenIntegrationPolicy.shouldPreserveExternalRendererForSameTrackSeek(
+                true, true, true, false));
+    }
+
+    @Test
+    public void transientRecyclerMissDoesNotDeactivateAnActiveLyricTransition() {
+        assertTrue(LockscreenIntegrationPolicy.shouldRetainLyricModeForTransientSurfaceMiss(
+                true, true, true, 2_000L, 1_200L));
+        assertTrue(LockscreenIntegrationPolicy.shouldRetainLyricModeForTransientSurfaceMiss(
+                true, true, false, 600L, 1_200L));
+        assertFalse(LockscreenIntegrationPolicy.shouldRetainLyricModeForTransientSurfaceMiss(
+                true, true, false, 1_201L, 1_200L));
+        assertFalse(LockscreenIntegrationPolicy.shouldRetainLyricModeForTransientSurfaceMiss(
+                true, false, true, 0L, 1_200L));
+        assertFalse(LockscreenIntegrationPolicy.shouldRetainLyricModeForTransientSurfaceMiss(
+                false, true, true, 0L, 1_200L));
+    }
+
+    @Test
+    public void systemUiOwnsBrightScreenRecyclerPositioning() {
+        assertFalse(LockscreenIntegrationPolicy.shouldModulePositionLyricsRecycler(
+                false, true));
+        assertTrue(LockscreenIntegrationPolicy.shouldModulePositionLyricsRecycler(
+                true, true));
+        assertTrue(LockscreenIntegrationPolicy.shouldModulePositionLyricsRecycler(
+                false, false));
+    }
+
+    @Test
+    public void pausedBufferingAndPlayingPositionJumpsAreObserved() {
+        assertTrue(LockscreenIntegrationPolicy.isPlaybackPositionJump(
                 2, 26_000L, 17_000L, 1_500L));
-        assertTrue(LockscreenIntegrationPolicy.shouldRealignAfterPlaybackPositionJump(
+        assertTrue(LockscreenIntegrationPolicy.isPlaybackPositionJump(
                 6, 17_000L, 7_621L, 1_500L));
-        assertTrue(LockscreenIntegrationPolicy.shouldRealignAfterPlaybackPositionJump(
+        assertTrue(LockscreenIntegrationPolicy.isPlaybackPositionJump(
                 3, 1_000L, 69_000L, 1_500L));
-        assertFalse(LockscreenIntegrationPolicy.shouldRealignAfterPlaybackPositionJump(
+        assertFalse(LockscreenIntegrationPolicy.isPlaybackPositionJump(
                 0, 17_000L, 0L, 1_500L));
-        assertFalse(LockscreenIntegrationPolicy.shouldRealignAfterPlaybackPositionJump(
+        assertFalse(LockscreenIntegrationPolicy.isPlaybackPositionJump(
                 2, 17_000L, 16_000L, 1_500L));
     }
 
     @Test
-    public void stalePowerampScaleIndexYieldsToEstablishedProgressLine() {
-        assertTrue(LockscreenIntegrationPolicy.shouldPreferProgressScaleForStalePowerampIndex(
-                true, 117_617L, 125_833L, 128_001L, 420L));
-        assertFalse(LockscreenIntegrationPolicy.shouldPreferProgressScaleForStalePowerampIndex(
-                true, 117_617L, 125_833L, 126_100L, 420L));
-        assertFalse(LockscreenIntegrationPolicy.shouldPreferProgressScaleForStalePowerampIndex(
-                false, 117_617L, 125_833L, 128_001L, 420L));
-        assertFalse(LockscreenIntegrationPolicy.shouldPreferProgressScaleForStalePowerampIndex(
-                true, 129_535L, 125_833L, 128_001L, 420L));
+    public void attachedRecyclerIsSearchedWhenRememberedRowsBelongToHiddenSurface() {
+        assertTrue(LockscreenIntegrationPolicy.shouldSearchAttachedRecyclerForLyricCandidates(
+                0, 0));
+        assertTrue(LockscreenIntegrationPolicy.shouldSearchAttachedRecyclerForLyricCandidates(
+                8, 0));
+        assertFalse(LockscreenIntegrationPolicy.shouldSearchAttachedRecyclerForLyricCandidates(
+                8, 1));
+    }
+
+    @Test
+    public void officialRecyclerIndexWinsOverPlaybackProgressDuringTransition() {
+        assertEquals(32, LockscreenIntegrationPolicy.chooseOfficialLyricVisualIndex(
+                32, 34, 34));
+        assertEquals(34, LockscreenIntegrationPolicy.chooseOfficialLyricVisualIndex(
+                -1, 34, 35));
+        assertEquals(35, LockscreenIntegrationPolicy.chooseOfficialLyricVisualIndex(
+                -1, -1, 35));
+    }
+
+    @Test
+    public void officialInactiveScaleIsClampedAndDisabledScaleIsNeutral() {
+        assertEquals(0.75f, LockscreenIntegrationPolicy.officialInactiveRowScale(
+                true, 60), 0.0001f);
+        assertEquals(0.90f, LockscreenIntegrationPolicy.officialInactiveRowScale(
+                true, 90), 0.0001f);
+        assertEquals(1f, LockscreenIntegrationPolicy.officialInactiveRowScale(
+                true, 120), 0.0001f);
+        assertEquals(1f, LockscreenIntegrationPolicy.officialInactiveRowScale(
+                false, 75), 0.0001f);
+    }
+
+    @Test
+    public void brightLyricsWaitForPublishedModelGeometryButAodKeepsItsExistingPath() {
+        assertTrue(LockscreenIntegrationPolicy.shouldDeferBrightLyricPixelsForGeometryCommit(
+                true, false));
+        assertFalse(LockscreenIntegrationPolicy.shouldDeferBrightLyricPixelsForGeometryCommit(
+                true, true));
+        assertFalse(LockscreenIntegrationPolicy.shouldDeferBrightLyricPixelsForGeometryCommit(
+                false, false));
+    }
+
+    @Test
+    public void committedBrightModelRevealDoesNotTakeOverAodOrDisabledMotion() {
+        assertTrue(LockscreenIntegrationPolicy.shouldRevealCommittedBrightLyricModel(
+                true, false, LyricUiConfig.MOTION_STANDARD));
+        assertTrue(LockscreenIntegrationPolicy.shouldRevealCommittedBrightLyricModel(
+                true, false, LyricUiConfig.MOTION_REDUCED));
+        assertFalse(LockscreenIntegrationPolicy.shouldRevealCommittedBrightLyricModel(
+                true, false, LyricUiConfig.MOTION_OFF));
+        assertFalse(LockscreenIntegrationPolicy.shouldRevealCommittedBrightLyricModel(
+                true, true, LyricUiConfig.MOTION_STANDARD));
+        assertFalse(LockscreenIntegrationPolicy.shouldRevealCommittedBrightLyricModel(
+                false, false, LyricUiConfig.MOTION_STANDARD));
     }
 
     @Test
