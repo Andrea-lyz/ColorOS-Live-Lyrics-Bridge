@@ -9,6 +9,24 @@ final class LyricUiLayoutPolicy {
                 : config.lineSpacingTenthsDp;
     }
 
+    static int wrappedLineSpacingTenthsDp(LyricUiConfig config) {
+        return config == null
+                ? LyricUiConfig.defaults().wrappedLineSpacingTenthsDp
+                : config.wrappedLineSpacingTenthsDp;
+    }
+
+    static float mainTextSizeSp(LyricUiConfig config, boolean untranslatedLayout) {
+        float configured = (config == null ? LyricUiConfig.defaults() : config)
+                .mainFontTenthsSp / 10f;
+        return untranslatedLayout ? Math.min(30f, configured + 2f) : configured;
+    }
+
+    static float addWrappedLineSpacing(float baseLineGapPx, float extraSpacingPx) {
+        // Never let the additive control create a negative total line gap. At the
+        // supported -1dp minimum this resolves to zero while preserving glyph separation.
+        return baseLineGapPx + Math.max(-Math.max(0f, baseLineGapPx), extraSpacingPx);
+    }
+
     static int legacyLineSpacingTenthsDp(LyricUiConfig config) {
         if (config == null || !LyricUiPreset.hasDefaultAppearance(config)) {
             return 130;

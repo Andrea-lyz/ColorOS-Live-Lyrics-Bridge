@@ -21,6 +21,32 @@ public final class LyricUiLayoutPolicyTest {
     }
 
     @Test
+    public void wrappedLineSpacingIsAnIndependentNonNegativeIncrement() {
+        LyricUiConfig defaults = LyricUiConfig.defaults();
+
+        assertEquals(0, LyricUiLayoutPolicy.wrappedLineSpacingTenthsDp(defaults));
+        assertEquals(25, LyricUiLayoutPolicy.wrappedLineSpacingTenthsDp(
+                defaults.buildUpon().wrappedLineSpacingTenthsDp(23).build()));
+        assertEquals(-10, LyricUiLayoutPolicy.wrappedLineSpacingTenthsDp(
+                defaults.buildUpon().wrappedLineSpacingTenthsDp(-10).build()));
+        assertEquals(80, LyricUiLayoutPolicy.wrappedLineSpacingTenthsDp(
+                defaults.buildUpon().wrappedLineSpacingTenthsDp(999).build()));
+        assertEquals(5f, LyricUiLayoutPolicy.addWrappedLineSpacing(2f, 3f), 0.0001f);
+        assertEquals(0f, LyricUiLayoutPolicy.addWrappedLineSpacing(2f, -3f), 0.0001f);
+    }
+
+    @Test
+    public void mainFontSizeAddsTwoSpOnlyForUntranslatedLayout() {
+        LyricUiConfig maximum = LyricUiConfig.defaults()
+                .buildUpon()
+                .mainFontTenthsSp(280)
+                .build();
+
+        assertEquals(28f, LyricUiLayoutPolicy.mainTextSizeSp(maximum, false), 0.0001f);
+        assertEquals(30f, LyricUiLayoutPolicy.mainTextSizeSp(maximum, true), 0.0001f);
+    }
+
+    @Test
     public void presetsOwnTheirDocumentedSpacing() {
         LyricUiConfig soft = LyricUiPreset.SOFT.apply(LyricUiConfig.defaults())
                 .buildUpon()

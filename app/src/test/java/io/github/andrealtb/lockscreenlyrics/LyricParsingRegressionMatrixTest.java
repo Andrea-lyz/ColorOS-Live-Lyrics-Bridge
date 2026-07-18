@@ -116,6 +116,22 @@ public final class LyricParsingRegressionMatrixTest {
     }
 
     @Test
+    public void opaliteMoveOnEnhancedLineKeepsEnglishMainLine() {
+        String lrc = "[02:08.296]You [02:08.508]move [02:08.710]on[02:10.232]\n"
+                + "[02:08.296]你放下过往";
+
+        LyricsCoreAdapter.ParsedLyrics parsed = LyricsCoreAdapter.parse(lrc);
+        LyricsCoreAdapter.ParsedLine line = parsed.lines.stream()
+                .filter(candidate -> candidate.startMillis == 128_296L)
+                .findFirst()
+                .orElseThrow();
+
+        assertEquals("You move on", line.text);
+        assertEquals("你放下过往", line.translation);
+        assertTrue(line.syllables.size() > 1);
+    }
+
+    @Test
     public void neteaseBracketWordTimedLineKeepsTrueWordTiming() {
         String lrc = "[00:46.230]Girl [00:46.470]tell [00:46.770]me "
                 + "[00:47.010]what [00:47.280]you [00:47.460]want"

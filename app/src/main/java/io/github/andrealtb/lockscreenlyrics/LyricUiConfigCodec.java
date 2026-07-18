@@ -29,6 +29,7 @@ final class LyricUiConfigCodec {
     static final String FONT_WEIGHT = "font_weight";
     static final String ALIGNMENT = "alignment";
     static final String LINE_SPACING = "line_spacing_tenths_dp";
+    static final String WRAPPED_LINE_SPACING = "wrapped_line_spacing_tenths_dp";
     // Schema 1 only. Kept so migration can explicitly discard the former metadata DSL.
     static final String LEGACY_METADATA_CLEANUP_RULES = "metadata_cleanup_rules";
 
@@ -62,6 +63,7 @@ final class LyricUiConfigCodec {
         values.put(FONT_WEIGHT, config.fontWeight);
         values.put(ALIGNMENT, config.alignment);
         values.put(LINE_SPACING, config.lineSpacingTenthsDp);
+        values.put(WRAPPED_LINE_SPACING, config.wrappedLineSpacingTenthsDp);
         return values;
     }
 
@@ -102,6 +104,7 @@ final class LyricUiConfigCodec {
         if (values.containsKey(FONT_WEIGHT)) builder.fontWeight(integer(values.get(FONT_WEIGHT), base.fontWeight));
         if (values.containsKey(ALIGNMENT)) builder.alignment(integer(values.get(ALIGNMENT), base.alignment));
         if (values.containsKey(LINE_SPACING)) builder.lineSpacingTenthsDp(integer(values.get(LINE_SPACING), base.lineSpacingTenthsDp));
+        if (values.containsKey(WRAPPED_LINE_SPACING)) builder.wrappedLineSpacingTenthsDp(integer(values.get(WRAPPED_LINE_SPACING), base.wrappedLineSpacingTenthsDp));
         LyricUiConfig decoded = builder.build();
         if (allowLegacy && !values.containsKey(LINE_SPACING)) {
             decoded = decoded.buildUpon()

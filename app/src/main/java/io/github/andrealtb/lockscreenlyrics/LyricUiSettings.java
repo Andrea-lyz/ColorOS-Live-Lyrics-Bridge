@@ -11,6 +11,18 @@ final class LyricUiSettings {
             "io.github.andrealtb.lockscreenlyrics.action.PLAYER_TRANSLATION_SETTINGS_CHANGED";
     static final String ACTION_CONTENT_CLEANUP_CHANGED =
             "io.github.andrealtb.lockscreenlyrics.action.CONTENT_CLEANUP_CHANGED";
+    /** Requests a restart of the main SystemUI process through the protected settings receiver. */
+    static final String ACTION_RESTART_SYSTEM_UI =
+            "io.github.andrealtb.lockscreenlyrics.action.RESTART_SYSTEM_UI";
+    static final String EXTRA_SYSTEM_UI_RESTART_RESULT_RECEIVER =
+            "system_ui_restart_result_receiver";
+    static final String EXTRA_SYSTEM_UI_RESTART_REQUEST_ID =
+            "system_ui_restart_request_id";
+    static final String RESULT_SYSTEM_UI_RESTART_REQUEST_ID =
+            "system_ui_restart_request_id";
+    static final String RESULT_SYSTEM_UI_RESTART_ACCEPTED =
+            "system_ui_restart_accepted";
+    static final int RESULT_SYSTEM_UI_RESTART_ACKNOWLEDGED = 1;
     static final String CHANGE_SETTINGS_PERMISSION =
             "io.github.andrealtb.lockscreenlyrics.permission.CHANGE_LYRIC_UI_SETTINGS";
     static final String EXTRA_CLEAR_TRANSLATION_OVERRIDES =

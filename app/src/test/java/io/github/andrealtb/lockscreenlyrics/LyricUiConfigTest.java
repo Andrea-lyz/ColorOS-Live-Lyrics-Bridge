@@ -25,6 +25,7 @@ public final class LyricUiConfigTest {
         assertEquals(220, config.mainFontTenthsSp);
         assertEquals(66, config.translationFontRatioPercent);
         assertEquals(0, config.lineSpacingTenthsDp);
+        assertEquals(0, config.wrappedLineSpacingTenthsDp);
     }
 
     @Test
@@ -39,6 +40,7 @@ public final class LyricUiConfigTest {
                 .mainFontTenthsSp(999)
                 .translationFontRatioPercent(3)
                 .lineSpacingTenthsDp(203)
+                .wrappedLineSpacingTenthsDp(83)
                 .build();
 
         assertEquals(30, config.inactiveOpacityPercent);
@@ -47,16 +49,19 @@ public final class LyricUiConfigTest {
         assertEquals(10, config.glowRadiusPercent);
         assertEquals("#FFFFFF", config.primaryColor);
         assertEquals("#ABC123", config.glowColor);
-        assertEquals(260, config.mainFontTenthsSp);
+        assertEquals(280, config.mainFontTenthsSp);
         assertEquals(55, config.translationFontRatioPercent);
         assertEquals(200, config.lineSpacingTenthsDp);
+        assertEquals(80, config.wrappedLineSpacingTenthsDp);
 
         LyricUiConfig compact = new LyricUiConfig.Builder()
                 .inactiveScalePercent(-999)
                 .lineSpacingTenthsDp(-999)
+                .wrappedLineSpacingTenthsDp(-999)
                 .build();
         assertEquals(75, compact.inactiveScalePercent);
         assertEquals(-50, compact.lineSpacingTenthsDp);
+        assertEquals(-10, compact.wrappedLineSpacingTenthsDp);
     }
 
     @Test
@@ -64,6 +69,7 @@ public final class LyricUiConfigTest {
         LyricUiConfig baseline = new LyricUiConfig.Builder()
                 .inactiveOpacityPercent(70)
                 .glowEnabled(false)
+                .wrappedLineSpacingTenthsDp(30)
                 .build();
         Map<String, Object> values = new HashMap<>();
         values.put(LyricUiConfigCodec.SCHEMA, 2);
@@ -74,12 +80,14 @@ public final class LyricUiConfigTest {
         assertTrue(decoded.blurEnabled);
         assertEquals(70, decoded.inactiveOpacityPercent);
         assertFalse(decoded.glowEnabled);
+        assertEquals(30, decoded.wrappedLineSpacingTenthsDp);
     }
 
     @Test
     public void codecRoundTripPreservesLineSpacing() {
         LyricUiConfig source = LyricUiConfig.defaults().buildUpon()
                 .lineSpacingTenthsDp(65)
+                .wrappedLineSpacingTenthsDp(25)
                 .alignment(LyricUiConfig.ALIGN_CENTER)
                 .build();
 
@@ -89,6 +97,7 @@ public final class LyricUiConfigTest {
                 false);
 
         assertEquals(65, decoded.lineSpacingTenthsDp);
+        assertEquals(25, decoded.wrappedLineSpacingTenthsDp);
         assertEquals(LyricUiConfig.ALIGN_CENTER, decoded.alignment);
     }
 
@@ -98,6 +107,7 @@ public final class LyricUiConfigTest {
                 .alignment(LyricUiConfig.ALIGN_CENTER)
                 .mainFontTenthsSp(260)
                 .lineSpacingTenthsDp(-35)
+                .wrappedLineSpacingTenthsDp(30)
                 .inactiveOpacityPercent(73)
                 .glowEnabled(false)
                 .defaultTranslationEnabled(true)
@@ -109,6 +119,7 @@ public final class LyricUiConfigTest {
         assertEquals(LyricUiConfig.ALIGN_CENTER, updated.alignment);
         assertEquals(260, updated.mainFontTenthsSp);
         assertEquals(-35, updated.lineSpacingTenthsDp);
+        assertEquals(30, updated.wrappedLineSpacingTenthsDp);
         assertEquals(73, updated.inactiveOpacityPercent);
         assertFalse(updated.glowEnabled);
     }
@@ -140,6 +151,7 @@ public final class LyricUiConfigTest {
     public void resetAppearancePreservesPolicyFields() {
         LyricUiConfig config = new LyricUiConfig.Builder()
                 .inactiveOpacityPercent(80)
+                .wrappedLineSpacingTenthsDp(30)
                 .screenTimeoutSeconds(30)
                 .defaultTranslationEnabled(false)
                 .maxRefreshRateHz(90)
@@ -147,6 +159,7 @@ public final class LyricUiConfigTest {
                 .resetAppearance();
 
         assertEquals(44, config.inactiveOpacityPercent);
+        assertEquals(0, config.wrappedLineSpacingTenthsDp);
         assertEquals(30, config.screenTimeoutSeconds);
         assertFalse(config.defaultTranslationEnabled);
         assertEquals(90, config.maxRefreshRateHz);

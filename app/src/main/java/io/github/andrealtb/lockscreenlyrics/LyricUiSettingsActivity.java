@@ -47,6 +47,7 @@ public final class LyricUiSettingsActivity extends Activity {
     private static final int CARD = 0xFFFFFFFF;
     private static final int TEXT = 0xFF111111;
     private static final long PREVIEW_SCROLL_LAYER_RELEASE_DELAY_MS = 160L;
+    private static final long SYSTEM_UI_RESTART_ACK_TIMEOUT_MS = 2_500L;
     private static final Pattern COLOR_PATTERN = Pattern.compile("#[0-9A-Fa-f]{6}");
 
     private SharedPreferences preferences;
@@ -77,6 +78,7 @@ public final class LyricUiSettingsActivity extends Activity {
     private Spinner fontWeight;
     private Spinner alignment;
     private LightweightSlider lineSpacing;
+    private LightweightSlider wrappedLineSpacing;
     private TextView previewMain;
     private LinearLayout previewActiveSlot;
     private TextView previewTranslation;
@@ -99,6 +101,8 @@ public final class LyricUiSettingsActivity extends Activity {
     private boolean draftListenersReady;
     private int ignoredPresetSelection = -1;
     private long pendingSettingsRevision = -1L;
+    private long systemUiRestartRequestSequence;
+    private long pendingSystemUiRestartRequestId = -1L;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -140,6 +144,7 @@ public final class LyricUiSettingsActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        pendingSystemUiRestartRequestId = -1L;
         releaseScrollCachedPreviewLayer();
         super.onDestroy();
     }
@@ -186,7 +191,7 @@ public final class LyricUiSettingsActivity extends Activity {
         disableAutofill(content);
         installInsets(content);
 
-        TextView notice = text("修改期间仅更新本页预览；点击保存后一次校验并应用。", 14, 0xFF7A4C00);
+        TextView notice = text("修改期间仅更新本页预览；点击“应用并保存”后一次校验并应用。", 14, 0xFF7A4C00);
         notice.setPadding(dp(14), dp(12), dp(14), dp(12));
         notice.setBackgroundColor(0xFFFFF4DE);
         content.addView(notice, marginBottom(dp(18)));
@@ -212,7 +217,7 @@ public final class LyricUiSettingsActivity extends Activity {
         previewSecondarySlotTwo = new LinearLayout(this);
         previewSecondarySlotTwo.setOrientation(LinearLayout.VERTICAL);
         previewSecondarySlotTwo.setGravity(Gravity.CENTER_VERTICAL);
-        previewMain = text("正在播放的主歌词", 22, Color.WHITE);
+        previewMain = text("正在播放的主歌词\n内部换行预览", 22, Color.WHITE);
         previewTranslation = text("Current translation preview", 15, Color.WHITE);
         previewSecondaryOne = text("下一行歌词预览", 22, Color.WHITE);
         previewSecondaryTranslationOne = text("Next translation preview", 15, Color.WHITE);
@@ -299,8 +304,14 @@ public final class LyricUiSettingsActivity extends Activity {
 
         content.addView(section("高级排版"));
         LinearLayout typography = card();
-        mainFontSize = seek(18, 26);
+        mainFontSize = seek(18, 28);
         typography.addView(labeledSeek("主歌词字号", mainFontSize, " sp", 18));
+        TextView mainFontSizeHint = text(
+                "有翻译：主歌词最高 28sp\n无翻译：自动增加 2sp，最高 30sp",
+                12,
+                0x99000000);
+        mainFontSizeHint.setPadding(dp(4), 0, dp(4), dp(6));
+        typography.addView(mainFontSizeHint, matchWrap());
         translationFontRatio = seek(55, 75);
         typography.addView(labeledSeek("翻译字号比例", translationFontRatio, "%", 55));
         fontWeight = spinner(new String[]{"跟随系统", "常规", "中等", "粗体"});
@@ -308,15 +319,30 @@ public final class LyricUiSettingsActivity extends Activity {
         alignment = spinner(new String[]{"左对齐", "居中", "右对齐"});
         typography.addView(row("对齐", alignment));
         lineSpacing = seek(-10, 40);
-        typography.addView(labeledHalfDpSeek("歌词行间距", lineSpacing));
+        typography.addView(labeledHalfDpSeek("歌词行间距（歌词之间）", lineSpacing));
+        wrappedLineSpacing = seek(-2, 16);
+        typography.addView(labeledHalfDpSeek("歌词内换行额外间距", wrappedLineSpacing));
         content.addView(typography, marginBottom(dp(16)));
 
-        Button save = button("保存并应用");
-        save.setTextColor(Color.WHITE);
-        save.setBackgroundColor(TEXT);
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.setGravity(Gravity.CENTER_VERTICAL);
+
+        Button restartSystemUi = button("重启系统界面");
+        styleActionButton(restartSystemUi);
+        restartSystemUi.setOnClickListener(view -> requestSystemUiRestart());
+        LinearLayout.LayoutParams restartParams = new LinearLayout.LayoutParams(
+                0,
+                dp(52),
+                1f);
+        restartParams.rightMargin = dp(6);
+        actions.addView(restartSystemUi, restartParams);
+
+        Button save = button("应用并保存");
+        styleActionButton(save);
         save.setOnClickListener(view -> save());
-        content.addView(save, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(52)));
+        actions.addView(save, new LinearLayout.LayoutParams(0, dp(52), 1f));
+        content.addView(actions, matchWrap());
 
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
@@ -682,6 +708,7 @@ public final class LyricUiSettingsActivity extends Activity {
                 .fontWeight(fontWeight.getSelectedItemPosition())
                 .alignment(alignment.getSelectedItemPosition())
                 .lineSpacingTenthsDp(lineSpacing.getProgress() * 5)
+                .wrappedLineSpacingTenthsDp(wrappedLineSpacing.getProgress() * 5)
                 .build();
     }
 
@@ -712,6 +739,7 @@ public final class LyricUiSettingsActivity extends Activity {
         fontWeight.setSelection(config.fontWeight);
         alignment.setSelection(config.alignment);
         lineSpacing.setProgress(config.lineSpacingTenthsDp / 5);
+        wrappedLineSpacing.setProgress(config.wrappedLineSpacingTenthsDp / 5);
         updateSeekValueLabels();
         ignoredPresetSelection = LyricUiPreset.detect(config).ordinal();
         presetSpinner.setSelection(ignoredPresetSelection);
@@ -731,7 +759,7 @@ public final class LyricUiSettingsActivity extends Activity {
     private LightweightSlider[] valueSeekBars() {
         return new LightweightSlider[]{opacity, blurRadius, inactiveScale,
                 glowIntensity, glowRadius, mainFontSize, translationFontRatio,
-                lineSpacing};
+                lineSpacing, wrappedLineSpacing};
     }
 
     private void bindPreview(LyricUiConfig config) {
@@ -810,6 +838,9 @@ public final class LyricUiSettingsActivity extends Activity {
         }
         int previewSpacing = dp(
                 LyricUiLayoutPolicy.lineSpacingTenthsDp(config) / 10f);
+        previewMain.setLineSpacing(
+                dp(1f + LyricUiLayoutPolicy.wrappedLineSpacingTenthsDp(config) / 10f),
+                1f);
         previewMain.setIncludeFontPadding(false);
         previewTranslation.setIncludeFontPadding(false);
         previewSecondaryOne.setIncludeFontPadding(false);
@@ -858,6 +889,12 @@ public final class LyricUiSettingsActivity extends Activity {
             view.setTranslationX(0f);
             return;
         }
+        if (text.indexOf('\n') >= 0) {
+            // A single translation cannot optically center multiple lines with different
+            // ink bounds. Keep TextView's per-line gravity instead of shifting the whole block.
+            view.setTranslationX(0f);
+            return;
+        }
         Rect bounds = new Rect();
         view.getPaint().getTextBounds(text, 0, text.length(), bounds);
         if (bounds.isEmpty()) {
@@ -898,14 +935,31 @@ public final class LyricUiSettingsActivity extends Activity {
         android.graphics.Paint.FontMetrics mainMetrics = main.getPaint().getFontMetrics();
         android.graphics.Paint.FontMetrics translationMetrics =
                 translation.getPaint().getFontMetrics();
-        float groupHeight = LyricUiLayoutPolicy.fontOuterHeight(
+        float mainHeight = LyricUiLayoutPolicy.mainTextBlockHeight(
                 mainMetrics.top,
-                mainMetrics.bottom)
+                mainMetrics.ascent,
+                mainMetrics.descent,
+                mainMetrics.bottom,
+                previewMainLineCount(main),
+                dp(1f + LyricUiLayoutPolicy.wrappedLineSpacingTenthsDp(config) / 10f));
+        float groupHeight = mainHeight
                 + dp(2f)
                 + LyricUiLayoutPolicy.fontOuterHeight(
                 translationMetrics.top,
                 translationMetrics.bottom);
         return previewSlotHeight(config, groupHeight, main.getPaint().getTextSize());
+    }
+
+    private static int previewMainLineCount(TextView view) {
+        if (view == null || view.getText() == null || view.getText().length() == 0) {
+            return 0;
+        }
+        int count = 1;
+        CharSequence text = view.getText();
+        for (int i = 0; i < text.length(); i++) {
+            if (text.charAt(i) == '\n') count++;
+        }
+        return LyricUiLayoutPolicy.visibleMainLineCount(count, 2);
     }
 
     private int previewSlotHeight(
@@ -933,6 +987,64 @@ public final class LyricUiSettingsActivity extends Activity {
         if (params.height == height) return;
         params.height = height;
         view.setLayoutParams(params);
+    }
+
+    private void requestSystemUiRestart() {
+        long requestId = ++systemUiRestartRequestSequence;
+        pendingSystemUiRestartRequestId = requestId;
+        try {
+            Intent intent = new Intent(LyricUiSettings.ACTION_RESTART_SYSTEM_UI)
+                    .setPackage("com.android.systemui")
+                    .putExtra(
+                            LyricUiSettings.EXTRA_SYSTEM_UI_RESTART_REQUEST_ID,
+                            requestId)
+                    .putExtra(
+                            LyricUiSettings.EXTRA_SYSTEM_UI_RESTART_RESULT_RECEIVER,
+                            createSystemUiRestartResultReceiver(requestId));
+            intent.addFlags(
+                    Intent.FLAG_RECEIVER_REGISTERED_ONLY | Intent.FLAG_RECEIVER_FOREGROUND);
+            sendBroadcast(intent);
+            Toast.makeText(this, "正在请求重启系统界面…", Toast.LENGTH_SHORT).show();
+            getWindow().getDecorView().postDelayed(() -> {
+                if (pendingSystemUiRestartRequestId != requestId) return;
+                pendingSystemUiRestartRequestId = -1L;
+                Toast.makeText(
+                        this,
+                        "系统界面未响应；首次使用需先重启设备，让模块加载到 SystemUI",
+                        Toast.LENGTH_LONG).show();
+            }, SYSTEM_UI_RESTART_ACK_TIMEOUT_MS);
+        } catch (RuntimeException error) {
+            if (pendingSystemUiRestartRequestId == requestId) {
+                pendingSystemUiRestartRequestId = -1L;
+            }
+            Log.w(TAG, "Could not request SystemUI restart", error);
+            Toast.makeText(this, "无法请求重启系统界面，请确认模块已启用", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private ResultReceiver createSystemUiRestartResultReceiver(long requestId) {
+        return new ResultReceiver(new Handler(getMainLooper())) {
+            @Override
+            protected void onReceiveResult(int resultCode, Bundle resultData) {
+                if (pendingSystemUiRestartRequestId != requestId
+                        || resultData == null
+                        || resultData.getLong(
+                        LyricUiSettings.RESULT_SYSTEM_UI_RESTART_REQUEST_ID,
+                        -1L) != requestId) {
+                    return;
+                }
+                pendingSystemUiRestartRequestId = -1L;
+                if (resultCode == LyricUiSettings.RESULT_SYSTEM_UI_RESTART_ACKNOWLEDGED
+                        && resultData.getBoolean(
+                        LyricUiSettings.RESULT_SYSTEM_UI_RESTART_ACCEPTED,
+                        false)) {
+                    Toast.makeText(
+                            LyricUiSettingsActivity.this,
+                            "系统界面已收到请求，正在重启",
+                            Toast.LENGTH_SHORT).show();
+                }
+            }
+        };
     }
 
     private void save() {
@@ -969,14 +1081,16 @@ public final class LyricUiSettingsActivity extends Activity {
                         + ", revision=" + revision
                         + ", alignment=" + config.alignment
                         + ", fontSp10=" + config.mainFontTenthsSp
-                        + ", lineSpacingDp10=" + config.lineSpacingTenthsDp);
-        Toast.makeText(this, "已保存，等待 SystemUI 确认", Toast.LENGTH_SHORT).show();
+                        + ", lineSpacingDp10=" + config.lineSpacingTenthsDp
+                        + ", wrappedLineSpacingDp10="
+                        + config.wrappedLineSpacingTenthsDp);
+        Toast.makeText(this, "已应用并保存，等待 SystemUI 确认", Toast.LENGTH_SHORT).show();
         getWindow().getDecorView().postDelayed(() -> {
             if (pendingSettingsRevision != revision) return;
             pendingSettingsRevision = -1L;
             Toast.makeText(
                     this,
-                    "已保存，但 SystemUI 未确认应用，请检查模块是否已启用",
+                    "已应用并保存，但 SystemUI 未确认应用，请检查模块是否已启用",
                     Toast.LENGTH_LONG).show();
         }, 2_500L);
     }
@@ -1009,7 +1123,7 @@ public final class LyricUiSettingsActivity extends Activity {
                                 + ", reason=" + reason);
                 Toast.makeText(
                         LyricUiSettingsActivity.this,
-                        applied ? "已保存并应用" : "SystemUI 拒绝了设置：" + reason,
+                        applied ? "已应用并保存" : "SystemUI 拒绝了设置：" + reason,
                         applied ? Toast.LENGTH_SHORT : Toast.LENGTH_LONG).show();
             }
         };
@@ -1210,6 +1324,13 @@ public final class LyricUiSettingsActivity extends Activity {
         button.setText(label);
         button.setAllCaps(false);
         return button;
+    }
+
+    private void styleActionButton(Button button) {
+        button.setTextColor(Color.WHITE);
+        button.setBackgroundColor(TEXT);
+        button.setTextSize(14);
+        button.setGravity(Gravity.CENTER);
     }
 
     private TextView text(String value, float size, int color) {

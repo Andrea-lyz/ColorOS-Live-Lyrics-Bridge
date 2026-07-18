@@ -43,6 +43,7 @@ final class LyricUiConfig {
     final int fontWeight;
     final int alignment;
     final int lineSpacingTenthsDp;
+    final int wrappedLineSpacingTenthsDp;
 
     private LyricUiConfig(Builder builder) {
         schemaVersion = SCHEMA_VERSION;
@@ -66,11 +67,14 @@ final class LyricUiConfig {
         screenTimeoutEnabled = builder.screenTimeoutEnabled;
         screenTimeoutSeconds = LyricUiSettings.sanitizeScreenTimeoutSeconds(
                 builder.screenTimeoutSeconds);
-        mainFontTenthsSp = clamp(builder.mainFontTenthsSp, 180, 260);
+        mainFontTenthsSp = clamp(builder.mainFontTenthsSp, 180, 280);
         translationFontRatioPercent = clamp(builder.translationFontRatioPercent, 55, 75);
         fontWeight = clamp(builder.fontWeight, WEIGHT_SYSTEM, WEIGHT_BOLD);
         alignment = clamp(builder.alignment, ALIGN_START, ALIGN_END);
         lineSpacingTenthsDp = roundStep(clamp(builder.lineSpacingTenthsDp, -50, 200), 5);
+        wrappedLineSpacingTenthsDp = roundStep(
+                clamp(builder.wrappedLineSpacingTenthsDp, -10, 80),
+                5);
     }
 
     static LyricUiConfig defaults() {
@@ -100,6 +104,7 @@ final class LyricUiConfig {
                 .fontWeight(defaults.fontWeight)
                 .alignment(defaults.alignment)
                 .lineSpacingTenthsDp(defaults.lineSpacingTenthsDp)
+                .wrappedLineSpacingTenthsDp(defaults.wrappedLineSpacingTenthsDp)
                 .build();
     }
 
@@ -147,6 +152,7 @@ final class LyricUiConfig {
                 && fontWeight == other.fontWeight
                 && alignment == other.alignment
                 && lineSpacingTenthsDp == other.lineSpacingTenthsDp
+                && wrappedLineSpacingTenthsDp == other.wrappedLineSpacingTenthsDp
                 && primaryColor.equals(other.primaryColor)
                 && glowColor.equals(other.glowColor);
     }
@@ -161,7 +167,7 @@ final class LyricUiConfig {
                 defaultTranslationEnabled, lineTimedProgressEnabled,
                 translationProgressEnabled, screenTimeoutEnabled, screenTimeoutSeconds,
                 mainFontTenthsSp, translationFontRatioPercent, fontWeight, alignment,
-                lineSpacingTenthsDp);
+                lineSpacingTenthsDp, wrappedLineSpacingTenthsDp);
     }
 
     static final class Builder {
@@ -189,6 +195,7 @@ final class LyricUiConfig {
         private int fontWeight = WEIGHT_SYSTEM;
         private int alignment = ALIGN_START;
         private int lineSpacingTenthsDp;
+        private int wrappedLineSpacingTenthsDp;
 
         Builder() {
         }
@@ -218,6 +225,7 @@ final class LyricUiConfig {
             fontWeight = source.fontWeight;
             alignment = source.alignment;
             lineSpacingTenthsDp = source.lineSpacingTenthsDp;
+            wrappedLineSpacingTenthsDp = source.wrappedLineSpacingTenthsDp;
         }
 
         Builder inactiveOpacityPercent(int v) { inactiveOpacityPercent = v; return this; }
@@ -244,6 +252,10 @@ final class LyricUiConfig {
         Builder fontWeight(int v) { fontWeight = v; return this; }
         Builder alignment(int v) { alignment = v; return this; }
         Builder lineSpacingTenthsDp(int v) { lineSpacingTenthsDp = v; return this; }
+        Builder wrappedLineSpacingTenthsDp(int v) {
+            wrappedLineSpacingTenthsDp = v;
+            return this;
+        }
         LyricUiConfig build() { return new LyricUiConfig(this); }
     }
 }

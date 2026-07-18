@@ -1694,6 +1694,8 @@ public final class LockscreenLyricsModule extends XposedModule {
                     + ", alignment=" + config.alignment
                     + ", fontSp10=" + config.mainFontTenthsSp
                     + ", lineSpacingDp10=" + config.lineSpacingTenthsDp
+                    + ", wrappedLineSpacingDp10="
+                    + config.wrappedLineSpacingTenthsDp
                     + ", force=" + force);
         }
     }
@@ -1745,13 +1747,18 @@ public final class LockscreenLyricsModule extends XposedModule {
             resetOfficialRowScaleState();
             boolean lineSpacingChanged = previousConfig == null
                     || config.lineSpacingTenthsDp != previousConfig.lineSpacingTenthsDp;
+            boolean wrappedLineSpacingChanged = previousConfig == null
+                    || config.wrappedLineSpacingTenthsDp
+                    != previousConfig.wrappedLineSpacingTenthsDp;
             for (View recycler : snapshotLyricsRecyclerViews()) {
                 configureOfficialLyricLineSpacing(recycler);
-                if (lineSpacingChanged) {
+                if (lineSpacingChanged || wrappedLineSpacingChanged) {
                     recycler.requestLayout();
                 }
             }
-            redrawLyricRenderTargets(false, false);
+            redrawLyricRenderTargets(
+                    wrappedLineSpacingChanged,
+                    wrappedLineSpacingChanged);
         }
         lyricUiStyleSettingsLoadedAtElapsedMs = SystemClock.elapsedRealtime();
         settingsInfo("settings-applied", "Applied lyric UI settings"
@@ -1760,6 +1767,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 + ", alignment=" + config.alignment
                 + ", fontSp10=" + config.mainFontTenthsSp
                 + ", lineSpacingDp10=" + config.lineSpacingTenthsDp
+                + ", wrappedLineSpacingDp10=" + config.wrappedLineSpacingTenthsDp
                 + ", changed=" + !config.equals(previousConfig));
         sendSettingsApplyResult(intent, true, config, "applied");
     }
@@ -8988,6 +8996,9 @@ public final class LockscreenLyricsModule extends XposedModule {
                     } else if (LyricUiSettings.ACTION_CONTENT_CLEANUP_CHANGED.equals(
                             intent.getAction())) {
                         handleLyricContentCleanupChanged(receiverContext, intent);
+                    } else if (LyricUiSettings.ACTION_RESTART_SYSTEM_UI.equals(
+                            intent.getAction())) {
+                        handleSystemUiRestartRequest(intent);
                     }
                 }
             };
@@ -8996,6 +9007,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 filter.addAction(LyricUiSettings.ACTION_PLAYER_TRANSLATION_SETTINGS_CHANGED);
                 filter.addAction(LyricUiSettings.ACTION_REQUEST_MEDIA_SNAPSHOT);
                 filter.addAction(LyricUiSettings.ACTION_CONTENT_CLEANUP_CHANGED);
+                filter.addAction(LyricUiSettings.ACTION_RESTART_SYSTEM_UI);
                 if (Build.VERSION.SDK_INT >= 33) {
                     appContext.registerReceiver(
                             receiver,
@@ -9017,6 +9029,50 @@ public final class LockscreenLyricsModule extends XposedModule {
                 error("Failed to register protected SystemUI lyric settings receiver", t);
             }
         }
+    }
+
+    /**
+     * Restarts only the main SystemUI process after the protected settings broadcast has been
+     * delivered.  The settings app cannot kill another UID directly, so the request is handled
+     * here while running inside SystemUI.  Sub-processes keep running; the persistent main
+     * process is the one that owns the lock-screen surface and will be restarted by the system.
+     */
+    @SuppressWarnings("deprecation")
+    private void handleSystemUiRestartRequest(Intent intent) {
+        if (!SYSTEMUI_PACKAGE.equals(logProcessName)) {
+            return;
+        }
+        ResultReceiver receiver = intent == null
+                ? null
+                : intent.getParcelableExtra(
+                LyricUiSettings.EXTRA_SYSTEM_UI_RESTART_RESULT_RECEIVER);
+        if (receiver != null) {
+            Bundle result = new Bundle();
+            result.putLong(
+                    LyricUiSettings.RESULT_SYSTEM_UI_RESTART_REQUEST_ID,
+                    intent.getLongExtra(
+                            LyricUiSettings.EXTRA_SYSTEM_UI_RESTART_REQUEST_ID,
+                            -1L));
+            result.putBoolean(LyricUiSettings.RESULT_SYSTEM_UI_RESTART_ACCEPTED, true);
+            try {
+                receiver.send(
+                        LyricUiSettings.RESULT_SYSTEM_UI_RESTART_ACKNOWLEDGED,
+                        result);
+            } catch (Throwable throwable) {
+                warn(
+                        LyricLogFormatter.Area.SETTINGS,
+                        "systemui-restart-ack-failed",
+                        "Could not acknowledge SystemUI restart request"
+                                + " | error=" + throwable.getClass().getSimpleName());
+            }
+        }
+        mainHandler.postDelayed(() -> {
+            try {
+                android.os.Process.killProcess(android.os.Process.myPid());
+            } catch (Throwable throwable) {
+                error("Failed to restart SystemUI process", throwable);
+            }
+        }, 120L);
     }
 
     @SuppressWarnings("deprecation")
@@ -14216,7 +14272,10 @@ public final class LockscreenLyricsModule extends XposedModule {
                 + ", targetCenter=" + geometry.targetCenter
                 + ", fallbackSlotDp=" + LYRIC_SLOT_HEIGHT_DP
                 + ", spacingDp="
-                + LyricUiLayoutPolicy.lineSpacingTenthsDp(runtimeLyricUiConfig) / 10f);
+                + LyricUiLayoutPolicy.lineSpacingTenthsDp(runtimeLyricUiConfig) / 10f
+                + ", wrappedSpacingDp="
+                + LyricUiLayoutPolicy.wrappedLineSpacingTenthsDp(
+                runtimeLyricUiConfig) / 10f);
     }
 
     private void maybeLogLyricsRecyclerSetCurrentGeometry(
@@ -15700,7 +15759,7 @@ public final class LockscreenLyricsModule extends XposedModule {
 
     private static final class OfficialLyricTextRenderer {
         private static final float ACTIVE_FEATHER_WIDTH_FACTOR = 0.42f;
-        private static final float UNTRANSLATED_LINE_ADVANCE_DP = 26f;
+        private static final float WRAPPED_LINE_BASE_GAP_DP = 1f;
         private static final int MAX_WRAPPED_DRAW_LINES = 256;
         private static final int VISIBLE_MAIN_DRAW_LINES = 2;
         private static final long FOCUSED_REVEAL_ANIMATION_MS = 260L;
@@ -15834,7 +15893,9 @@ public final class LockscreenLyricsModule extends XposedModule {
                                 + " | previousAlignment=" + previous.alignment
                                 + ", alignment=" + config.alignment
                                 + ", fontSp10=" + config.mainFontTenthsSp
-                                + ", lineSpacingDp10=" + config.lineSpacingTenthsDp));
+                                + ", lineSpacingDp10=" + config.lineSpacingTenthsDp
+                                + ", wrappedLineSpacingDp10="
+                                + config.wrappedLineSpacingTenthsDp));
             }
         }
 
@@ -16425,10 +16486,16 @@ public final class LockscreenLyricsModule extends XposedModule {
             inactivePaint.getFontMetrics(mainFontMetrics);
             Paint.FontMetrics mainMetrics = mainFontMetrics;
             float lineHeight = mainMetrics.descent - mainMetrics.ascent;
+            // Use one font-metric baseline strategy for translated and untranslated layouts.
+            // The old fixed 26dp untranslated advance was tuned for 24sp and collapsed at
+            // larger CJK sizes; an additive gap now has the same meaning for every script.
             float lineGap = visibleMainLineCount > 1
-                    ? (untranslatedLayout
-                            ? dp(textView.getContext(), UNTRANSLATED_LINE_ADVANCE_DP) - lineHeight
-                            : dp(textView.getContext(), 1f))
+                    ? LyricUiLayoutPolicy.addWrappedLineSpacing(
+                            dp(textView.getContext(), WRAPPED_LINE_BASE_GAP_DP),
+                            dp(
+                                    textView.getContext(),
+                                    LyricUiLayoutPolicy.wrappedLineSpacingTenthsDp(uiConfig)
+                                            / 10f))
                     : 0f;
             float translationGap = sourceHasTranslation ? dp(textView.getContext(), 2f) : 0f;
             translationPaint.getFontMetrics(translationFontMetrics);
@@ -16840,6 +16907,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                     + uiConfig.fontWeight;
             typographyKey = 31 * typographyKey
                     + (uiConfig.glowEnabled ? uiConfig.glowRadiusPercent : 0);
+            typographyKey = 31 * typographyKey + uiConfig.wrappedLineSpacingTenthsDp;
             if (line.slotHeightCollapsedValue > 0
                     && line.slotHeightExpandedValue > 0
                     && line.slotHeightWidthKey == widthKey
@@ -16871,9 +16939,12 @@ public final class LockscreenLyricsModule extends XposedModule {
             Paint.FontMetrics mainMetrics = mainFontMetrics;
             float lineHeight = mainMetrics.descent - mainMetrics.ascent;
             float lineGap = visibleMainLineCount > 1
-                    ? (untranslatedLayout
-                            ? dp(context, UNTRANSLATED_LINE_ADVANCE_DP) - lineHeight
-                            : dp(context, 1f))
+                    ? LyricUiLayoutPolicy.addWrappedLineSpacing(
+                            dp(context, WRAPPED_LINE_BASE_GAP_DP),
+                            dp(
+                                    context,
+                                    LyricUiLayoutPolicy.wrappedLineSpacingTenthsDp(uiConfig)
+                                            / 10f))
                     : 0f;
             float mainHeight = LyricUiLayoutPolicy.mainTextBlockHeight(
                     mainMetrics.top,
@@ -18071,10 +18142,9 @@ public final class LockscreenLyricsModule extends XposedModule {
             if (compactSlot) {
                 textSize = Math.max(sp(textView.getContext(), 10f), textView.getTextSize());
             } else {
-                float mainTextSizeSp = uiConfig.mainFontTenthsSp / 10f;
-                float textSizeSp = untranslatedLayout
-                        ? Math.min(28f, mainTextSizeSp + 2f)
-                        : mainTextSizeSp;
+                float textSizeSp = LyricUiLayoutPolicy.mainTextSizeSp(
+                        uiConfig,
+                        untranslatedLayout);
                 textSize = sp(textView.getContext(), textSizeSp);
             }
             float translationRatio = uiConfig.translationFontRatioPercent / 100f;
@@ -18175,10 +18245,9 @@ public final class LockscreenLyricsModule extends XposedModule {
             Typeface typeface = resolveConfiguredTypeface(textView.getTypeface());
             inactivePaint.setTypeface(typeface);
             translationPaint.setTypeface(typeface);
-            float mainTextSizeSp = uiConfig.mainFontTenthsSp / 10f;
-            float mainSize = sp(textView.getContext(), untranslatedLayout
-                    ? Math.min(28f, mainTextSizeSp + 2f)
-                    : mainTextSizeSp);
+            float mainSize = sp(
+                    textView.getContext(),
+                    LyricUiLayoutPolicy.mainTextSizeSp(uiConfig, untranslatedLayout));
             inactivePaint.setTextSize(mainSize);
             translationPaint.setTextSize(
                     mainSize * uiConfig.translationFontRatioPercent / 100f);

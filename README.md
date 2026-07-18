@@ -1,254 +1,148 @@
 # ColorOS Live Lyrics Bridge
 
 [![Build Debug APK](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/actions/workflows/build-debug.yml/badge.svg)](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/actions/workflows/build-debug.yml)
+[![Latest release](https://img.shields.io/github/v/release/Andrea-lyz/ColorOS-Live-Lyrics-Bridge)](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/releases/latest)
 
-Languages: [English](README.md) | [简体中文](README.zh-CN.md)
+Language: English | [简体中文](README.zh-CN.md)
 
 <p align="center">
-  <img src="GIF.gif" alt="ColorOS Live Lyrics Bridge demo" width="360">
+  <img src="GIF.gif" alt="ColorOS lock-screen lyrics demo" width="360">
 </p>
 
-An LSPosed/libxposed API 102 module that bridges timed lyrics from supported Android music players into the ColorOS/OPlus lock-screen lyric pipeline.
+Bring lyrics from more music apps to the native ColorOS / OPlus lock-screen lyric page.
 
-The module currently ships DexKit-based compatibility adapters for Salt Player and ConePlayer plus SystemUI renderer hooks. Other players should integrate by publishing the `lyricInfo` contract themselves.
+This is not a floating overlay. It passes a player's full lyric timeline to the system UI, keeping the ColorOS look, transitions, and always-on display while adding word-by-word highlighting, translations, and appearance controls.
 
-Release assets also include optional LyricProvider APKs for QQ Music, NetEase Cloud Music, Apple Music, Poweramp, Spotify, QiShui Music, and KuGou Music/Concept. They are separate LSPosed modules that forward complete lyric data to ColorOS Live Lyrics Bridge and Lyricon/词幕.
+> Current release: **v3.3.1**. Update the Bridge and every installed LyricProvider together. Mixing versions can cause track-change and lyric-timing issues.
 
-A player-independent transaction layer associates lyric callbacks with media metadata. Events with media IDs, URIs, or complete title/artist hints bind directly; anonymous passive callbacks wait for the next stable metadata observation so preloads and instrumentals cannot shift lyrics across tracks.
+## What it does
 
-## What It Hooks
+- Shows full lyrics on the native ColorOS lock screen and AOD lyric page.
+- Supports line-timed lyrics, word-by-word highlighting, and translations when the player provides the required data.
+- Wraps or smoothly browses long lines instead of shrinking them into tiny text.
+- Lets you adjust color, opacity, glow, blur, text size, weight, alignment, scaling, and motion, with separate spacing controls for lyric rows and wrapped lines inside a row.
+- Includes Default, Soft, Bold, and Minimal presets with a live preview.
+- Remembers translation choices per player and can hide leading title, credit, and copyright lines.
+- Can keep the screen awake while lyrics are visible, either indefinitely or for a chosen duration.
+- Preserves the media card's original previous, play/pause, next, and other controls.
+- Handles rapid track changes, pause/resume, AOD transitions, repeated lines, and long CJK text more reliably.
 
-Player process:
+## Before you install
 
-```text
-android.media.session.MediaSession#setMetadata(android.media.MediaMetadata)
-```
+This module is intended for devices that meet all of these requirements:
 
-For built-in compatibility adapters, a valid lyric captured for the current track takes priority over a simple player-provided `MediaMetadata["lyricInfo"]` payload. The simple payload remains a fallback until capture succeeds. A player payload containing `rawLyric` or timed translation data is treated as an explicit enhanced integration and is kept. Self-integrating players should publish the same payload themselves.
+- Root access and an LSPosed / LSP manager with **libxposed API 102** support.
+- A ColorOS / OPlus system image that already includes the native lock-screen lyric page.
+- An understanding that a major system or player update may require a compatibility update.
 
-```json
-{
-  "songName": "...",
-  "artist": "...",
-  "songId": "lockscreen-lyrics-...",
-  "lyric": "[00:00.00]...",
-  "rawLyric": "[00:00.000]word[00:00.120]..."
-}
-```
+The APK has a minimum Android API level of 26, but that does not mean every Android 8.0+ device is compatible. The deciding factor is the private OPlus SystemUI implementation on the device. Development and current testing mainly target the ColorOS 16 lyric path. OnePlus, OPPO, and realme devices may behave differently even when their system interfaces look similar.
 
-SystemUI process:
+If the ROM has no native lock-screen lyric page, this module will not create a separate floating lyric window.
 
-- Reads `lyricInfo` from OPlus media data.
-- Normalizes the official line-level LRC so each timestamp produces one primary OPlus list item, while translations and word timing remain in the complete model.
-- Builds a word-level timeline from `rawLyric` when available.
-- Merges timed translation lines from the original `lyricInfo` into the word-level model.
-- Resolves private OPlus media and lyric targets through DexKit, with legacy class-name fallback.
-- Draws inside the official lock-screen lyric `TextView.onDraw(Canvas)` path.
-- Maps official items by timestamp, normalized text, and occurrence order so repeated lyrics and pre-roll lines remain stable.
-- Uses stable per-line adaptive lyric slots whose height is computed from wrapping, translation, and typography, with a `56dp` floor, about `12dp` vertical drawing room, `1dp` bottom safety, and an `80dp` fallback before width is known. Outward-rounded font `top/bottom` bounds prevent descender clipping. Row spacing is adjustable from `-5–20dp` in `0.5dp` steps, defaults to `0dp` in every preset, and is previewed with the same slot floor and drawing room as the lock screen. Main lyrics always show at most two lines while retaining the complete wrapped-line set for a moving two-line window—including passive long-line panning when line-timed pseudo word progress is disabled—and place the active line about `48dp` below the viewport center. Translation toggles animate all bound row heights from one shared layout amount and compensate the active-row anchor; AOD uses a single endpoint update.
-- Recovers lyric rendering after transient visibility changes. Slot height does not react to word progress, focus, scale, glow, or AOD state; translation visibility is the only bounded user action that animates the measured height.
-- Dynamically recognizes player-provided `lyricInfo` without a hard-coded package name.
-- Keeps the screen from timing out while the recognized provider's lock-screen lyric UI is actively visible.
+## Player compatibility
 
-## Screen Timeout Keep-Awake
+There are two ways a player can work with the module:
 
-The keep-awake logic runs only in the SystemUI process. It is intentionally tied to the official OPlus lock-screen lyric UI, not to playback alone.
+- **Built into the Bridge:** install only the main module.
+- **LyricProvider required:** install the main module plus the matching Provider APK. The Provider reads lyrics from the music app; the Bridge sends them to the lock screen.
 
-SystemUI hooks used by this feature:
+| Player | Extra Provider | Current support |
+| --- | --- | --- |
+| Salt Player | No | Built into the Bridge; word-timed and translated lyrics when supplied by the player |
+| ConePlayer (standard and Google Play packages) | No | Built into the Bridge; full lyric timelines and background recovery |
+| QQ Music | `LyricProvider-QQMusic` | Word-timed and translated lyrics |
+| NetEase Cloud Music / Honor edition | `LyricProvider-163Music` | Word-timed and translated lyrics |
+| Apple Music | `LyricProvider-AppleMusic` | Word-timed and translated lyrics; background-vocal and duet lanes are excluded |
+| Poweramp | `LyricProvider-Poweramp` | Embedded local lyrics and lyrics available through provider matching |
+| Spotify | `LyricProvider-Spotify` | Standard original lyrics only; translations are not currently supported |
+| QiShui Music | `LyricProvider-QiShui` | Word-timed and translated lyrics; also requires the special setup below |
+| KuGou Music / Concept | `LyricProvider-KuGou` | Word-timed and translated lyrics |
 
-- `android.util.Log.i(String, String)`
-- `android.util.Log.println(int, String, String)`
-- OPlus Seedling media playback position/state hooks
-- Visible official lyric `TextView` tracking
-- `ACTION_SCREEN_OFF`, `ACTION_SCREEN_ON`, and `ACTION_USER_PRESENT` broadcasts inside SystemUI
+Music apps can change their private lyric interfaces at any time. This table describes the adapters present in the current code; it is not a promise that every future player release will remain compatible.
 
-The module watches OPlus `PluginSeedling--Template` logs for supported player packages and checks fields such as:
+Players that publish the public `lyricInfo` protocol usually need neither a dedicated Provider nor Bridge scope in the player process. [Halcyon](https://github.com/Kifranei/Halcyon) is one known native integration.
 
-```text
-lyricUiMode=true
-lockImmersiveMode: true
-containerView.isShown=true
-hasLyric=false
-```
+## Installation
 
-It holds a 15-second `SCREEN_BRIGHT_WAKE_LOCK` lease only when all of these are true:
+1. Open the [latest release](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/releases/latest) and install `ColorOS-Live-Lyrics-Bridge-<version>.apk`.
+2. Enable **ColorOS Live Lyrics Bridge** in LSPosed and keep its recommended default scope.
+3. For QQ Music, NetEase, Apple Music, Poweramp, Spotify, QiShui, or KuGou, also install the matching `LyricProvider-*.apk` from the same release.
+4. Enable each Provider separately in LSPosed and select only its matching music app as the scope.
+5. Reboot the device so the hooks load in SystemUI, system services, and the player.
 
-- The current package is either a built-in compatibility adapter or the active provider of a valid `lyricInfo` payload.
-- OPlus lyric UI mode is active.
-- Playback is playing.
-- There is lyric evidence from a recently visible official lyric view, with only a short grace window from fresh lyric metadata.
-- The screen is interactive and the keyguard is still showing.
+`LyricProvider-<version>.zip` is simply a bundle containing every Provider APK. It is not a Recovery-flashable package. You only need to install Providers for the players you use.
 
-While active, the module renews the wake-lock lease and pulses `PowerManager.userActivity(...)` about every 8 seconds so the system treats the lock-screen lyric view as user-visible activity. The wake lock is released on screen off, true keyguard dismissal, playback stop, missing visible lyric evidence, unsupported package, or any condition change. `ACTION_USER_PRESENT` is followed by a short keyguard recheck so face unlock can keep the lock-screen lyric UI awake when the keyguard remains visible.
+### Extra step for QiShui Music
 
-Self-integrating players are recognized from the current media session and do not need to be added to `scope.list` or `PLAYER_ADAPTERS`. If OPlus changes the `PluginSeedling--Template` log format for a device/ROM, the keep-awake detection may need a small SystemUI-side update.
+Enable **Restore inline hooks** for QiShui Music in your LSP manager and follow its instructions for handling `libart.so` in listed apps. Without this step, QiShui may report an unsafe version and the Provider may not work reliably.
 
-## Player-provided lyricInfo
+## Appearance and behavior
 
-This is the preferred integration for players that already own timed lyrics. Publish a valid `lyricInfo` JSON string in the active media session; the module dynamically binds that session in SystemUI. A timed `lyric` field enables native line-level lyrics, while optional `rawLyric` enables this module's word-level renderer.
+Open **ColorOS Live Lyrics Bridge → Settings** from the module page in LSPosed.
 
-Known self-integrating players:
+Choose a preset first, then fine-tune it if needed. Changes update only the preview until you tap **Apply and save**. The settings page also includes:
 
-- [Halcyon](https://github.com/Kifranei/Halcyon) — `lyricInfo` integration completed.
+- per-player translation defaults and remembered translation-button state;
+- guided cleanup of title, credit, and copyright lines at the start of lyrics;
+- progress effects for line-timed lyrics and translations;
+- vertical browsing for long lyrics and horizontal scrolling for long translations;
+- 60 / 90 / 120 Hz lyric redraw limits;
+- keep-screen-awake control with an optional custom duration.
 
-See the [player integration contract](docs/PLAYER_INTEGRATION.md). No module APK dependency, package-name registration, or LSPosed player scope is required.
+The refresh-rate setting limits lyric drawing only. It does not force the display to remain at a high refresh rate.
 
-## Optional LyricProvider Modules
+## Troubleshooting
 
-The release bundle includes the Bridge APK and separate provider APKs:
+### No lyrics appear at all
 
-```text
-ColorOS-Live-Lyrics-Bridge-<tag>.apk
-LyricProvider-QQMusic-<tag>.apk
-LyricProvider-163Music-<tag>.apk
-LyricProvider-AppleMusic-<tag>.apk
-LyricProvider-Poweramp-<tag>.apk
-LyricProvider-Spotify-<tag>.apk
-LyricProvider-QiShui-<tag>.apk
-LyricProvider-KuGou-<tag>.apk
-LyricProvider-<tag>.zip
-```
+Check that the ROM has the native lyric page, that the Bridge keeps its recommended scope, and that the target player does not need a separate Provider. Force stop and reopen the player; reboot the device if the issue remains.
 
-Provider APKs are not part of the Bridge module's static scope. Install only the provider you need and enable that provider module for its target player:
+### Line lyrics work, but word highlighting or translations do not
 
-- `LyricProvider-QQMusic`: `com.tencent.qqmusic`
-- `LyricProvider-163Music`: `com.netease.cloudmusic`, `com.hihonor.cloudmusic`
-- `LyricProvider-AppleMusic`: `com.apple.android.music` (word-timed and translated lyrics only; background vocals and duet lanes are excluded)
-- `LyricProvider-Poweramp`: `com.maxmpz.audioplayer`
-- `LyricProvider-Spotify`: `com.spotify.music` (original lyrics only; translation is not currently supported)
-- `LyricProvider-QiShui`: `com.luna.music`
-- `LyricProvider-KuGou`: `com.kugou.android`, `com.kugou.android.lite`
+The current player or track probably supplies line-timed lyrics only. Word timing and translations cannot be generated from nothing; they must exist in the lyric source. The current Spotify Provider intentionally supplies original lyrics only.
 
-Then restart the target player and SystemUI. Providers keep compatibility with Lyricon/词幕 and send full lyric documents to ColorOS Live Lyrics Bridge, including word timing and translations when the player exposes them.
+### The previous track remains visible, or “No lyrics” appears after switching tracks
 
-QiShui Music also requires enabling LSPosed Manager's "Restore inline hooks" option for QiShui Music so `libart.so` is cleaned for listed apps; otherwise QiShui Music may show a version-safety warning and the provider may not work normally.
+Make sure the Bridge and all Providers came from the same release. Version mismatches are a common cause of inconsistent track timing. Then force stop the player and restart SystemUI; reboot after any scope change.
 
-## Compatibility Adapters
+### A system update breaks the module
 
-The LSPosed settings page saves one versioned UI snapshot. It includes four appearance presets, opacity, blur, scale, glow and colors, motion level, long-text browsing, supported 60/90/120 Hz redraw caps, font size/ratio/weight/alignment, and line spacing. Player translation defaults and remembered overrides live on a separate page: built-in Salt/Cone entries stay available, while provider-backed rows are disabled until their matching LyricProvider APK is installed. Every preset owns the default advanced typography; changing any typography field makes the preset state Custom. Appearance reset preserves screen-timeout, refresh-rate, translation, and lyric-content cleanup policies. Settings broadcasts use a signature permission.
+The ColorOS lyric page is a private vendor SystemUI feature and can change between updates. Open an [issue](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/issues) with the device model, OS version, SystemUI version, player version, and relevant LSPosed logs.
 
-Opening lyric information cleanup has its own secondary page. Common copyright notices, production/instrument credits, and leading “title - artist” rules are simple switches; parsing-protection rules that preserve main/translation lane correctness remain fixed. If recognition is incomplete, the page reads at most the first 80 timed rows of the current SystemUI lyric and lets the user choose the first formal lyric. The correction is bound to the raw `trackKey` and a line fingerprint rather than a fragile row number. Safe prefix or exact-line formats can optionally be learned from unresolved rows without exposing regex or a DSL. Learned rules are limited to the opening 30 seconds/32 candidates and bounded by count and a 4 KiB snapshot.
+### Does the module modify music files or upload lyrics?
 
-Compatibility adapters hook legacy players whose native metadata does not expose complete lyric timing through the `lyricInfo` contract.
+The Bridge only passes lyrics locally between the player, Android media session, and SystemUI. It does not modify music files. Whether lyrics are fetched online depends on the player or the matching LyricProvider.
 
-Built-in compatibility adapters are:
+## For player developers
 
-```java
-new SaltPlayerAdapter()
-new ConePlayerAdapter("ink.trantor.coneplayer")
-new ConePlayerAdapter("ink.trantor.coneplayer.gp")
-```
+If your player already has a full lyric timeline, the preferred integration is to publish the public `MediaMetadata["lyricInfo"]` payload. Users then need only the Bridge, with no player-specific Provider, and your app does not need a compile-time dependency on the module APK.
 
-The Salt adapter has been verified against Salt Player 12.0.0 official and alpha07 builds. The ConePlayer adapter has been verified across versions 1.1.3 through 1.1.5 for the formal package, with Google Play package scope included.
+- [Player integration protocol](docs/PLAYER_INTEGRATION.md)
+- [播放器接入协议（中文）](docs/PLAYER_INTEGRATION.zh-CN.md)
+- [Bridge and LyricProvider responsibilities (Chinese)](docs/LYRIC_PROVIDER_BRIDGE.zh-CN.md)
 
-Prefer the player-provided `lyricInfo` contract for new players. Add a `PlayerAdapter` only for compatibility cases where the player cannot publish `lyricInfo` itself.
+## Building locally
 
-To add another compatibility adapter:
-
-1. Add the package name to `src/main/resources/META-INF/xposed/scope.list`.
-2. Implement a new `PlayerAdapter` next to `SaltPlayerAdapter`.
-3. Capture that player's real timed lyric source and call `module.cacheTimedLyric(source, rawLyric)`.
-4. Add the adapter to `PLAYER_ADAPTERS`.
-5. Keep both `system` and `com.android.systemui` in `scope.list`; they are required for OPlus media-history integration and SystemUI-side lock-screen behavior.
-
-If a player outside the built-in adapter scope already writes a valid OPlus `lyricInfo` metadata field by itself, a source hook is normally unnecessary. For a built-in adapter package, a line-only payload is a fallback; captured `rawLyric` replaces it once the adapter has data for the current track.
-
-## Why API 102
-
-The local `../LSP_api` folder is libxposed API `102.0.0`. This project follows its current module layout:
-
-- Entry class extends `io.github.libxposed.api.XposedModule`
-- Entry list: `src/main/resources/META-INF/xposed/java_init.list`
-- Module config: `src/main/resources/META-INF/xposed/module.prop`
-- Static scope: `src/main/resources/META-INF/xposed/scope.list`
-- LSPosed repository metadata: `.github/lsposed/`
-- Hook API: `hook(method).setId(...).setExceptionMode(...).intercept(...)`
-
-`libxposed-api-stubs` is compile-only and is not packaged into the APK. It exists so the project can compile without downloading `io.github.libxposed:api:102.0.0`; LSPosed provides the real API classes at runtime.
-
-## Build
+JDK 21 is required. The app still emits Java 17 bytecode for Android compatibility.
 
 ```powershell
 .\scripts\gradle-local.cmd testDebugUnitTest assembleDebug
 ```
 
-APK output:
+The debug APK is written to `app\build\outputs\apk\debug\app-debug.apk`.
 
-```text
-app\build\outputs\apk\debug\app-debug.apk
-```
+## Support the project
 
-JDK 21 is required to compile the Lyrics Core dependency. The helper discovers it from `SALT_LYRIC_JAVA_HOME`, `JAVA_HOME`, or common local JDK locations, and maps the repository to a temporary ASCII drive so Gradle works reliably when the checkout path contains non-ASCII characters. The app itself still targets Java 17 bytecode for Android compatibility.
-
-This feature cycle intentionally keeps `compileSdk` and `targetSdk` at 35. The Android 36 version warnings remain a separate compatibility upgrade and are not hidden by a Lint baseline.
-
-## GitHub Actions
-
-- `Build Debug APK`: runs on pushes to `main` and pull requests when project source or build files change. The generated debug APK is uploaded as a workflow artifact.
-- `Release APK Bundle`: runs after pushing a tag such as `v2.3.0`, or from manual dispatch. It builds the signed Bridge APK, checks out `Andrea-lyz/LyricProvider`, builds the signed provider APKs, publishes all APKs to the source release, and mirrors all APKs to the LSPosed repository release with a `versionCode-versionName` tag such as `104-2.3.0`.
-
-The release workflow expects these repository secrets:
-
-- `SIGNING_KEY`: base64-encoded keystore file content.
-- `KEY_STORE_PASSWORD`: keystore password.
-- `KEY_ALIAS`: signing key alias.
-- `KEY_PASSWORD`: signing key password.
-- `LSP_REPO_TOKEN`: PAT with repository-content and release write access to `Xposed-Modules-Repo/io.github.andrealtb.lockscreenlyrics`.
-- `LYRIC_PROVIDER_TOKEN`: optional PAT for checking out `Andrea-lyz/LyricProvider` when that repository is private.
-
-Release assets are published as `ColorOS-Live-Lyrics-Bridge-<tag>.apk`, individual `LyricProvider-<Player>-<tag>.apk` files, and `LyricProvider-<tag>.zip` containing all provider APKs for users who want to install every provider together.
-
-Install and test with a built-in adapter:
-
-```powershell
-adb install -r app\build\outputs\apk\debug\app-debug.apk
-adb shell am force-stop com.salt.music
-# Or: adb shell am force-stop ink.trantor.coneplayer
-```
-
-Enable the module in LSPosed for the target player package, `system`, and System UI, then restart the target player and System UI. Reboot only after changing scopes or when validating the `system`-side media-history capability. Restart the player, play a song, then lock the screen.
-
-Useful logs:
-
-```powershell
-adb shell setprop log.tag.LockscreenLyrics DEBUG
-adb logcat -v time -s LockscreenLyrics
-adb shell setprop log.tag.LockscreenLyricsParse VERBOSE
-adb logcat -v time -s LockscreenLyricsParse
-adb logcat -v time | Select-String -Pattern "LockscreenLyrics|OplusMediaDataManagerEx|loadLyricInBg|Failed to parse lyric data|LyricsRecyclerView|hasLyric"
-# Restore the quiet defaults after capture.
-adb shell setprop log.tag.LockscreenLyrics INFO
-adb shell setprop log.tag.LockscreenLyricsParse INFO
-```
-
-INFO/DEBUG output is controlled by the log tag; WARN/ERROR remains available. Use `VERBOSE` on the main tag only when frame-by-frame RecyclerView ownership snapshots are required. Full parser traces deliberately require `LockscreenLyricsParse=VERBOSE` and use `chunk=n/total`. Restore both tags to `INFO` after capture to avoid persistent diagnostic overhead. The main format is `[process][module][event] message | key=value`.
-
-Expected module log:
-
-```text
-LockscreenLyrics: [com.salt.music][Hook][hook-installed] Hooked MediaSession#setMetadata
-LockscreenLyrics: [com.android.systemui][Transaction][accepted] Accepted lyric transaction from EMBEDDED | rawChars=..., oplusChars=...
-LockscreenLyrics: [com.android.systemui][Recycler][attachment] Observed LyricsRecyclerView attachment | alpha=..., size=...
-LockscreenLyrics: [com.android.systemui][Render][row-scale] Official lyric row scale | lineIndex=..., activeIndex=...
-LockscreenLyricsParse: [com.android.systemui][Parser][trace] chunk=1/2 ...
-```
-
-If you only see `Skip lyricInfo injection because no fresh real lyric is cached`, the adapter has not captured a timed LRC result in the current process yet, or the current song only has untimed lyrics.
-
-## Support
-
-If this project helps you, donations are welcome and appreciated.
+If the project is useful to you, you can support future compatibility work through WeChat or Alipay.
 
 <p align="center">
-  <img src="PY_QR.png" alt="WeChat and Alipay donation QR code" width="600" height="400">
+  <img src="PY_QR.png" alt="WeChat and Alipay support QR code" width="600" height="400">
 </p>
 
 ## License and acknowledgements
 
-Copyright 2026 Andrea-lyz. This project is released under the [Apache License 2.0](LICENSE).
+Copyright 2026 Andrea-lyz. Licensed under the [Apache License 2.0](LICENSE).
 
-This project uses [Accompanist Lyrics Core](https://github.com/6xingyv/accompanist-lyrics-core) `0.4.7` (`com.mocharealm.accompanist:lyrics-core-jvm`), maintained by [6xingyv](https://github.com/6xingyv), for timed-lyric parsing. Accompanist Lyrics Core is also distributed under the [Apache License 2.0](https://github.com/6xingyv/accompanist-lyrics-core/blob/main/LICENSE).
+The project uses [Accompanist Lyrics Core](https://github.com/6xingyv/accompanist-lyrics-core) to parse lyric timelines. Optional Providers build on the [tomakino/LyricProvider](https://github.com/tomakino/LyricProvider) ecosystem. Thanks to the authors and contributors of both projects.
 
-The optional provider APKs are based on the LyricProvider ecosystem by [tomakino/LyricProvider](https://github.com/tomakino/LyricProvider). Thanks to tomakino and LyricProvider contributors for the provider architecture these integrations build on.
-
-Android, ColorOS, OPlus, LSPosed, Salt Player, ConePlayer, and other product names are trademarks of their respective owners. This project is not affiliated with or endorsed by those owners.
+Android, ColorOS, OPlus, LSPosed, and all music-app names are trademarks of their respective owners. This project is not affiliated with or endorsed by those vendors.

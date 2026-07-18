@@ -1,128 +1,151 @@
 # ColorOS Live Lyrics Bridge
 
-## Latest release
-
-v3.3.0 improves compatibility with changing ColorOS/SystemUI private lyric layouts and consolidates playback-state, track-switch, and lyric-commit handling across all bundled LyricProviders. It fixes delayed or split lyric appearance during track changes, short repeated word-by-word segments in QQ Music, and several provider timing and identity races. Routine diagnostic logging is quieter, while the verified AOD attach/prime path remains unchanged. Update the Bridge and installed Provider APKs together; release assets include `LyricProvider-v3.3.0.zip`.
+<p align="center">
+  <img src="GIF.gif" alt="ColorOS lock-screen lyrics demo" width="360">
+</p>
 
 ## 简体中文
 
-将受支持音乐播放器的时间轴歌词桥接到 ColorOS/OPlus 原生锁屏歌词界面，并补充逐字高亮、翻译切换、媒体卡片和后台恢复能力。
+把更多音乐 App 的歌词送进 ColorOS / OPlus 自带的锁屏歌词页面。
+
+它不是悬浮窗：歌词仍由系统原生界面显示，模块负责补充完整时间轴、逐字高亮、翻译和外观设置。
+
+### v3.3.1 更新了什么
+
+- 新增“歌词内换行额外间距”，可以单独调整同一句歌词换行后的疏密，并与设置预览保持一致。
+- 主歌词字号上限提高到 `28sp`；没有翻译时会额外增加 `2sp`，最高 `30sp`。
+- 设置页新增“重启系统界面”按钮，保存外观后可以直接让 SystemUI 重新加载；首次启用模块仍需先重启设备。
+- 修复类似 “You move on” 的短英文逐字歌词被误判成翻译的问题。
+- 保持已经验证的 AOD 首次显示与切换方式不变，并重新整理中英文使用说明。
+- **请将 Bridge 与已安装的所有 LyricProvider 一起更新。** Release 提供 `LyricProvider-v3.3.1.zip` 合集。
 
 ### 主要功能
 
-- 内置 Salt Player 与 ConePlayer 兼容适配器。
-- 支持播放器通过 `MediaMetadata["lyricInfo"]` 主动接入，无需依赖模块 APK。
-- Release 附带可选 LyricProvider APK，可分别适配 QQ 音乐、网易云音乐/荣耀版、Apple Music、Poweramp、Spotify、汽水音乐和酷狗音乐/概念版；Spotify Provider 当前仅支持原文歌词，暂不支持翻译。
-- 支持逐行 LRC、逐字 `rawLyric`、翻译行识别和重复歌词稳定定位；关闭普通逐行伪逐字时，三行长歌词会在固定两行视窗内随整句进度平滑移动。
-- 提供版本化歌词界面设置、四种外观预设和动态预览，可调透明度、模糊、缩放、光晕、颜色、动效、字号、翻译比例、字重、对齐、行距、长文本浏览与内容刷新上限；播放器翻译默认值和歌词开头信息清理使用独立二级页面。
-- 通过通用歌词事务层隔离异步回调，避免有歌词/无歌词曲目连续切换时歌词错绑或后续持续显示无歌词。
-- 长日语、中文歌词按 Unicode 字符边界换行，避免无空格长句被自动缩小。
-- 保留播放器原始媒体 action 语义，仅通过 OPlus Rule0 提供翻译按钮，避免上一首、播放/暂停、下一首错位。
-- Salt Player 完全停止后可从 ColorOS 历史媒体卡片恢复播放。
-- ConePlayer 冷启动恢复播放时可从已选中音轨元数据恢复歌词。
-- 内置播放器自动接入 OPlus 历史播放器；外部播放器可通过 Manifest 元数据主动申请接入。
+- 原生锁屏与 AOD 歌词，不额外覆盖悬浮窗口。
+- 普通逐行、逐字高亮与翻译歌词。
+- 长句自动换行或平滑浏览，兼顾中文、日文等无空格文本。
+- 四种外观预设和实时预览。
+- 可调颜色、透明度、光晕、模糊、缩放、动效、字号、字重和对齐；歌词之间与同一句内部换行的间距可以分开设置。
+- 可按播放器记住翻译开关，清理歌词开头的歌名、制作信息和版权行。
+- 歌词显示时可保持屏幕点亮，也可自定义亮屏时长。
+- 保留系统媒体卡片原本的上一首、播放/暂停和下一首操作。
 
-### 推荐作用域
+### 使用条件
 
-本仓库的 [`SCOPE`](SCOPE) 使用 LSPosed 模块仓库要求的 JSON 数组格式：
+- 已 Root，并安装支持 **libxposed API 102** 的 LSPosed / LSP 管理器。
+- 系统本身带有 ColorOS / OPlus 原生锁屏歌词页面。
+- 当前主要围绕 ColorOS 16 的歌词链路开发和验证。不同 OPPO、一加、真我机型及不同 SystemUI 版本可能需要单独适配。
+- 如果系统原本没有锁屏歌词页面，本模块不会新建一个悬浮歌词窗口。
 
-```json
-["system", "com.salt.music", "ink.trantor.coneplayer", "ink.trantor.coneplayer.gp", "com.android.systemui"]
-```
+### 播放器支持
 
-| 作用域 | 用途 |
-| --- | --- |
-| `system` | 在 system_server 中扩展 OPlus 历史播放器判断。 |
-| `com.salt.music` | Salt Player 歌词抓取与后台播放恢复。 |
-| `ink.trantor.coneplayer` | ConePlayer 正式版歌词适配。 |
-| `ink.trantor.coneplayer.gp` | ConePlayer Google Play 版歌词适配。 |
-| `com.android.systemui` | 锁屏歌词渲染、翻译按钮、媒体 action 与屏幕超时处理。 |
+| 播放器 | 还要安装什么 | 歌词能力 |
+| --- | --- | --- |
+| Salt Player | 无 | Bridge 内置适配；逐字与翻译取决于播放器数据 |
+| ConePlayer / 光锥音乐 | 无 | Bridge 内置适配；正式版与 Google Play 版 |
+| QQ 音乐 | `LyricProvider-QQMusic` | 逐字、翻译 |
+| 网易云音乐 / 荣耀版 | `LyricProvider-163Music` | 逐字、翻译 |
+| Apple Music | `LyricProvider-AppleMusic` | 逐字、翻译；不输出背景人声和对唱分轨 |
+| Poweramp | `LyricProvider-Poweramp` | 本地内嵌歌词与可匹配的在线歌词 |
+| Spotify | `LyricProvider-Spotify` | 目前仅原文标准歌词，不支持翻译 |
+| 汽水音乐 | `LyricProvider-QiShui` | 逐字、翻译；需要额外完成下方设置 |
+| 酷狗音乐 / 概念版 | `LyricProvider-KuGou` | 逐字、翻译 |
 
-外部播放器仅通过公开 `lyricInfo` 协议接入歌词时，通常无需加入播放器作用域。若需要进入 OPlus 历史播放器栈，可在自身 `AndroidManifest.xml` 中声明：
+### 安装方法
 
-```xml
-<meta-data
-    android:name="io.github.andrealtb.lockscreenlyrics.OPLUS_MEDIA_HISTORY"
-    android:value="true" />
-```
+1. 安装 Release 中的 `ColorOS-Live-Lyrics-Bridge-<版本>.apk`。
+2. 在 LSPosed 中启用 Bridge，并保留推荐作用域。
+3. 表格中标注 Provider 的播放器，还要安装同一 Release 中对应的 `LyricProvider-*.apk`。
+4. 在 LSPosed 中单独启用 Provider，只勾选它对应的音乐 App。
+5. 重启手机。
 
-该声明不会替播放器实现 `MediaSession`、媒体按键接收、后台服务启动或播放队列恢复。
+`LyricProvider-<版本>.zip` 只是全部 Provider APK 的下载合集，不是 Recovery 刷机包。只安装自己需要的 Provider 即可。
 
-### 安装与升级
+**汽水音乐用户：**还需在 LSP 管理器中为汽水音乐开启“还原内联钩子”，并按管理器提示处理 `libart.so`。
 
-1. 从 Releases 下载 APK 并安装。
-2. 在 LSPosed 中启用模块，并确认推荐作用域包含 `system`、`com.android.systemui` 和需要进程内适配的播放器。
-3. 重启设备，使 SystemUI、system_server 和播放器进程中的 Hook 完整加载。
+### 遇到问题先检查
 
-QQ 音乐、网易云音乐/荣耀版、Apple Music、Poweramp、Spotify、汽水音乐、酷狗音乐/概念版需要额外安装 Release 中对应的 LyricProvider APK，并在 LSPosed 中为目标播放器单独启用该 Provider。Release 同时提供 `LyricProvider-<tag>.zip`，里面包含全部 Provider APK。Apple Music Provider 只输出逐字和翻译歌词，不输出背景人声或对唱格式歌词；Spotify Provider 当前仅支持原文歌词，暂不支持翻译。汽水音乐还需要在 LSP 管理器中为汽水音乐开启“还原内联钩子”：对列表中的应用清理 `libart.so`。
+- Bridge 和 Provider 是否来自同一个 Release。
+- 是否保留 Bridge 推荐作用域，并给 Provider 选中了正确的音乐 App。
+- 系统是否真的带有 OPlus 原生锁屏歌词页面。
+- 只有普通歌词、没有逐字或翻译时，通常是当前歌词源没有提供相应数据。
+- 系统或播放器大版本更新后失效，请在 Issues 中附上机型、系统、SystemUI、播放器版本和 LSPosed 日志。
 
-源码、完整接入协议和问题反馈：
+[下载完整 Release](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/releases/latest) · [源码与详细说明](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge) · [问题反馈](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/issues)
 
-- [源码仓库](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge)
-- [播放器接入协议](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/blob/main/docs/PLAYER_INTEGRATION.zh-CN.md)
-- [Issues](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/issues)
+---
 
 ## English
 
-Bridges timed lyrics from supported music players into the native ColorOS/OPlus lock-screen lyric UI, with word-level highlighting, translation controls, media-card integration, and playback recovery.
+Bring lyrics from more music apps to the native ColorOS / OPlus lock-screen lyric page.
+
+This is not a floating overlay. The system still owns the lyric UI; the module adds full timelines, word-by-word highlighting, translations, and appearance controls.
+
+### What's new in v3.3.1
+
+- Adds a separate wrapped-line spacing control for lines that wrap inside one lyric row, shared by the settings preview and lock screen.
+- Raises the main lyric size limit to `28sp`; untranslated layouts add `2sp`, up to `30sp`.
+- Adds a **Restart SystemUI** button to the settings page so saved appearance changes can be reloaded directly. A device reboot is still required when enabling the module for the first time.
+- Fixes short word-timed English lines such as “You move on” being mistaken for translations.
+- Keeps the verified AOD first-display and transition behavior unchanged, with clearer Chinese and English documentation.
+- **Update the Bridge and every installed LyricProvider together.** The release includes the `LyricProvider-v3.3.1.zip` bundle.
 
 ### Highlights
 
-- Built-in compatibility adapters for Salt Player and ConePlayer.
-- Public `MediaMetadata["lyricInfo"]` protocol for self-integrating players without an APK dependency.
-- Optional LyricProvider APKs in Releases for QQ Music, NetEase Cloud Music/Honor, Apple Music, Poweramp, Spotify, QiShui Music, and KuGou Music/Concept. The Spotify Provider currently supports original lyrics only, without translations.
-- Line-timed LRC, word-timed `rawLyric`, translation detection, and stable repeated-line matching; three-line lyrics pan inside a fixed two-line viewport when line-timed pseudo word progress is disabled.
-- Compact dynamic lock-screen lyric layout with smoother translation toggles and AOD/highlight transition stabilization.
-- Versioned lyric UI settings with four visual presets and a live preview, covering opacity, blur, scaling, glow, colors, motion, typography, alignment, row spacing, long-text browsing, and redraw caps; player translation defaults and guided opening-information cleanup use dedicated secondary pages.
-- A generic lyric transaction layer prevents stale asynchronous callbacks from binding across tracks, including sequences that contain instrumentals or no-lyric tracks.
-- Long Japanese and Chinese lyric lines wrap at Unicode character boundaries instead of being reduced to tiny text.
-- Preserves the player's original media-action semantics and exposes translation only through OPlus Rule0, preventing previous/play-pause/next slot corruption.
-- Restores Salt Player playback from the ColorOS history media card after the app has fully stopped.
-- Restores ConePlayer lyrics from selected audio-track metadata during background playback resumption.
-- Automatically accepts built-in adapters into OPlus media history; external players may opt in through manifest metadata.
+- Native lock-screen and AOD lyrics, without a separate overlay.
+- Line-timed lyrics, word-by-word highlighting, and translations.
+- Better wrapping and smooth browsing for long CJK and other no-space text.
+- Four appearance presets with a live preview.
+- Controls for color, opacity, glow, blur, scale, motion, text size, weight, and alignment, with separate spacing for lyric rows and wrapped lines.
+- Per-player translation preferences and guided removal of leading title, credit, and copyright lines.
+- Optional keep-screen-awake behavior with a custom duration.
+- Preserves the stock media card's previous, play/pause, and next actions.
 
-### Recommended Scope
+### Requirements
 
-The repository [`SCOPE`](SCOPE) follows the required JSON-array format:
+- Root and an LSPosed / LSP manager that supports **libxposed API 102**.
+- A ColorOS / OPlus ROM that already provides the native lock-screen lyric page.
+- Current development and testing mainly target the ColorOS 16 lyric path. Compatibility may vary between OPPO, OnePlus, and realme devices or SystemUI releases.
+- The module does not create a floating lyric window on ROMs that have no native lyric page.
 
-```json
-["system", "com.salt.music", "ink.trantor.coneplayer", "ink.trantor.coneplayer.gp", "com.android.systemui"]
-```
+### Supported players
 
-| Scope | Purpose |
-| --- | --- |
-| `system` | Extends OPlus media-history decisions in system_server. |
-| `com.salt.music` | Salt Player lyric capture and background playback recovery. |
-| `ink.trantor.coneplayer` | ConePlayer standard-package lyric adapter. |
-| `ink.trantor.coneplayer.gp` | ConePlayer Google Play-package lyric adapter. |
-| `com.android.systemui` | Lock-screen rendering, translation action, media actions, and screen-timeout handling. |
-
-External players that only publish the public `lyricInfo` payload usually do not need player-process scope. To opt into OPlus media history, an external player may declare:
-
-```xml
-<meta-data
-    android:name="io.github.andrealtb.lockscreenlyrics.OPLUS_MEDIA_HISTORY"
-    android:value="true" />
-```
-
-This declaration does not replace the player's own `MediaSession`, media-button receiver, playback service, or queue-restoration implementation.
+| Player | Additional module | Lyric support |
+| --- | --- | --- |
+| Salt Player | None | Built into the Bridge; word timing and translations depend on player data |
+| ConePlayer | None | Built into the Bridge; standard and Google Play packages |
+| QQ Music | `LyricProvider-QQMusic` | Word-timed lyrics and translations |
+| NetEase Cloud Music / Honor edition | `LyricProvider-163Music` | Word-timed lyrics and translations |
+| Apple Music | `LyricProvider-AppleMusic` | Word-timed lyrics and translations; background-vocal and duet lanes are excluded |
+| Poweramp | `LyricProvider-Poweramp` | Embedded local lyrics and lyrics available through provider matching |
+| Spotify | `LyricProvider-Spotify` | Standard original lyrics only; no translation support yet |
+| QiShui Music | `LyricProvider-QiShui` | Word-timed lyrics and translations; requires the extra step below |
+| KuGou Music / Concept | `LyricProvider-KuGou` | Word-timed lyrics and translations |
 
 ### Installation
 
-1. Download and install the APK from Releases.
-2. Enable the module in LSPosed and confirm that `system`, `com.android.systemui`, and the required built-in player scopes are selected.
-3. Reboot the device so the SystemUI, system_server, and player-process hooks are loaded.
+1. Install `ColorOS-Live-Lyrics-Bridge-<version>.apk` from the release.
+2. Enable the Bridge in LSPosed and keep its recommended scope.
+3. For players marked with a Provider above, install the matching `LyricProvider-*.apk` from the same release.
+4. Enable each Provider separately in LSPosed and select only its matching music app.
+5. Reboot the device.
 
-QQ Music, NetEase Cloud Music/Honor, Apple Music, Poweramp, Spotify, QiShui Music, and KuGou Music/Concept require the matching LyricProvider APK from the same release, enabled separately for the target player in LSPosed. Releases also include `LyricProvider-<tag>.zip` with every provider APK. The Apple Music Provider only outputs word-timed and translated lyrics; background vocals and duet lanes are excluded. The Spotify Provider currently supports original lyrics only; translations are not supported. QiShui Music also requires LSPosed Manager's "Restore inline hooks" option for QiShui Music so `libart.so` is cleaned for listed apps.
+`LyricProvider-<version>.zip` is only a bundle of all Provider APKs; it is not a Recovery-flashable package. Install only the Providers you need.
 
-Source, integration documentation, and support:
+**QiShui users:** also enable **Restore inline hooks** for QiShui in the LSP manager and follow its instructions for handling `libart.so`.
 
-- [Source repository](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge)
-- [Player integration protocol](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/blob/main/docs/PLAYER_INTEGRATION.md)
-- [Issues](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/issues)
+### Quick checks when something does not work
+
+- Confirm that the Bridge and Providers came from the same release.
+- Keep the Bridge's recommended scope and select the correct music app for each Provider.
+- Confirm that the ROM actually has the native OPlus lock-screen lyric page.
+- If line lyrics work but word timing or translations do not, the lyric source probably does not supply that data.
+- After a major OS or player update, include the device, OS, SystemUI, player versions, and LSPosed logs in an issue.
+
+[Download the complete release](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/releases/latest) · [Source and full documentation](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge) · [Report an issue](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/issues)
 
 ### Support
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Xposed-Modules-Repo/io.github.andrealtb.lockscreenlyrics/main/PY_QR.png" alt="WeChat and Alipay donation QR code" width="600" height="400">
+  <img src="PY_QR.png" alt="WeChat and Alipay support QR code" width="600" height="400">
 </p>

@@ -179,4 +179,19 @@ public final class LyricLineVariantSelectorTest {
                 1,
                 texts.get(0)));
     }
+
+    @Test
+    public void shortEnglishMoveOnLineStillWinsWhenParserReturnsTranslationFirst() {
+        List<String> texts = Arrays.asList(
+                "你放下过往",
+                "You move on");
+
+        int primaryIndex = LyricLineVariantSelector.findPrimaryTextIndex(texts);
+
+        assertEquals(1, primaryIndex);
+        assertFalse(LyricLineVariantSelector.isLikelyCjkPhoneticVariant(
+                texts,
+                0,
+                texts.get(1)));
+    }
 }

@@ -21,7 +21,8 @@ enum LyricUiPreset {
                 .translationFontRatioPercent(defaults.translationFontRatioPercent)
                 .fontWeight(defaults.fontWeight)
                 .alignment(defaults.alignment)
-                .lineSpacingTenthsDp(defaults.lineSpacingTenthsDp);
+                .lineSpacingTenthsDp(defaults.lineSpacingTenthsDp)
+                .wrappedLineSpacingTenthsDp(defaults.wrappedLineSpacingTenthsDp);
         switch (this) {
             case SOFT:
                 return builder.inactiveOpacityPercent(36)
@@ -102,6 +103,7 @@ enum LyricUiPreset {
                 && left.translationFontRatioPercent == right.translationFontRatioPercent
                 && left.fontWeight == right.fontWeight
                 && left.alignment == right.alignment
-                && left.lineSpacingTenthsDp == right.lineSpacingTenthsDp;
+                && left.lineSpacingTenthsDp == right.lineSpacingTenthsDp
+                && left.wrappedLineSpacingTenthsDp == right.wrappedLineSpacingTenthsDp;
     }
 }

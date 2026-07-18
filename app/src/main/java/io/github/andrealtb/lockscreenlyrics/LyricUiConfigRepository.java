@@ -31,7 +31,8 @@ final class LyricUiConfigRepository {
                 && (!preferences.contains(LyricUiConfigCodec.SCHEMA)
                 || preferences.getInt(LyricUiConfigCodec.SCHEMA, -1)
                 != LyricUiConfig.SCHEMA_VERSION
-                || !preferences.contains(LyricUiConfigCodec.LINE_SPACING))) {
+                || !preferences.contains(LyricUiConfigCodec.LINE_SPACING)
+                || !preferences.contains(LyricUiConfigCodec.WRAPPED_LINE_SPACING))) {
             save(preferences, config);
             preferences.edit().remove(
                     LyricUiConfigCodec.LEGACY_METADATA_CLEANUP_RULES).apply();

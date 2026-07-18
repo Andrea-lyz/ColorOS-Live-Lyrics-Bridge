@@ -42,6 +42,7 @@ public final class LyricUiPresetTest {
                 .fontWeight(LyricUiConfig.WEIGHT_BOLD)
                 .alignment(LyricUiConfig.ALIGN_CENTER)
                 .lineSpacingTenthsDp(40)
+                .wrappedLineSpacingTenthsDp(25)
                 .build();
 
         LyricUiConfig defaults = LyricUiPreset.DEFAULT.apply(customTypography);
@@ -50,6 +51,7 @@ public final class LyricUiPresetTest {
         assertEquals(LyricUiConfig.WEIGHT_SYSTEM, defaults.fontWeight);
         assertEquals(LyricUiConfig.ALIGN_START, defaults.alignment);
         assertEquals(0, defaults.lineSpacingTenthsDp);
+        assertEquals(0, defaults.wrappedLineSpacingTenthsDp);
         assertEquals(LyricUiPreset.CUSTOM, LyricUiPreset.detect(customTypography));
         assertEquals(LyricUiPreset.DEFAULT, LyricUiPreset.detect(defaults));
 
@@ -61,6 +63,7 @@ public final class LyricUiPresetTest {
             assertEquals(LyricUiConfig.WEIGHT_SYSTEM, applied.fontWeight);
             assertEquals(LyricUiConfig.ALIGN_START, applied.alignment);
             assertEquals(0, applied.lineSpacingTenthsDp);
+            assertEquals(0, applied.wrappedLineSpacingTenthsDp);
             assertEquals(preset, LyricUiPreset.detect(applied));
             assertEquals(
                     LyricUiPreset.CUSTOM,
@@ -68,6 +71,10 @@ public final class LyricUiPresetTest {
             assertEquals(
                     LyricUiPreset.CUSTOM,
                     LyricUiPreset.detect(applied.buildUpon().lineSpacingTenthsDp(125).build()));
+            assertEquals(
+                    LyricUiPreset.CUSTOM,
+                    LyricUiPreset.detect(
+                            applied.buildUpon().wrappedLineSpacingTenthsDp(25).build()));
         }
     }
 
