@@ -13,7 +13,7 @@ Bring lyrics from more music apps to the native ColorOS / OPlus lock-screen lyri
 
 This is not a floating overlay. It passes a player's full lyric timeline to the system UI, keeping the ColorOS look, transitions, and always-on display while adding word-by-word highlighting, translations, and appearance controls.
 
-> Current release: **v3.3.1**. Update the Bridge and every installed LyricProvider together. Mixing versions can cause track-change and lyric-timing issues.
+> Current release: **v3.4.0**. Update the Bridge and every installed LyricProvider together. Mixing versions can cause track-change and lyric-timing issues.
 
 ## What it does
 
@@ -53,9 +53,10 @@ There are two ways a player can work with the module:
 | QQ Music | `LyricProvider-QQMusic` | Word-timed and translated lyrics |
 | NetEase Cloud Music / Honor edition | `LyricProvider-163Music` | Word-timed and translated lyrics |
 | Apple Music | `LyricProvider-AppleMusic` | Word-timed and translated lyrics; background-vocal and duet lanes are excluded |
+| LX Music (ToSide / Walnut variants) | `LyricProvider-LXMusic` | Full lyric timeline and translations when supplied by the player |
 | Poweramp | `LyricProvider-Poweramp` | Embedded local lyrics and lyrics available through provider matching |
 | Spotify | `LyricProvider-Spotify` | Standard original lyrics only; translations are not currently supported |
-| QiShui Music | `LyricProvider-QiShui` | Word-timed and translated lyrics; also requires the special setup below |
+| QiShui Music | `LyricProvider-QiShui` | Word-timed and translated lyrics; proper root hiding and the special setup below are required |
 | KuGou Music / Concept | `LyricProvider-KuGou` | Word-timed and translated lyrics |
 
 Music apps can change their private lyric interfaces at any time. This table describes the adapters present in the current code; it is not a promise that every future player release will remain compatible.
@@ -66,7 +67,7 @@ Players that publish the public `lyricInfo` protocol usually need neither a dedi
 
 1. Open the [latest release](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/releases/latest) and install `ColorOS-Live-Lyrics-Bridge-<version>.apk`.
 2. Enable **ColorOS Live Lyrics Bridge** in LSPosed and keep its recommended default scope.
-3. For QQ Music, NetEase, Apple Music, Poweramp, Spotify, QiShui, or KuGou, also install the matching `LyricProvider-*.apk` from the same release.
+3. For QQ Music, NetEase, Apple Music, LX Music, Poweramp, Spotify, QiShui, or KuGou, also install the matching `LyricProvider-*.apk` from the same release.
 4. Enable each Provider separately in LSPosed and select only its matching music app as the scope.
 5. Reboot the device so the hooks load in SystemUI, system services, and the player.
 
@@ -74,7 +75,7 @@ Players that publish the public `lyricInfo` protocol usually need neither a dedi
 
 ### Extra step for QiShui Music
 
-Enable **Restore inline hooks** for QiShui Music in your LSP manager and follow its instructions for handling `libart.so` in listed apps. Without this step, QiShui may report an unsafe version and the Provider may not work reliably.
+Enable **Restore inline hooks** for QiShui Music in your LSP manager and follow its instructions for handling `libart.so` in listed apps. Also ensure root hiding is properly configured. Without these precautions, QiShui may report an unsafe version and the Provider may not work reliably.
 
 ## Appearance and behavior
 

@@ -6,7 +6,7 @@ val releaseStoreFilePath = providers.environmentVariable("SIGNING_STORE_FILE").o
 val releaseStorePassword = providers.environmentVariable("KEY_STORE_PASSWORD").orNull
 val releaseKeyAlias = providers.environmentVariable("KEY_ALIAS").orNull
 val releaseKeyPassword = providers.environmentVariable("KEY_PASSWORD").orNull
-val defaultVersionName = "3.3.1"
+val defaultVersionName = "3.4.0"
 val releaseVersionName = providers.gradleProperty("releaseTag")
     .orElse(providers.environmentVariable("RELEASE_TAG"))
     .map { tag ->
@@ -38,12 +38,13 @@ android {
         applicationId = "io.github.andrealtb.lockscreenlyrics"
         minSdk = 26
         targetSdk = 35
-        versionCode = 123
+        versionCode = 124
         versionName = releaseVersionName.get()
     }
 
     buildFeatures {
-        buildConfig = false
+        // The module references BuildConfig from injected runtime code.
+        buildConfig = true
     }
 
     signingConfigs {
@@ -82,9 +83,33 @@ android {
 
 dependencies {
     compileOnly(project(":libxposed-api-stubs"))
+    implementation(project(":external-lyric-protocol"))
     implementation("com.mocharealm.accompanist:lyrics-core-jvm:0.4.7")
     implementation("org.jetbrains.kotlin:kotlin-stdlib:2.3.0")
     implementation("org.luckypray:dexkit:2.2.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20260522")
+}
+
+// Android otherwise falls back to the debug signing config for an unconfigured release build.
+// Stop release-producing task requests during configuration, before a release APK/AAB is packaged.
+val releaseArtifactTaskRequested = gradle.startParameter.taskNames.any { requestedTask ->
+    val taskName = requestedTask.substringAfterLast(':').lowercase()
+    taskName in setOf(
+        "assemble",
+        "bundle",
+        "build",
+        "install",
+        "assemblerelease",
+        "bundlerelease",
+        "packagerelease",
+        "installrelease",
+        "signreleasebundle"
+    )
+}
+if (releaseArtifactTaskRequested) {
+    check(hasReleaseSigningConfig) {
+        "Release signing is required. Set SIGNING_STORE_FILE, KEY_STORE_PASSWORD, " +
+            "KEY_ALIAS, and KEY_PASSWORD; release must not fall back to debug signing."
+    }
 }

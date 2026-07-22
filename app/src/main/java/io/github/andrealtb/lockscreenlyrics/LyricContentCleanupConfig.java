@@ -6,6 +6,7 @@ import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -14,11 +15,8 @@ import java.util.Objects;
 /** Versioned settings for display-only cleanup of timed lines at the beginning of a song. */
 final class LyricContentCleanupConfig {
     static final int SCHEMA_VERSION = 1;
-    static final int MAX_LEARNED_RULES = 32;
-    static final int MAX_TRACK_OVERRIDES = 24;
     static final int MAX_PREFIX_CHARS = 40;
     static final int MAX_EXACT_CHARS = 160;
-    static final int MAX_SERIALIZED_CHARS = 4 * 1024;
 
     enum LearnedType {
         PREFIX("prefix"),
@@ -112,11 +110,7 @@ final class LyricContentCleanupConfig {
                 overrides.put(encoded);
             }
             object.put("tracks", overrides);
-            String encoded = object.toString();
-            if (encoded.length() > MAX_SERIALIZED_CHARS) {
-                throw new IllegalArgumentException("歌词开头清理设置超过 4KiB 限制");
-            }
-            return encoded;
+            return object.toString();
         } catch (IllegalArgumentException error) {
             throw error;
         } catch (Throwable error) {
@@ -126,7 +120,6 @@ final class LyricContentCleanupConfig {
 
     static LyricContentCleanupConfig decode(String encoded) {
         if (encoded == null) return defaults();
-        if (encoded.length() > MAX_SERIALIZED_CHARS) return null;
         if (encoded.trim().isEmpty()) return defaults();
         try {
             JSONObject object = new JSONObject(encoded);
@@ -137,9 +130,7 @@ final class LyricContentCleanupConfig {
                     .titleArtistLeadEnabled(object.optBoolean("titleArtist", true));
             JSONArray learned = object.optJSONArray("learned");
             if (learned != null) {
-                for (int index = 0;
-                        index < learned.length() && index < MAX_LEARNED_RULES;
-                        index++) {
+                for (int index = 0; index < learned.length(); index++) {
                     JSONObject item = learned.optJSONObject(index);
                     if (item == null) continue;
                     LearnedType type = LearnedType.fromId(item.optString("type", ""));
@@ -155,9 +146,7 @@ final class LyricContentCleanupConfig {
             }
             JSONArray tracks = object.optJSONArray("tracks");
             if (tracks != null) {
-                for (int index = 0;
-                        index < tracks.length() && index < MAX_TRACK_OVERRIDES;
-                        index++) {
+                for (int index = 0; index < tracks.length(); index++) {
                     JSONObject item = tracks.optJSONObject(index);
                     if (item == null) continue;
                     builder.firstFormalLine(
@@ -171,15 +160,13 @@ final class LyricContentCleanupConfig {
         }
     }
 
-    private static ArrayList<LearnedRule> sanitizeRules(List<LearnedRule> source) {
-        ArrayList<LearnedRule> result = new ArrayList<>();
-        if (source == null) return result;
+    private static ArrayList<LearnedRule> sanitizeRules(Iterable<LearnedRule> source) {
+        LinkedHashSet<LearnedRule> uniqueRules = new LinkedHashSet<>();
+        if (source == null) return new ArrayList<>();
         for (LearnedRule rule : source) {
-            if (rule == null || result.contains(rule)) continue;
-            result.add(rule);
-            if (result.size() >= MAX_LEARNED_RULES) break;
+            if (rule != null) uniqueRules.add(rule);
         }
-        return result;
+        return new ArrayList<>(uniqueRules);
     }
 
     private static LinkedHashMap<String, String> sanitizeOverrides(Map<String, String> source) {
@@ -190,7 +177,6 @@ final class LyricContentCleanupConfig {
             String fingerprint = sanitizeFingerprint(entry.getValue());
             if (track.isEmpty() || fingerprint.isEmpty()) continue;
             result.put(track, fingerprint);
-            if (result.size() >= MAX_TRACK_OVERRIDES) break;
         }
         return result;
     }
@@ -241,7 +227,7 @@ final class LyricContentCleanupConfig {
         private boolean copyrightNoticesEnabled = true;
         private boolean productionCreditsEnabled = true;
         private boolean titleArtistLeadEnabled = true;
-        private final ArrayList<LearnedRule> learnedRules = new ArrayList<>();
+        private final LinkedHashSet<LearnedRule> learnedRules = new LinkedHashSet<>();
         private final LinkedHashMap<String, String> firstFormalLineByTrack =
                 new LinkedHashMap<>();
 
@@ -272,10 +258,7 @@ final class LyricContentCleanupConfig {
         }
 
         Builder addLearnedRule(LearnedRule rule) {
-            if (rule != null && !learnedRules.contains(rule)
-                    && learnedRules.size() < MAX_LEARNED_RULES) {
-                learnedRules.add(rule);
-            }
+            if (rule != null) learnedRules.add(rule);
             return this;
         }
 
@@ -295,10 +278,6 @@ final class LyricContentCleanupConfig {
             if (!track.isEmpty() && !cleanFingerprint.isEmpty()) {
                 firstFormalLineByTrack.remove(track);
                 firstFormalLineByTrack.put(track, cleanFingerprint);
-                while (firstFormalLineByTrack.size() > MAX_TRACK_OVERRIDES) {
-                    String first = firstFormalLineByTrack.keySet().iterator().next();
-                    firstFormalLineByTrack.remove(first);
-                }
             }
             return this;
         }

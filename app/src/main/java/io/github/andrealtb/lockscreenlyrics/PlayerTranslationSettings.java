@@ -31,6 +31,8 @@ final class PlayerTranslationSettings {
                     "com.netease.cloudmusic", "com.hihonor.cloudmusic"),
             new Entry("Apple Music", "io.github.proify.lyricon.amprovider",
                     "com.apple.android.music"),
+            new Entry("LX Music", "io.github.proify.lyricon.lxprovider",
+                    "cn.toside.music.mobile", "com.lxwalnut.music.mobile"),
             new Entry("Poweramp", "io.github.proify.lyricon.paprovider",
                     "com.maxmpz.audioplayer"),
             new Entry("Spotify", "io.github.proify.lyricon.spotifyprovider",

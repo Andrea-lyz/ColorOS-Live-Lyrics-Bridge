@@ -380,14 +380,21 @@ public final class LyricOpeningCleanupSettingsActivity extends Activity {
         final String encoded;
         try {
             encoded = config.encode();
+            LyricContentCleanupRepository.save(preferences, config);
         } catch (IllegalArgumentException error) {
             Toast.makeText(this, error.getMessage(), Toast.LENGTH_LONG).show();
             return;
         }
-        LyricContentCleanupRepository.save(preferences, config);
         Intent intent = new Intent(LyricUiSettings.ACTION_CONTENT_CLEANUP_CHANGED)
-                .setPackage("com.android.systemui")
-                .putExtra(LyricUiSettings.EXTRA_CONTENT_CLEANUP_CONFIG, encoded);
+                .setPackage(LyricContentCleanupConfigTransfer.SYSTEM_UI_PACKAGE);
+        if (encoded.length() <= LyricContentCleanupConfigTransfer.LEGACY_INLINE_MAX_CHARS) {
+            intent.putExtra(LyricUiSettings.EXTRA_CONTENT_CLEANUP_CONFIG, encoded);
+        }
+        if (!LyricContentCleanupConfigTransfer.grantSystemUiReadAccess(this)) {
+            Toast.makeText(this, "无法授权系统界面读取歌词开头清理设置", Toast.LENGTH_LONG).show();
+            return;
+        }
+        LyricContentCleanupConfigTransfer.attachConfigUri(intent);
         sendBroadcast(intent);
         draft = config;
         selectedFirstFormalIndex = findStoredFirstFormalIndex();

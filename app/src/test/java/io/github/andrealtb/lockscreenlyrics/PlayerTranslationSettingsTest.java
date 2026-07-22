@@ -25,6 +25,10 @@ public final class PlayerTranslationSettingsTest {
             assertTrue(unique.add(packageName));
             assertTrue(PlayerTranslationSettings.isSupportedPlayerPackage(packageName));
         }
+        assertTrue(PlayerTranslationSettings.isSupportedPlayerPackage(
+                "cn.toside.music.mobile"));
+        assertTrue(PlayerTranslationSettings.isSupportedPlayerPackage(
+                "com.lxwalnut.music.mobile"));
         assertFalse(PlayerTranslationSettings.isSupportedPlayerPackage("com.example.unknown"));
     }
 }

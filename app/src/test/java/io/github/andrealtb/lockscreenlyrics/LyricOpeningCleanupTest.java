@@ -78,6 +78,57 @@ public final class LyricOpeningCleanupTest {
     }
 
     @Test
+    public void manualFirstFormalLineDropsEveryPrecedingPhysicalRow() {
+        String lrc = "Provider preface without a timestamp\n"
+                + "[00:00.000]Unusual opening metadata\n"
+                + "[00:01.000]Another opening header\n"
+                + "[00:02.296]First lyric\n"
+                + "[00:04.507]Second lyric";
+        List<LyricOpeningCleanup.Line> lines = LyricOpeningCleanup.parseLines(lrc);
+        LyricContentCleanupConfig config = LyricContentCleanupConfig.defaults()
+                .buildUpon()
+                .copyrightNoticesEnabled(false)
+                .productionCreditsEnabled(false)
+                .titleArtistLeadEnabled(false)
+                .firstFormalLine("track", lines.get(2).fingerprint)
+                .build();
+
+        LyricOpeningCleanup.Result result = LyricOpeningCleanup.clean(lrc, "track", config);
+
+        assertEquals(
+                "[00:02.296]First lyric\n[00:04.507]Second lyric",
+                result.timedText);
+    }
+
+    @Test
+    public void manualFirstFormalLineKeepsSlightlyEarlyCrossLaneVariant() {
+        String raw = "[00:00.000]Raw header\n"
+                + "[00:02.296]Raw first lyric\n"
+                + "[00:04.507]Raw second lyric";
+        String display = "[00:00.000]Rendered header\n"
+                + "[00:02.295]Localized first lyric\n"
+                + "[00:04.507]Localized second lyric";
+        List<LyricOpeningCleanup.Line> rawLines = LyricOpeningCleanup.parseLines(raw);
+        LyricContentCleanupConfig config = LyricContentCleanupConfig.defaults()
+                .buildUpon()
+                .copyrightNoticesEnabled(false)
+                .productionCreditsEnabled(false)
+                .titleArtistLeadEnabled(false)
+                .firstFormalLine("track", rawLines.get(1).fingerprint)
+                .build();
+
+        LyricOpeningCleanup.Result result = LyricOpeningCleanup.clean(
+                display,
+                raw,
+                "track",
+                config);
+
+        assertEquals(
+                "[00:02.295]Localized first lyric\n[00:04.507]Localized second lyric",
+                result.timedText);
+    }
+
+    @Test
     public void extremeTaylorCreditBlockIsCoveredByDefaultBuiltIns() {
         String lrc = "[00:00.000]the 1 (Explicit) - Taylor Swift\n"
                 + "[00:00.100]TME享有本翻译作品的著作权\n"
@@ -138,6 +189,16 @@ public final class LyricOpeningCleanupTest {
 
         assertFalse(result.timedText.contains("Someone"));
         assertTrue(result.timedText.contains("real later lyric"));
+    }
+
+    @Test
+    public void unusualManualCandidateFallsBackToExactLearnedRule() {
+        LyricContentCleanupConfig.LearnedRule rule =
+                LyricOpeningCleanup.proposeLearnedRule("(SCORE (13)/Megatone production note)");
+
+        assertNotNull(rule);
+        assertEquals(LyricContentCleanupConfig.LearnedType.EXACT, rule.type);
+        assertEquals("(score (13)/megatone production note)", rule.value);
     }
 
     @Test

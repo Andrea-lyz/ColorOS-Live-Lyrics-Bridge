@@ -1,0 +1,16 @@
+{
+  "fixtureSchemaVersion": 1,
+  "transport": "direct",
+  "action": "io.github.andrealtb.lockscreenlyrics.action.EXTERNAL_LYRIC_DIRECT_V4",
+  "protocolVersion": 4,
+  "systemUiPackage": "com.android.systemui",
+  "senderKind": "provider",
+  "requiredFields": [
+    "protocolVersion",
+    "source",
+    "playerPackage",
+    "senderPackage",
+    "senderKind",
+    "eventType"
+  ]
+}

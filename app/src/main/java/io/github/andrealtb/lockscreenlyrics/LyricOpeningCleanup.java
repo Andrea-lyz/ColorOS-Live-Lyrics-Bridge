@@ -14,6 +14,9 @@ final class LyricOpeningCleanup {
     static final int MAX_PREVIEW_CHARS = 64 * 1024;
     private static final int OPENING_MAX_LINES = 32;
     private static final long OPENING_MAX_TIME_MILLIS = 30_000L;
+    // The raw and rendered lanes can differ by a few milliseconds after word-timing
+    // normalization. Keep the selected first lyric instead of advancing to the next row.
+    private static final long MANUAL_CROSS_LANE_EARLY_TOLERANCE_MILLIS = 250L;
     private static final Pattern TIME_TAG = Pattern.compile(
             "[\\[<]([0-9]{1,3}:[0-9]{2}(?:[.:][0-9]{1,3})?)[\\]>]");
     private static final Pattern YRC_LINE_TAG = Pattern.compile("\\[(\\d{1,10}),\\d{1,10}]");
@@ -86,7 +89,8 @@ final class LyricOpeningCleanup {
                 ? LyricContentCleanupConfig.defaults()
                 : config;
         List<Line> lines = parseLines(timedText);
-        long fallbackCutoffMillis = manualCutoffTime(
+        int manualCutoff = findManualCutoffIndex(
+                lines,
                 parseLines(referenceTimedText),
                 trackKey,
                 safeConfig);
@@ -94,18 +98,23 @@ final class LyricOpeningCleanup {
                 lines,
                 trackKey,
                 safeConfig,
-                fallbackCutoffMillis);
+                manualCutoff);
         if (timedText == null || timedText.isEmpty() || lines.isEmpty()) {
             return new Result(timedText == null ? "" : timedText, decisions);
         }
+        int manualRawCutoff = manualCutoff >= 0 && manualCutoff < lines.size()
+                ? lines.get(manualCutoff).rawIndex
+                : -1;
         StringBuilder filtered = new StringBuilder(timedText.length());
         int decisionIndex = 0;
         String[] rawLines = timedText.split("\\r?\\n", -1);
         for (int index = 0; index < rawLines.length; index++) {
-            boolean hidden = false;
+            // A manual first-formal-line selection is a hard per-track boundary: discard
+            // every physical input row before it, including malformed or untimed metadata.
+            boolean hidden = index < manualRawCutoff;
             if (decisionIndex < decisions.size()
                     && decisions.get(decisionIndex).line.rawIndex == index) {
-                hidden = decisions.get(decisionIndex).hidden;
+                hidden |= decisions.get(decisionIndex).hidden;
                 decisionIndex++;
             }
             if (!hidden) {
@@ -120,38 +129,23 @@ final class LyricOpeningCleanup {
             List<Line> lines,
             String trackKey,
             LyricContentCleanupConfig config) {
-        return analyze(lines, trackKey, config, -1L);
+        return analyze(
+                lines,
+                trackKey,
+                config,
+                findManualCutoffIndex(lines, null, trackKey, config));
     }
 
     private static List<Decision> analyze(
             List<Line> lines,
             String trackKey,
             LyricContentCleanupConfig config,
-            long fallbackCutoffMillis) {
+            int manualCutoff) {
         ArrayList<Decision> result = new ArrayList<>();
         if (lines == null || lines.isEmpty()) return result;
         LyricContentCleanupConfig safeConfig = config == null
                 ? LyricContentCleanupConfig.defaults()
                 : config;
-        String firstFingerprint = safeConfig.firstFormalLineByTrack.get(
-                trackKey == null ? "" : trackKey);
-        int manualCutoff = -1;
-        if (firstFingerprint != null) {
-            for (int index = 0; index < lines.size(); index++) {
-                if (firstFingerprint.equals(lines.get(index).fingerprint)) {
-                    manualCutoff = index;
-                    break;
-                }
-            }
-        }
-        if (manualCutoff < 0 && fallbackCutoffMillis >= 0L) {
-            for (int index = 0; index < lines.size(); index++) {
-                if (lines.get(index).timeMillis >= fallbackCutoffMillis) {
-                    manualCutoff = index;
-                    break;
-                }
-            }
-        }
         for (int index = 0; index < lines.size(); index++) {
             Line line = lines.get(index);
             if (LyricMetadataFilter.isParsingProtectedLine(line.text)) {
@@ -185,18 +179,30 @@ final class LyricOpeningCleanup {
         return result;
     }
 
-    private static long manualCutoffTime(
+    private static int findManualCutoffIndex(
+            List<Line> lines,
             List<Line> referenceLines,
             String trackKey,
             LyricContentCleanupConfig config) {
-        if (referenceLines == null || referenceLines.isEmpty() || config == null) return -1L;
+        if (lines == null || lines.isEmpty() || config == null) return -1;
         String fingerprint = config.firstFormalLineByTrack.get(
                 trackKey == null ? "" : trackKey);
-        if (fingerprint == null) return -1L;
-        for (Line line : referenceLines) {
-            if (fingerprint.equals(line.fingerprint)) return line.timeMillis;
+        if (fingerprint == null) return -1;
+        for (int index = 0; index < lines.size(); index++) {
+            if (fingerprint.equals(lines.get(index).fingerprint)) return index;
         }
-        return -1L;
+        if (referenceLines == null || referenceLines.isEmpty()) return -1;
+        for (Line line : referenceLines) {
+            if (!fingerprint.equals(line.fingerprint)) continue;
+            long earliestAllowed = Math.max(
+                    0L,
+                    line.timeMillis - MANUAL_CROSS_LANE_EARLY_TOLERANCE_MILLIS);
+            for (int index = 0; index < lines.size(); index++) {
+                if (lines.get(index).timeMillis >= earliestAllowed) return index;
+            }
+            return -1;
+        }
+        return -1;
     }
 
     static List<Line> parseLines(String timedText) {
@@ -245,10 +251,9 @@ final class LyricOpeningCleanup {
         // Copyright-symbol lines already have a dedicated built-in switch. A one-character
         // learned prefix would be too broad, so never propose one here.
         if (normalized.startsWith("©")) return null;
-        if (normalized.length() <= 80
-                && (normalized.contains("all rights reserved")
-                || normalized.contains("permission")
-                || normalized.contains("版权所有"))) {
+        // The user has already identified this pre-first-lyric row as metadata. For an
+        // unknown format, an exact match is safe to reuse and avoids a brittle broad prefix.
+        if (normalized.length() <= LyricContentCleanupConfig.MAX_EXACT_CHARS) {
             return new LyricContentCleanupConfig.LearnedRule(
                     LyricContentCleanupConfig.LearnedType.EXACT,
                     normalized);

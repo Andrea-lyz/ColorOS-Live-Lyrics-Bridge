@@ -10,14 +10,13 @@
 
 它不是悬浮窗：歌词仍由系统原生界面显示，模块负责补充完整时间轴、逐字高亮、翻译和外观设置。
 
-### v3.3.1 更新了什么
+### v3.4.0 更新了什么
 
-- 新增“歌词内换行额外间距”，可以单独调整同一句歌词换行后的疏密，并与设置预览保持一致。
-- 主歌词字号上限提高到 `28sp`；没有翻译时会额外增加 `2sp`，最高 `30sp`。
-- 设置页新增“重启系统界面”按钮，保存外观后可以直接让 SystemUI 重新加载；首次启用模块仍需先重启设备。
-- 修复类似 “You move on” 的短英文逐字歌词被误判成翻译的问题。
-- 保持已经验证的 AOD 首次显示与切换方式不变，并重新整理中英文使用说明。
-- **请将 Bridge 与已安装的所有 LyricProvider 一起更新。** Release 提供 `LyricProvider-v3.3.1.zip` 合集。
+- 统一 Bridge 与 Provider 的 v4 歌词传递链路，改善切歌、后台恢复和完整歌词的到达稳定性。
+- 新增 LX Music Provider，支持 ToSide 与 Walnut 两个 LX Music 版本。
+- 优化逐字进度扫光、翻译按钮衔接，并修复酷狗 Lite / 概念版部分逐字行的显示问题。
+- 歌词开头清理规则不再受旧容量限制；逐曲首句选择在不同歌词轨道间更可靠。
+- **请将 Bridge 与已安装的所有 LyricProvider 一起更新。** Release 提供 `LyricProvider-v3.4.0.zip` 合集。
 
 ### 主要功能
 
@@ -46,6 +45,7 @@
 | QQ 音乐 | `LyricProvider-QQMusic` | 逐字、翻译 |
 | 网易云音乐 / 荣耀版 | `LyricProvider-163Music` | 逐字、翻译 |
 | Apple Music | `LyricProvider-AppleMusic` | 逐字、翻译；不输出背景人声和对唱分轨 |
+| LX Music（ToSide / Walnut 版本） | `LyricProvider-LXMusic` | 完整时间轴；播放器提供时支持翻译 |
 | Poweramp | `LyricProvider-Poweramp` | 本地内嵌歌词与可匹配的在线歌词 |
 | Spotify | `LyricProvider-Spotify` | 目前仅原文标准歌词，不支持翻译 |
 | 汽水音乐 | `LyricProvider-QiShui` | 逐字、翻译；需要额外完成下方设置 |
@@ -81,14 +81,13 @@ Bring lyrics from more music apps to the native ColorOS / OPlus lock-screen lyri
 
 This is not a floating overlay. The system still owns the lyric UI; the module adds full timelines, word-by-word highlighting, translations, and appearance controls.
 
-### What's new in v3.3.1
+### What's new in v3.4.0
 
-- Adds a separate wrapped-line spacing control for lines that wrap inside one lyric row, shared by the settings preview and lock screen.
-- Raises the main lyric size limit to `28sp`; untranslated layouts add `2sp`, up to `30sp`.
-- Adds a **Restart SystemUI** button to the settings page so saved appearance changes can be reloaded directly. A device reboot is still required when enabling the module for the first time.
-- Fixes short word-timed English lines such as “You move on” being mistaken for translations.
-- Keeps the verified AOD first-display and transition behavior unchanged, with clearer Chinese and English documentation.
-- **Update the Bridge and every installed LyricProvider together.** The release includes the `LyricProvider-v3.3.1.zip` bundle.
+- Unifies the Bridge and Provider v4 lyric path for more reliable track changes, background recovery, and complete lyric delivery.
+- Adds an LX Music Provider for the ToSide and Walnut LX Music variants.
+- Refines word-progress sweep, translation-button handoff, and KuGou Lite / Concept word-line rendering.
+- Removes the former cleanup-rule capacity ceiling and makes per-track first-lyric choices more reliable across lyric lanes.
+- **Update the Bridge and every installed LyricProvider together.** The release includes the `LyricProvider-v3.4.0.zip` bundle.
 
 ### Highlights
 
@@ -117,6 +116,7 @@ This is not a floating overlay. The system still owns the lyric UI; the module a
 | QQ Music | `LyricProvider-QQMusic` | Word-timed lyrics and translations |
 | NetEase Cloud Music / Honor edition | `LyricProvider-163Music` | Word-timed lyrics and translations |
 | Apple Music | `LyricProvider-AppleMusic` | Word-timed lyrics and translations; background-vocal and duet lanes are excluded |
+| LX Music (ToSide / Walnut variants) | `LyricProvider-LXMusic` | Full lyric timeline and translations when supplied by the player |
 | Poweramp | `LyricProvider-Poweramp` | Embedded local lyrics and lyrics available through provider matching |
 | Spotify | `LyricProvider-Spotify` | Standard original lyrics only; no translation support yet |
 | QiShui Music | `LyricProvider-QiShui` | Word-timed lyrics and translations; requires the extra step below |
