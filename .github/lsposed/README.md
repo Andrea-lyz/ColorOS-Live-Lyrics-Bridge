@@ -10,13 +10,13 @@
 
 它不是悬浮窗：歌词仍由系统原生界面显示，模块负责补充完整时间轴、逐字高亮、翻译和外观设置。
 
-### v3.4.0 更新了什么
+### v3.4.1 更新了什么
 
-- 统一 Bridge 与 Provider 的 v4 歌词传递链路，改善切歌、后台恢复和完整歌词的到达稳定性。
-- 新增 LX Music Provider，支持 ToSide 与 Walnut 两个 LX Music 版本。
-- 优化逐字进度扫光、翻译按钮衔接，并修复酷狗 Lite / 概念版部分逐字行的显示问题。
-- 歌词开头清理规则不再受旧容量限制；逐曲首句选择在不同歌词轨道间更可靠。
-- **请将 Bridge 与已安装的所有 LyricProvider 一起更新。** Release 提供 `LyricProvider-v3.4.0.zip` 合集。
+- 修复播放器翻译设置把已安装 LyricProvider 误判为“未安装”的问题；Android 11 及以上现在可正确识别全部 8 个 Provider。
+- 补全英文制作人员信息的开头清理，清理后会收紧歌词行；同时修正官方歌词列表含插入行时的行位映射，避免歌词错位或空白。
+- 网易云、QQ、Spotify 与汽水 Provider 恢复与词幕并用时的正常歌曲提交；酷狗修复同曲不同标题版本切歌串歌、暂无歌词与封面被覆盖的问题。
+- LX Music 改进进程重启后的歌词代次，并加入低频、脱敏的 LSPosed 诊断日志，便于排查少数切歌异常。
+- **请将 Bridge 与正在使用的 LyricProvider 一起更新。** Release 提供 `LyricProvider-v3.4.1.zip` 合集。
 
 ### 主要功能
 
@@ -45,10 +45,10 @@
 | QQ 音乐 | `LyricProvider-QQMusic` | 逐字、翻译 |
 | 网易云音乐 / 荣耀版 | `LyricProvider-163Music` | 逐字、翻译 |
 | Apple Music | `LyricProvider-AppleMusic` | 逐字、翻译；不输出背景人声和对唱分轨 |
-| LX Music（ToSide / Walnut 版本） | `LyricProvider-LXMusic` | 完整时间轴；播放器提供时支持翻译 |
+| LX Music（ToSide / Walnut 版本） | `LyricProvider-LXMusic` | 完整时间轴歌词；播放器提供时支持翻译歌词 |
 | Poweramp | `LyricProvider-Poweramp` | 本地内嵌歌词与可匹配的在线歌词 |
 | Spotify | `LyricProvider-Spotify` | 目前仅原文标准歌词，不支持翻译 |
-| 汽水音乐 | `LyricProvider-QiShui` | 逐字、翻译；需要额外完成下方设置 |
+| 汽水音乐 | `LyricProvider-QiShui` | 逐字、翻译；需做好 Root 隐藏并完成下方设置 |
 | 酷狗音乐 / 概念版 | `LyricProvider-KuGou` | 逐字、翻译 |
 
 ### 安装方法
@@ -61,7 +61,7 @@
 
 `LyricProvider-<版本>.zip` 只是全部 Provider APK 的下载合集，不是 Recovery 刷机包。只安装自己需要的 Provider 即可。
 
-**汽水音乐用户：**还需在 LSP 管理器中为汽水音乐开启“还原内联钩子”，并按管理器提示处理 `libart.so`。
+**汽水音乐用户：**还需在 LSP 管理器中为汽水音乐开启“还原内联钩子”，并按管理器提示处理 `libart.so`；同时需做好 Root 隐藏。
 
 ### 遇到问题先检查
 
@@ -81,13 +81,13 @@ Bring lyrics from more music apps to the native ColorOS / OPlus lock-screen lyri
 
 This is not a floating overlay. The system still owns the lyric UI; the module adds full timelines, word-by-word highlighting, translations, and appearance controls.
 
-### What's new in v3.4.0
+### What's new in v3.4.1
 
-- Unifies the Bridge and Provider v4 lyric path for more reliable track changes, background recovery, and complete lyric delivery.
-- Adds an LX Music Provider for the ToSide and Walnut LX Music variants.
-- Refines word-progress sweep, translation-button handoff, and KuGou Lite / Concept word-line rendering.
-- Removes the former cleanup-rule capacity ceiling and makes per-track first-lyric choices more reliable across lyric lanes.
-- **Update the Bridge and every installed LyricProvider together.** The release includes the `LyricProvider-v3.4.0.zip` bundle.
+- Fixes installed LyricProviders being incorrectly shown as unavailable in player translation settings; all eight Providers are now visible on Android 11 and later.
+- Cleans English production credits at the lyric opening and compacts the remaining rows; also fixes slot mapping when the stock lyric list has interleaved rows, preventing misplaced or blank lyrics.
+- Restores original Lyricon song delivery alongside the Bridge for NetEase, QQ Music, Spotify, and QiShui; KuGou fixes cross-track state, missing lyrics, and cover-art replacement between alternate-title releases.
+- LX Music improves lyric generations after a player-process restart and adds low-frequency, privacy-preserving LSPosed diagnostics for rare track-change failures.
+- **Update the Bridge and the LyricProviders you use together.** The release includes the `LyricProvider-v3.4.1.zip` bundle.
 
 ### Highlights
 
@@ -119,7 +119,7 @@ This is not a floating overlay. The system still owns the lyric UI; the module a
 | LX Music (ToSide / Walnut variants) | `LyricProvider-LXMusic` | Full lyric timeline and translations when supplied by the player |
 | Poweramp | `LyricProvider-Poweramp` | Embedded local lyrics and lyrics available through provider matching |
 | Spotify | `LyricProvider-Spotify` | Standard original lyrics only; no translation support yet |
-| QiShui Music | `LyricProvider-QiShui` | Word-timed lyrics and translations; requires the extra step below |
+| QiShui Music | `LyricProvider-QiShui` | Word-timed and translated lyrics; proper root hiding and the extra step below are required |
 | KuGou Music / Concept | `LyricProvider-KuGou` | Word-timed lyrics and translations |
 
 ### Installation
@@ -132,7 +132,7 @@ This is not a floating overlay. The system still owns the lyric UI; the module a
 
 `LyricProvider-<version>.zip` is only a bundle of all Provider APKs; it is not a Recovery-flashable package. Install only the Providers you need.
 
-**QiShui users:** also enable **Restore inline hooks** for QiShui in the LSP manager and follow its instructions for handling `libart.so`.
+**QiShui users:** also enable **Restore inline hooks** for QiShui in the LSP manager and follow its instructions for handling `libart.so`; ensure root hiding is properly configured as well.
 
 ### Quick checks when something does not work
 

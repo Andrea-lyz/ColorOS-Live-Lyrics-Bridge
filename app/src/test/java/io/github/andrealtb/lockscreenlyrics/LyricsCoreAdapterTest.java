@@ -419,6 +419,20 @@ public final class LyricsCoreAdapterTest {
     }
 
     @Test
+    public void nearbyEnglishProductionCreditsRemainSeparateUntilCleanupRemovesThem() {
+        String lrc = "[00:00.253]Background Vocal: Alyx/Shannon Bae\n"
+                + "[00:00.338]Drum: Abraham Olaleye\n"
+                + "[00:04.561]Keep me on my toes";
+
+        LyricsCoreAdapter.ParsedLyrics parsed = LyricsCoreAdapter.parse(lrc);
+
+        assertEquals(3, parsed.lines.size());
+        assertParsedLine(parsed, 253L, "Background Vocal: Alyx/Shannon Bae", "");
+        assertParsedLine(parsed, 338L, "Drum: Abraham Olaleye", "");
+        assertParsedLine(parsed, 4_561L, "Keep me on my toes", "");
+    }
+
+    @Test
     public void userReportedEnhancedBilingualFilesKeepPrimaryLinesWhenSupplied() throws Exception {
         String fixtureDir = System.getProperty("lyrics.swap.fixture.dir", "");
         assumeTrue("lyrics.swap.fixture.dir was not supplied", !fixtureDir.isEmpty());

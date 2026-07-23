@@ -157,6 +157,46 @@ public final class LyricOpeningCleanupTest {
     }
 
     @Test
+    public void nearbyProductionCreditsAreRemovedAsPhysicalRows() {
+        String lrc = "[00:00.253]Background Vocal: Alyx/Shannon Bae\n"
+                + "[00:00.338]Drum: Abraham Olaleye\n"
+                + "[00:00.439]Synth: Abraham Olaleye\n"
+                + "[00:00.557]Digital Edited by: Cube Studio\n"
+                + "[00:00.844]Mixed in Dolby Atmos by: Adam Grover\n"
+                + "[00:00.980]Original Publishers: Example Publishing\n"
+                + "[00:01.723]Sub-Publishers: Example Publishing Korea\n"
+                + "[00:02.483]Background Vocal: Alyx/Shannon Bae\n"
+                + "[00:02.533]Drum: Abraham Olaleye\n"
+                + "[00:02.668]Synth: Abraham Olaleye\n"
+                + "[00:02.804]Digital Edited by: Cube Studio\n"
+                + "[00:03.108]Mixed in Dolby Atmos by: Adam Grover\n"
+                + "[00:03.243]Original Publishers: Example Publishing\n"
+                + "[00:03.986]Sub-Publishers: Example Publishing Korea\n"
+                + "[00:04.561]Keep me on my toes";
+
+        LyricOpeningCleanup.Result cleaned = LyricOpeningCleanup.clean(
+                lrc,
+                "gimme-dat-love",
+                LyricContentCleanupConfig.defaults());
+
+        assertEquals("[00:04.561]Keep me on my toes", cleaned.timedText);
+        assertEquals(15, cleaned.decisions.size());
+        for (int index = 0; index < 14; index++) {
+            assertTrue(cleaned.decisions.get(index).hidden);
+        }
+        assertFalse(cleaned.decisions.get(14).hidden);
+
+        LyricContentCleanupConfig disabled = LyricContentCleanupConfig.defaults()
+                .buildUpon()
+                .productionCreditsEnabled(false)
+                .build();
+        assertEquals(lrc, LyricOpeningCleanup.clean(
+                lrc,
+                "gimme-dat-love",
+                disabled).timedText);
+    }
+
+    @Test
     public void missingFingerprintFailsOpenInsteadOfUsingStoredRowNumber() {
         String lrc = "[00:01.000]Credit line\n[00:05.000]First lyric";
         LyricContentCleanupConfig config = LyricContentCleanupConfig.defaults()

@@ -13,7 +13,7 @@ Bring lyrics from more music apps to the native ColorOS / OPlus lock-screen lyri
 
 This is not a floating overlay. It passes a player's full lyric timeline to the system UI, keeping the ColorOS look, transitions, and always-on display while adding word-by-word highlighting, translations, and appearance controls.
 
-> Current release: **v3.4.0**. Update the Bridge and every installed LyricProvider together. Mixing versions can cause track-change and lyric-timing issues.
+> Current release: **v3.4.1**. Update the Bridge and the Providers you use from the same release. Mixing versions can cause track-change and lyric-timing issues.
 
 ## What it does
 

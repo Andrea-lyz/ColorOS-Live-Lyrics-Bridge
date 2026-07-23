@@ -5,6 +5,18 @@
 
     <uses-permission android:name="io.github.andrealtb.lockscreenlyrics.permission.CHANGE_LYRIC_UI_SETTINGS" />
 
+    <!-- Android 11+ filters package lookups unless the counterpart apps are declared here. -->
+    <queries>
+        <package android:name="io.github.proify.lyricon.qmprovider" />
+        <package android:name="io.github.proify.lyricon.cmprovider" />
+        <package android:name="io.github.proify.lyricon.amprovider" />
+        <package android:name="io.github.proify.lyricon.lxprovider" />
+        <package android:name="io.github.proify.lyricon.paprovider" />
+        <package android:name="io.github.proify.lyricon.spotifyprovider" />
+        <package android:name="io.github.proify.lyricon.qishuiprovider" />
+        <package android:name="io.github.proify.lyricon.kgprovider" />
+    </queries>
+
     <application
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"

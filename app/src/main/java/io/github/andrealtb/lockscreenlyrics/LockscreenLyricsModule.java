@@ -7068,15 +7068,24 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (!currentWordLyricModelFromExternal
                 || model == null
                 || adapterPosition < 0
-                || adapterPosition >= model.lines.size()
                 || TextUtils.isEmpty(normalizedText)) {
+            return false;
+        }
+        boolean hasOfficialSlot = hasStrictOfficialAdapterSlot(model, adapterPosition);
+        if (!hasOfficialSlot && adapterPosition >= model.lines.size()) {
             return false;
         }
         if (model.hasRenderableText(normalizedText)
                 && !model.hasDuplicateRenderableText(normalizedText)) {
             return false;
         }
-        WordLine slotLine = model.lineAt(adapterPosition);
+        // officialLines is keyed by the real RecyclerView adapter positions. A null entry is an
+        // unmodelled official row (for example an interleaved credit), not the logical lyric at
+        // the same numeric index. Falling back to model.lines here shifts every later slot and
+        // incorrectly suppresses its custom draw.
+        WordLine slotLine = hasOfficialSlot
+                ? model.lineAtOfficialIndex(adapterPosition)
+                : model.lineAt(adapterPosition);
         if (slotLine == null) {
             return false;
         }
@@ -7086,14 +7095,16 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (matchesMain || matchesTranslation) {
             return false;
         }
+        int logicalSlotIndex = model.indexOfLine(slotLine);
+        int nearbyAnchorIndex = logicalSlotIndex >= 0 ? logicalSlotIndex : adapterPosition;
         WordLine nearbyLine = model.findLineByTextNearIndex(
                 normalizedText,
-                adapterPosition,
+                nearbyAnchorIndex,
                 3,
                 false);
         WordLine nearbyTranslationLine = model.findLineByTranslationNearIndex(
                 normalizedText,
-                adapterPosition,
+                nearbyAnchorIndex,
                 3);
         if (nearbyLine != null || nearbyTranslationLine != null) {
             return false;

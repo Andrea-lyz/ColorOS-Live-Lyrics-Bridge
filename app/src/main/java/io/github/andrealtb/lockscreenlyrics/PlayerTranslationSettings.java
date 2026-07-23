@@ -67,4 +67,12 @@ final class PlayerTranslationSettings {
         }
         return packages.toArray(new String[0]);
     }
+
+    static String[] providerPackages() {
+        ArrayList<String> packages = new ArrayList<>();
+        for (Entry entry : ENTRIES) {
+            if (!entry.isBuiltIn()) packages.add(entry.providerPackage);
+        }
+        return packages.toArray(new String[0]);
+    }
 }

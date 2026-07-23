@@ -65,10 +65,14 @@ final class LyricMetadataFilter {
         String label = (separator >= 0 ? lower.substring(0, separator) : lower).trim();
         if (label.isEmpty() || label.length() > 120) return false;
         String[] roleStarts = {
-                "vocals recorded", "orchestration", "percussion", "synthesizer",
+                "vocals recorded", "background vocal", "background vocals",
+                "backing vocal", "backing vocals", "orchestration", "percussion",
+                "synth", "synthesizer",
                 "viola", "violin", "piano", "acoustic guitar", "electric guitar",
-                "drum programming", "orchestra", "band", "choir", "conductor",
-                "accordion", "strings", "guitar", "bass", "drums", "cello",
+                "drum", "drums", "drum programming", "digital edited", "digital editing",
+                "mixed in dolby atmos", "orchestra", "band", "choir", "conductor",
+                "accordion", "strings", "guitar", "bass", "cello",
+                "original publisher", "original publishers", "sub-publisher", "sub-publishers",
                 "publisher", "乐队", "樂隊", "管弦乐", "管弦樂", "交响乐团",
                 "交響樂團", "合唱", "指挥", "指揮", "手风琴", "手風琴",
                 "钢琴", "鋼琴", "大提琴", "小提琴", "弦乐", "弦樂"

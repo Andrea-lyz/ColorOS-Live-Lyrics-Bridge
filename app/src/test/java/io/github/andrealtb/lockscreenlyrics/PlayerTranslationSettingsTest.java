@@ -31,4 +31,16 @@ public final class PlayerTranslationSettingsTest {
                 "com.lxwalnut.music.mobile"));
         assertFalse(PlayerTranslationSettings.isSupportedPlayerPackage("com.example.unknown"));
     }
+
+    @Test
+    public void providerBackedPlayersExposeEightUniqueProviderPackages() {
+        String[] packages = PlayerTranslationSettings.providerPackages();
+        HashSet<String> unique = new HashSet<>();
+        assertEquals(8, packages.length);
+        for (String packageName : packages) {
+            assertTrue(unique.add(packageName));
+        }
+        assertTrue(unique.contains("io.github.proify.lyricon.cmprovider"));
+        assertTrue(unique.contains("io.github.proify.lyricon.qishuiprovider"));
+    }
 }
