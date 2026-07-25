@@ -22,10 +22,14 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 final class ExternalLyricIngress<T> {
     private static final int PARSE_QUEUE_CAPACITY = 12;
-    private static final int MAX_FIELD_CHARS = 1_500_000;
-    private static final int MAX_TOTAL_CHARS = 3_000_000;
-    private static final int MAX_METADATA_FIELD_CHARS = 16_384;
     private static final long FAILURE_LOG_INTERVAL_MS = 10_000L;
+
+    // Size limits must mirror io.github.proify.extensions.bridge
+    // .ExternalLyricV4Protocol on the Provider side. Failing this assertion
+    // means one side will accept a payload the other side rejects.
+    private static final int MAX_FIELD_CHARS = ExternalLyricProtocol.MAX_LYRIC_FIELD_CHARS;
+    private static final int MAX_TOTAL_CHARS = ExternalLyricProtocol.MAX_TOTAL_LYRIC_CHARS;
+    private static final int MAX_METADATA_FIELD_CHARS = ExternalLyricProtocol.MAX_METADATA_FIELD_CHARS;
 
     interface CaptureHandler<T> {
         T parse(CaptureSnapshot snapshot) throws Throwable;

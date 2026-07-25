@@ -1,6 +1,8 @@
 package io.github.andrealtb.lockscreenlyrics;
 
-final class LyricTextSanitizer {
+import java.text.Normalizer;
+
+public final class LyricTextSanitizer {
     static final int ZERO_WIDTH_SPACE_CODE_POINT = 0x200B;
     static final int WORD_JOINER_CODE_POINT = 0x2060;
     static final int BYTE_ORDER_MARK_CODE_POINT = 0xFEFF;
@@ -9,7 +11,7 @@ final class LyricTextSanitizer {
     private LyricTextSanitizer() {
     }
 
-    static String removeIgnorableCharacters(String value) {
+    public static String removeIgnorableCharacters(String value) {
         if (value == null || value.isEmpty()) {
             return "";
         }

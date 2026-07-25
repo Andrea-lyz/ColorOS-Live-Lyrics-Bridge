@@ -55,6 +55,18 @@ public final class ExternalLyricProtocol {
     public static final String MATCH_POLICY_TITLE_ONLY = "titleOnly";
     public static final String IDENTITY_CONFIDENCE_CURRENT_TRACK = "currentTrack";
 
+    // -- Size limits mirrored on the Provider side at
+    // io.github.proify.extensions.bridge.ExternalLyricV4Protocol. Keeping
+    // the numeric gap explicit: SystemUI inspects string lengths (chars)
+    // before any parcelization, while Provider measures the marshalled
+    // Parcel (bytes). 1.5M characters (UTF-16) can comfortably fit inside
+    // the Provider's 512 KiB parcel cap once the surrounding extras are
+    // added.
+    public static final int MAX_LYRIC_FIELD_CHARS = 1_500_000;
+    public static final int MAX_TOTAL_LYRIC_CHARS = 3_000_000;
+    public static final int MAX_METADATA_FIELD_CHARS = 16_384;
+    public static final int MAX_PARCEL_BYTES = 512 * 1024;
+
     private ExternalLyricProtocol() {
     }
 

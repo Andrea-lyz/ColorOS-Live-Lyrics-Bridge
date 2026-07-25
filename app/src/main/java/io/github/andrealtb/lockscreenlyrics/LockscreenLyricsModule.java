@@ -48,6 +48,20 @@ import android.widget.TextView;
 
 import org.json.JSONObject;
 
+import io.github.andrealtb.lockscreenlyrics.render.CachedDrawFrame;
+import io.github.andrealtb.lockscreenlyrics.render.DrawFrame;
+import io.github.andrealtb.lockscreenlyrics.render.InlineTimedLyricLine;
+import io.github.andrealtb.lockscreenlyrics.render.LyricDrawLine;
+import io.github.andrealtb.lockscreenlyrics.render.LyricTimingMode;
+import io.github.andrealtb.lockscreenlyrics.render.LyricsRecyclerGeometry;
+import io.github.andrealtb.lockscreenlyrics.render.NormalizedWordLineText;
+import io.github.andrealtb.lockscreenlyrics.render.TagMatch;
+import io.github.andrealtb.lockscreenlyrics.render.WordLine;
+import io.github.andrealtb.lockscreenlyrics.render.WordLyricModel;
+import io.github.andrealtb.lockscreenlyrics.render.WordLyricRenderConstants;
+import io.github.andrealtb.lockscreenlyrics.render.WordLyricRenderSupport;
+import io.github.andrealtb.lockscreenlyrics.render.WordRange;
+
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -188,112 +202,148 @@ public final class LockscreenLyricsModule extends XposedModule {
     private static final String TRANSLATION_PREFERENCE_KEY =
             LyricUiSettings.TRANSLATION_PREFERENCE_KEY;
     private static final String TRANSLATION_ACTION_DESCRIPTION_PREFIX =
-            "翻译：";
-    private static final String TRANSLATION_ACTION_NAME = "翻译";
+            "\u7ffb\u8bd1\uff1a";
+    private static final String TRANSLATION_ACTION_NAME = "\u7ffb\u8bd1";
     private static final int TRANSLATION_ICON_FINGERPRINT_SIZE = 48;
     private static final int OPLUS_LYRIC_ENTRANCE_ALL = 52;
-    private static final long LYRIC_CACHE_MAX_AGE_MS = 5 * 60 * 1000L;
-    private static final long EXTERNAL_LYRIC_REBROADCAST_DELAY_MS = 2_000L;
-    private static final int TRACK_LYRIC_CACHE_MAX_ENTRIES = 24;
-    private static final long SALT_STALE_FALLBACK_CONFIRM_WINDOW_MS = 8_000L;
-    private static final long PLAYER_METADATA_LYRIC_PUBLICATION_DELAY_MS = 500L;
-    private static final long SCREEN_TIMEOUT_USER_ACTIVITY_INTERVAL_MS = 8_000L;
-    private static final long SCREEN_TIMEOUT_WAKE_LOCK_LEASE_MS = 15_000L;
-    private static final long SCREEN_TIMEOUT_VISIBLE_LYRIC_VIEW_MAX_AGE_MS = 12_000L;
-    private static final long SCREEN_TIMEOUT_MODEL_EVIDENCE_GRACE_MS = 3_000L;
-    private static final long SCREEN_TIMEOUT_USER_PRESENT_RECHECK_DELAY_MS = 500L;
-    private static final long SCREEN_TIMEOUT_KEYGUARD_STATE_CACHE_MS = 250L;
-    private static final long SCREEN_TIMEOUT_VISIBLE_LYRIC_NOTE_THROTTLE_MS = 250L;
-    private static final long OFFICIAL_DRAW_FRAME_TRANSIENT_MISS_GRACE_MS = 1_200L;
-    private static final long SYSTEMUI_LYRIC_MODEL_HANDOFF_MAX_MS = 1_400L;
-    private static final long SYSTEMUI_LYRIC_HANDOFF_MIN_MASK_MS = 320L;
-    private static final long EXTERNAL_LYRIC_SOFT_HANDOFF_MASK_MS = 2_200L;
-    private static final long EXTERNAL_LYRIC_MODEL_READY_MASK_MS = 1_200L;
-    private static final long EXTERNAL_LYRIC_RECYCLER_MASK_MS = 680L;
-    private static final long EXTERNAL_LYRIC_CUSTOM_FRAME_MIN_MASK_MS = 220L;
-    private static final long EXTERNAL_LYRIC_MODE_RECOVERY_MS = 3_000L;
-    private static final long[] EXTERNAL_LYRIC_SOFT_HANDOFF_REFRESH_DELAYS_MS = {
-            16L, 80L, 180L, 360L, 720L, 1_200L, 1_800L, 2_120L
-    };
-    private static final long[] EXTERNAL_LYRIC_MODE_RECOVERY_REFRESH_DELAYS_MS = {
-            48L, 160L, 360L, 760L, 1_240L, 1_840L, 2_480L
-    };
-    private static final float SYSTEMUI_LYRIC_HANDOFF_HIDDEN_ALPHA = 0.001f;
-    private static final float SYSTEMUI_LYRIC_VISIBLE_ALPHA = 1f;
-    private static final long SYSTEMUI_LYRIC_HANDOFF_FADE_IN_MS = 420L;
-    private static final long[] AOD_LYRIC_HANDOFF_REDRAW_DELAYS_MS = {
-            48L, 120L, 240L, SYSTEMUI_LYRIC_HANDOFF_FADE_IN_MS
-    };
-    private static final long SYSTEMUI_LYRIC_ROW_REBIND_WINDOW_MS = 1_800L;
-    private static final long SYSTEMUI_TRACK_RESET_POSITION_GUARD_MS = 1_800L;
-    private static final long SYSTEMUI_TRACK_RESET_STALE_POSITION_MS = 3_000L;
+    private static final long LYRIC_CACHE_MAX_AGE_MS =
+            LyricTimingTuningConstants.LyricGeneral.CACHE_MAX_AGE_MS;
+    private static final long EXTERNAL_LYRIC_REBROADCAST_DELAY_MS =
+            LyricTimingTuningConstants.ExternalLyric.REBROADCAST_DELAY_MS;
+    private static final int TRACK_LYRIC_CACHE_MAX_ENTRIES =
+            LyricTimingTuningConstants.LyricGeneral.CACHE_MAX_ENTRIES;
+    private static final long SALT_STALE_FALLBACK_CONFIRM_WINDOW_MS =
+            LyricTimingTuningConstants.LyricGeneral.SALT_STALE_FALLBACK_CONFIRM_WINDOW_MS;
+    private static final long PLAYER_METADATA_LYRIC_PUBLICATION_DELAY_MS =
+            LyricTimingTuningConstants.LyricGeneral.PLAYER_METADATA_LYRIC_PUBLICATION_DELAY_MS;
+    private static final long SCREEN_TIMEOUT_USER_ACTIVITY_INTERVAL_MS =
+            LyricTimingTuningConstants.ScreenTimeout.USER_ACTIVITY_INTERVAL_MS;
+    private static final long SCREEN_TIMEOUT_WAKE_LOCK_LEASE_MS =
+            LyricTimingTuningConstants.ScreenTimeout.WAKE_LOCK_LEASE_MS;
+    private static final long SCREEN_TIMEOUT_VISIBLE_LYRIC_VIEW_MAX_AGE_MS =
+            LyricTimingTuningConstants.ScreenTimeout.VISIBLE_LYRIC_VIEW_MAX_AGE_MS;
+    private static final long SCREEN_TIMEOUT_MODEL_EVIDENCE_GRACE_MS =
+            LyricTimingTuningConstants.ScreenTimeout.MODEL_EVIDENCE_GRACE_MS;
+    private static final long SCREEN_TIMEOUT_USER_PRESENT_RECHECK_DELAY_MS =
+            LyricTimingTuningConstants.ScreenTimeout.USER_PRESENT_RECHECK_DELAY_MS;
+    private static final long SCREEN_TIMEOUT_KEYGUARD_STATE_CACHE_MS =
+            LyricTimingTuningConstants.ScreenTimeout.KEYGUARD_STATE_CACHE_MS;
+    private static final long SCREEN_TIMEOUT_VISIBLE_LYRIC_NOTE_THROTTLE_MS =
+            LyricTimingTuningConstants.ScreenTimeout.VISIBLE_LYRIC_NOTE_THROTTLE_MS;
+    private static final long OFFICIAL_DRAW_FRAME_TRANSIENT_MISS_GRACE_MS =
+            LyricTimingTuningConstants.OfficialLyric.DRAW_FRAME_TRANSIENT_MISS_GRACE_MS;
+    private static final long SYSTEMUI_LYRIC_MODEL_HANDOFF_MAX_MS =
+            LyricTimingTuningConstants.OfficialLyric.SYSTEMUI_LYRIC_MODEL_HANDOFF_MAX_MS;
+    private static final long SYSTEMUI_LYRIC_HANDOFF_MIN_MASK_MS =
+            LyricTimingTuningConstants.OfficialLyric.SYSTEMUI_LYRIC_HANDOFF_MIN_MASK_MS;
+    private static final long EXTERNAL_LYRIC_SOFT_HANDOFF_MASK_MS =
+            LyricTimingTuningConstants.ExternalLyric.SOFT_HANDOFF_MASK_MS;
+    private static final long EXTERNAL_LYRIC_MODEL_READY_MASK_MS =
+            LyricTimingTuningConstants.ExternalLyric.MODEL_READY_MASK_MS;
+    private static final long EXTERNAL_LYRIC_RECYCLER_MASK_MS =
+            LyricTimingTuningConstants.ExternalLyric.RECYCLER_MASK_MS;
+    private static final long EXTERNAL_LYRIC_CUSTOM_FRAME_MIN_MASK_MS =
+            LyricTimingTuningConstants.ExternalLyric.CUSTOM_FRAME_MIN_MASK_MS;
+    private static final long EXTERNAL_LYRIC_MODE_RECOVERY_MS =
+            LyricTimingTuningConstants.ExternalLyric.MODE_RECOVERY_MS;
+    private static final long[] EXTERNAL_LYRIC_SOFT_HANDOFF_REFRESH_DELAYS_MS =
+            LyricTimingTuningConstants.ExternalLyric.SOFT_HANDOFF_REFRESH_DELAYS_MS;
+    private static final long[] EXTERNAL_LYRIC_MODE_RECOVERY_REFRESH_DELAYS_MS =
+            LyricTimingTuningConstants.ExternalLyric.MODE_RECOVERY_REFRESH_DELAYS_MS;
+    private static final float SYSTEMUI_LYRIC_HANDOFF_HIDDEN_ALPHA =
+            LyricTimingTuningConstants.OfficialLyric.SYSTEMUI_LYRIC_HANDOFF_HIDDEN_ALPHA;
+    private static final float SYSTEMUI_LYRIC_VISIBLE_ALPHA =
+            LyricTimingTuningConstants.OfficialLyric.SYSTEMUI_LYRIC_VISIBLE_ALPHA;
+    private static final long SYSTEMUI_LYRIC_HANDOFF_FADE_IN_MS =
+            LyricTimingTuningConstants.OfficialLyric.SYSTEMUI_LYRIC_HANDOFF_FADE_IN_MS;
+    private static final long[] AOD_LYRIC_HANDOFF_REDRAW_DELAYS_MS =
+            LyricTimingTuningConstants.Aod.HANDOFF_REDRAW_DELAYS_MS;
+    private static final long SYSTEMUI_LYRIC_ROW_REBIND_WINDOW_MS =
+            LyricTimingTuningConstants.OfficialLyric.SYSTEMUI_LYRIC_ROW_REBIND_WINDOW_MS;
+    private static final long SYSTEMUI_TRACK_RESET_POSITION_GUARD_MS =
+            LyricTimingTuningConstants.OfficialLyric.SYSTEMUI_TRACK_RESET_POSITION_GUARD_MS;
+    private static final long SYSTEMUI_TRACK_RESET_STALE_POSITION_MS =
+            LyricTimingTuningConstants.OfficialLyric.SYSTEMUI_TRACK_RESET_STALE_POSITION_MS;
     // Text-only line updates do not need a 60 Hz invalidation loop. Word-timed progress and
     // active row visual transitions still retain the display-rate path below.
-    private static final long ACTIVE_LYRIC_FRAME_DELAY_MS = 16L;
-    private static final long ACTIVE_LYRIC_STATIC_FRAME_DELAY_MS = 96L;
-    private static final long AOD_ACTIVE_LYRIC_REFRESH_DELAY_MS = 180L;
-    private static final long ACTIVE_LYRIC_RETRY_DELAY_MS = 48L;
-    private static final long LYRIC_RECYCLER_SCREEN_STATE_SETTLE_MS = 900L;
-    private static final long LYRIC_RECYCLER_SET_CURRENT_SETTLE_MS = 360L;
-    private static final long EXTERNAL_LYRIC_ROW_SCALE_SETTLE_MS = 900L;
-    private static final long EXTERNAL_LYRIC_HANDOFF_RESTART_GRACE_MS = 260L;
-    private static final long EXTERNAL_LYRIC_PLAYBACK_RESET_MIN_POSITION_MS = 1_000L;
-    private static final long EXTERNAL_LYRIC_MODEL_WAIT_RETRY_MS = 120L;
-    private static final long EXTERNAL_TRACK_GENERATION_RESET_MAX = 2L;
-    private static final long LYRIC_PLAYBACK_POSITION_JUMP_MS = 1_500L;
-    private static final int LYRIC_BOUND_FRAME_RETRY_MAX = 4;
-    private static final int LYRIC_SURFACE_RENDER_PASS_MAX_FRAMES = 6;
-    private static final long LYRIC_SURFACE_RENDER_PASS_MAX_MS = 120L;
-    private static final long TRANSLATION_TOGGLE_CONFIG_LOG_THROTTLE_MS = 5_000L;
-    private static final long LYRIC_UI_STYLE_SETTINGS_RELOAD_MS = 1_500L;
-    private static final long LYRIC_VISIBILITY_RECOVERY_FIRST_DELAY_MS = 96L;
-    private static final long LYRIC_VISIBILITY_RECOVERY_SECOND_DELAY_MS = 240L;
-    private static final long LYRIC_VISIBILITY_RECOVERY_FINAL_DELAY_MS = 520L;
-    private static final long LYRIC_VISIBILITY_RECOVERY_LONG_DELAY_MS = 1_200L;
-    private static final long LYRIC_VISIBILITY_RECOVERY_LAST_DELAY_MS = 2_400L;
-    private static final long LYRIC_SURFACE_PROVISIONAL_DRAW_GRACE_MS = 1_200L;
-    private static final long[] LYRIC_VISIBILITY_RECOVERY_DELAYS_MS = {
-            LYRIC_VISIBILITY_RECOVERY_FIRST_DELAY_MS,
-            LYRIC_VISIBILITY_RECOVERY_SECOND_DELAY_MS,
-            LYRIC_VISIBILITY_RECOVERY_FINAL_DELAY_MS,
-            LYRIC_VISIBILITY_RECOVERY_LONG_DELAY_MS,
-            LYRIC_VISIBILITY_RECOVERY_LAST_DELAY_MS
-    };
-    private static final float LYRIC_SLOT_HEIGHT_DP = 80f;
-    private static final float LYRIC_SLOT_MIN_HEIGHT_DP = 56f;
-    private static final float LYRIC_SLOT_VERTICAL_PADDING_DP = 12f;
-    private static final float LYRIC_SLOT_BOTTOM_SAFETY_DP = 1f;
-    private static final long TRANSLATION_TOGGLE_LAYOUT_FRAME_MS = 16L;
-    private static final float OFFICIAL_LYRIC_INACTIVE_BLUR_RADIUS_PX = 4f;
-    private static final float OFFICIAL_LYRIC_ACTIVE_ROW_SCALE = 1.0f;
-    private static final float OFFICIAL_LYRIC_INACTIVE_ROW_SCALE = 0.9f;
-    private static final float OFFICIAL_LYRIC_INACTIVE_ROW_FADE = 0.9f;
-    private static final long OFFICIAL_LYRIC_ROW_SCALE_ANIMATION_MS = 340L;
-    private static final float OFFICIAL_LYRIC_BLUR_ZERO_THRESHOLD_PX = 0.55f;
-    private static final float OFFICIAL_LYRIC_ROW_EASE_X1 = 0.28f;
-    private static final float OFFICIAL_LYRIC_ROW_EASE_Y1 = 0f;
-    private static final float OFFICIAL_LYRIC_ROW_EASE_X2 = 0.46f;
-    private static final float OFFICIAL_LYRIC_ROW_EASE_Y2 = 1f;
-    private static final long OFFICIAL_LYRIC_ROW_SCALE_ATTACH_SUPPRESS_MS = 180L;
-    private static final long AOD_WORD_PROGRESS_TO_LINE_ANIMATION_MS = 240L;
-    private static final float ACTIVE_LYRIC_CENTER_OFFSET_DP = 48f;
-    private static final float ACTIVE_LYRIC_POSITION_SHIFT_UP_DP = 20f;
+    private static final long ACTIVE_LYRIC_FRAME_DELAY_MS =
+            LyricTimingTuningConstants.LyricGeneral.ACTIVE_LYRIC_FRAME_DELAY_MS;
+    private static final long ACTIVE_LYRIC_STATIC_FRAME_DELAY_MS =
+            LyricTimingTuningConstants.LyricGeneral.ACTIVE_LYRIC_STATIC_FRAME_DELAY_MS;
+    private static final long AOD_ACTIVE_LYRIC_REFRESH_DELAY_MS =
+            LyricTimingTuningConstants.Aod.ACTIVE_LYRIC_REFRESH_DELAY_MS;
+    private static final long ACTIVE_LYRIC_RETRY_DELAY_MS =
+            LyricTimingTuningConstants.LyricGeneral.ACTIVE_LYRIC_RETRY_DELAY_MS;
+    private static final long LYRIC_RECYCLER_SCREEN_STATE_SETTLE_MS =
+            LyricTimingTuningConstants.LyricGeneral.LYRIC_RECYCLER_SCREEN_STATE_SETTLE_MS;
+    private static final long LYRIC_RECYCLER_SET_CURRENT_SETTLE_MS =
+            LyricTimingTuningConstants.LyricGeneral.LYRIC_RECYCLER_SET_CURRENT_SETTLE_MS;
+    private static final long EXTERNAL_LYRIC_ROW_SCALE_SETTLE_MS =
+            LyricTimingTuningConstants.ExternalLyric.ROW_SCALE_SETTLE_MS;
+    private static final long EXTERNAL_LYRIC_HANDOFF_RESTART_GRACE_MS =
+            LyricTimingTuningConstants.ExternalLyric.HANDOFF_RESTART_GRACE_MS;
+    private static final long EXTERNAL_LYRIC_PLAYBACK_RESET_MIN_POSITION_MS =
+            LyricTimingTuningConstants.ExternalLyric.PLAYBACK_RESET_MIN_POSITION_MS;
+    private static final long EXTERNAL_LYRIC_MODEL_WAIT_RETRY_MS =
+            LyricTimingTuningConstants.ExternalLyric.MODEL_WAIT_RETRY_MS;
+    private static final long EXTERNAL_TRACK_GENERATION_RESET_MAX =
+            LyricTimingTuningConstants.ExternalLyric.TRACK_GENERATION_RESET_MAX;
+    private static final long LYRIC_PLAYBACK_POSITION_JUMP_MS =
+            LyricTimingTuningConstants.LyricGeneral.PLAYBACK_POSITION_JUMP_MS;
+    private static final int LYRIC_BOUND_FRAME_RETRY_MAX =
+            LyricTimingTuningConstants.LyricGeneral.BOUND_FRAME_RETRY_MAX;
+    private static final int LYRIC_SURFACE_RENDER_PASS_MAX_FRAMES =
+            LyricTimingTuningConstants.LyricGeneral.SURFACE_RENDER_PASS_MAX_FRAMES;
+    private static final long LYRIC_SURFACE_RENDER_PASS_MAX_MS =
+            LyricTimingTuningConstants.LyricGeneral.SURFACE_RENDER_PASS_MAX_MS;
+    private static final long TRANSLATION_TOGGLE_CONFIG_LOG_THROTTLE_MS =
+            LyricTimingTuningConstants.Translation.TOGGLE_CONFIG_LOG_THROTTLE_MS;
+    private static final long LYRIC_UI_STYLE_SETTINGS_RELOAD_MS =
+            LyricTimingTuningConstants.LyricGeneral.UI_STYLE_SETTINGS_RELOAD_MS;
+    private static final long LYRIC_VISIBILITY_RECOVERY_FIRST_DELAY_MS =
+            LyricTimingTuningConstants.LyricGeneral.VISIBILITY_RECOVERY_FIRST_DELAY_MS;
+    private static final long LYRIC_VISIBILITY_RECOVERY_SECOND_DELAY_MS =
+            LyricTimingTuningConstants.LyricGeneral.VISIBILITY_RECOVERY_SECOND_DELAY_MS;
+    private static final long LYRIC_VISIBILITY_RECOVERY_FINAL_DELAY_MS =
+            LyricTimingTuningConstants.LyricGeneral.VISIBILITY_RECOVERY_FINAL_DELAY_MS;
+    private static final long LYRIC_VISIBILITY_RECOVERY_LONG_DELAY_MS =
+            LyricTimingTuningConstants.LyricGeneral.VISIBILITY_RECOVERY_LONG_DELAY_MS;
+    private static final long LYRIC_VISIBILITY_RECOVERY_LAST_DELAY_MS =
+            LyricTimingTuningConstants.LyricGeneral.VISIBILITY_RECOVERY_LAST_DELAY_MS;
+    private static final long LYRIC_SURFACE_PROVISIONAL_DRAW_GRACE_MS =
+            LyricTimingTuningConstants.LyricGeneral.SURFACE_PROVISIONAL_DRAW_GRACE_MS;
+    private static final long[] LYRIC_VISIBILITY_RECOVERY_DELAYS_MS =
+            LyricTimingTuningConstants.LyricGeneral.VISIBILITY_RECOVERY_DELAYS_MS;
+    private static final long TRANSLATION_TOGGLE_LAYOUT_FRAME_MS =
+            LyricTimingTuningConstants.Translation.TOGGLE_LAYOUT_FRAME_MS;
+    private static final float OFFICIAL_LYRIC_INACTIVE_BLUR_RADIUS_PX =
+            LyricTimingTuningConstants.OfficialLyric.INACTIVE_BLUR_RADIUS_PX;
+    private static final float OFFICIAL_LYRIC_BLUR_ZERO_THRESHOLD_PX =
+            LyricTimingTuningConstants.OfficialLyric.BLUR_ZERO_THRESHOLD_PX;
+    private static final long OFFICIAL_LYRIC_ROW_SCALE_ATTACH_SUPPRESS_MS =
+            LyricTimingTuningConstants.OfficialLyric.ROW_SCALE_ATTACH_SUPPRESS_MS;
+    private static final long AOD_WORD_PROGRESS_TO_LINE_ANIMATION_MS =
+            LyricTimingTuningConstants.Aod.WORD_PROGRESS_TO_LINE_ANIMATION_MS;
+    private static final float ACTIVE_LYRIC_CENTER_OFFSET_DP =
+            LyricTimingTuningConstants.LyricGeneral.ACTIVE_LYRIC_CENTER_OFFSET_DP;
+    private static final float ACTIVE_LYRIC_POSITION_SHIFT_UP_DP =
+            LyricTimingTuningConstants.LyricGeneral.ACTIVE_LYRIC_POSITION_SHIFT_UP_DP;
     // A bound lyric row is reused by more than one immersive RecyclerView during SystemUI
     // cross-fades. Reusing a frame by TextView identity can therefore carry the old surface's
     // adapter position into the new surface. Resolve every frame from the current binding.
-    private static final boolean OFFICIAL_DRAW_FRAME_REUSE_ENABLED = false;
-    private static final boolean OFFICIAL_SLOT_ALIAS_REUSE_ENABLED = true;
-    private static final long OFFICIAL_FRAME_DECISION_LOG_INTERVAL_MS = 120L;
-    private static final long OFFICIAL_ADAPTER_SUPPRESSION_LOG_INTERVAL_MS = 5_000L;
+    private static final boolean OFFICIAL_DRAW_FRAME_REUSE_ENABLED =
+            LyricTimingTuningConstants.OfficialLyric.DRAW_FRAME_REUSE_ENABLED;
+    private static final long OFFICIAL_FRAME_DECISION_LOG_INTERVAL_MS =
+            LyricTimingTuningConstants.OfficialLyric.FRAME_DECISION_LOG_INTERVAL_MS;
+    private static final long OFFICIAL_ADAPTER_SUPPRESSION_LOG_INTERVAL_MS =
+            LyricTimingTuningConstants.OfficialLyric.ADAPTER_SUPPRESSION_LOG_INTERVAL_MS;
     private static final Pattern LRC_TIME_TAG = Pattern.compile("\\[[0-9]{1,3}:[0-9]{2}(?:[.:][0-9]{1,3})?\\]");
-    private static final Pattern ANY_LRC_TIME_TAG = Pattern.compile("[\\[<]([0-9]{1,3}:[0-9]{2}(?:[.:][0-9]{1,3})?)[\\]>]");
-    private static final long[] EXTERNAL_LYRIC_PROMOTION_RETRY_DELAYS_MS = {
-            120L,
-            360L,
-            900L
-    };
-    private static final long SYSTEMUI_EXTERNAL_LYRIC_LOAD_CONTEXT_MAX_AGE_MS = 15_000L;
-    private static final long SYSTEMUI_EXTERNAL_PLAYBACK_HANDOFF_CONTEXT_MAX_AGE_MS = 3_000L;
+    private static final long[] EXTERNAL_LYRIC_PROMOTION_RETRY_DELAYS_MS =
+            LyricTimingTuningConstants.ExternalLyric.PROMOTION_RETRY_DELAYS_MS;
+    private static final long SYSTEMUI_EXTERNAL_LYRIC_LOAD_CONTEXT_MAX_AGE_MS =
+            LyricTimingTuningConstants.ExternalLyric.SYSTEMUI_LOAD_CONTEXT_MAX_AGE_MS;
+    private static final long SYSTEMUI_EXTERNAL_PLAYBACK_HANDOFF_CONTEXT_MAX_AGE_MS =
+            LyricTimingTuningConstants.ExternalLyric.SYSTEMUI_PLAYBACK_HANDOFF_CONTEXT_MAX_AGE_MS;
     private final LyricSessionReducer playerLyricSession =
             new LyricSessionReducer(LYRIC_CACHE_MAX_AGE_MS, TRACK_LYRIC_CACHE_MAX_ENTRIES);
     private volatile MediaSession lastSession;
@@ -861,7 +911,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                     },
                     LYRIC_RENDER_PIPELINE_REVISION,
                     OFFICIAL_DRAW_FRAME_REUSE_ENABLED,
-                    OFFICIAL_SLOT_ALIAS_REUSE_ENABLED);
+                    WordLyricRenderConstants.OFFICIAL_SLOT_ALIAS_REUSE_ENABLED);
     private final PlayerRuntimeBootstrap playerRuntimeBootstrap =
             new PlayerRuntimeBootstrap(new PlayerRuntimeBootstrap.Host() {
                 @Override
@@ -1280,18 +1330,18 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private Object onOplusMediaGetLyricEntrance(XposedInterface.Chain chain) throws Throwable {
+        Object packageNameArg = chain.getArg(0);
+        String packageName = packageNameArg instanceof String ? (String) packageNameArg : "";
         Object result = chain.proceed();
         int original = result instanceof Number ? ((Number) result).intValue() : 0;
+        int overrideResult = 0;
         if (original != 0) {
             return result;
         }
-
-        Object packageName = chain.getArg(0);
-        if (packageName instanceof String
-                && isModuleManagedPlayerPackage((String) packageName)) {
-            return OPLUS_LYRIC_ENTRANCE_ALL;
+        if (isModuleManagedPlayerPackage(packageName)) {
+            overrideResult = OPLUS_LYRIC_ENTRANCE_ALL;
         }
-        return 0;
+        return overrideResult;
     }
 
     private Object onOplusMediaUpdatePkgActionsRule(XposedInterface.Chain chain) throws Throwable {
@@ -2478,7 +2528,7 @@ public final class LockscreenLyricsModule extends XposedModule {
 
     private static String translationActionDescription(boolean enabled) {
         return TRANSLATION_ACTION_DESCRIPTION_PREFIX
-                + (enabled ? "开启" : "关闭");
+                + (enabled ? "\u5f00\u542f" : "\u5173\u95ed");
     }
 
     private void installSystemUiWordLyricHooks(
@@ -3310,7 +3360,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             return packageName.equals(currentLyricProviderPackage);
         }
         if (TextUtils.isEmpty(payload.songName)
-                || !normalizeLine(payload.songName).equals(normalizeLine(songName))) {
+                || !WordLyricRenderSupport.normalizeLine(payload.songName).equals(WordLyricRenderSupport.normalizeLine(songName))) {
             return false;
         }
         bindCurrentLyricProviderPackage(packageName, "matching SystemUI media data");
@@ -3844,7 +3894,7 @@ public final class LockscreenLyricsModule extends XposedModule {
 
     private void rememberSeedlingActiveLyric(String currentLyric, long position) {
         WordLyricModel model = currentWordLyricModel;
-        String normalized = normalizeLine(currentLyric);
+        String normalized = WordLyricRenderSupport.normalizeLine(currentLyric);
         if (model == null || TextUtils.isEmpty(normalized)) {
             return;
         }
@@ -4945,7 +4995,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             return cached.normalized;
         }
         String text = value instanceof String ? (String) value : value.toString();
-        String normalized = normalizeLine(text);
+        String normalized = WordLyricRenderSupport.normalizeLine(text);
         normalizedLyricTextCache.put(
                 textView,
                 new NormalizedTextSnapshot(value, value.length(), contentHash, normalized));
@@ -5601,7 +5651,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
         int itemHeight = findBoundLyricsRecyclerItemHeight(recyclerView, targetIndex);
         if (itemHeight <= 0) {
-            itemHeight = dp(recyclerView.getContext(), LYRIC_SLOT_HEIGHT_DP);
+            itemHeight = dp(recyclerView.getContext(), WordLyricRenderConstants.LYRIC_SLOT_HEIGHT_DP);
         }
         return Math.max(0, desiredCenter - itemHeight / 2);
     }
@@ -6526,7 +6576,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         WordLine line = null;
         WordLine translationLine = null;
         if (indexedLine != null) {
-            if (matchesWordLineText(indexedLine, normalizedText)) {
+            if (WordLyricRenderSupport.matchesWordLineText(indexedLine, normalizedText)) {
                 line = indexedLine;
             } else if (!TextUtils.isEmpty(indexedLine.translation)
                     && indexedLine.normalizedTranslation().equals(normalizedText)) {
@@ -6615,7 +6665,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         WordLine translationLine = null;
         String matchReason = "none";
         if (indexedLine != null) {
-            if (matchesWordLineText(indexedLine, normalizedText)) {
+            if (WordLyricRenderSupport.matchesWordLineText(indexedLine, normalizedText)) {
                 line = indexedLine;
                 matchReason = "indexed-main";
             } else if (!TextUtils.isEmpty(indexedLine.translation)
@@ -6665,7 +6715,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             }
         }
         if (line == null && translationLine == null) {
-            if (activeLine != null && matchesWordLineText(activeLine, normalizedText)) {
+            if (activeLine != null && WordLyricRenderSupport.matchesWordLineText(activeLine, normalizedText)) {
                 line = activeLine;
                 matchReason = "active-main";
             } else {
@@ -6895,7 +6945,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             return false;
         }
         if (normalizedText.equals(cached.normalizedText)
-                || matchesWordLineText(cached.line, normalizedText)) {
+                || WordLyricRenderSupport.matchesWordLineText(cached.line, normalizedText)) {
             return true;
         }
         return !TextUtils.isEmpty(cached.line.translation)
@@ -7026,7 +7076,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                     null);
             return true;
         }
-        boolean matchesMain = matchesWordLineText(indexedLine, normalizedText);
+        boolean matchesMain = WordLyricRenderSupport.matchesWordLineText(indexedLine, normalizedText);
         boolean matchesTranslation = !TextUtils.isEmpty(indexedLine.translation)
                 && indexedLine.normalizedTranslation().equals(normalizedText);
         if (matchesMain || matchesTranslation) {
@@ -7089,7 +7139,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (slotLine == null) {
             return false;
         }
-        boolean matchesMain = matchesWordLineText(slotLine, normalizedText);
+        boolean matchesMain = WordLyricRenderSupport.matchesWordLineText(slotLine, normalizedText);
         boolean matchesTranslation = !TextUtils.isEmpty(slotLine.translation)
                 && slotLine.normalizedTranslation().equals(normalizedText);
         if (matchesMain || matchesTranslation) {
@@ -7123,7 +7173,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             int adapterPosition,
             WordLine line,
             TextView textView) {
-        if (!OFFICIAL_SLOT_ALIAS_REUSE_ENABLED) {
+        if (!WordLyricRenderConstants.OFFICIAL_SLOT_ALIAS_REUSE_ENABLED) {
             return false;
         }
         if (!hasStrictOfficialAdapterSlot(model, adapterPosition) || line == null) {
@@ -8436,7 +8486,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             }
             WordLine targetLine = resolveRecyclerVisualActiveLyricLine(model, position, target);
             if (targetLine == null
-                    || !matchesWordLineText(targetLine, normalizedTextOf(target))) {
+                    || !WordLyricRenderSupport.matchesWordLineText(targetLine, normalizedTextOf(target))) {
                 continue;
             }
             target.postInvalidateOnAnimation();
@@ -8510,8 +8560,8 @@ public final class LockscreenLyricsModule extends XposedModule {
                 continue;
             }
             LyricTextMatch match = findLyricTextMatch(model, textView, normalized, position);
-            if (!sameWordLine(match.line, line)
-                    && !sameWordLine(match.translationLine, line)) {
+            if (!WordLyricRenderSupport.sameWordLine(match.line, line)
+                    && !WordLyricRenderSupport.sameWordLine(match.translationLine, line)) {
                 continue;
             }
 
@@ -9254,13 +9304,13 @@ public final class LockscreenLyricsModule extends XposedModule {
         result.putString(LyricUiSettings.RESULT_ARTIST, lastSystemUiArtistName);
         result.putString(LyricUiSettings.RESULT_ALBUM, lastSystemUiAlbumName);
         boolean snapshotMatchesCurrent = TextUtils.equals(
-                normalizeLine(currentCleanupSnapshotTitle),
-                normalizeLine(lastSystemUiSongName))
+                WordLyricRenderSupport.normalizeLine(currentCleanupSnapshotTitle),
+                WordLyricRenderSupport.normalizeLine(lastSystemUiSongName))
                 && (TextUtils.isEmpty(currentCleanupSnapshotArtist)
                 || TextUtils.isEmpty(lastSystemUiArtistName)
                 || TextUtils.equals(
-                normalizeLine(currentCleanupSnapshotArtist),
-                normalizeLine(lastSystemUiArtistName)));
+                WordLyricRenderSupport.normalizeLine(currentCleanupSnapshotArtist),
+                WordLyricRenderSupport.normalizeLine(lastSystemUiArtistName)));
         result.putString(
                 LyricUiSettings.RESULT_TRACK_KEY,
                 snapshotMatchesCurrent ? currentCleanupSnapshotTrackKey : "");
@@ -11366,7 +11416,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (TextUtils.isEmpty(container) || TextUtils.isEmpty(value)) {
             return false;
         }
-        return normalizeLine(container).contains(normalizeLine(value));
+        return WordLyricRenderSupport.normalizeLine(container).contains(WordLyricRenderSupport.normalizeLine(value));
     }
 
     private boolean isPendingSaltFallbackClear(String trackKey, long nowMillis) {
@@ -11704,7 +11754,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private static boolean looksLikeTimedLrc(String lyric) {
-        return !TextUtils.isEmpty(lyric) && ANY_LRC_TIME_TAG.matcher(lyric).find();
+        return !TextUtils.isEmpty(lyric) && WordLyricRenderSupport.ANY_LRC_TIME_TAG.matcher(lyric).find();
     }
 
     private void cacheSystemUiLyricModel(LyricInfoContract.Payload payload) {
@@ -12740,7 +12790,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 translation = cleanPlainLyricText(supplementalLine.text);
             }
             if (!TextUtils.isEmpty(translation)
-                    && !normalizeLine(translation).equals(normalizeLine(targetLine.text))) {
+                    && !WordLyricRenderSupport.normalizeLine(translation).equals(WordLyricRenderSupport.normalizeLine(targetLine.text))) {
                 targetLine.translation = translation;
             }
         }
@@ -12757,7 +12807,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             boolean allowTextAsTranslation) {
         WordLine best = null;
         long bestDistance = Long.MAX_VALUE;
-        String targetText = normalizeLine(targetLine.text);
+        String targetText = WordLyricRenderSupport.normalizeLine(targetLine.text);
         for (WordLine candidate : supplementalModel.lines) {
             if (candidate == null) {
                 continue;
@@ -12768,7 +12818,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             }
 
             String candidateTranslation = cleanPlainLyricText(candidate.translation);
-            String candidateText = normalizeLine(candidate.text);
+            String candidateText = WordLyricRenderSupport.normalizeLine(candidate.text);
             boolean usable = !TextUtils.isEmpty(candidateTranslation)
                     || (allowTextAsTranslation
                     && !TextUtils.isEmpty(candidate.text)
@@ -12816,7 +12866,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                     continue;
                 }
 
-                String key = line.timeMillis + "|" + normalizeLine(line.text);
+                String key = line.timeMillis + "|" + WordLyricRenderSupport.normalizeLine(line.text);
                 WordLine existing = uniqueLines.get(key);
                 if (existing == null) {
                     uniqueLines.put(key, line);
@@ -13049,7 +13099,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             return null;
         }
 
-        java.util.regex.Matcher matcher = ANY_LRC_TIME_TAG.matcher(line);
+        java.util.regex.Matcher matcher = WordLyricRenderSupport.ANY_LRC_TIME_TAG.matcher(line);
         ArrayList<TagMatch> tags = new ArrayList<>();
         while (matcher.find()) {
             tags.add(new TagMatch(matcher.start(), matcher.end(), parseLrcTimeMillis(matcher.group(1))));
@@ -13106,7 +13156,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             return null;
         }
 
-        long inferredEnd = inferWordLineEndMillis(tags.get(0).timeMillis, normalized.words);
+        long inferredEnd = WordLyricRenderSupport.inferWordLineEndMillis(tags.get(0).timeMillis, normalized.words);
         long endTimeMillis = explicitEndMillis > tags.get(0).timeMillis
                 ? Math.max(explicitEndMillis, normalized.words.get(normalized.words.size() - 1).timeMillis + 80L)
                 : inferredEnd;
@@ -13173,7 +13223,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 continue;
             }
             int score = Math.min(120, line.words == null ? 0 : line.words.size()) * 12
-                    + Math.min(120, normalizeLine(line.text).length());
+                    + Math.min(120, WordLyricRenderSupport.normalizeLine(line.text).length());
             if (line.inlineTiming) {
                 score += 1_000;
             }
@@ -13219,7 +13269,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (TextUtils.isEmpty(segment)) {
             return "";
         }
-        String cleaned = ANY_LRC_TIME_TAG.matcher(segment).replaceAll("");
+        String cleaned = WordLyricRenderSupport.ANY_LRC_TIME_TAG.matcher(segment).replaceAll("");
         cleaned = LyricTextSanitizer.removeIgnorableCharacters(cleaned).replace('\t', ' ');
         return cleaned.trim().replaceAll(" {2,}", " ");
     }
@@ -13350,7 +13400,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 continue;
             }
             int score = Math.min(80, line.words == null ? 0 : line.words.size()) * 4
-                    + Math.min(80, normalizeLine(line.text).length());
+                    + Math.min(80, WordLyricRenderSupport.normalizeLine(line.text).length());
             if (containsLatinLetter(line.text)) {
                 score += 1_000;
             }
@@ -13484,7 +13534,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             if (TextUtils.isEmpty(displayText)) {
                 continue;
             }
-            String normalizedDisplayText = normalizeLine(displayText);
+            String normalizedDisplayText = WordLyricRenderSupport.normalizeLine(displayText);
             int occurrence = textOccurrences.containsKey(normalizedDisplayText)
                     ? textOccurrences.get(normalizedDisplayText)
                     : 0;
@@ -13497,9 +13547,9 @@ public final class LockscreenLyricsModule extends XposedModule {
                     occurrence,
                     officialIndex);
             boolean displayMatchesMainText =
-                    matchesWordLineText(wordLine, normalizedDisplayText);
+                    WordLyricRenderSupport.matchesWordLineText(wordLine, normalizedDisplayText);
             model.officialLines.add(
-                    OFFICIAL_SLOT_ALIAS_REUSE_ENABLED && displayMatchesMainText
+                    WordLyricRenderConstants.OFFICIAL_SLOT_ALIAS_REUSE_ENABLED && displayMatchesMainText
                             ? wordLine
                             : null);
             boolean usableTranslationAlias = wordLine != null
@@ -13581,7 +13631,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (wordLine == null || TextUtils.isEmpty(displayText)) {
             return false;
         }
-        String normalizedDisplayText = normalizeLine(displayText);
+        String normalizedDisplayText = WordLyricRenderSupport.normalizeLine(displayText);
         if (TextUtils.isEmpty(normalizedDisplayText)
                 || normalizedDisplayText.equals(wordLine.normalizedText)
                 || LockscreenIntegrationPolicy.sameLyricVariant(
@@ -13609,7 +13659,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             return null;
         }
         WordLine exactTime = model.findLineAtTime(timeMillis);
-        if (matchesWordLineText(exactTime, normalizedDisplayText)) {
+        if (WordLyricRenderSupport.matchesWordLineText(exactTime, normalizedDisplayText)) {
             return exactTime;
         }
 
@@ -13635,7 +13685,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
 
         WordLine nearest = model.findNearestLineByTime(timeMillis, 650L);
-        if (matchesWordLineText(nearest, normalizedDisplayText)) {
+        if (WordLyricRenderSupport.matchesWordLineText(nearest, normalizedDisplayText)) {
             return nearest;
         }
         return nearest;
@@ -13652,14 +13702,14 @@ public final class LockscreenLyricsModule extends XposedModule {
                 continue;
             }
 
-            java.util.regex.Matcher firstTag = ANY_LRC_TIME_TAG.matcher(line);
+            java.util.regex.Matcher firstTag = WordLyricRenderSupport.ANY_LRC_TIME_TAG.matcher(line);
             if (!firstTag.find() || firstTag.start() != 0) {
                 continue;
             }
 
             long timeMillis = parseLrcTimeMillis(firstTag.group(1));
             String text = line.substring(firstTag.end());
-            text = ANY_LRC_TIME_TAG.matcher(text).replaceAll("");
+            text = WordLyricRenderSupport.ANY_LRC_TIME_TAG.matcher(text).replaceAll("");
             text = cleanPlainLyricText(text);
             if (!TextUtils.isEmpty(text) && !isNonLyricInfoLine(text, timeMillis)) {
                 TimedLyricGroup group = groups.get(timeMillis);
@@ -13706,7 +13756,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             return null;
         }
 
-        long inferredEnd = inferWordLineEndMillis(parsedLine.startMillis, normalized.words);
+        long inferredEnd = WordLyricRenderSupport.inferWordLineEndMillis(parsedLine.startMillis, normalized.words);
         long endTimeMillis = parsedLine.endMillis > parsedLine.startMillis
                 && parsedLine.endMillis - parsedLine.startMillis <= 120_000L
                 ? parsedLine.endMillis
@@ -13771,7 +13821,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (TextUtils.isEmpty(text)) {
             return "";
         }
-        text = ANY_LRC_TIME_TAG.matcher(text).replaceAll("");
+        text = WordLyricRenderSupport.ANY_LRC_TIME_TAG.matcher(text).replaceAll("");
         text = LyricTextSanitizer.removeIgnorableCharacters(text).trim();
         return text.replaceAll("[ \\t]{2,}", " ");
     }
@@ -13856,15 +13906,9 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
 
         String candidate = text.substring(start, end + 1);
-        return ANY_LRC_TIME_TAG.matcher(candidate).matches() ? end + 1 : -1;
+        return WordLyricRenderSupport.ANY_LRC_TIME_TAG.matcher(candidate).matches() ? end + 1 : -1;
     }
 
-    private static long inferWordLineEndMillis(long timeMillis, ArrayList<WordRange> words) {
-        if (words == null || words.isEmpty()) {
-            return timeMillis + 600L;
-        }
-        return Math.max(timeMillis + 600L, words.get(words.size() - 1).timeMillis + 520L);
-    }
 
     private long estimatePlaybackPositionMillis() {
         long base = lastComputedPositionMs;
@@ -14203,7 +14247,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 + ", firstVisiblePosition=" + geometry.firstVisiblePosition
                 + ", firstVisibleTop=" + geometry.firstVisibleTop
                 + ", targetCenter=" + geometry.targetCenter
-                + ", fallbackSlotDp=" + LYRIC_SLOT_HEIGHT_DP
+                + ", fallbackSlotDp=" + WordLyricRenderConstants.LYRIC_SLOT_HEIGHT_DP
                 + ", spacingDp="
                 + LyricUiLayoutPolicy.lineSpacingTenthsDp(runtimeLyricUiConfig) / 10f
                 + ", wrappedSpacingDp="
@@ -14627,7 +14671,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private static String[] splitMixedTranslationAndWordLine(String rawLine) {
-        java.util.regex.Matcher matcher = ANY_LRC_TIME_TAG.matcher(rawLine);
+        java.util.regex.Matcher matcher = WordLyricRenderSupport.ANY_LRC_TIME_TAG.matcher(rawLine);
         ArrayList<TagMatch> tags = new ArrayList<>();
         while (matcher.find()) {
             tags.add(new TagMatch(matcher.start(), matcher.end(), parseLrcTimeMillis(matcher.group(1))));
@@ -14645,6 +14689,9 @@ public final class LockscreenLyricsModule extends XposedModule {
                 continue;
             }
             if (containsLatinLetter(prefixText) && containsLyricLeadSeparator(prefixText)) {
+                continue;
+            }
+            if (isShortLatinInterjectionBeforeInlineTimingSuffix(rawLine, tags, i, prefixText)) {
                 continue;
             }
             if (looksLikeInlineTimedPrefixBeforeSplit(rawLine, tags, i)) {
@@ -14727,7 +14774,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 }
                 lastVisibleSegmentStartMillis = current.timeMillis;
             }
-            if (normalizeLine(segment).length() <= 2) {
+            if (WordLyricRenderSupport.normalizeLine(segment).length() <= 2) {
                 compactSegments++;
             }
         }
@@ -14755,6 +14802,52 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
         String prefix = rawLine.substring(lineStart.end, firstWord.start);
         return TextUtils.isEmpty(prefix.trim());
+    }
+
+    private static boolean isShortLatinInterjectionBeforeInlineTimingSuffix(
+            String rawLine,
+            ArrayList<TagMatch> tags,
+            int splitTagIndex,
+            String prefixText) {
+        if (TextUtils.isEmpty(rawLine)
+                || tags == null
+                || splitTagIndex <= 0
+                || splitTagIndex >= tags.size()) {
+            return false;
+        }
+        TagMatch lineStart = tags.get(0);
+        TagMatch splitTag = tags.get(splitTagIndex);
+        if (lineStart == null
+                || splitTag == null
+                || lineStart.timeMillis < 0L
+                || splitTag.timeMillis < 0L) {
+            return false;
+        }
+        if (containsLatinLetter(prefixText) && prefixText.trim().indexOf(' ') >= 0) {
+            return false;
+        }
+        if (prefixText.length() > 6) {
+            return false;
+        }
+        long gapMillis = splitTag.timeMillis - lineStart.timeMillis;
+        if (gapMillis < 0L || gapMillis > 1500L) {
+            return false;
+        }
+        int segmentStart = splitTag.end;
+        int segmentEnd = splitTagIndex + 1 < tags.size()
+                ? tags.get(splitTagIndex + 1).start
+                : rawLine.length();
+        if (segmentStart >= segmentEnd) {
+            return false;
+        }
+        String suffixText = cleanPlainLyricText(rawLine.substring(segmentStart, segmentEnd));
+        if (TextUtils.isEmpty(suffixText)
+                || !containsLatinLetter(suffixText)
+                || containsNonAscii(suffixText)
+                || suffixText.length() <= prefixText.length()) {
+            return false;
+        }
+        return true;
     }
 
     private static void traceWordLyricModel(
@@ -14901,8 +14994,8 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (TextUtils.isEmpty(text)) {
             return false;
         }
-        String normalized = normalizeLine(text);
-        return normalized.indexOf(':') >= 0 || normalized.indexOf('：') >= 0;
+        String normalized = WordLyricRenderSupport.normalizeLine(text);
+        return normalized.indexOf(':') >= 0 || normalized.indexOf('\uff1a') >= 0;
     }
 
     private static boolean isNonLyricInfoLine(String text, long timeMillis) {
@@ -14926,7 +15019,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private static boolean isShortStandaloneLyricText(String text) {
-        String normalized = normalizeLine(text);
+        String normalized = WordLyricRenderSupport.normalizeLine(text);
         if (TextUtils.isEmpty(normalized) || normalized.length() > 18) {
             return false;
         }
@@ -15883,7 +15976,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             if (distance <= 0) {
                 return 1f;
             }
-            return OFFICIAL_LYRIC_INACTIVE_ROW_FADE;
+            return WordLyricRenderConstants.OFFICIAL_LYRIC_INACTIVE_ROW_FADE;
         }
 
         private float resolveOfficialRowBlurRadiusTarget(DrawFrame frame) {
@@ -15922,7 +16015,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 return 1f;
             }
             if (line == null || frame == null) {
-                return OFFICIAL_LYRIC_ACTIVE_ROW_SCALE;
+                return WordLyricRenderConstants.OFFICIAL_LYRIC_ACTIVE_ROW_SCALE;
             }
             boolean scaleActive = frame.lineIndex == frame.scaleActiveIndex
                     || (frame.scaleActiveIndex < 0 && frame.focused);
@@ -16038,12 +16131,12 @@ public final class LockscreenLyricsModule extends XposedModule {
 
         private static float currentOfficialRowScale(WordLine line, long now) {
             if (line == null || line.rowVisualScaleStartedAtMs < 0L) {
-                return line == null ? OFFICIAL_LYRIC_ACTIVE_ROW_SCALE : line.rowVisualScaleTarget;
+                return line == null ? WordLyricRenderConstants.OFFICIAL_LYRIC_ACTIVE_ROW_SCALE : line.rowVisualScaleTarget;
             }
             float rawProgress = Math.max(
                     0f,
                     Math.min(1f, (now - line.rowVisualScaleStartedAtMs)
-                            / (float) OFFICIAL_LYRIC_ROW_SCALE_ANIMATION_MS));
+                            / (float) WordLyricRenderConstants.OFFICIAL_LYRIC_ROW_SCALE_ANIMATION_MS));
             if (rawProgress >= 1f) {
                 finishOfficialRowVisualAnimation(line);
                 return line.rowVisualScaleTarget;
@@ -16060,7 +16153,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             float rawProgress = Math.max(
                     0f,
                     Math.min(1f, (now - line.rowVisualScaleStartedAtMs)
-                            / (float) OFFICIAL_LYRIC_ROW_SCALE_ANIMATION_MS));
+                            / (float) WordLyricRenderConstants.OFFICIAL_LYRIC_ROW_SCALE_ANIMATION_MS));
             if (rawProgress >= 1f) {
                 return line.rowVisualFadeTarget;
             }
@@ -16082,10 +16175,10 @@ public final class LockscreenLyricsModule extends XposedModule {
         private static float officialRowScaleEase(float progress) {
             return cubicBezierYForX(
                     Math.max(0f, Math.min(1f, progress)),
-                    OFFICIAL_LYRIC_ROW_EASE_X1,
-                    OFFICIAL_LYRIC_ROW_EASE_Y1,
-                    OFFICIAL_LYRIC_ROW_EASE_X2,
-                    OFFICIAL_LYRIC_ROW_EASE_Y2);
+                    WordLyricRenderConstants.OFFICIAL_LYRIC_ROW_EASE_X1,
+                    WordLyricRenderConstants.OFFICIAL_LYRIC_ROW_EASE_Y1,
+                    WordLyricRenderConstants.OFFICIAL_LYRIC_ROW_EASE_X2,
+                    WordLyricRenderConstants.OFFICIAL_LYRIC_ROW_EASE_Y2);
         }
 
         private static float cubicBezierYForX(
@@ -16578,7 +16671,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 return 0;
             }
             Context context = textView.getContext();
-            int fallbackHeight = dp(context, LYRIC_SLOT_HEIGHT_DP);
+            int fallbackHeight = dp(context, WordLyricRenderConstants.LYRIC_SLOT_HEIGHT_DP);
             if (scrollScaleEnabled && forceOfficialSlotHeight) {
                 return fallbackHeight;
             }
@@ -16668,8 +16761,8 @@ public final class LockscreenLyricsModule extends XposedModule {
             // driven and does not change when focus, progress, AOD, blur, or scale animates.
             // Keep the same padding for scale presets so bold glyphs and glow are not
             // clipped at the TextView/item boundary.
-            int minHeight = dp(context, LYRIC_SLOT_MIN_HEIGHT_DP);
-            int verticalPadding = dp(context, LYRIC_SLOT_VERTICAL_PADDING_DP);
+            int minHeight = dp(context, WordLyricRenderConstants.LYRIC_SLOT_MIN_HEIGHT_DP);
+            int verticalPadding = dp(context, WordLyricRenderConstants.LYRIC_SLOT_VERTICAL_PADDING_DP);
             if (uiConfig.glowEnabled) {
                 int glowDrawingRoom = Math.round(
                         inactivePaint.getTextSize()
@@ -16681,12 +16774,12 @@ public final class LockscreenLyricsModule extends XposedModule {
             int collapsedHeight = LyricUiLayoutPolicy.requiredSlotHeight(
                     mainHeight,
                     verticalPadding,
-                    dp(context, LYRIC_SLOT_BOTTOM_SAFETY_DP),
+                    dp(context, WordLyricRenderConstants.LYRIC_SLOT_BOTTOM_SAFETY_DP),
                     minHeight);
             int expandedHeight = LyricUiLayoutPolicy.requiredSlotHeight(
                     expandedGroupHeight,
                     verticalPadding,
-                    dp(context, LYRIC_SLOT_BOTTOM_SAFETY_DP),
+                    dp(context, WordLyricRenderConstants.LYRIC_SLOT_BOTTOM_SAFETY_DP),
                     minHeight);
             int resolvedHeight = Math.round(
                     collapsedHeight + (expandedHeight - collapsedHeight) * translationAmount);
@@ -18148,12 +18241,6 @@ public final class LockscreenLyricsModule extends XposedModule {
             }
         }
 
-        private static final class LyricDrawLine {
-            int start;
-            int end;
-            float width;
-        }
-
         private static final class MainLineWindow {
             final int currentStart;
             final int previousStart;
@@ -18432,946 +18519,6 @@ public final class LockscreenLyricsModule extends XposedModule {
             this.line = line;
             this.translationLine = translationLine;
         }
-    }
-
-    private static final class DrawFrame {
-        final WordLyricModel model;
-        final WordLine line;
-        final int lineIndex;
-        final int activeIndex;
-        final int scaleActiveIndex;
-        final long position;
-        final long glowPosition;
-        final boolean active;
-        final boolean focused;
-        final boolean rowScaleAnimationAllowed;
-
-        DrawFrame(
-                WordLyricModel model,
-                WordLine line,
-                int lineIndex,
-                int activeIndex,
-                int scaleActiveIndex,
-                long position,
-                long glowPosition,
-                boolean active,
-                boolean focused,
-                boolean rowScaleAnimationAllowed) {
-            this.model = model;
-            this.line = line;
-            this.lineIndex = lineIndex;
-            this.activeIndex = activeIndex;
-            this.scaleActiveIndex = scaleActiveIndex;
-            this.position = position;
-            this.glowPosition = glowPosition;
-            this.active = active;
-            this.focused = focused;
-            this.rowScaleAnimationAllowed = rowScaleAnimationAllowed;
-        }
-    }
-
-    private static final class CachedDrawFrame {
-        final WordLyricModel model;
-        final WordLine line;
-        final long lineTimeMillis;
-        final String normalizedText;
-        long capturedAtElapsedMs;
-
-        CachedDrawFrame(
-                WordLyricModel model,
-                WordLine line,
-                long lineTimeMillis,
-                String normalizedText,
-                long capturedAtElapsedMs) {
-            this.model = model;
-            this.line = line;
-            this.lineTimeMillis = lineTimeMillis;
-            this.normalizedText = nullToEmpty(normalizedText);
-            this.capturedAtElapsedMs = capturedAtElapsedMs;
-        }
-    }
-
-    private static final class LyricsRecyclerGeometry {
-        static final LyricsRecyclerGeometry EMPTY =
-                new LyricsRecyclerGeometry(-1, -1, 0, Integer.MIN_VALUE, 0);
-
-        final int firstVisiblePosition;
-        final int lastVisiblePosition;
-        final int firstVisibleTop;
-        final int targetCenter;
-        final int childCount;
-
-        LyricsRecyclerGeometry(
-                int firstVisiblePosition,
-                int lastVisiblePosition,
-                int firstVisibleTop,
-                int targetCenter,
-                int childCount) {
-            this.firstVisiblePosition = firstVisiblePosition;
-            this.lastVisiblePosition = lastVisiblePosition;
-            this.firstVisibleTop = firstVisibleTop;
-            this.targetCenter = targetCenter;
-            this.childCount = childCount;
-        }
-    }
-
-    private static final class WordLyricModel {
-        final ArrayList<WordLine> lines = new ArrayList<>();
-        final ArrayList<WordLine> officialLines = new ArrayList<>();
-        final LinkedHashMap<String, Integer> renderableTextCounts = new LinkedHashMap<>();
-        final IdentityHashMap<WordLine, Integer> lineIndexByIdentity = new IdentityHashMap<>();
-        final IdentityHashMap<WordLine, Integer> officialIndexByIdentity = new IdentityHashMap<>();
-        boolean renderableTextIndexBuilt;
-        int lineIndexCacheSize = -1;
-        WordLine lineIndexCacheFirst;
-        WordLine lineIndexCacheLast;
-        int officialIndexCacheSize = -1;
-        WordLine officialIndexCacheFirst;
-        WordLine officialIndexCacheLast;
-        String parserName = "lyrics-core";
-
-        WordLine findLine(long position, String currentLine) {
-            String normalizedCurrent = normalizeLine(currentLine);
-            WordLine fallback = null;
-            for (WordLine line : lines) {
-                if (!TextUtils.isEmpty(normalizedCurrent)
-                        && matchesWordLineText(line, normalizedCurrent)) {
-                    return line;
-                }
-                if (line.timeMillis <= position) {
-                    fallback = line;
-                }
-            }
-            return fallback;
-        }
-
-        WordLine findActiveLine(long position) {
-            int index = lastLineIndexAtOrBefore(position);
-            return index >= 0 ? lines.get(index) : null;
-        }
-
-        WordLine lineAt(int index) {
-            return index >= 0 && index < lines.size() ? lines.get(index) : null;
-        }
-
-        WordLine lineAtOfficialIndex(int index) {
-            if (!OFFICIAL_SLOT_ALIAS_REUSE_ENABLED) {
-                return null;
-            }
-            return rawOfficialLineAt(index);
-        }
-
-        WordLine rawOfficialLineAt(int index) {
-            return index >= 0 && index < officialLines.size()
-                    ? officialLines.get(index)
-                    : null;
-        }
-
-        WordLine lineAtAdapterIndex(int index) {
-            if (index < 0) {
-                return null;
-            }
-            WordLine indexedLine = lineAt(index);
-            if (indexedLine != null) {
-                return indexedLine;
-            }
-            if (OFFICIAL_SLOT_ALIAS_REUSE_ENABLED
-                    && !officialLines.isEmpty()
-                    && index < officialLines.size()) {
-                WordLine officialLine = officialLines.get(index);
-                if (officialLine != null) {
-                    return officialLine;
-                }
-            }
-            return null;
-        }
-
-        WordLine lineAtOfficialDisplayIndex(int index) {
-            WordLine officialLine = lineAtOfficialIndex(index);
-            return officialLine != null ? officialLine : lineAtAdapterIndex(index);
-        }
-
-        WordLine lineAtAdapterIndexMatchingText(int index, String normalizedText) {
-            if (index < 0 || TextUtils.isEmpty(normalizedText)) {
-                return lineAtAdapterIndex(index);
-            }
-            WordLine indexedLine = lineAt(index);
-            WordLine officialLine = OFFICIAL_SLOT_ALIAS_REUSE_ENABLED
-                    ? rawOfficialLineAt(index)
-                    : null;
-            if (matchesWordLineRenderableText(officialLine, normalizedText)) {
-                return officialLine;
-            }
-            if (matchesWordLineRenderableText(indexedLine, normalizedText)) {
-                return indexedLine;
-            }
-            WordLine adapterLine = lineAtAdapterIndex(index);
-            if (adapterLine != indexedLine
-                    && adapterLine != officialLine
-                    && matchesWordLineRenderableText(adapterLine, normalizedText)) {
-                return adapterLine;
-            }
-            return adapterLine;
-        }
-
-        int indexOfLine(WordLine target) {
-            if (target == null) {
-                return -1;
-            }
-            ensureLineIndexCache();
-            Integer index = lineIndexByIdentity.get(target);
-            return index == null ? -1 : index;
-        }
-
-        int adapterIndexOfLine(WordLine target) {
-            if (target == null) {
-                return -1;
-            }
-            if (OFFICIAL_SLOT_ALIAS_REUSE_ENABLED && !officialLines.isEmpty()) {
-                ensureOfficialIndexCache();
-                Integer officialIndex = officialIndexByIdentity.get(target);
-                if (officialIndex != null) {
-                    return officialIndex;
-                }
-            }
-            return indexOfLine(target);
-        }
-
-        WordLine firstDisplayLine() {
-            if (OFFICIAL_SLOT_ALIAS_REUSE_ENABLED && !officialLines.isEmpty()) {
-                for (WordLine line : officialLines) {
-                    if (line != null && !TextUtils.isEmpty(line.text)) {
-                        return line;
-                    }
-                }
-            }
-            for (WordLine line : lines) {
-                if (line != null && !TextUtils.isEmpty(line.text)) {
-                    return line;
-                }
-            }
-            return null;
-        }
-
-        int firstDisplayLineIndex() {
-            return indexOfLine(firstDisplayLine());
-        }
-
-        int displayIndexAt(long position) {
-            WordLine active = findActiveLine(position);
-            int index = indexOfLine(active);
-            return index >= 0 ? index : lines.isEmpty() ? -1 : 0;
-        }
-
-        int adapterIndexAt(long position) {
-            WordLine active = findActiveLine(position);
-            int index = adapterIndexOfLine(active);
-            return index >= 0 ? index : lines.isEmpty() ? -1 : 0;
-        }
-
-        WordLine findLineAtTime(long timeMillis) {
-            if (timeMillis < 0) {
-                return null;
-            }
-            int index = firstLineIndexAt(timeMillis);
-            return index >= 0 ? lines.get(index) : null;
-        }
-
-        WordLine findNearestLineByTime(long timeMillis, long maxDistanceMillis) {
-            if (timeMillis < 0 || lines.isEmpty()) {
-                return null;
-            }
-            WordLine best = null;
-            long bestDistance = Math.max(0L, maxDistanceMillis) + 1L;
-            int insertionIndex = firstLineIndexAfterOrAt(timeMillis);
-            int start = Math.max(0, insertionIndex - 1);
-            int end = Math.min(lines.size() - 1, insertionIndex + 1);
-            for (int i = start; i <= end; i++) {
-                WordLine line = lines.get(i);
-                long distance = Math.abs(line.timeMillis - timeMillis);
-                if (distance < bestDistance) {
-                    best = line;
-                    bestDistance = distance;
-                }
-            }
-            return bestDistance <= Math.max(0L, maxDistanceMillis) ? best : null;
-        }
-
-        WordLine findLineByText(String normalizedText) {
-            return findLineByText(normalizedText, -1L);
-        }
-
-        WordLine findLineByText(String normalizedText, long position) {
-            if (TextUtils.isEmpty(normalizedText)) {
-                return null;
-            }
-            WordLine best = null;
-            long bestDistance = Long.MAX_VALUE;
-            for (WordLine line : lines) {
-                if (matchesWordLineText(line, normalizedText)) {
-                    if (position < 0) {
-                        return line;
-                    }
-                    long distance = Math.abs(line.timeMillis - position);
-                    if (best == null || distance < bestDistance) {
-                        best = line;
-                        bestDistance = distance;
-                    }
-                }
-            }
-            return best;
-        }
-
-        WordLine findLineByTextOccurrence(String normalizedText, int occurrence) {
-            if (TextUtils.isEmpty(normalizedText) || occurrence < 0) {
-                return null;
-            }
-            int seen = 0;
-            for (WordLine line : lines) {
-                if (!matchesWordLineText(line, normalizedText)) {
-                    continue;
-                }
-                if (seen++ == occurrence) {
-                    return line;
-                }
-            }
-            return null;
-        }
-
-        boolean hasRenderableText(String normalizedText) {
-            if (TextUtils.isEmpty(normalizedText)) {
-                return false;
-            }
-            ensureRenderableTextIndex();
-            if (renderableTextCounts.containsKey(normalizedText)) {
-                return true;
-            }
-            for (WordLine line : lines) {
-                if (matchesWordLineText(line, normalizedText)) {
-                    return true;
-                }
-                if (line.normalizedTranslation().equals(normalizedText)) {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        WordLine findLineByTextNearIndex(
-                String normalizedText, int index, int radius, boolean requireTranslation) {
-            if (TextUtils.isEmpty(normalizedText) || index < 0 || lines.isEmpty()) {
-                return null;
-            }
-            int anchor = Math.max(0, Math.min(index, lines.size() - 1));
-            int start = Math.max(0, anchor - Math.max(0, radius));
-            int end = Math.min(lines.size() - 1, anchor + Math.max(0, radius));
-            WordLine best = null;
-            int bestDistance = Integer.MAX_VALUE;
-            for (int i = start; i <= end; i++) {
-                WordLine line = lines.get(i);
-                if (!matchesWordLineText(line, normalizedText)) {
-                    continue;
-                }
-                if (requireTranslation && TextUtils.isEmpty(line.translation)) {
-                    continue;
-                }
-                int distance = Math.abs(i - anchor);
-                if (best == null || distance < bestDistance) {
-                    best = line;
-                    bestDistance = distance;
-                }
-            }
-            return best;
-        }
-
-        WordLine findLineByTranslation(String normalizedText) {
-            return findLineByTranslation(normalizedText, -1L);
-        }
-
-        WordLine findLineByTranslation(String normalizedText, long position) {
-            if (TextUtils.isEmpty(normalizedText)) {
-                return null;
-            }
-            WordLine best = null;
-            long bestDistance = Long.MAX_VALUE;
-            for (WordLine line : lines) {
-                if (line.normalizedTranslation().equals(normalizedText)) {
-                    if (position < 0) {
-                        return line;
-                    }
-                    long distance = Math.abs(line.timeMillis - position);
-                    if (best == null || distance < bestDistance) {
-                        best = line;
-                        bestDistance = distance;
-                    }
-                }
-            }
-            return best;
-        }
-
-        WordLine findLineByTranslationNearIndex(String normalizedText, int index, int radius) {
-            if (TextUtils.isEmpty(normalizedText) || index < 0 || lines.isEmpty()) {
-                return null;
-            }
-            int anchor = Math.max(0, Math.min(index, lines.size() - 1));
-            int start = Math.max(0, anchor - Math.max(0, radius));
-            int end = Math.min(lines.size() - 1, anchor + Math.max(0, radius));
-            WordLine best = null;
-            int bestDistance = Integer.MAX_VALUE;
-            for (int i = start; i <= end; i++) {
-                WordLine line = lines.get(i);
-                if (!line.normalizedTranslation().equals(normalizedText)) {
-                    continue;
-                }
-                int distance = Math.abs(i - anchor);
-                if (best == null || distance < bestDistance) {
-                    best = line;
-                    bestDistance = distance;
-                }
-            }
-            return best;
-        }
-
-        int translationCount() {
-            int count = 0;
-            for (WordLine line : lines) {
-                if (!TextUtils.isEmpty(line.translation)) {
-                    count++;
-                }
-            }
-            return count;
-        }
-
-        boolean hasDuplicateRenderableText(String normalizedText) {
-            if (TextUtils.isEmpty(normalizedText)) {
-                return false;
-            }
-            ensureRenderableTextIndex();
-            Integer exactCount = renderableTextCounts.get(normalizedText);
-            if (exactCount != null) {
-                return exactCount > 1;
-            }
-            int count = 0;
-            for (WordLine line : lines) {
-                if (matchesWordLineText(line, normalizedText)
-                        || line.normalizedTranslation().equals(normalizedText)) {
-                    count++;
-                    if (count > 1) {
-                        return true;
-                    }
-                }
-            }
-            return false;
-        }
-
-        private void ensureRenderableTextIndex() {
-            if (renderableTextIndexBuilt) {
-                return;
-            }
-            renderableTextCounts.clear();
-            for (WordLine line : lines) {
-                String primary = line.normalizedText;
-                String display = line.normalizedDisplayText();
-                String translation = line.normalizedTranslation();
-                incrementRenderableTextCount(primary);
-                if (!display.equals(primary)) {
-                    incrementRenderableTextCount(display);
-                }
-                if (!translation.equals(primary) && !translation.equals(display)) {
-                    incrementRenderableTextCount(translation);
-                }
-            }
-            renderableTextIndexBuilt = true;
-        }
-
-        private void incrementRenderableTextCount(String normalizedText) {
-            if (TextUtils.isEmpty(normalizedText)) {
-                return;
-            }
-            Integer count = renderableTextCounts.get(normalizedText);
-            renderableTextCounts.put(normalizedText, count == null ? 1 : count + 1);
-        }
-
-        private void ensureLineIndexCache() {
-            int size = lines.size();
-            WordLine first = size == 0 ? null : lines.get(0);
-            WordLine last = size == 0 ? null : lines.get(size - 1);
-            if (lineIndexCacheSize == size
-                    && lineIndexCacheFirst == first
-                    && lineIndexCacheLast == last) {
-                return;
-            }
-            lineIndexByIdentity.clear();
-            for (int i = 0; i < size; i++) {
-                WordLine line = lines.get(i);
-                if (line != null && !lineIndexByIdentity.containsKey(line)) {
-                    lineIndexByIdentity.put(line, i);
-                }
-            }
-            lineIndexCacheSize = size;
-            lineIndexCacheFirst = first;
-            lineIndexCacheLast = last;
-        }
-
-        private void ensureOfficialIndexCache() {
-            int size = officialLines.size();
-            WordLine first = size == 0 ? null : officialLines.get(0);
-            WordLine last = size == 0 ? null : officialLines.get(size - 1);
-            if (officialIndexCacheSize == size
-                    && officialIndexCacheFirst == first
-                    && officialIndexCacheLast == last) {
-                return;
-            }
-            officialIndexByIdentity.clear();
-            for (int i = 0; i < size; i++) {
-                WordLine line = officialLines.get(i);
-                if (line != null && !officialIndexByIdentity.containsKey(line)) {
-                    officialIndexByIdentity.put(line, i);
-                }
-            }
-            officialIndexCacheSize = size;
-            officialIndexCacheFirst = first;
-            officialIndexCacheLast = last;
-        }
-
-        private int lastLineIndexAtOrBefore(long position) {
-            int low = 0;
-            int high = lines.size() - 1;
-            int best = -1;
-            while (low <= high) {
-                int mid = (low + high) >>> 1;
-                WordLine line = lines.get(mid);
-                if (line.timeMillis <= position) {
-                    best = mid;
-                    low = mid + 1;
-                } else {
-                    high = mid - 1;
-                }
-            }
-            return best;
-        }
-
-        private int firstLineIndexAt(long timeMillis) {
-            int low = 0;
-            int high = lines.size() - 1;
-            int best = -1;
-            while (low <= high) {
-                int mid = (low + high) >>> 1;
-                long lineTime = lines.get(mid).timeMillis;
-                if (lineTime >= timeMillis) {
-                    if (lineTime == timeMillis) {
-                        best = mid;
-                    }
-                    high = mid - 1;
-                } else {
-                    low = mid + 1;
-                }
-            }
-            return best;
-        }
-
-        private int firstLineIndexAfterOrAt(long timeMillis) {
-            int low = 0;
-            int high = lines.size() - 1;
-            int best = lines.size();
-            while (low <= high) {
-                int mid = (low + high) >>> 1;
-                if (lines.get(mid).timeMillis >= timeMillis) {
-                    best = mid;
-                    high = mid - 1;
-                } else {
-                    low = mid + 1;
-                }
-            }
-            return best;
-        }
-    }
-
-    private enum LyricTimingMode {
-        WORD_TIMED,
-        LINE_TIMED
-    }
-
-    private static final class WordLine {
-        final long timeMillis;
-        final long endTimeMillis;
-        final String text;
-        final String normalizedText;
-        final String textMatchKey;
-        final ArrayList<WordRange> words;
-        final LyricTimingMode timingMode;
-        String displayText = "";
-        String translation = "";
-        private String normalizedDisplaySource = "";
-        private String normalizedDisplayText = "";
-        private String displayMatchKey = "";
-        private String normalizedTranslationSource = "";
-        private String normalizedTranslationText = "";
-        int rendererLayoutWidthKey = -1;
-        int rendererLayoutTextSizeKey = -1;
-        Typeface rendererLayoutTypeface;
-        boolean rendererLayoutSingleLine;
-        boolean rendererLayoutBalanceUntranslatedText;
-        int rendererLayoutCount;
-        int[] rendererLayoutStarts = new int[4];
-        int[] rendererLayoutEnds = new int[4];
-        float[] rendererLayoutWidths = new float[4];
-        int mainLineWindowLayoutKey = -1;
-        int mainLineWindowStart;
-        int mainLineWindowPreviousStart;
-        long mainLineWindowChangedAtMs;
-        volatile boolean passiveLinePanEligible;
-        int focusedVisualActiveIndex = Integer.MIN_VALUE;
-        long focusedVisualStartElapsedMs;
-        boolean rowVisualScaleInitialized;
-        float rowVisualScaleStart = OFFICIAL_LYRIC_INACTIVE_ROW_SCALE;
-        float rowVisualScaleTarget = OFFICIAL_LYRIC_INACTIVE_ROW_SCALE;
-        float rowVisualFadeStart = 1f;
-        float rowVisualFadeTarget = 1f;
-        float rowVisualBlurRadiusTarget = 0f;
-        long rowVisualScaleStartedAtMs = -1L;
-        int rowVisualScaleActiveIndex = Integer.MIN_VALUE;
-        int slotHeightWidthKey = -1;
-        int slotHeightBaseTextSizeKey = -1;
-        int slotHeightTypographyKey = -1;
-        int slotHeightTranslationHash;
-        int slotHeightTranslationLength = -1;
-        int slotHeightTranslationAmountKey = -1;
-        boolean slotHeightScrollScaleEnabled;
-        boolean slotHeightForceOfficial;
-        int slotHeightCollapsedValue = -1;
-        int slotHeightExpandedValue = -1;
-        int slotHeightValue = -1;
-
-        void ensureRendererLayoutCapacity(int requiredCapacity) {
-            if (requiredCapacity <= rendererLayoutStarts.length) {
-                return;
-            }
-            int capacity = rendererLayoutStarts.length;
-            while (capacity < requiredCapacity) {
-                capacity = Math.min(256, capacity * 2);
-                if (capacity >= requiredCapacity || capacity == 256) {
-                    break;
-                }
-            }
-            rendererLayoutStarts = Arrays.copyOf(rendererLayoutStarts, capacity);
-            rendererLayoutEnds = Arrays.copyOf(rendererLayoutEnds, capacity);
-            rendererLayoutWidths = Arrays.copyOf(rendererLayoutWidths, capacity);
-        }
-
-        WordLine(long timeMillis, String text, ArrayList<WordRange> words) {
-            this(
-                    timeMillis,
-                    text,
-                    words,
-                    inferWordLineEndMillis(timeMillis, words),
-                    words != null && words.size() > 1
-                            ? LyricTimingMode.WORD_TIMED
-                            : LyricTimingMode.LINE_TIMED);
-        }
-
-        WordLine(long timeMillis, String text, ArrayList<WordRange> words, long endTimeMillis) {
-            this(
-                    timeMillis,
-                    text,
-                    words,
-                    endTimeMillis,
-                    words != null && words.size() > 1
-                            ? LyricTimingMode.WORD_TIMED
-                            : LyricTimingMode.LINE_TIMED);
-        }
-
-        WordLine(
-                long timeMillis,
-                String text,
-                ArrayList<WordRange> words,
-                long endTimeMillis,
-                LyricTimingMode timingMode) {
-            this.timeMillis = timeMillis;
-            this.endTimeMillis = Math.max(timeMillis, endTimeMillis);
-            this.text = text;
-            this.normalizedText = normalizeLine(text);
-            this.textMatchKey = lyricMatchKeyFromNormalized(normalizedText);
-            this.words = words;
-            this.timingMode = timingMode == null
-                    ? LyricTimingMode.LINE_TIMED
-                    : timingMode;
-        }
-
-        String normalizedDisplayText() {
-            String source = nullToEmpty(displayText);
-            if (!source.equals(normalizedDisplaySource)) {
-                normalizedDisplaySource = source;
-                normalizedDisplayText = normalizeLine(source);
-                displayMatchKey = lyricMatchKeyFromNormalized(normalizedDisplayText);
-            }
-            return normalizedDisplayText;
-        }
-
-        String displayMatchKey() {
-            normalizedDisplayText();
-            return displayMatchKey;
-        }
-
-        String normalizedTranslation() {
-            String source = nullToEmpty(translation);
-            if (!source.equals(normalizedTranslationSource)) {
-                normalizedTranslationSource = source;
-                normalizedTranslationText = normalizeLine(source);
-            }
-            return normalizedTranslationText;
-        }
-
-        WordRange findWord(long position) {
-            int index = findWordIndex(position);
-            return index >= 0 ? words.get(index) : null;
-        }
-
-        int findWordIndex(long position) {
-            int fallback = -1;
-            for (int i = 0; i < words.size(); i++) {
-                WordRange word = words.get(i);
-                if (word.timeMillis <= position) {
-                    fallback = i;
-                } else {
-                    break;
-                }
-            }
-            return fallback >= 0 ? fallback : words.isEmpty() ? -1 : 0;
-        }
-
-        long delayToNextWordMillis(long position) {
-            for (WordRange word : words) {
-                if (word.timeMillis > position) {
-                    return Math.max(40L, word.timeMillis - position + 16L);
-                }
-            }
-            return 220L;
-        }
-
-        long wordEndMillis(int index) {
-            if (index < 0 || index >= words.size()) {
-                return timeMillis + 600L;
-            }
-            long begin = words.get(index).timeMillis;
-            if (index + 1 < words.size()) {
-                return Math.max(begin + 80L, words.get(index + 1).timeMillis);
-            }
-            return Math.max(begin + 80L, endTimeMillis);
-        }
-
-        float wordProgress(int index, long position) {
-            if (index < 0 || index >= words.size()) {
-                return 0f;
-            }
-            long begin = words.get(index).timeMillis;
-            long end = wordEndMillis(index);
-            if (position <= begin) {
-                return 0f;
-            }
-            if (position >= end) {
-                return 1f;
-            }
-            return (float) (position - begin) / (float) Math.max(1L, end - begin);
-        }
-    }
-
-    private static final class WordRange {
-        final long timeMillis;
-        final int start;
-        final int end;
-
-        WordRange(long timeMillis, int start, int end) {
-            this.timeMillis = timeMillis;
-            this.start = start;
-            this.end = end;
-        }
-    }
-
-    private static final class NormalizedWordLineText {
-        final String text;
-        final ArrayList<WordRange> words;
-
-        NormalizedWordLineText(String text, ArrayList<WordRange> words) {
-            this.text = text;
-            this.words = words;
-        }
-    }
-
-    private static final class TagMatch {
-        final int start;
-        final int end;
-        final long timeMillis;
-
-        TagMatch(int start, int end, long timeMillis) {
-            this.start = start;
-            this.end = end;
-            this.timeMillis = timeMillis;
-        }
-    }
-
-    private static final class InlineTimedLyricLine {
-        final long timeMillis;
-        final long endTimeMillis;
-        final String text;
-        final ArrayList<WordRange> words;
-        final boolean inlineTiming;
-        final int sourceTimedSegmentCount;
-        final int order;
-
-        InlineTimedLyricLine(
-                long timeMillis,
-                long endTimeMillis,
-                String text,
-                ArrayList<WordRange> words,
-                boolean inlineTiming,
-                int sourceTimedSegmentCount,
-                int order) {
-            this.timeMillis = timeMillis;
-            this.endTimeMillis = Math.max(timeMillis, endTimeMillis);
-            this.text = text;
-            this.words = words;
-            this.inlineTiming = inlineTiming;
-            this.sourceTimedSegmentCount = Math.max(0, sourceTimedSegmentCount);
-            this.order = order;
-        }
-    }
-
-    private static boolean sameWordLine(WordLine left, WordLine right) {
-        return left != null && right != null && left == right;
-    }
-
-    private static boolean matchesWordLineText(WordLine line, String normalizedText) {
-        if (line == null || TextUtils.isEmpty(normalizedText)) {
-            return false;
-        }
-        String normalizedDisplayText = line.normalizedDisplayText();
-        if (line.normalizedText.equals(normalizedText)
-                || normalizedDisplayText.equals(normalizedText)) {
-            return true;
-        }
-        if (isLyricPrefixMatchCached(
-                normalizedText,
-                line.normalizedText,
-                line.textMatchKey)) {
-            return true;
-        }
-        return !TextUtils.isEmpty(normalizedDisplayText)
-                && isLyricPrefixMatchCached(
-                normalizedText,
-                normalizedDisplayText,
-                line.displayMatchKey());
-    }
-
-    private static boolean matchesWordLineRenderableText(WordLine line, String normalizedText) {
-        return matchesWordLineText(line, normalizedText)
-                || (line != null
-                && !TextUtils.isEmpty(line.translation)
-                && line.normalizedTranslation().equals(normalizedText));
-    }
-
-    private static boolean matchesLyricText(String fullText, String normalizedText) {
-        if (TextUtils.isEmpty(normalizedText)) {
-            return false;
-        }
-        String normalizedFullText = normalizeLine(fullText);
-        if (normalizedFullText.equals(normalizedText)) {
-            return true;
-        }
-        return isLyricPrefixMatch(normalizedText, normalizedFullText);
-    }
-
-    private static boolean isLyricPrefixMatch(String visibleText, String fullText) {
-        if (TextUtils.isEmpty(visibleText) || TextUtils.isEmpty(fullText)) {
-            return false;
-        }
-        String visibleKey = lyricMatchKey(visibleText);
-        String fullKey = lyricMatchKey(fullText);
-        return LyricTextMatchPolicy.hasSubstantialPrefix(
-                visibleText,
-                fullText,
-                visibleKey,
-                fullKey);
-    }
-
-    private static boolean isLyricPrefixMatchCached(
-            String visibleText, String fullText, String fullKey) {
-        if (TextUtils.isEmpty(visibleText) || TextUtils.isEmpty(fullText)) {
-            return false;
-        }
-        String visibleKey = lyricMatchKeyFromNormalized(visibleText);
-        return LyricTextMatchPolicy.hasSubstantialPrefix(
-                visibleText,
-                fullText,
-                visibleKey,
-                fullKey);
-    }
-
-    private static String lyricMatchKey(String text) {
-        return lyricMatchKeyFromNormalized(normalizeLine(text));
-    }
-
-    private static String lyricMatchKeyFromNormalized(String normalized) {
-        StringBuilder key = new StringBuilder(normalized.length());
-        for (int i = 0; i < normalized.length(); i++) {
-            char ch = normalized.charAt(i);
-            if (Character.isLetterOrDigit(ch)) {
-                key.append(Character.toLowerCase(ch));
-            }
-        }
-        return key.toString();
-    }
-
-    private static String normalizeLine(String line) {
-        if (line == null) {
-            return "";
-        }
-        String normalized = LyricTextSanitizer.removeIgnorableCharacters(line);
-        if (normalized.indexOf('[') >= 0 || normalized.indexOf('<') >= 0) {
-            normalized = ANY_LRC_TIME_TAG.matcher(normalized).replaceAll("");
-        }
-        int length = normalized.length();
-        int start = 0;
-        int end = length;
-        while (start < end && normalized.charAt(start) <= ' ') {
-            start++;
-        }
-        while (end > start && normalized.charAt(end - 1) <= ' ') {
-            end--;
-        }
-        boolean collapseWhitespace = false;
-        for (int i = start + 1; i < end; i++) {
-            char previous = normalized.charAt(i - 1);
-            char current = normalized.charAt(i);
-            if ((previous == ' ' || previous == '\t')
-                    && (current == ' ' || current == '\t')) {
-                collapseWhitespace = true;
-                break;
-            }
-        }
-        if (!collapseWhitespace) {
-            return start == 0 && end == length
-                    ? normalized
-                    : normalized.substring(start, end);
-        }
-        StringBuilder result = new StringBuilder(end - start);
-        boolean inWhitespaceRun = false;
-        for (int i = start; i < end; i++) {
-            char ch = normalized.charAt(i);
-            boolean whitespace = ch == ' ' || ch == '\t';
-            if (whitespace) {
-                if (!inWhitespaceRun) {
-                    result.append(ch);
-                } else if (result.charAt(result.length() - 1) != ' ') {
-                    result.setCharAt(result.length() - 1, ' ');
-                }
-                inWhitespaceRun = true;
-            } else {
-                result.append(ch);
-                inWhitespaceRun = false;
-            }
-        }
-        return result.toString();
     }
 
 }

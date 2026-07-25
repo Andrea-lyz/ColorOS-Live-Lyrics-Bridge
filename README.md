@@ -50,14 +50,16 @@ There are two ways a player can work with the module:
 | --- | --- | --- |
 | Salt Player | No | Built into the Bridge; word-timed and translated lyrics when supplied by the player |
 | ConePlayer (standard and Google Play packages) | No | Built into the Bridge; full lyric timelines and background recovery |
-| QQ Music | `LyricProvider-QQMusic` | Word-timed and translated lyrics |
-| NetEase Cloud Music / Honor edition | `LyricProvider-163Music` | Word-timed and translated lyrics |
-| Apple Music | `LyricProvider-AppleMusic` | Word-timed and translated lyrics; background-vocal and duet lanes are excluded |
-| LX Music (ToSide / Walnut variants) | `LyricProvider-LXMusic` | Full lyric timeline and translations when supplied by the player |
-| Poweramp | `LyricProvider-Poweramp` | Embedded local lyrics and lyrics available through provider matching |
-| Spotify | `LyricProvider-Spotify` | Standard original lyrics only; translations are not currently supported |
-| QiShui Music | `LyricProvider-QiShui` | Word-timed and translated lyrics; proper root hiding and the special setup below are required |
-| KuGou Music / Concept | `LyricProvider-KuGou` | Word-timed and translated lyrics |
+| QQ Music / QQ Music HD | `LyricProvider-QQMusic` | Direct v4 provider admitted by the Bridge; word-timed and translated lyrics |
+| NetEase Cloud Music / Honor edition | `LyricProvider-163Music` | Direct v4 provider admitted by the Bridge; word-timed and translated lyrics |
+| Apple Music | `LyricProvider-AppleMusic` | Direct v4 provider admitted by the Bridge; word-timed and translated lyrics; background-vocal and duet lanes are excluded |
+| LX Music (ToSide / Walnut variants) | `LyricProvider-LXMusic` | Direct v4 provider admitted by the Bridge; full lyric timeline and translations when supplied by the player |
+| Poweramp | `LyricProvider-Poweramp` | Direct v4 provider admitted by the Bridge; embedded local lyrics and lyrics available through provider matching |
+| Spotify | `LyricProvider-Spotify` | Direct v4 provider admitted by the Bridge; standard original lyrics only; translations are not currently supported |
+| QiShui Music | `LyricProvider-QiShui` | Direct v4 provider admitted by the Bridge; word-timed and translated lyrics; proper root hiding and the special setup below are required |
+| KuGou Music / Concept | `LyricProvider-KuGou` | Direct v4 provider admitted by the Bridge; word-timed and translated lyrics |
+
+The Provider list above follows the Bridge's direct v4 admission registry: a Provider is considered adapted when its source and player package are admitted by the Bridge. The current admitted Provider sources are `qq-music`, `netease-cloud-music`, `apple-music`, `lx-music`, `lx-walnut-music`, `poweramp-music`, `spotify-music`, `qishui-music`, `kugou-music`, and `kugou-concept-music`. Other modules present in the LyricProvider repository are not included in this adapted list unless their source and host package are added to the Bridge registry.
 
 Music apps can change their private lyric interfaces at any time. This table describes the adapters present in the current code; it is not a promise that every future player release will remain compatible.
 

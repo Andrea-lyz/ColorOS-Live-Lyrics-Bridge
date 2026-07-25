@@ -24,8 +24,34 @@ import java.util.regex.Pattern;
  */
 final class LyricsCoreAdapter {
     private static final AutoParser AUTO_PARSER = new AutoParser();
+    /**
+     * Matches `[mm:ss.xxx]` / `<mm:ss.xxx>` LRC tags. The closing bracket is
+     * optional because KUGOU/LX edge formats sometimes emit `<00:01.123` or
+     * `[00:01.123` without a terminator (line end acts as the implicit
+     * delimiter). {@link #lrcTagEnd} translates the match into the actual
+     * character span consumed by the tag so downstream region searches stay
+     * accurate whether or not a closing bracket is present.
+     */
     private static final Pattern LRC_OR_WORD_TIME_TAG = Pattern.compile(
-            "[\\[<](\\d{1,3}):([0-5]?\\d)(?:[\\.:](\\d{1,3}))?[\\]>]");
+            "[\\[<](\\d{1,3}):([0-5]?\\d)(?:[\\.:](\\d{1,3}))?[\\]>]?");
+
+    /**
+     * Returns the inclusive end offset of a {@link #LRC_OR_WORD_TIME_TAG}
+     * match. The regex marks the closing bracket as optional, so a missing
+     * terminator leaves {@code matcher.end()} on the last matched digit.
+     * If the source actually has a closing bracket right after the match we
+     * step past it so downstream region searches skip the tag in full.
+     */
+    private static int lrcTagEnd(Matcher matcher, String source) {
+        int end = matcher.end();
+        if (end < source.length()) {
+            char next = source.charAt(end);
+            if (next == ']' || next == '>') {
+                return end + 1;
+            }
+        }
+        return end;
+    }
 
     private LyricsCoreAdapter() {
     }

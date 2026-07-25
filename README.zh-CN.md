@@ -50,14 +50,16 @@
 | --- | --- | --- |
 | Salt Player | 否 | Bridge 内置适配；支持播放器提供的逐字与翻译歌词 |
 | ConePlayer / 光锥音乐（正式版、Google Play 版） | 否 | Bridge 内置适配；支持完整时间轴歌词和后台恢复 |
-| QQ 音乐 | `LyricProvider-QQMusic` | 逐字歌词、翻译歌词 |
-| 网易云音乐 / 网易云音乐荣耀版 | `LyricProvider-163Music` | 逐字歌词、翻译歌词 |
-| Apple Music | `LyricProvider-AppleMusic` | 逐字歌词、翻译歌词；不输出背景人声和对唱分轨 |
-| LX Music（ToSide / Walnut 版本） | `LyricProvider-LXMusic` | 完整时间轴歌词；播放器提供时支持翻译歌词 |
-| Poweramp | `LyricProvider-Poweramp` | 本地内嵌歌词与可匹配的在线歌词 |
-| Spotify | `LyricProvider-Spotify` | 目前只支持原文标准歌词，不支持翻译 |
-| 汽水音乐 | `LyricProvider-QiShui` | 逐字歌词、翻译歌词；需做好 Root 隐藏并完成下方特殊设置 |
-| 酷狗音乐 / 酷狗概念版 | `LyricProvider-KuGou` | 逐字歌词、翻译歌词 |
+| QQ 音乐 / QQ 音乐 HD | `LyricProvider-QQMusic` | Bridge 已放行 v4 直达 Provider；支持逐字歌词、翻译歌词 |
+| 网易云音乐 / 网易云音乐荣耀版 | `LyricProvider-163Music` | Bridge 已放行 v4 直达 Provider；支持逐字歌词、翻译歌词 |
+| Apple Music | `LyricProvider-AppleMusic` | Bridge 已放行 v4 直达 Provider；支持逐字歌词、翻译歌词；不输出背景人声和对唱分轨 |
+| LX Music（ToSide / Walnut 版本） | `LyricProvider-LXMusic` | Bridge 已放行 v4 直达 Provider；支持完整时间轴歌词；播放器提供时支持翻译歌词 |
+| Poweramp | `LyricProvider-Poweramp` | Bridge 已放行 v4 直达 Provider；支持本地内嵌歌词与可匹配的在线歌词 |
+| Spotify | `LyricProvider-Spotify` | Bridge 已放行 v4 直达 Provider；目前只支持原文标准歌词，不支持翻译 |
+| 汽水音乐 | `LyricProvider-QiShui` | Bridge 已放行 v4 直达 Provider；支持逐字歌词、翻译歌词；需做好 Root 隐藏并完成下方特殊设置 |
+| 酷狗音乐 / 酷狗概念版 | `LyricProvider-KuGou` | Bridge 已放行 v4 直达 Provider；支持逐字歌词、翻译歌词 |
+
+上表以 Bridge 的 v4 直达放行注册表为准：Provider 的 `source` 与播放器包名已被 Bridge 静态放行，即视为已完成 Bridge 适配。目前放行的 Provider source 为：`qq-music`、`netease-cloud-music`、`apple-music`、`lx-music`、`lx-walnut-music`、`poweramp-music`、`spotify-music`、`qishui-music`、`kugou-music` 和 `kugou-concept-music`。LyricProvider 仓库中其他模块虽然存在，但在加入 Bridge 注册表前不属于当前适配清单。
 
 播放器更新后，私有歌词接口可能发生变化。表格表示当前代码已经包含相应适配，不代表未来所有播放器版本都能永久兼容。
 

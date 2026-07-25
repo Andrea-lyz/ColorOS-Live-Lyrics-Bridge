@@ -1,10 +1,10 @@
 package io.github.andrealtb.lockscreenlyrics;
 
-final class LyricTextMatchPolicy {
+public final class LyricTextMatchPolicy {
     private LyricTextMatchPolicy() {
     }
 
-    static boolean hasSubstantialPrefix(String visibleText, String fullText) {
+    public static boolean hasSubstantialPrefix(String visibleText, String fullText) {
         return hasSubstantialPrefix(
                 visibleText,
                 fullText,
@@ -12,7 +12,7 @@ final class LyricTextMatchPolicy {
                 matchKey(fullText));
     }
 
-    static boolean hasSubstantialPrefix(
+    public static boolean hasSubstantialPrefix(
             String visibleText,
             String fullText,
             String visibleKey,

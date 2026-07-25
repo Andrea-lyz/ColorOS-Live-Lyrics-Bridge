@@ -49,4 +49,50 @@ public final class ExternalLyricSenderPolicyTest {
                 "com.example.music",
                 "com.example.music").accepted);
     }
+
+    @Test
+    public void staticWhitelistRejectsUnknownSenderKind() {
+        assertFalse(ExternalLyricSenderPolicy.authorizeStaticWhitelist(
+                ExternalLyricProtocol.Transport.DIRECT,
+                "rogue-sender",
+                "lyricprovider/spotify-music",
+                "com.spotify.music",
+                "com.spotify.music").accepted);
+    }
+
+    @Test
+    public void staticWhitelistRejectsMismatchPlayerAndSenderPackage() {
+        assertFalse(ExternalLyricSenderPolicy.authorizeStaticWhitelist(
+                ExternalLyricProtocol.Transport.DIRECT,
+                ExternalLyricProtocol.SENDER_KIND_PROVIDER,
+                "lyricprovider/spotify-music",
+                "com.spotify.music",
+                "").accepted);
+        assertFalse(ExternalLyricSenderPolicy.authorizeStaticWhitelist(
+                ExternalLyricProtocol.Transport.DIRECT,
+                ExternalLyricProtocol.SENDER_KIND_PROVIDER,
+                "lyricprovider/spotify-music",
+                "",
+                "com.spotify.music").accepted);
+    }
+
+    @Test
+    public void staticWhitelistRejectsNonDirectTransport() {
+        // The Android-free overload only accepts Transport.DIRECT. Any other
+        // enum value (or null) must be rejected up front before the
+        // sender-kind check runs.
+        assertFalse(ExternalLyricSenderPolicy.authorizeStaticWhitelist(
+                null,
+                ExternalLyricProtocol.SENDER_KIND_PROVIDER,
+                "lyricprovider/spotify-music",
+                "com.spotify.music",
+                "com.spotify.music").accepted);
+    }
+
+    @Test
+    public void staticWhitelistRejectsNullSnapshot() {
+        assertFalse(ExternalLyricSenderPolicy.authorizeStaticWhitelist(
+                ExternalLyricProtocol.Transport.DIRECT,
+                null).accepted);
+    }
 }

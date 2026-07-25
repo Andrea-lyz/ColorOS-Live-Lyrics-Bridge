@@ -539,4 +539,65 @@ public final class LyricsCoreAdapterTest {
                 .orElseThrow();
         assertEquals(expectedWordCount, line.words.size());
     }
+
+    @Test
+    public void parsePlainLrc_acceptsTimeTagMissingClosingBracket() {
+        // KUGOU/LX edge formats sometimes emit a line that starts with a time
+        // tag but omits the closing bracket — the line terminator acts as the
+        // implicit delimiter. The parser must still pick up the timestamp
+        // and lyric text instead of dropping the line.
+        String lrc = "[00:00.500hello\n"
+                + "[00:02.000]world";
+
+        LyricsCoreAdapter.ParsedLyrics parsed = LyricsCoreAdapter.parsePlainLrc(lrc);
+
+        assertEquals(2, parsed.lines.size());
+        assertEquals(500L, parsed.lines.get(0).startMillis);
+        assertEquals("hello", parsed.lines.get(0).text);
+        assertEquals(2_000L, parsed.lines.get(1).startMillis);
+        assertEquals("world", parsed.lines.get(1).text);
+    }
+
+    @Test
+    public void parsePlainLrc_acceptsAngleTimeTagMissingClosingBracket() {
+        String lrc = "<00:01.250逐字\n"
+                + "<00:03.000>结束";
+
+        LyricsCoreAdapter.ParsedLyrics parsed = LyricsCoreAdapter.parsePlainLrc(lrc);
+
+        assertEquals(2, parsed.lines.size());
+        assertEquals(1_250L, parsed.lines.get(0).startMillis);
+        assertEquals("逐字", parsed.lines.get(0).text);
+        assertEquals(3_000L, parsed.lines.get(1).startMillis);
+        assertEquals("结束", parsed.lines.get(1).text);
+    }
+
+    @Test
+    public void parsePlainLrc_unclosedTagDoesNotEatNextLineText() {
+        // Without the optional closing bracket, an unclosed time tag at the
+        // end of one line must not pull text from the next line into its own
+        // lyric text — the `\n` separator is the line boundary.
+        String lrc = "[00:01.000first line\n"
+                + "[00:02.000]second";
+
+        LyricsCoreAdapter.ParsedLyrics parsed = LyricsCoreAdapter.parsePlainLrc(lrc);
+
+        assertEquals(2, parsed.lines.size());
+        assertEquals("first line", parsed.lines.get(0).text);
+        assertEquals("second", parsed.lines.get(1).text);
+    }
+
+    @Test
+    public void parsePlainLrc_normalBracketsStillWork() {
+        // Regression guard: the existing strict-bracket path must still parse
+        // canonical LRC files after the optional-close change.
+        String lrc = "[00:01.000]hello\n"
+                + "[00:02.000]world";
+
+        LyricsCoreAdapter.ParsedLyrics parsed = LyricsCoreAdapter.parsePlainLrc(lrc);
+
+        assertEquals(2, parsed.lines.size());
+        assertEquals("hello", parsed.lines.get(0).text);
+        assertEquals("world", parsed.lines.get(1).text);
+    }
 }

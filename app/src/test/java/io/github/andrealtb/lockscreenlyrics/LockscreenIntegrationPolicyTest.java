@@ -679,4 +679,111 @@ public class LockscreenIntegrationPolicyTest {
                 1,
                 false));
     }
+
+    @Test
+    public void isLikelyTitleArtistCreditRejectsAfterFifteenSeconds() {
+        assertFalse(LockscreenIntegrationPolicy.isLikelyTitleArtistCredit(
+                "Hello World - Adele",
+                16_000L));
+    }
+
+    @Test
+    public void isLikelyTitleArtistCreditRejectsOverLongOpening() {
+        String longText = "Sweeter Than Fiction (Taylor's Version) From The Vault - "
+                + "Taylor Swift Additional Vocals By Ed Sheeran Acoustic Guitarist "
+                + "Engineered By Serban Ghenea Mixed By Manny Marroquin";
+        assertTrue(longText.length() > 96);
+        assertFalse(LockscreenIntegrationPolicy.isLikelyTitleArtistCredit(
+                longText, 6_000L));
+    }
+
+    @Test
+    public void isLikelyTitleArtistCreditRejectsSentenceEndingPunctuation() {
+        assertFalse(LockscreenIntegrationPolicy.isLikelyTitleArtistCredit(
+                "Hello World - Adele!",
+                3_000L));
+    }
+
+    @Test
+    public void isLikelyTitleArtistCreditRejectsTextWithoutSeparator() {
+        assertFalse(LockscreenIntegrationPolicy.isLikelyTitleArtistCredit(
+                "Single string with no separator at all",
+                3_000L));
+    }
+
+    @Test
+    public void isLikelyTitleArtistCreditRejectsLettersMissingOnEitherSide() {
+        // Both sides must contain at least one letter — pure symbols/punctuation
+        // are not enough to be a title-artist credit.
+        assertFalse(LockscreenIntegrationPolicy.isLikelyTitleArtistCredit(
+                "++ - ***",
+                3_000L));
+    }
+
+    @Test
+    public void isLikelyTitleArtistCreditRejectsNullAndEmpty() {
+        assertFalse(LockscreenIntegrationPolicy.isLikelyTitleArtistCredit(null, 0L));
+        assertFalse(LockscreenIntegrationPolicy.isLikelyTitleArtistCredit("", 0L));
+        assertFalse(LockscreenIntegrationPolicy.isLikelyTitleArtistCredit("   ", 0L));
+        assertFalse(LockscreenIntegrationPolicy.isLikelyTitleArtistCredit(
+                "Hello World - Adele", -1L));
+    }
+
+    @Test
+    public void isProductionDetailLineRejectsBareLabelWithoutContent() {
+        assertFalse(LockscreenIntegrationPolicy.isProductionDetailLine(
+                "Producer:", 2_000L));
+    }
+
+    @Test
+    public void isProductionDetailLineRejectsUnLabeledLineAfterFifteenSeconds() {
+        assertFalse(LockscreenIntegrationPolicy.isProductionDetailLine(
+                "Producer Joe Bloggs",
+                16_000L));
+    }
+
+    @Test
+    public void isProductionDetailLineRejectsOverLongLabel() {
+        String longLabel = "voice directed and edited by something really long";
+        assertTrue(longLabel.length() > 40);
+        assertFalse(LockscreenIntegrationPolicy.isProductionDetailLine(
+                longLabel + ": someone",
+                2_000L));
+    }
+
+    @Test
+    public void isProductionDetailLineRejectsUnrecognisedLabel() {
+        assertFalse(LockscreenIntegrationPolicy.isProductionDetailLine(
+                "Shouted by: someone",
+                2_000L));
+    }
+
+    @Test
+    public void isProductionDetailLineRejectsNullAndEmpty() {
+        assertFalse(LockscreenIntegrationPolicy.isProductionDetailLine(null, 0L));
+        assertFalse(LockscreenIntegrationPolicy.isProductionDetailLine("", 0L));
+        assertFalse(LockscreenIntegrationPolicy.isProductionDetailLine("   ", 0L));
+    }
+
+    @Test
+    public void isExternalLyricPayloadSizeAcceptableRejectsNegativeInputs() {
+        assertFalse(LockscreenIntegrationPolicy.isExternalLyricPayloadSizeAcceptable(
+                -1, 0, 0, 0, 0,
+                1_500_000, 3_000_000, 16_384));
+        assertFalse(LockscreenIntegrationPolicy.isExternalLyricPayloadSizeAcceptable(
+                0, -1, 0, 0, 0,
+                1_500_000, 3_000_000, 16_384));
+        assertFalse(LockscreenIntegrationPolicy.isExternalLyricPayloadSizeAcceptable(
+                0, 0, 0, 0, -1,
+                1_500_000, 3_000_000, 16_384));
+        assertFalse(LockscreenIntegrationPolicy.isExternalLyricPayloadSizeAcceptable(
+                0, 0, 0, 0, 0,
+                -1, 3_000_000, 16_384));
+        assertFalse(LockscreenIntegrationPolicy.isExternalLyricPayloadSizeAcceptable(
+                0, 0, 0, 0, 0,
+                1_500_000, -1, 16_384));
+        assertFalse(LockscreenIntegrationPolicy.isExternalLyricPayloadSizeAcceptable(
+                0, 0, 0, 0, 0,
+                1_500_000, 3_000_000, -1));
+    }
 }

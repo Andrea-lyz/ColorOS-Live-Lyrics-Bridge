@@ -107,7 +107,9 @@ public final class LyricInfoContract {
 
     /**
      * Parses a player-provided payload. A timed {@code lyric} field is the minimum contract;
-     * {@code rawLyric} is optional and enables the module's word-level renderer.
+     * when {@code lyric} is empty but {@code rawLyric} contains timed tags, {@code rawLyric}
+     * is used as the display fallback so word-only payloads still enter the pipeline.
+     * {@code rawLyric} is preserved verbatim for the module's word-level renderer.
      */
     public static Payload parse(String value) {
         if (value == null || value.trim().isEmpty()) {
@@ -116,16 +118,20 @@ public final class LyricInfoContract {
         try {
             JSONObject object = new JSONObject(value);
             String lyric = object.optString(JSON_LYRIC, "");
-            if (!containsTimedLrc(lyric)) {
+            String rawLyric = object.optString(JSON_RAW_LYRIC, "");
+            boolean lyricTimed = containsTimedLrc(lyric);
+            boolean rawLyricTimed = containsTimedLrc(rawLyric);
+            if (!lyricTimed && !rawLyricTimed) {
                 return null;
             }
+            String resolvedLyric = lyricTimed ? lyric : rawLyric;
             return new Payload(
                     object.optString(JSON_SONG_NAME, ""),
                     object.optString(JSON_ARTIST, ""),
                     object.optString(JSON_ALBUM, ""),
                     object.optString(JSON_SONG_ID, ""),
-                    lyric,
-                    object.optString(JSON_RAW_LYRIC, ""),
+                    resolvedLyric,
+                    rawLyric,
                     findTranslationLyric(object),
                     object.optString(JSON_PROVIDER, ""),
                     object.optString(JSON_TRACK_KEY, ""),
