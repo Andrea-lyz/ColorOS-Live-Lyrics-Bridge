@@ -36,7 +36,6 @@ final class SaltPlayerAdapter implements PlayerAdapter {
     private static final String SALT_SONG_CLASS =
             "com.salt.music.data.entry.Song";
     private static final String ACTION_PLAY_OR_PAUSE = "com.salt.music.play_or_pause";
-    private static final String OBFUSCATED_PACKAGE = "androidx.obf";
     private static final String SOURCE_ENUM_MARKER_EMBEDDED = "EMBEDDED";
     private static final String SOURCE_ENUM_MARKER_LYRICS3 = "TAG_LYRICS3_V2";
     private static final String SCROLL_ENUM_MARKER_CAN_SCROLL = "CAN_SCROLL";
@@ -265,7 +264,7 @@ final class SaltPlayerAdapter implements PlayerAdapter {
             String description,
             String... strings) {
         ClassDataList classes = bridge.findClass(FindClass.create()
-                .searchPackages(OBFUSCATED_PACKAGE)
+                .searchPackages(SaltPlayerDexKitSearchPolicy.lyricModelPackages())
                 .matcher(ClassMatcher.create().usingEqStrings(strings)));
         return requireSingleClass(description, classes);
     }
@@ -275,7 +274,7 @@ final class SaltPlayerAdapter implements PlayerAdapter {
             ClassData sourceEnum,
             ClassData scrollEnum) {
         ClassDataList classes = bridge.findClass(FindClass.create()
-                .searchPackages(OBFUSCATED_PACKAGE)
+                .searchPackages(SaltPlayerDexKitSearchPolicy.lyricModelPackages())
                 .matcher(ClassMatcher.create()
                         .fields(FieldsMatcher.create()
                                 .addForType(sourceEnum.getName())
@@ -318,7 +317,7 @@ final class SaltPlayerAdapter implements PlayerAdapter {
             DexKitBridge bridge,
             ClassData lyricResult) {
         ClassDataList classes = bridge.findClass(FindClass.create()
-                .searchPackages(OBFUSCATED_PACKAGE)
+                .searchPackages(SaltPlayerDexKitSearchPolicy.lyricModelPackages())
                 .matcher(ClassMatcher.create()
                         .fields(FieldsMatcher.create()
                                 .addForType(SALT_SONG_CLASS)
