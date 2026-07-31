@@ -600,4 +600,20 @@ public final class LyricsCoreAdapterTest {
         assertEquals("hello", parsed.lines.get(0).text);
         assertEquals("world", parsed.lines.get(1).text);
     }
+
+    @Test
+    public void parsesMetrolistCanonicalEnhancedLrcAsWordTiming() {
+        String lrc = "[00:01.000]<00:01.000>Hello <00:01.400>world<00:02.000>\n"
+                + "[00:02.500]<00:02.500>Again<00:03.000>";
+
+        LyricsCoreAdapter.ParsedLyrics parsed = LyricsCoreAdapter.parse(lrc);
+
+        assertEquals(2, parsed.lines.size());
+        LyricsCoreAdapter.ParsedLine first = parsed.lines.get(0);
+        assertEquals("Hello world", first.text);
+        assertTrue("Metrolist rawLyric must remain karaoke/word timed",
+                first.syllables.size() >= 2);
+        assertEquals(1_000L, first.syllables.get(0).startMillis);
+        assertEquals(1_400L, first.syllables.get(1).startMillis);
+    }
 }

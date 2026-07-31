@@ -39,6 +39,25 @@ public final class ExternalLyricProtocolFixtureTest {
                 ExternalLyricProtocol.DIRECT_PROTOCOL_VERSION - 1));
     }
 
+    @Test
+    public void metrolistProviderFixtureUsesItsStaticHostBinding() throws Exception {
+        JSONObject fixture = readFixture(
+                "fixtures/metrolist-external-lyric-direct-v4.json");
+
+        assertEquals(ExternalLyricProtocol.ACTION_DIRECT_LYRIC_CAPTURED,
+                fixture.getString("action"));
+        assertEquals(ExternalLyricProtocol.DIRECT_PROTOCOL_VERSION,
+                fixture.getInt("protocolVersion"));
+        assertEquals("lyricprovider/metrolist-music", fixture.getString("source"));
+        assertEquals("com.metrolist.music", fixture.getString("playerPackage"));
+        assertEquals("com.metrolist.music", fixture.getString("senderPackage"));
+        assertEquals(
+                "playbackState,trackGeneration,currentTrackAuthority",
+                fixture.getString("capabilities"));
+        assertNull(ExternalLyricProtocol.compatibilityError(
+                fixture.getString("action"), fixture.getInt("protocolVersion")));
+    }
+
     private static JSONObject readFixture(String path) throws Exception {
         InputStream stream = ExternalLyricProtocolFixtureTest.class.getClassLoader()
                 .getResourceAsStream(path);

@@ -469,6 +469,8 @@ public final class LockscreenLyricsModule extends XposedModule {
     private volatile long externalLyricRecyclerMaskUntilElapsedMs;
     private volatile long externalLyricRecyclerMaskCooldownUntilElapsedMs;
     private volatile int externalLyricModeRecoveryGeneration;
+    private volatile String lastExternalSystemUiLyricReloadKey = "";
+    private volatile long lastExternalSystemUiLyricReloadAtElapsedMs;
     private final Object externalLyricModeRecoveryCallbacksLock = new Object();
     private final ArrayList<Runnable> externalLyricModeRecoveryCallbacks =
             new ArrayList<>(EXTERNAL_LYRIC_MODE_RECOVERY_REFRESH_DELAYS_MS.length);
@@ -9967,8 +9969,10 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
         systemUiHasOfficialLyric = true;
         cacheSystemUiLyricModel(payload);
+        redrawLyricRenderTargets(false, false);
         recoverExternalLyricModeAfterPromotion("external lyric document");
         appleMusicProviderAdaptation.scheduleAppleMusicSystemUiCommitAfterLyricPromotion(document);
+        scheduleSystemUiLyricReloadAfterExternalPromotion(document);
         info("Promoted external lyric document for current SystemUI track from "
                 + document.source
                 + " to title=" + nullToEmpty(targetTitle)
@@ -9984,6 +9988,107 @@ public final class LockscreenLyricsModule extends XposedModule {
                 ? ", systemUiMetadataContext=true"
                 : ""));
         return true;
+    }
+
+    /**
+     * External promotion updates the module's lyric model immediately, but the official
+     * LyricsRecyclerView is populated by SystemUI's metadata refresh transaction.  Replaying the
+     * last observed metadata callback re-enters the normal loadLyricInBg path, which is also what
+     * a pause/play toggle triggers on affected ColorOS builds.  Keep this generic and use the
+     * already-resolved refresh context; do not invoke a stale loadLyricInBg argument list.
+     */
+    private void scheduleSystemUiLyricReloadAfterExternalPromotion(
+            ExternalLyricDocument document) {
+        if (document == null
+                || document.sourceInfo == null
+                || TextUtils.isEmpty(document.sourceInfo.playerPackage)
+                || ExternalLyricProviderSpecialCases.shouldReplaySystemUiAfterAppleMusicLyricReady(
+                document.source,
+                document.sourceInfo.playerPackage)) {
+            return;
+        }
+        final String reloadKey = externalSystemUiLyricReloadKey(document);
+        Runnable reload = () -> replaySystemUiLyricLoadAfterExternalPromotion(
+                document,
+                reloadKey);
+        mainHandler.post(reload);
+        for (long delayMs : EXTERNAL_LYRIC_PROMOTION_RETRY_DELAYS_MS) {
+            mainHandler.postDelayed(reload, delayMs);
+        }
+    }
+
+    private boolean replaySystemUiLyricLoadAfterExternalPromotion(
+            ExternalLyricDocument document,
+            String reloadKey) {
+        if (document == null
+                || document.sourceInfo == null
+                || !isCurrentGeneratedExternalDocument(document)) {
+            return false;
+        }
+        long now = SystemClock.elapsedRealtime();
+        if (TextUtils.equals(reloadKey, lastExternalSystemUiLyricReloadKey)
+                && now - lastExternalSystemUiLyricReloadAtElapsedMs < 2_000L) {
+            return true;
+        }
+
+        SystemUiLyricLoadContext context = latestSystemUiLyricLoadContext;
+        Object owner = context == null ? null : context.owner.get();
+        MediaMetadata metadata = context == null ? null : context.metadata.get();
+        long contextAgeMillis = context == null
+                ? -1L
+                : now - context.observedAtElapsedMillis;
+        if (context == null
+                || owner == null
+                || metadata == null
+                || contextAgeMillis < 0L
+                || contextAgeMillis > SYSTEMUI_EXTERNAL_LYRIC_LOAD_CONTEXT_MAX_AGE_MS) {
+            return false;
+        }
+
+        boolean packageMatches = TextUtils.isEmpty(context.packageName)
+                || TextUtils.equals(
+                document.sourceInfo.playerPackage,
+                context.packageName);
+        boolean contextTrackMatches = externalLyricDocumentMatchesTrack(
+                document,
+                context.title,
+                context.artist);
+        boolean currentTrackMatches = externalLyricDocumentMatchesTrack(
+                document,
+                lastSystemUiSongName,
+                lastSystemUiArtistName);
+        if (!packageMatches || (!contextTrackMatches && !currentTrackMatches)) {
+            return false;
+        }
+
+        try {
+            context.refreshMethod.invoke(owner, context.key, metadata);
+            lastExternalSystemUiLyricReloadKey = reloadKey;
+            lastExternalSystemUiLyricReloadAtElapsedMs = now;
+            if (isExternalLyricIngressDiagnosticsEnabled()
+                    || isLyricLayoutDiagnosticsEnabled()) {
+                info("Replayed SystemUI metadata lyric load after external promotion"
+                        + " | source=" + document.source
+                        + ", generation=" + document.trackGeneration
+                        + ", title=" + shortenForLog(document.title));
+            }
+            return true;
+        } catch (Throwable error) {
+            maybeLogExternalLyricBroadcastFailure(
+                    "Failed to replay SystemUI metadata lyric load after external promotion",
+                    error);
+            return false;
+        }
+    }
+
+    private static String externalSystemUiLyricReloadKey(ExternalLyricDocument document) {
+        return document.source
+                + '|'
+                + document.trackGeneration
+                + '|'
+                + firstNonEmpty(
+                document.trackHintKey,
+                buildTrackKey(document.title, document.artist));
     }
 
     private boolean shouldPromoteExternalLyricAsAuthoritative(

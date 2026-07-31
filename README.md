@@ -13,7 +13,7 @@ Bring lyrics from more music apps to the native ColorOS / OPlus lock-screen lyri
 
 This is not a floating overlay. It passes a player's full lyric timeline to the system UI, keeping the ColorOS look, transitions, and always-on display while adding word-by-word highlighting, translations, and appearance controls.
 
-> Current release: **v3.4.1**. Update the Bridge and the Providers you use from the same release. Mixing versions can cause track-change and lyric-timing issues.
+> Current release: **v3.6.0**. Update the Bridge and the Providers you use from the same release. Mixing versions can cause track-change and lyric-timing issues.
 
 ## What it does
 
@@ -50,6 +50,7 @@ There are two ways a player can work with the module:
 | --- | --- | --- |
 | Salt Player | No | Built into the Bridge; word-timed and translated lyrics when supplied by the player |
 | ConePlayer (standard and Google Play packages) | No | Built into the Bridge; full lyric timelines and background recovery |
+| [Metrolist](https://github.com/metrolistgroup/metrolist) | `LyricProvider-Metrolist` | Direct v4 provider admitted by the Bridge; word-timed lyrics from BetterLyrics or KuGou, with LrcLib fallback; follows Metrolist's configured provider order; translations are not supported |
 | QQ Music / QQ Music HD | `LyricProvider-QQMusic` | Direct v4 provider admitted by the Bridge; word-timed and translated lyrics |
 | NetEase Cloud Music / Honor edition | `LyricProvider-163Music` | Direct v4 provider admitted by the Bridge; word-timed and translated lyrics |
 | Apple Music | `LyricProvider-AppleMusic` | Direct v4 provider admitted by the Bridge; word-timed and translated lyrics; background-vocal and duet lanes are excluded |
@@ -59,7 +60,9 @@ There are two ways a player can work with the module:
 | QiShui Music | `LyricProvider-QiShui` | Direct v4 provider admitted by the Bridge; word-timed and translated lyrics; proper root hiding and the special setup below are required |
 | KuGou Music / Concept | `LyricProvider-KuGou` | Direct v4 provider admitted by the Bridge; word-timed and translated lyrics |
 
-The Provider list above follows the Bridge's direct v4 admission registry: a Provider is considered adapted when its source and player package are admitted by the Bridge. The current admitted Provider sources are `qq-music`, `netease-cloud-music`, `apple-music`, `lx-music`, `lx-walnut-music`, `poweramp-music`, `spotify-music`, `qishui-music`, `kugou-music`, and `kugou-concept-music`. Other modules present in the LyricProvider repository are not included in this adapted list unless their source and host package are added to the Bridge registry.
+[Metrolist](https://github.com/metrolistgroup/metrolist) is a **YouTube Music client for Android**. Because Metrolist itself does not provide a stable lyric retrieval interface, this Provider retrieves lyrics from third-party lyric providers in the same way as Metrolist. The lyrics selected by the Provider may therefore differ from those shown inside Metrolist.
+
+The Provider list above follows the Bridge's direct v4 admission registry: a Provider is considered adapted when its source and player package are admitted by the Bridge. The current admitted Provider sources are `qq-music`, `netease-cloud-music`, `apple-music`, `lx-music`, `lx-walnut-music`, `poweramp-music`, `spotify-music`, `qishui-music`, `kugou-music`, `kugou-concept-music`, and `metrolist-music`. Other modules present in the LyricProvider repository are not included in this adapted list unless their source and host package are added to the Bridge registry.
 
 Music apps can change their private lyric interfaces at any time. This table describes the adapters present in the current code; it is not a promise that every future player release will remain compatible.
 
@@ -69,7 +72,7 @@ Players that publish the public `lyricInfo` protocol usually need neither a dedi
 
 1. Open the [latest release](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/releases/latest) and install `ColorOS-Live-Lyrics-Bridge-<version>.apk`.
 2. Enable **ColorOS Live Lyrics Bridge** in LSPosed and keep its recommended default scope.
-3. For QQ Music, NetEase, Apple Music, LX Music, Poweramp, Spotify, QiShui, or KuGou, also install the matching `LyricProvider-*.apk` from the same release.
+3. For Metrolist, QQ Music, NetEase, Apple Music, LX Music, Poweramp, Spotify, QiShui, or KuGou, also install the matching `LyricProvider-*.apk` from the same release.
 4. Enable each Provider separately in LSPosed and select only its matching music app as the scope.
 5. Reboot the device so the hooks load in SystemUI, system services, and the player.
 

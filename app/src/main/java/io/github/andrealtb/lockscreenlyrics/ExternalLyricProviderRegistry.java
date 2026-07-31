@@ -29,6 +29,8 @@ final class ExternalLyricProviderRegistry {
     static final String LX_WALNUT_MUSIC_PLAYER_PACKAGE = "com.lxwalnut.music.mobile";
     static final String LX_MUSIC_SOURCE = "lyricprovider/lx-music";
     static final String LX_WALNUT_MUSIC_SOURCE = "lyricprovider/lx-walnut-music";
+    static final String METROLIST_PLAYER_PACKAGE = "com.metrolist.music";
+    static final String METROLIST_SOURCE = "lyricprovider/metrolist-music";
 
     private static final Source[] EXTERNAL_SOURCES = {
             new Source(APPLE_MUSIC_SOURCE, APPLE_MUSIC_PLAYER_PACKAGE, false, false, false),
@@ -47,7 +49,8 @@ final class ExternalLyricProviderRegistry {
                     true,
                     true,
                     false),
-            new Source(POWERAMP_SOURCE, POWERAMP_PLAYER_PACKAGE, false, true, true)
+            new Source(POWERAMP_SOURCE, POWERAMP_PLAYER_PACKAGE, false, true, true),
+            new Source(METROLIST_SOURCE, METROLIST_PLAYER_PACKAGE, true, true, false)
     };
 
     private static final String[] BRIDGE_PLAYER_PACKAGES = {
@@ -62,7 +65,8 @@ final class ExternalLyricProviderRegistry {
             SPOTIFY_PLAYER_PACKAGE,
             QISHUI_MUSIC_PLAYER_PACKAGE,
             KUGOU_MUSIC_PLAYER_PACKAGE,
-            KUGOU_CONCEPT_MUSIC_PLAYER_PACKAGE
+            KUGOU_CONCEPT_MUSIC_PLAYER_PACKAGE,
+            METROLIST_PLAYER_PACKAGE
     };
 
     private ExternalLyricProviderRegistry() {
@@ -134,7 +138,8 @@ final class ExternalLyricProviderRegistry {
                 || APPLE_MUSIC_PLAYER_PACKAGE.equals(packageName)
                 || QISHUI_MUSIC_PLAYER_PACKAGE.equals(packageName)
                 || KUGOU_MUSIC_PLAYER_PACKAGE.equals(packageName)
-                || KUGOU_CONCEPT_MUSIC_PLAYER_PACKAGE.equals(packageName);
+                || KUGOU_CONCEPT_MUSIC_PLAYER_PACKAGE.equals(packageName)
+                || METROLIST_PLAYER_PACKAGE.equals(packageName);
     }
 
     private static Source findBySource(String source) {

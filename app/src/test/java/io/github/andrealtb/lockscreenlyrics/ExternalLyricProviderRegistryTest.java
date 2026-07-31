@@ -27,6 +27,9 @@ public class ExternalLyricProviderRegistryTest {
         assertEquals("com.lxwalnut.music.mobile",
                 ExternalLyricProviderRegistry.trustedHostPackageForSource(
                         "lyricprovider/lx-walnut-music"));
+        assertEquals("com.metrolist.music",
+                ExternalLyricProviderRegistry.trustedHostPackageForSource(
+                        "lyricprovider/metrolist-music"));
         assertEquals("", ExternalLyricProviderRegistry.trustedHostPackageForSource("unknown"));
     }
 
@@ -44,10 +47,14 @@ public class ExternalLyricProviderRegistryTest {
                 "lyricprovider/lx-music", "cn.toside.music.mobile"));
         assertTrue(ExternalLyricProviderRegistry.isTrustedSourceBoundToHostPackage(
                 "lyricprovider/lx-walnut-music", "com.lxwalnut.music.mobile"));
+        assertTrue(ExternalLyricProviderRegistry.isTrustedSourceBoundToHostPackage(
+                "lyricprovider/metrolist-music", "com.metrolist.music"));
         assertFalse(ExternalLyricProviderRegistry.isTrustedSourceBoundToHostPackage(
                 "lyricprovider/spotify-music", "com.tencent.qqmusic"));
         assertFalse(ExternalLyricProviderRegistry.isTrustedSourceBoundToHostPackage(
                 "lyricprovider/lx-music", "com.lxwalnut.music.mobile"));
+        assertFalse(ExternalLyricProviderRegistry.isTrustedSourceBoundToHostPackage(
+                "lyricprovider/metrolist-music", "com.spotify.music"));
         assertFalse(ExternalLyricProviderRegistry.isTrustedSourceBoundToHostPackage(
                 "lyricprovider/unknown", "com.example.music"));
     }
@@ -75,6 +82,14 @@ public class ExternalLyricProviderRegistryTest {
                         "lyricprovider/spotify-music");
         assertTrue(spotify.supportsPlaybackState);
         assertFalse(spotify.canPromoteAsAuthoritative);
+
+        ExternalLyricSourceProfile metrolist =
+                ExternalLyricSourceProfile.registeredProviderDefaults(
+                        "lyricprovider/metrolist-music");
+        assertTrue(metrolist.supportsPlaybackState);
+        assertTrue(metrolist.supportsTrackGeneration);
+        assertTrue(metrolist.canPromoteAsAuthoritative);
+        assertFalse(metrolist.allowsTitleOnlyFallbackMatch);
     }
 
     @Test
@@ -89,6 +104,27 @@ public class ExternalLyricProviderRegistryTest {
         assertTrue(trusted.supportsPlaybackState);
         assertTrue(trusted.supportsTrackGeneration);
         assertEquals("com.spotify.music", trusted.playerPackage);
+
+        ExternalLyricSourceProfile metrolist =
+                ExternalLyricSourceProfile.version4ProviderDeclaration(
+                        "lyricprovider/metrolist-music",
+                        "com.metrolist.music",
+                        "playbackState,trackGeneration,currentTrackAuthority",
+                        "mediaId,trackKey,titleArtist",
+                        "");
+        assertTrue(metrolist.supportsPlaybackState);
+        assertTrue(metrolist.supportsTrackGeneration);
+        assertTrue(metrolist.canPromoteAsAuthoritative);
+
+        ExternalLyricSourceProfile metrolistWrongHost =
+                ExternalLyricSourceProfile.version4ProviderDeclaration(
+                        "lyricprovider/metrolist-music",
+                        "com.spotify.music",
+                        "playbackState,trackGeneration",
+                        "mediaId,trackKey,titleArtist",
+                        "");
+        assertEquals("", metrolistWrongHost.playerPackage);
+        assertFalse(metrolistWrongHost.supportsPlaybackState);
 
         ExternalLyricSourceProfile lx = ExternalLyricSourceProfile.version4ProviderDeclaration(
                 "lyricprovider/lx-music",

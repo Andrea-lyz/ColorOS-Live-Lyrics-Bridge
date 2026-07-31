@@ -13,7 +13,7 @@
 
 它不是一套盖在锁屏上的悬浮窗，而是把播放器的完整歌词交给系统原生界面显示。这样既能保留 ColorOS 的锁屏风格、切歌动画和息屏显示，也能补上逐字高亮、翻译和外观设置。
 
-> 当前版本：**v3.4.1**。升级时请把 Bridge 和正在使用的 LyricProvider 从同一 Release 一起更新，避免新旧版本配合异常。
+> 当前版本：**v3.6.0**。升级时请把 Bridge 和正在使用的 LyricProvider 从同一 Release 一起更新，避免新旧版本配合异常。
 
 ## 主要功能
 
@@ -50,6 +50,7 @@
 | --- | --- | --- |
 | Salt Player | 否 | Bridge 内置适配；支持播放器提供的逐字与翻译歌词 |
 | ConePlayer / 光锥音乐（正式版、Google Play 版） | 否 | Bridge 内置适配；支持完整时间轴歌词和后台恢复 |
+| [Metrolist](https://github.com/metrolistgroup/metrolist) | `LyricProvider-Metrolist` | Bridge 已放行 v4 直达 Provider；按 Metrolist 中配置的供应商顺序搜索，支持 BetterLyrics / KuGou 逐字歌词及 LrcLib 回退；不支持翻译歌词 |
 | QQ 音乐 / QQ 音乐 HD | `LyricProvider-QQMusic` | Bridge 已放行 v4 直达 Provider；支持逐字歌词、翻译歌词 |
 | 网易云音乐 / 网易云音乐荣耀版 | `LyricProvider-163Music` | Bridge 已放行 v4 直达 Provider；支持逐字歌词、翻译歌词 |
 | Apple Music | `LyricProvider-AppleMusic` | Bridge 已放行 v4 直达 Provider；支持逐字歌词、翻译歌词；不输出背景人声和对唱分轨 |
@@ -59,7 +60,9 @@
 | 汽水音乐 | `LyricProvider-QiShui` | Bridge 已放行 v4 直达 Provider；支持逐字歌词、翻译歌词；需做好 Root 隐藏并完成下方特殊设置 |
 | 酷狗音乐 / 酷狗概念版 | `LyricProvider-KuGou` | Bridge 已放行 v4 直达 Provider；支持逐字歌词、翻译歌词 |
 
-上表以 Bridge 的 v4 直达放行注册表为准：Provider 的 `source` 与播放器包名已被 Bridge 静态放行，即视为已完成 Bridge 适配。目前放行的 Provider source 为：`qq-music`、`netease-cloud-music`、`apple-music`、`lx-music`、`lx-walnut-music`、`poweramp-music`、`spotify-music`、`qishui-music`、`kugou-music` 和 `kugou-concept-music`。LyricProvider 仓库中其他模块虽然存在，但在加入 Bridge 注册表前不属于当前适配清单。
+[Metrolist](https://github.com/metrolistgroup/metrolist) 是**适用于安卓系统的 YouTube Music 客户端**。由于 Metrolist 本身没有稳定的歌词获取接口，本 Provider 采用与 Metrolist 相同的方式从第三方歌词提供商获取歌词，因此两者获取的歌词可能存在差异。
+
+上表以 Bridge 的 v4 直达放行注册表为准：Provider 的 `source` 与播放器包名已被 Bridge 静态放行，即视为已完成 Bridge 适配。目前放行的 Provider source 为：`qq-music`、`netease-cloud-music`、`apple-music`、`lx-music`、`lx-walnut-music`、`poweramp-music`、`spotify-music`、`qishui-music`、`kugou-music`、`kugou-concept-music` 和 `metrolist-music`。LyricProvider 仓库中其他模块虽然存在，但在加入 Bridge 注册表前不属于当前适配清单。
 
 播放器更新后，私有歌词接口可能发生变化。表格表示当前代码已经包含相应适配，不代表未来所有播放器版本都能永久兼容。
 
@@ -69,7 +72,7 @@
 
 1. 打开 [Releases](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/releases/latest)，安装 `ColorOS-Live-Lyrics-Bridge-<版本>.apk`。
 2. 在 LSPosed 中启用 **ColorOS Live Lyrics Bridge**，保留模块推荐的默认作用域。
-3. 如果你使用 QQ 音乐、网易云、Apple Music、LX Music、Poweramp、Spotify、汽水音乐或酷狗，再安装同一版本中对应的 `LyricProvider-*.apk`。
+3. 如果你使用 Metrolist、QQ 音乐、网易云、Apple Music、LX Music、Poweramp、Spotify、汽水音乐或酷狗，再安装同一版本中对应的 `LyricProvider-*.apk`。
 4. 在 LSPosed 中分别启用这些 Provider，并只勾选它对应的音乐 App。
 5. 重启手机，让 SystemUI、系统服务和播放器里的模块完整加载。
 
