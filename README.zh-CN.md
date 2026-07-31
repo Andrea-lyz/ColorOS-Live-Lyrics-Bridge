@@ -50,7 +50,7 @@
 | --- | --- | --- |
 | Salt Player | 否 | Bridge 内置适配；支持播放器提供的逐字与翻译歌词 |
 | ConePlayer / 光锥音乐（正式版、Google Play 版） | 否 | Bridge 内置适配；支持完整时间轴歌词和后台恢复 |
-| [Metrolist](https://github.com/metrolistgroup/metrolist) | `LyricProvider-Metrolist` | Bridge 已放行 v4 直达 Provider；按 Metrolist 中配置的供应商顺序搜索，支持 BetterLyrics / KuGou 逐字歌词及 LrcLib 回退；不支持翻译歌词 |
+| [Metrolist](https://github.com/metrolistgroup/metrolist) | `LyricProvider-Metrolist` | Bridge 已放行 v4 直达 Provider；按 Metrolist 中配置的供应商顺序搜索，支持 BetterLyrics / KuGou 逐字歌词及 LrcLib 回退；不支持翻译歌词，也不支持词幕（Lyricon） |
 | QQ 音乐 / QQ 音乐 HD | `LyricProvider-QQMusic` | Bridge 已放行 v4 直达 Provider；支持逐字歌词、翻译歌词 |
 | 网易云音乐 / 网易云音乐荣耀版 | `LyricProvider-163Music` | Bridge 已放行 v4 直达 Provider；支持逐字歌词、翻译歌词 |
 | Apple Music | `LyricProvider-AppleMusic` | Bridge 已放行 v4 直达 Provider；支持逐字歌词、翻译歌词；不输出背景人声和对唱分轨 |

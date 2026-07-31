@@ -50,7 +50,7 @@ There are two ways a player can work with the module:
 | --- | --- | --- |
 | Salt Player | No | Built into the Bridge; word-timed and translated lyrics when supplied by the player |
 | ConePlayer (standard and Google Play packages) | No | Built into the Bridge; full lyric timelines and background recovery |
-| [Metrolist](https://github.com/metrolistgroup/metrolist) | `LyricProvider-Metrolist` | Direct v4 provider admitted by the Bridge; word-timed lyrics from BetterLyrics or KuGou, with LrcLib fallback; follows Metrolist's configured provider order; translations are not supported |
+| [Metrolist](https://github.com/metrolistgroup/metrolist) | `LyricProvider-Metrolist` | Direct v4 provider admitted by the Bridge; word-timed lyrics from BetterLyrics or KuGou, with LrcLib fallback; follows Metrolist's configured provider order; translations and Lyricon integration are not supported |
 | QQ Music / QQ Music HD | `LyricProvider-QQMusic` | Direct v4 provider admitted by the Bridge; word-timed and translated lyrics |
 | NetEase Cloud Music / Honor edition | `LyricProvider-163Music` | Direct v4 provider admitted by the Bridge; word-timed and translated lyrics |
 | Apple Music | `LyricProvider-AppleMusic` | Direct v4 provider admitted by the Bridge; word-timed and translated lyrics; background-vocal and duet lanes are excluded |
