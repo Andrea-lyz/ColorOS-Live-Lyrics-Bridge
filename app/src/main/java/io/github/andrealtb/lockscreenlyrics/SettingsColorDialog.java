@@ -1,5 +1,6 @@
 package io.github.andrealtb.lockscreenlyrics;
 
+import android.app.Activity;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -18,7 +19,9 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Window;
 import android.view.WindowManager;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.PopupWindow;
@@ -242,7 +245,34 @@ final class SettingsColorDialog {
         popup.setOutsideTouchable(true);
         popup.setElevation(dp(context, 10));
         popup.setInputMethodMode(PopupWindow.INPUT_METHOD_NEEDED);
-        popup.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        // Keep both windows at stable geometry while the IME is visible. showAsDropDown() plus
+        // adjustResize asks PopupWindow to scroll its anchor's ScrollView, which jumps the whole
+        // settings page to the bottom and relocates this panel to the top of the screen.
+        popup.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING);
+        Window hostWindow = context instanceof Activity
+                ? ((Activity) context).getWindow()
+                : null;
+        int previousSoftInputMode = hostWindow == null
+                ? 0
+                : hostWindow.getAttributes().softInputMode;
+        if (hostWindow != null) {
+            hostWindow.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING);
+        }
+        popup.setOnDismissListener(() -> {
+            hexInput.clearFocus();
+            InputMethodManager keyboard =
+                    (InputMethodManager) context.getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (keyboard != null) {
+                keyboard.hideSoftInputFromWindow(anchor.getWindowToken(), 0);
+            }
+            // Restore resize only after the IME has started closing; restoring it while the IME
+            // is still visible would produce the same one-frame page jump during dismissal.
+            if (hostWindow != null) {
+                anchor.postDelayed(
+                        () -> hostWindow.setSoftInputMode(previousSoftInputMode),
+                        180L);
+            }
+        });
 
         preview.setOnClickListener(view -> {
             boolean showHsv = hsvPanel.getVisibility() != View.VISIBLE;
@@ -273,7 +303,30 @@ final class SettingsColorDialog {
         panel.setTranslationY(-dp(context, 6));
         panel.setPivotX(panelWidth);
         panel.setPivotY(0f);
-        popup.showAsDropDown(anchor, anchor.getWidth() - panelWidth, dp(context, 8));
+        // Absolute overlay placement intentionally avoids PopupWindow's anchor-parent scrolling.
+        // Prefer below the swatch, fall back above it, and keep a small screen-edge margin.
+        View root = anchor.getRootView();
+        int[] rootLocation = new int[2];
+        int[] anchorLocation = new int[2];
+        root.getLocationOnScreen(rootLocation);
+        anchor.getLocationOnScreen(anchorLocation);
+        panel.measure(
+                View.MeasureSpec.makeMeasureSpec(panelWidth, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+        int edgeMargin = dp(context, 10);
+        int anchorLeftInRoot = anchorLocation[0] - rootLocation[0];
+        int anchorTopInRoot = anchorLocation[1] - rootLocation[1];
+        int x = Math.max(
+                edgeMargin,
+                Math.min(
+                        root.getWidth() - panelWidth - edgeMargin,
+                        anchorLeftInRoot + anchor.getWidth() - panelWidth));
+        int belowY = anchorTopInRoot + anchor.getHeight() + dp(context, 8);
+        int aboveY = anchorTopInRoot - panel.getMeasuredHeight() - dp(context, 8);
+        int y = belowY + panel.getMeasuredHeight() <= root.getHeight() - edgeMargin
+                ? belowY
+                : Math.max(edgeMargin, aboveY);
+        popup.showAtLocation(root, Gravity.TOP | Gravity.LEFT, x, y);
         panel.animate()
                 .alpha(1f)
                 .scaleX(1f)
