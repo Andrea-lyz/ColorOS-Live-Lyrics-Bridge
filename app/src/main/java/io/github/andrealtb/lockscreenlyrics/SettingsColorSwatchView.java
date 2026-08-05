@@ -36,8 +36,9 @@ final class SettingsColorSwatchView extends View {
         setFocusable(true);
 
         whiteBorderPaint.setStyle(Paint.Style.STROKE);
-        whiteBorderPaint.setStrokeWidth(dp(2f));
-        whiteBorderPaint.setColor(Color.WHITE);
+        boolean needsDarkOutline = !custom && color == Color.WHITE;
+        whiteBorderPaint.setStrokeWidth(dp(needsDarkOutline ? 1f : 2f));
+        whiteBorderPaint.setColor(needsDarkOutline ? 0xFF1B222C : Color.WHITE);
         selectionPaint.setStyle(Paint.Style.STROKE);
         selectionPaint.setStrokeWidth(dp(2f));
         selectionPaint.setColor(0xFF9A6A12);
