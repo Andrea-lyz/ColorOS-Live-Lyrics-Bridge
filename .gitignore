@@ -19,6 +19,9 @@ local.properties
 backups/
 _anchors/
 _debug_frames/
+.filescope/
+.serena/
+**/bin/
 
 # OS files
 .DS_Store
