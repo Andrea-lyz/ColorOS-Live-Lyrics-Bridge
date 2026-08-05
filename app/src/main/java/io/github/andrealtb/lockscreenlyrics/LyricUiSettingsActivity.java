@@ -734,6 +734,9 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
         FrameLayout surface = new FrameLayout(this);
         surface.setClickable(true);
         surface.setFocusable(true);
+        // SettingsPreviewView has a 4dp elevation. Keep the gesture surface above it so the
+        // touch target and its white handle are both rendered over the dark preview pixels.
+        surface.setElevation(dp(6));
         surface.setContentDescription(getString(R.string.cd_preview_collapse_gesture));
         surface.setVisibility(View.GONE);
 
