@@ -15682,22 +15682,8 @@ public final class LockscreenLyricsModule extends XposedModule {
         private final ArrayList<LyricDrawLine> drawLines = new ArrayList<>(8);
         private final LyricDrawLine[] drawLinePool =
                 new LyricDrawLine[MAX_WRAPPED_DRAW_LINES];
-        private final LinearGradient activeFeatherShader = new LinearGradient(
-                0f,
-                0f,
-                1f,
-                0f,
-                new int[]{
-                        0xFFFFFFFF,
-                        0xF6FFFFFF,
-                        0xD9FFFFFF,
-                        0x9AFFFFFF,
-                        0x48FFFFFF,
-                        0x10FFFFFF,
-                        0x00FFFFFF
-                },
-                new float[]{0f, 0.13f, 0.32f, 0.55f, 0.76f, 0.92f, 1f},
-                Shader.TileMode.CLAMP);
+        private LinearGradient activeFeatherShader;
+        private String activeFeatherPrimaryColor;
         // A continuous alpha mask keeps the cached glyph glow soft at the progress boundary.
         private final LinearGradient glowFeatherMaskShader = new LinearGradient(
                 0f,
@@ -15799,6 +15785,10 @@ public final class LockscreenLyricsModule extends XposedModule {
             if (config == null || config.equals(uiConfig)) return;
             LyricUiConfig previous = uiConfig;
             uiConfig = config;
+            if (!config.primaryColor.equals(previous.primaryColor)) {
+                activeFeatherShader = null;
+                activeFeatherPrimaryColor = null;
+            }
             scrollScaleEnabled = config.scaleEnabled;
             inactiveBlurEnabled = config.blurEnabled;
             lineTimedProgressEnabled = config.lineTimedProgressEnabled;
@@ -17259,7 +17249,12 @@ public final class LockscreenLyricsModule extends XposedModule {
                         y,
                         aodLineFillAmount);
             } else {
-                canvas.drawText(line.text, x, y, activeLine ? activePaint : inactivePaint);
+                boolean completedAodFill = activeLine && aodLowFrameRateMode;
+                canvas.drawText(
+                        line.text,
+                        x,
+                        y,
+                        completedAodFill ? activePaint : inactivePaint);
             }
             canvas.restore();
 
@@ -17356,13 +17351,14 @@ public final class LockscreenLyricsModule extends XposedModule {
                 boolean activeLine,
                 boolean drawProgress,
                 float fullLineOverlayAmount) {
+            boolean completedAodFill = activeLine && aodLowFrameRateMode && !drawProgress;
             canvas.drawText(
                     text,
                     drawLine.start,
                     drawLine.end,
                     x,
                     y,
-                    activeLine && !drawProgress ? activePaint : inactivePaint);
+                    completedAodFill ? activePaint : inactivePaint);
             if (!drawProgress) {
                 return;
             }
@@ -17875,6 +17871,23 @@ public final class LockscreenLyricsModule extends XposedModule {
                     activeFeatherPaint);
         }
 
+        private LinearGradient resolveActiveFeatherShader() {
+            String primaryColor = uiConfig.primaryColor;
+            if (activeFeatherShader == null
+                    || !primaryColor.equals(activeFeatherPrimaryColor)) {
+                activeFeatherShader = new LinearGradient(
+                        0f,
+                        0f,
+                        1f,
+                        0f,
+                        LyricUiColors.activeFeatherColors(uiConfig),
+                        new float[]{0f, 0.13f, 0.32f, 0.55f, 0.76f, 0.92f, 1f},
+                        Shader.TileMode.CLAMP);
+                activeFeatherPrimaryColor = primaryColor;
+            }
+            return activeFeatherShader;
+        }
+
         private void drawRevealedText(
                 Canvas canvas,
                 String text,
@@ -17923,9 +17936,10 @@ public final class LockscreenLyricsModule extends XposedModule {
             float featherSpan = Math.max(1f, featherEnd - featherStart);
             activeFeatherShaderMatrix.setScale(featherSpan, 1f);
             activeFeatherShaderMatrix.postTranslate(featherStart, 0f);
-            activeFeatherShader.setLocalMatrix(activeFeatherShaderMatrix);
+            LinearGradient featherShader = resolveActiveFeatherShader();
+            featherShader.setLocalMatrix(activeFeatherShaderMatrix);
             featherPaint.setAlpha((revealPaint.getColor() >>> 24) & 0xFF);
-            featherPaint.setShader(activeFeatherShader);
+            featherPaint.setShader(featherShader);
             int featherSave = canvas.save();
             canvas.clipRect(featherStart, 0f, featherEnd, canvas.getHeight());
             canvas.drawText(text, start, end, x, y, featherPaint);

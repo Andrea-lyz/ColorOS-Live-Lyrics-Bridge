@@ -1,6 +1,7 @@
 package io.github.andrealtb.lockscreenlyrics;
 
 final class LyricUiColors {
+    private static final String BASE_LYRIC_COLOR = "#FFFFFF";
     private static final int OPAQUE_ALPHA = 0xFF;
     private static final int PLAYED_ALPHA = 0xF0;
     private static final int GLOW_SHADOW_ALPHA = 0xBA;
@@ -11,13 +12,13 @@ final class LyricUiColors {
     }
 
     static int inactive(LyricUiConfig config) {
-        return withAlpha(config.primaryColor, percentAlpha(config.inactiveOpacityPercent));
+        return withAlpha(BASE_LYRIC_COLOR, percentAlpha(config.inactiveOpacityPercent));
     }
 
     static int focusedInactive(LyricUiConfig config) {
         int alpha = Math.min(OPAQUE_ALPHA,
                 percentAlpha(config.inactiveOpacityPercent) + FOCUSED_OPACITY_BONUS);
-        return withAlpha(config.primaryColor, alpha);
+        return withAlpha(BASE_LYRIC_COLOR, alpha);
     }
 
     static int active(LyricUiConfig config) {
@@ -26,6 +27,18 @@ final class LyricUiColors {
 
     static int played(LyricUiConfig config) {
         return withAlpha(config.primaryColor, PLAYED_ALPHA);
+    }
+
+    static int[] activeFeatherColors(LyricUiConfig config) {
+        return new int[]{
+                withAlpha(config.primaryColor, 0xFF),
+                withAlpha(config.primaryColor, 0xF6),
+                withAlpha(config.primaryColor, 0xD9),
+                withAlpha(config.primaryColor, 0x9A),
+                withAlpha(config.primaryColor, 0x48),
+                withAlpha(config.primaryColor, 0x10),
+                withAlpha(config.primaryColor, 0x00)
+        };
     }
 
     static int translationBase(

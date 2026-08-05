@@ -1,5 +1,6 @@
 package io.github.andrealtb.lockscreenlyrics;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 
 import org.junit.Test;
@@ -33,13 +34,28 @@ public class LyricUiColorsTest {
     }
 
     @Test
-    public void aodActiveTranslationUsesSameOpaqueColorAsMainLine() {
+    public void customPrimaryAffectsActiveLayersButNotBaseLyrics() {
         LyricUiConfig config = LyricUiConfig.defaults().buildUpon()
                 .primaryColor("#123456")
                 .build();
 
+        assertEquals(0x70FFFFFF, LyricUiColors.inactive(config));
+        assertEquals(0x96FFFFFF, LyricUiColors.focusedInactive(config));
+        assertEquals(0xFF123456, LyricUiColors.active(config));
+        assertEquals(0xF0123456, LyricUiColors.played(config));
         assertEquals(0xFF123456, LyricUiColors.translationBase(config, true, 0f));
-        assertEquals(0x70123456, LyricUiColors.translationBase(config, false, 0f));
-        assertEquals(0x96123456, LyricUiColors.translationBase(config, false, 1f));
+        assertEquals(0x70FFFFFF, LyricUiColors.translationBase(config, false, 0f));
+        assertEquals(0x96FFFFFF, LyricUiColors.translationBase(config, false, 1f));
+        assertArrayEquals(
+                new int[]{
+                        0xFF123456,
+                        0xF6123456,
+                        0xD9123456,
+                        0x9A123456,
+                        0x48123456,
+                        0x10123456,
+                        0x00123456
+                },
+                LyricUiColors.activeFeatherColors(config));
     }
 }
