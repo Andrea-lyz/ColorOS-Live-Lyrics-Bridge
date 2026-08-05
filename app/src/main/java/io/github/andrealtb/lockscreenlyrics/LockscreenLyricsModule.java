@@ -9215,6 +9215,9 @@ public final class LockscreenLyricsModule extends XposedModule {
                     } else if (LyricUiSettings.ACTION_REQUEST_MEDIA_SNAPSHOT.equals(
                             intent.getAction())) {
                         sendMediaSnapshotResult(intent);
+                    } else if (LyricUiSettings.ACTION_REQUEST_MODULE_STATUS.equals(
+                            intent.getAction())) {
+                        handleModuleStatusRequest(intent);
                     } else if (LyricUiSettings.ACTION_CONTENT_CLEANUP_CHANGED.equals(
                             intent.getAction())) {
                         handleLyricContentCleanupChanged(receiverContext, intent);
@@ -9228,6 +9231,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 IntentFilter filter = new IntentFilter(LyricUiSettings.ACTION_STYLE_CHANGED);
                 filter.addAction(LyricUiSettings.ACTION_PLAYER_TRANSLATION_SETTINGS_CHANGED);
                 filter.addAction(LyricUiSettings.ACTION_REQUEST_MEDIA_SNAPSHOT);
+                filter.addAction(LyricUiSettings.ACTION_REQUEST_MODULE_STATUS);
                 filter.addAction(LyricUiSettings.ACTION_CONTENT_CLEANUP_CHANGED);
                 filter.addAction(LyricUiSettings.ACTION_RESTART_SYSTEM_UI);
                 if (Build.VERSION.SDK_INT >= 33) {
@@ -9295,6 +9299,30 @@ public final class LockscreenLyricsModule extends XposedModule {
                 error("Failed to restart SystemUI process", throwable);
             }
         }, 120L);
+    }
+
+    @SuppressWarnings("deprecation")
+    private void handleModuleStatusRequest(Intent intent) {
+        if (!SYSTEMUI_PACKAGE.equals(logProcessName)) {
+            return;
+        }
+        ResultReceiver receiver = intent == null
+                ? null
+                : intent.getParcelableExtra(LyricUiSettings.EXTRA_RESULT_RECEIVER);
+        if (receiver == null) return;
+        Bundle result = new Bundle();
+        result.putInt(LyricUiSettings.RESULT_MODULE_VERSION_CODE, BuildConfig.VERSION_CODE);
+        result.putString(LyricUiSettings.RESULT_PROCESS, logProcessName);
+        result.putLong(LyricUiSettings.RESULT_MODULE_TIMESTAMP, System.currentTimeMillis());
+        try {
+            receiver.send(0, result);
+        } catch (Throwable throwable) {
+            warn(
+                    LyricLogFormatter.Area.SETTINGS,
+                    "module-status-reply-failed",
+                    "Could not answer module status request"
+                            + " | error=" + throwable.getClass().getSimpleName());
+        }
     }
 
     @SuppressWarnings("deprecation")

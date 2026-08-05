@@ -3,10 +3,13 @@ package io.github.andrealtb.lockscreenlyrics;
 final class LyricUiSettings {
     private static long lastSettingsRevision;
     static final String PREFERENCES_NAME = "lockscreen_lyrics";
+    static final String PREF_SETTINGS_LOCALE = "settings_locale";
     static final String ACTION_STYLE_CHANGED =
             "io.github.andrealtb.lockscreenlyrics.action.LYRIC_UI_STYLE_CHANGED";
     static final String ACTION_REQUEST_MEDIA_SNAPSHOT =
             "io.github.andrealtb.lockscreenlyrics.action.REQUEST_MEDIA_SNAPSHOT";
+    static final String ACTION_REQUEST_MODULE_STATUS =
+            "io.github.andrealtb.lockscreenlyrics.action.REQUEST_MODULE_STATUS";
     static final String ACTION_PLAYER_TRANSLATION_SETTINGS_CHANGED =
             "io.github.andrealtb.lockscreenlyrics.action.PLAYER_TRANSLATION_SETTINGS_CHANGED";
     static final String ACTION_CONTENT_CLEANUP_CHANGED =
@@ -45,6 +48,8 @@ final class LyricUiSettings {
     static final String RESULT_TRACK_KEY = "track_key";
     static final String RESULT_RAW_LYRIC = "raw_lyric";
     static final String RESULT_APPLIED = "applied";
+    static final String RESULT_MODULE_VERSION_CODE = "module_version_code";
+    static final String RESULT_MODULE_TIMESTAMP = "module_timestamp";
     static final String RESULT_CONFIG_REVISION = "config_revision";
     static final String RESULT_ALIGNMENT = "alignment";
     static final String RESULT_PROCESS = "process";
