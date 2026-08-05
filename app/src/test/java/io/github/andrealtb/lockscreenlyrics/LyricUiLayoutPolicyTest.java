@@ -1,6 +1,8 @@
 package io.github.andrealtb.lockscreenlyrics;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
@@ -145,5 +147,17 @@ public final class LyricUiLayoutPolicyTest {
                 415f, 100f, 5f), 0.0001f);
         assertEquals(5f, LyricUiLayoutPolicy.floatingPreviewTopInRoot(
                 80f, 100f, 5f), 0.0001f);
+    }
+
+    @Test
+    public void collapsedPreviewReturnsOnlyAfterItsAnchorClearsTheStickyBoundary() {
+        assertFalse(LyricUiLayoutPolicy.shouldRestoreCollapsedPreview(
+                320f, 320f, 12f));
+        assertFalse(LyricUiLayoutPolicy.shouldRestoreCollapsedPreview(
+                331f, 320f, 12f));
+        assertTrue(LyricUiLayoutPolicy.shouldRestoreCollapsedPreview(
+                333f, 320f, 12f));
+        assertTrue(LyricUiLayoutPolicy.shouldRestoreCollapsedPreview(
+                321f, 320f, -10f));
     }
 }

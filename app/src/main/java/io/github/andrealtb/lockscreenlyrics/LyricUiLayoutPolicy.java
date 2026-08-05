@@ -122,4 +122,11 @@ final class LyricUiLayoutPolicy {
         return Math.max(gap, visibleUiBottomOnScreen - rootTopOnScreen + gap);
     }
 
+    static boolean shouldRestoreCollapsedPreview(
+            float naturalTop,
+            float stickyTop,
+            float hysteresis) {
+        return naturalTop > stickyTop + Math.max(0f, hysteresis);
+    }
+
 }
