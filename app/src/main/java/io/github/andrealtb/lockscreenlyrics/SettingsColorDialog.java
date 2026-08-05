@@ -6,6 +6,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
+import android.graphics.Rect;
 import android.graphics.Shader;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
@@ -19,6 +20,7 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.view.Window;
 import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
@@ -26,6 +28,10 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.PopupWindow;
 import android.widget.TextView;
+
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 
 import java.util.Locale;
 
@@ -48,6 +54,7 @@ final class SettingsColorDialog {
         String initial = LyricUiConfig.sanitizeColor(currentColor, fallbackColor);
         int initialArgb = Color.parseColor(initial);
         int panelWidth = dp(context, 196);
+        View root = anchor.getRootView();
 
         LinearLayout panel = new LinearLayout(context);
         panel.setOrientation(LinearLayout.VERTICAL);
@@ -147,6 +154,7 @@ final class SettingsColorDialog {
 
         final boolean[] invalid = {false};
         final boolean[] syncing = {false};
+        final Runnable[] repositionPopup = {null};
         Runnable updateFieldBackground = () -> hexInput.setBackground(rounded(
                 Color.WHITE,
                 dp(context, 10),
@@ -154,7 +162,15 @@ final class SettingsColorDialog {
                 invalid[0]
                         ? 0xFFE5484D
                         : hexInput.hasFocus() ? 0xFFF2C14E : 0x40344455));
-        hexInput.setOnFocusChangeListener((view, hasFocus) -> updateFieldBackground.run());
+        hexInput.setOnFocusChangeListener((view, hasFocus) -> {
+            updateFieldBackground.run();
+            if (hasFocus && repositionPopup[0] != null) {
+                root.post(repositionPopup[0]);
+                root.postDelayed(repositionPopup[0], 100L);
+                root.postDelayed(repositionPopup[0], 220L);
+                root.postDelayed(repositionPopup[0], 360L);
+            }
+        });
         updateFieldBackground.run();
         hexInput.addTextChangedListener(new TextWatcher() {
             @Override
@@ -183,6 +199,7 @@ final class SettingsColorDialog {
                     }
                 }
                 updateFieldBackground.run();
+                if (repositionPopup[0] != null) panel.post(repositionPopup[0]);
             }
         });
 
@@ -258,7 +275,13 @@ final class SettingsColorDialog {
         if (hostWindow != null) {
             hostWindow.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING);
         }
+        final ViewTreeObserver.OnGlobalLayoutListener[] imeLayoutListener = {null};
         popup.setOnDismissListener(() -> {
+            if (repositionPopup[0] != null) root.removeCallbacks(repositionPopup[0]);
+            if (imeLayoutListener[0] != null
+                    && root.getViewTreeObserver().isAlive()) {
+                root.getViewTreeObserver().removeOnGlobalLayoutListener(imeLayoutListener[0]);
+            }
             hexInput.clearFocus();
             InputMethodManager keyboard =
                     (InputMethodManager) context.getSystemService(Context.INPUT_METHOD_SERVICE);
@@ -281,7 +304,7 @@ final class SettingsColorDialog {
                     dp(context, showHsv ? 2f : 1.5f),
                     showHsv ? 0xFFF2C14E : 0x40344455);
             panel.requestLayout();
-            panel.post(popup::update);
+            if (repositionPopup[0] != null) panel.post(repositionPopup[0]);
         });
 
         cancel.setOnClickListener(view -> popup.dismiss());
@@ -291,6 +314,7 @@ final class SettingsColorDialog {
                 invalid[0] = true;
                 error.setVisibility(View.VISIBLE);
                 updateFieldBackground.run();
+                if (repositionPopup[0] != null) panel.post(repositionPopup[0]);
                 return;
             }
             accepted.accept(LyricUiConfig.sanitizeColor("#" + raw, fallbackColor));
@@ -305,7 +329,6 @@ final class SettingsColorDialog {
         panel.setPivotY(0f);
         // Absolute overlay placement intentionally avoids PopupWindow's anchor-parent scrolling.
         // Prefer below the swatch, fall back above it, and keep a small screen-edge margin.
-        View root = anchor.getRootView();
         int[] rootLocation = new int[2];
         int[] anchorLocation = new int[2];
         root.getLocationOnScreen(rootLocation);
@@ -326,7 +349,46 @@ final class SettingsColorDialog {
         int y = belowY + panel.getMeasuredHeight() <= root.getHeight() - edgeMargin
                 ? belowY
                 : Math.max(edgeMargin, aboveY);
+        final int popupX = x;
+        final int preferredY = y;
+        final int[] lastGeometry = {Integer.MIN_VALUE, Integer.MIN_VALUE};
+        repositionPopup[0] = () -> {
+            if (!popup.isShowing()) return;
+            panel.measure(
+                    View.MeasureSpec.makeMeasureSpec(panelWidth, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+            int panelHeight = panel.getMeasuredHeight();
+            int availableBottom = root.getHeight();
+            WindowInsetsCompat windowInsets = ViewCompat.getRootWindowInsets(root);
+            Insets imeInsets = windowInsets == null
+                    ? Insets.NONE
+                    : windowInsets.getInsets(WindowInsetsCompat.Type.ime());
+            if (imeInsets.bottom > 0) {
+                availableBottom = Math.max(0, root.getHeight() - imeInsets.bottom);
+            } else {
+                // ColorOS can report the IME through the visible frame one animation frame
+                // before Type.ime() is populated; use it as a conservative fallback.
+                Rect visibleFrame = new Rect();
+                root.getWindowVisibleDisplayFrame(visibleFrame);
+                int visibleBottomInRoot = visibleFrame.bottom - rootLocation[1];
+                if (visibleBottomInRoot < root.getHeight() - dp(context, 80)) {
+                    availableBottom = Math.max(0, visibleBottomInRoot);
+                }
+            }
+            int maximumTop = availableBottom - edgeMargin - panelHeight;
+            int targetY = Math.max(edgeMargin, Math.min(preferredY, maximumTop));
+            if (lastGeometry[0] == targetY && lastGeometry[1] == panelHeight) return;
+            lastGeometry[0] = targetY;
+            lastGeometry[1] = panelHeight;
+            popup.update(popupX, targetY, panelWidth, panelHeight);
+        };
         popup.showAtLocation(root, Gravity.TOP | Gravity.LEFT, x, y);
+        imeLayoutListener[0] = () -> {
+            root.removeCallbacks(repositionPopup[0]);
+            root.post(repositionPopup[0]);
+        };
+        root.getViewTreeObserver().addOnGlobalLayoutListener(imeLayoutListener[0]);
+        panel.post(repositionPopup[0]);
         panel.animate()
                 .alpha(1f)
                 .scaleX(1f)
