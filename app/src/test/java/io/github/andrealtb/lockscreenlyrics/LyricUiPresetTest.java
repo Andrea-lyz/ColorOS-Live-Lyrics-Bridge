@@ -32,6 +32,24 @@ public final class LyricUiPresetTest {
         assertEquals(
                 LyricUiPreset.CUSTOM,
                 LyricUiPreset.detect(vivid.buildUpon().glowRadiusPercent(21).build()));
+        assertEquals(
+                LyricUiPreset.CUSTOM,
+                LyricUiPreset.detect(vivid.buildUpon().primaryColor("#123456").build()));
+        assertEquals(
+                LyricUiPreset.CUSTOM,
+                LyricUiPreset.detect(vivid.buildUpon().glowColor("#654321").build()));
+    }
+
+    @Test
+    public void minimalPresetRepresentsDisabledGlowAsZeroIntensity() {
+        LyricUiConfig minimal = LyricUiPreset.MINIMAL.apply(LyricUiConfig.defaults());
+
+        assertFalse(minimal.glowEnabled);
+        assertEquals(0, minimal.glowIntensityPercent);
+        assertEquals(LyricUiPreset.MINIMAL, LyricUiPreset.detect(minimal));
+        assertEquals(
+                LyricUiPreset.MINIMAL,
+                LyricUiPreset.detect(minimal.buildUpon().glowIntensityPercent(100).build()));
     }
 
     @Test
