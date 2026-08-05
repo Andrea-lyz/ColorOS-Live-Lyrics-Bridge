@@ -1,7 +1,5 @@
 package io.github.andrealtb.lockscreenlyrics;
 
-import android.app.ActionBar;
-import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -11,15 +9,14 @@ import android.os.Handler;
 import android.os.ResultReceiver;
 import android.view.Gravity;
 import android.view.View;
-import android.view.Window;
-import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.CheckBox;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
 import android.widget.ScrollView;
-import android.widget.Switch;
+import com.google.android.material.materialswitch.MaterialSwitch;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -30,17 +27,14 @@ import java.util.Locale;
 import java.util.Map;
 
 /** User-facing editor for opening lyric information cleanup. No regex or free-form DSL. */
-public final class LyricOpeningCleanupSettingsActivity extends Activity {
-    private static final int BACKGROUND = 0xFFF6F6F8;
-    private static final int CARD = 0xFFFFFFFF;
-    private static final int TEXT = 0xFF111111;
+public final class LyricOpeningCleanupSettingsActivity extends SettingsBaseActivity {
     private static final int MUTED = 0x99000000;
 
     private SharedPreferences preferences;
     private LyricContentCleanupConfig draft;
-    private Switch copyrightNotices;
-    private Switch productionCredits;
-    private Switch titleArtistLead;
+    private MaterialSwitch copyrightNotices;
+    private MaterialSwitch productionCredits;
+    private MaterialSwitch titleArtistLead;
     private TextView currentSong;
     private TextView currentStatus;
     private RadioGroup lyricRows;
@@ -57,9 +51,8 @@ public final class LyricOpeningCleanupSettingsActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        configureWindow();
-        ActionBar actionBar = getActionBar();
-        if (actionBar != null) actionBar.setDisplayHomeAsUpEnabled(true);
+
+        setTitle(R.string.opening_cleanup_settings_title);
         preferences = getSharedPreferences(LyricUiSettings.PREFERENCES_NAME, MODE_PRIVATE);
         draft = LyricContentCleanupRepository.load(preferences);
         setContentView(createContent());
@@ -73,104 +66,139 @@ public final class LyricOpeningCleanupSettingsActivity extends Activity {
         return true;
     }
 
-    private void configureWindow() {
-        Window window = getWindow();
-        window.setStatusBarColor(BACKGROUND);
-        window.setNavigationBarColor(BACKGROUND);
-        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-        window.getDecorView().setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
-    }
-
     private View createContent() {
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(20), dp(20), dp(20), dp(32));
-        content.setBackgroundColor(BACKGROUND);
+        int screenPadding = settingsScreenPadding();
+        content.setPadding(screenPadding, screenPadding, screenPadding,
+                settingsScreenBottomPadding() + dp(72));
+        content.setBackgroundColor(settingsBackgroundColor());
         content.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
-        installInsets(content);
+        installSettingsInsets(content);
 
         TextView intro = text(
-                "模块只清理歌词开头的制作、版权等说明，不修改时间轴、逐字效果或歌曲信息。识别不完整时，选择当前歌曲第一句正式歌词即可。",
+                getString(R.string.sub_clean_notice),
                 14,
                 0xFF6A4A00);
         intro.setPadding(dp(14), dp(12), dp(14), dp(12));
-        intro.setBackgroundColor(0xFFFFF4DE);
-        content.addView(intro, marginBottom(dp(18)));
+        android.graphics.drawable.GradientDrawable introBackground =
+                new android.graphics.drawable.GradientDrawable();
+        introBackground.setColor(0xFFFFF4DE);
+        introBackground.setCornerRadius(dp(12));
+        intro.setBackground(introBackground);
+        content.addView(intro, marginBottom(dp(12)));
 
-        content.addView(section("内置清理规则"));
         LinearLayout builtIns = card();
-        copyrightNotices = toggle("版权与权利声明", true);
-        productionCredits = toggle("制作人员与乐器信息", true);
-        titleArtistLead = toggle("开头的“歌名 - 歌手”", true);
+        builtIns.addView(section(getString(R.string.sub_clean_builtin)));
+        copyrightNotices = toggle(getString(R.string.sub_clean_copyright), true);
+        productionCredits = toggle(getString(R.string.sub_clean_production), true);
+        titleArtistLead = toggle(getString(R.string.sub_clean_titleartist), true);
         builtIns.addView(copyrightNotices);
+        addCardDivider(builtIns);
         builtIns.addView(productionCredits);
+        addCardDivider(builtIns);
         builtIns.addView(titleArtistLead);
+        addCardDivider(builtIns);
         TextView protectedRule = text(
-                "翻译来源占位等会影响主歌词/翻译识别的规则属于解析保护，始终启用。",
+                getString(R.string.sub_clean_protected),
                 13,
                 MUTED);
-        protectedRule.setPadding(0, dp(8), 0, dp(4));
+        protectedRule.setPadding(dp(17), dp(8), dp(17), dp(4));
         builtIns.addView(protectedRule, matchWrap());
-        Button resetBuiltIns = button("恢复内置规则默认值");
+        Button resetBuiltIns = button(getString(R.string.sub_clean_reset));
         resetBuiltIns.setOnClickListener(view -> {
             copyrightNotices.setChecked(true);
             productionCredits.setChecked(true);
             titleArtistLead.setChecked(true);
             rebuildCurrentSong();
         });
-        builtIns.addView(resetBuiltIns, matchWrap());
-        content.addView(builtIns, marginBottom(dp(16)));
+        LinearLayout.LayoutParams resetParams = matchWrap();
+        resetParams.leftMargin = dp(17);
+        resetParams.rightMargin = dp(17);
+        resetParams.bottomMargin = dp(12);
+        builtIns.addView(resetBuiltIns, resetParams);
+        content.addView(builtIns, marginBottom(dp(12)));
 
-        content.addView(section("检查并修正当前歌曲"));
         LinearLayout current = card();
-        currentSong = text("正在读取当前歌曲…", 17, TEXT);
+        current.addView(section(getString(R.string.sub_clean_current)));
+        currentSong = text(getString(R.string.sub_clean_song_loading), 17, settingsTextColor());
         currentSong.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        currentSong.setPadding(dp(17), dp(10), dp(17), 0);
         current.addView(currentSong, matchWrap());
-        currentStatus = text("请保持歌曲播放并确保锁屏歌词已加载。", 13, MUTED);
-        currentStatus.setPadding(0, dp(4), 0, dp(8));
+        currentStatus = text(getString(R.string.sub_clean_status_hint), 13, MUTED);
+        currentStatus.setPadding(dp(17), dp(4), dp(17), dp(8));
         current.addView(currentStatus, matchWrap());
-        Button refresh = button("重新读取当前歌词");
+        Button refresh = button(getString(R.string.sub_clean_refresh));
         refresh.setOnClickListener(view -> requestCurrentLyrics());
-        current.addView(refresh, matchWrap());
-        clearCurrentCorrection = button("清除这首歌的手动修正");
+        LinearLayout.LayoutParams currentButtonParams = matchWrap();
+        currentButtonParams.leftMargin = dp(17);
+        currentButtonParams.rightMargin = dp(17);
+        current.addView(refresh, currentButtonParams);
+        clearCurrentCorrection = button(getString(R.string.sub_clean_clearper));
         clearCurrentCorrection.setOnClickListener(view -> {
             if (currentTrackKey.isEmpty()) return;
             draft = draft.buildUpon().removeTrackOverride(currentTrackKey).build();
             selectedFirstFormalIndex = -1;
             rebuildCurrentSong();
         });
-        current.addView(clearCurrentCorrection, matchWrap());
+        LinearLayout.LayoutParams clearParams = matchWrap();
+        clearParams.leftMargin = dp(17);
+        clearParams.rightMargin = dp(17);
+        current.addView(clearCurrentCorrection, clearParams);
         lyricRows = new RadioGroup(this);
         lyricRows.setOrientation(LinearLayout.VERTICAL);
+        lyricRows.setPadding(dp(17), dp(6), dp(17), dp(12));
         current.addView(lyricRows, matchWrap());
-        content.addView(current, marginBottom(dp(16)));
+        content.addView(current, marginBottom(dp(12)));
 
-        content.addView(section("可学习的格式"));
         suggestions = card();
-        suggestions.addView(text(
-                "选择第一句正式歌词后，模块会从前面的未识别行中提取安全格式。勾选后会用于其他歌曲；过长或不稳定的内容只修正当前歌曲。",
+        suggestions.addView(section(getString(R.string.sub_clean_suggestions)));
+        TextView suggestionsHint = text(
+                getString(R.string.sub_clean_suggestions_hint),
                 13,
-                MUTED), matchWrap());
-        content.addView(suggestions, marginBottom(dp(16)));
+                MUTED);
+        suggestionsHint.setPadding(dp(17), dp(10), dp(17), dp(14));
+        suggestions.addView(suggestionsHint, matchWrap());
+        content.addView(suggestions, marginBottom(dp(12)));
 
-        content.addView(section("已学习内容"));
         learnedRules = card();
-        content.addView(learnedRules, marginBottom(dp(16)));
+        learnedRules.addView(section(getString(R.string.sub_clean_learned)));
+        content.addView(learnedRules, marginBottom(dp(12)));
 
-        Button save = button("保存并应用");
-        save.setTextColor(Color.WHITE);
-        save.setBackgroundColor(TEXT);
+        Button save = button(getString(R.string.sub_clean_save));
+        styleGoldButton(save);
+        removeButtonShadow(save);
         save.setOnClickListener(view -> save());
-        content.addView(save, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(52)));
 
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.setClipToPadding(false);
         scroll.addView(content);
-        return scroll;
+
+        FrameLayout stage = new FrameLayout(this);
+        stage.addView(scroll, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+        FrameLayout.LayoutParams bottomParams = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                dp(65),
+                Gravity.BOTTOM);
+        stage.addView(settingsBottomAction(save), bottomParams);
+
+        LinearLayout page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setBackgroundColor(settingsBackgroundColor());
+        page.addView(settingsAppBar(
+                getString(R.string.opening_cleanup_settings_title),
+                null,
+                this::finish), new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                settingsActionBarHeight()));
+        page.addView(stage, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f));
+        return page;
     }
 
     private void bindConfig() {
@@ -187,39 +215,46 @@ public final class LyricOpeningCleanupSettingsActivity extends Activity {
     @SuppressWarnings("deprecation")
     private void requestCurrentLyrics() {
         currentStatus.setText(R.string.cleanup_loading_current_lyrics);
-        ResultReceiver receiver = new ResultReceiver(new Handler()) {
-            @Override
-            protected void onReceiveResult(int resultCode, Bundle resultData) {
-                if (resultData == null) {
-                    showNoCurrentLyrics();
-                    return;
-                }
-                String title = resultData.getString(LyricUiSettings.RESULT_TITLE, "");
-                String artist = resultData.getString(LyricUiSettings.RESULT_ARTIST, "");
-                currentTrackKey = resultData.getString(
-                        LyricUiSettings.RESULT_TRACK_KEY,
-                        "");
-                currentRawLyric = resultData.getString(
-                        LyricUiSettings.RESULT_RAW_LYRIC,
-                        "");
-                currentSong.setText(title.isEmpty()
-                        ? "当前歌曲"
-                        : artist.isEmpty()
-                        ? title
-                        : getString(R.string.cleanup_current_song_artist, title, artist));
-                currentLines = LyricOpeningCleanup.parseLines(currentRawLyric);
-                if (currentTrackKey.isEmpty() || currentLines.isEmpty()) {
-                    showNoCurrentLyrics();
-                    return;
-                }
-                selectedFirstFormalIndex = findStoredFirstFormalIndex();
-                rebuildCurrentSong();
-            }
-        };
+        ResultReceiver receiver = new MediaSnapshotResultReceiver();
         Intent request = new Intent(LyricUiSettings.ACTION_REQUEST_MEDIA_SNAPSHOT)
                 .setPackage("com.android.systemui")
                 .putExtra(LyricUiSettings.EXTRA_RESULT_RECEIVER, receiver);
         sendBroadcast(request);
+    }
+
+    /** Named ResultReceiver: anonymous numbering shifts across builds and crashes SystemUI. */
+    private final class MediaSnapshotResultReceiver extends ResultReceiver {
+        MediaSnapshotResultReceiver() {
+            super(new Handler(getMainLooper()));
+        }
+
+        @Override
+        protected void onReceiveResult(int resultCode, Bundle resultData) {
+            if (resultData == null) {
+                showNoCurrentLyrics();
+                return;
+            }
+            String title = resultData.getString(LyricUiSettings.RESULT_TITLE, "");
+            String artist = resultData.getString(LyricUiSettings.RESULT_ARTIST, "");
+            currentTrackKey = resultData.getString(
+                    LyricUiSettings.RESULT_TRACK_KEY,
+                    "");
+            currentRawLyric = resultData.getString(
+                    LyricUiSettings.RESULT_RAW_LYRIC,
+                    "");
+            currentSong.setText(title.isEmpty()
+                    ? getString(R.string.sub_clean_song_current)
+                    : artist.isEmpty()
+                    ? title
+                    : getString(R.string.cleanup_current_song_artist, title, artist));
+            currentLines = LyricOpeningCleanup.parseLines(currentRawLyric);
+            if (currentTrackKey.isEmpty() || currentLines.isEmpty()) {
+                showNoCurrentLyrics();
+                return;
+            }
+            selectedFirstFormalIndex = findStoredFirstFormalIndex();
+            rebuildCurrentSong();
+        }
     }
 
     private void showNoCurrentLyrics() {
@@ -228,8 +263,8 @@ public final class LyricOpeningCleanupSettingsActivity extends Activity {
         currentLines = new ArrayList<>();
         selectedFirstFormalIndex = -1;
         lyricRows.removeAllViews();
-        currentSong.setText("未读取到可检查的歌词");
-        currentStatus.setText("请播放一首有逐行或逐字歌词的歌曲，等待锁屏歌词出现后重试。");
+        currentSong.setText(getString(R.string.sub_clean_song_none));
+        currentStatus.setText(getString(R.string.sub_clean_song_none_hint));
         clearCurrentCorrection.setEnabled(false);
         rebuildSuggestions(new ArrayList<>());
     }
@@ -254,7 +289,7 @@ public final class LyricOpeningCleanupSettingsActivity extends Activity {
             row.setTag(index);
             row.setText(formatLine(decision));
             row.setTextSize(14);
-            row.setTextColor(decision.hidden ? 0xFF6B6B6B : TEXT);
+            row.setTextColor(decision.hidden ? 0xFF6B6B6B : settingsTextColor());
             row.setGravity(Gravity.TOP | Gravity.START);
             row.setPadding(0, dp(7), 0, dp(7));
             row.setChecked(index == selectedFirstFormalIndex);
@@ -275,7 +310,12 @@ public final class LyricOpeningCleanupSettingsActivity extends Activity {
         while (suggestions.getChildCount() > 1) suggestions.removeViewAt(1);
         suggestionRules.clear();
         if (selectedFirstFormalIndex <= 0 || decisions == null || decisions.isEmpty()) {
-            suggestions.addView(text("先在上方选择第一句正式歌词。", 14, MUTED), matchWrap());
+            TextView empty = text(
+                    getString(R.string.sub_clean_pickfirst),
+                    14,
+                    MUTED);
+            empty.setPadding(dp(17), dp(10), dp(17), dp(14));
+            suggestions.addView(empty, matchWrap());
             return;
         }
         LyricContentCleanupConfig withoutTrackOverride = readDraft(false)
@@ -304,31 +344,39 @@ public final class LyricOpeningCleanupSettingsActivity extends Activity {
                     R.string.cleanup_learn_similar,
                     displayRule(proposed)));
             option.setTextSize(14);
-            option.setTextColor(TEXT);
-            option.setPadding(0, dp(6), 0, dp(6));
+            option.setTextColor(settingsTextColor());
+            option.setPadding(dp(17), dp(6), dp(17), dp(6));
             suggestions.addView(option, matchWrap());
             suggestionRules.put(option, proposed);
         }
         if (suggestionRules.isEmpty()) {
-            suggestions.addView(text(
-                    "没有可安全复用的格式；保存后仍会只修正当前歌曲。",
+            TextView empty = text(
+                    getString(R.string.sub_clean_suggestions_none),
                     14,
-                    MUTED), matchWrap());
+                    MUTED);
+            empty.setPadding(dp(17), dp(10), dp(17), dp(14));
+            suggestions.addView(empty, matchWrap());
         }
     }
 
     private void rebuildLearnedRules() {
-        learnedRules.removeAllViews();
+        while (learnedRules.getChildCount() > 1) learnedRules.removeViewAt(1);
         if (draft.learnedRules.isEmpty()) {
-            learnedRules.addView(text("尚未学习任何额外格式。", 14, MUTED), matchWrap());
+            TextView empty = text(
+                    getString(R.string.sub_clean_learned_none),
+                    14,
+                    MUTED);
+            empty.setPadding(dp(17), dp(10), dp(17), dp(14));
+            learnedRules.addView(empty, matchWrap());
             return;
         }
         for (LyricContentCleanupConfig.LearnedRule rule : draft.learnedRules) {
             LinearLayout row = new LinearLayout(this);
             row.setGravity(Gravity.CENTER_VERTICAL);
-            TextView label = text(displayRule(rule), 14, TEXT);
+            row.setPadding(dp(17), 0, dp(17), 0);
+            TextView label = text(displayRule(rule), 14, settingsTextColor());
             row.addView(label, new LinearLayout.LayoutParams(0, dp(52), 1f));
-            Button remove = button("删除");
+            Button remove = button(getString(R.string.sub_clean_remove));
             remove.setOnClickListener(view -> {
                 draft = draft.buildUpon().removeLearnedRule(rule).build();
                 rebuildLearnedRules();
@@ -337,18 +385,22 @@ public final class LyricOpeningCleanupSettingsActivity extends Activity {
             row.addView(remove, new LinearLayout.LayoutParams(dp(90), dp(48)));
             learnedRules.addView(row, matchWrap());
         }
-        Button clear = button("清除全部已学习格式");
+        Button clear = button(getString(R.string.sub_clean_learned_clear));
         clear.setOnClickListener(view -> new AlertDialog.Builder(this)
-                .setTitle("清除已学习格式？")
-                .setMessage("逐曲手动修正不会被清除。")
-                .setNegativeButton("取消", null)
-                .setPositiveButton("清除", (dialog, which) -> {
+                .setTitle(getString(R.string.sub_clean_learned_clear_title))
+                .setMessage(getString(R.string.sub_clean_learned_clear_message))
+                .setNegativeButton(getString(R.string.sub_clean_cancel), null)
+                .setPositiveButton(getString(R.string.sub_clean_clear), (dialog, which) -> {
                     draft = draft.buildUpon().clearLearnedRules().build();
                     rebuildLearnedRules();
                     rebuildCurrentSong();
                 })
                 .show());
-        learnedRules.addView(clear, matchWrap());
+        LinearLayout.LayoutParams clearParams = matchWrap();
+        clearParams.leftMargin = dp(17);
+        clearParams.rightMargin = dp(17);
+        clearParams.bottomMargin = dp(12);
+        learnedRules.addView(clear, clearParams);
     }
 
     private LyricContentCleanupConfig readDraft(boolean includeSuggestions) {
@@ -391,7 +443,7 @@ public final class LyricOpeningCleanupSettingsActivity extends Activity {
             intent.putExtra(LyricUiSettings.EXTRA_CONTENT_CLEANUP_CONFIG, encoded);
         }
         if (!LyricContentCleanupConfigTransfer.grantSystemUiReadAccess(this)) {
-            Toast.makeText(this, "无法授权系统界面读取歌词开头清理设置", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, getString(R.string.sub_clean_grant_failed), Toast.LENGTH_LONG).show();
             return;
         }
         LyricContentCleanupConfigTransfer.attachConfigUri(intent);
@@ -400,7 +452,7 @@ public final class LyricOpeningCleanupSettingsActivity extends Activity {
         selectedFirstFormalIndex = findStoredFirstFormalIndex();
         rebuildLearnedRules();
         rebuildCurrentSong();
-        Toast.makeText(this, "歌词开头信息清理已应用", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, getString(R.string.sub_clean_applied), Toast.LENGTH_SHORT).show();
     }
 
     private int findStoredFirstFormalIndex() {
@@ -416,15 +468,15 @@ public final class LyricOpeningCleanupSettingsActivity extends Activity {
         String time = formatTime(decision.line.timeMillis);
         String label = decision.hidden
                 ? LyricOpeningCleanup.reasonLabel(decision.reason)
-                : "正式歌词候选";
+                : getString(R.string.sub_clean_formal);
         return time + "  " + decision.line.text + "\n" + label;
     }
 
-    private static String displayRule(LyricContentCleanupConfig.LearnedRule rule) {
+    private String displayRule(LyricContentCleanupConfig.LearnedRule rule) {
         if (rule == null) return "";
-        return (rule.type == LyricContentCleanupConfig.LearnedType.PREFIX
-                ? "以“" + rule.value + "”开头"
-                : "整行为“" + rule.value + "”");
+        return rule.type == LyricContentCleanupConfig.LearnedType.PREFIX
+                ? getString(R.string.sub_clean_rule_prefix, rule.value)
+                : getString(R.string.sub_clean_rule_exact, rule.value);
     }
 
     private static String formatTime(long timeMillis) {
@@ -432,74 +484,4 @@ public final class LyricOpeningCleanupSettingsActivity extends Activity {
         return String.format(Locale.ROOT, "%02d:%02d", totalSeconds / 60L, totalSeconds % 60L);
     }
 
-    private LinearLayout card() {
-        LinearLayout view = new LinearLayout(this);
-        view.setOrientation(LinearLayout.VERTICAL);
-        view.setPadding(dp(14), dp(10), dp(14), dp(12));
-        view.setBackgroundColor(CARD);
-        return view;
-    }
-
-    private TextView section(String title) {
-        TextView view = text(title, 13, MUTED);
-        view.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-        view.setPadding(dp(4), dp(4), 0, dp(8));
-        return view;
-    }
-
-    private Switch toggle(String label, boolean checked) {
-        Switch view = new Switch(this);
-        view.setText(label);
-        view.setTextSize(16);
-        view.setTextColor(TEXT);
-        view.setChecked(checked);
-        view.setGravity(Gravity.CENTER_VERTICAL);
-        view.setIncludeFontPadding(false);
-        view.setMinHeight(dp(54));
-        return view;
-    }
-
-    private Button button(String label) {
-        Button button = new Button(this);
-        button.setText(label);
-        button.setAllCaps(false);
-        return button;
-    }
-
-    private TextView text(String value, float size, int color) {
-        TextView text = new TextView(this);
-        text.setText(value);
-        text.setTextSize(size);
-        text.setTextColor(color);
-        return text;
-    }
-
-    private LinearLayout.LayoutParams matchWrap() {
-        return new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-    }
-
-    private LinearLayout.LayoutParams marginBottom(int margin) {
-        LinearLayout.LayoutParams params = matchWrap();
-        params.bottomMargin = margin;
-        return params;
-    }
-
-    private int dp(float value) {
-        return Math.round(value * getResources().getDisplayMetrics().density);
-    }
-
-    @SuppressWarnings("deprecation")
-    private void installInsets(View content) {
-        int base = content.getPaddingTop();
-        content.setOnApplyWindowInsetsListener((view, insets) -> {
-            view.setPadding(
-                    view.getPaddingLeft(),
-                    base + insets.getSystemWindowInsetTop(),
-                    view.getPaddingRight(),
-                    view.getPaddingBottom());
-            return insets;
-        });
-    }
 }
