@@ -1,9 +1,177 @@
 <resources>
     <string name="app_name">ColorOS Live Lyrics Bridge</string>
     <string name="module_description">将受支持播放器的歌词桥接至 ColorOS/OPlus 锁屏，可在设置中自定义各类动效。</string>
-    <string name="lyric_ui_settings_title">歌词界面</string>
+    <string name="lyric_ui_settings_title">歌词外观</string>
+    <string name="settings_status_name">Live Lyrics Bridge</string>
+    <string name="player_translation_settings_title">播放器翻译设置</string>
+    <string name="opening_cleanup_settings_title">歌词开头信息清理</string>
+    <string name="settings_module_icon_description">模块图标</string>
+    <string name="settings_appbar_version">v%1$s</string>
+    <string name="settings_module_status_checking">正在检测…</string>
+    <string name="settings_module_status_active">模块已激活 · SystemUI 已加载 · 刚刚</string>
+    <string name="settings_module_status_active_restart">模块已更新，重启 SystemUI 生效</string>
+    <string name="settings_module_status_inactive">未激活</string>
+    <string name="settings_language_current">中文</string>
+    <string name="settings_language_description">切换语言</string>
     <string name="cleanup_current_song_artist">%1$s\n%2$s</string>
     <string name="cleanup_hidden_count">模块当前会隐藏 %1$d 行。点击一行，将它设为这首歌第一句正式歌词。</string>
     <string name="cleanup_learn_similar">以后也隐藏类似格式：%1$s</string>
     <string name="cleanup_loading_current_lyrics">正在读取 SystemUI 中的当前歌词…</string>
+    <!-- 播放器名称 -->
+    <string name="player_salt">Salt Player</string>
+    <string name="player_cone">ConePlayer</string>
+    <string name="player_qq">QQ 音乐</string>
+    <string name="player_netease">网易云音乐</string>
+    <string name="player_apple">Apple Music</string>
+    <string name="player_lx">LX Music</string>
+    <string name="player_poweramp">Poweramp</string>
+    <string name="player_spotify">Spotify</string>
+    <string name="player_qishui">汽水音乐</string>
+    <string name="player_kugou">酷狗音乐</string>
+    <!-- 子页面：播放器翻译设置 -->
+    <string name="sub_trans_desc">播放器自己的翻译按钮选择会优先于这里的默认值；可按播放器单独清除该记忆。</string>
+    <string name="sub_trans_fallback">其他播放器默认显示翻译</string>
+    <string name="sub_trans_default">默认显示翻译</string>
+    <string name="sub_trans_clear">清除该播放器的翻译记忆</string>
+    <string name="sub_trans_clear_toast">将在保存时清除 %1$s 的记忆</string>
+    <string name="sub_trans_status_builtin">内置适配</string>
+    <string name="sub_trans_status_detected">已检测到 LyricProvider</string>
+    <string name="sub_trans_status_missing">未安装对应 LyricProvider</string>
+    <string name="sub_trans_save">保存并应用</string>
+    <string name="sub_trans_saved">已保存，等待 SystemUI 确认</string>
+    <string name="sub_trans_saved_pending">已保存，但 SystemUI 未确认应用，请检查模块是否已启用</string>
+    <string name="sub_trans_applied">播放器翻译设置已应用</string>
+    <string name="sub_trans_rejected">SystemUI 拒绝了设置：%1$s</string>
+    <!-- 子页面：歌词开头信息清理 -->
+    <string name="sub_clean_notice">模块只清理歌词开头的制作、版权等说明，不修改时间轴、逐字效果或歌曲信息。识别不完整时，选择当前歌曲第一句正式歌词即可。</string>
+    <string name="sub_clean_builtin">内置清理规则</string>
+    <string name="sub_clean_copyright">版权与权利声明</string>
+    <string name="sub_clean_production">制作人员与乐器信息</string>
+    <string name="sub_clean_titleartist">开头的“歌名 - 歌手”</string>
+    <string name="sub_clean_protected">翻译来源占位等会影响主歌词/翻译识别的规则属于解析保护，始终启用。</string>
+    <string name="sub_clean_reset">恢复内置规则默认值</string>
+    <string name="sub_clean_current">检查并修正当前歌曲</string>
+    <string name="sub_clean_song_loading">正在读取当前歌曲…</string>
+    <string name="sub_clean_status_hint">请保持歌曲播放并确保锁屏歌词已加载。</string>
+    <string name="sub_clean_refresh">重新读取当前歌词</string>
+    <string name="sub_clean_clearper">清除这首歌的手动修正</string>
+    <string name="sub_clean_suggestions">可学习的格式</string>
+    <string name="sub_clean_suggestions_hint">选择第一句正式歌词后，模块会从前面的未识别行中提取安全格式。勾选后会用于其他歌曲；过长或不稳定的内容只修正当前歌曲。</string>
+    <string name="sub_clean_learned">已学习内容</string>
+    <string name="sub_clean_save">保存并应用</string>
+    <string name="sub_clean_song_current">当前歌曲</string>
+    <string name="sub_clean_song_none">未读取到可检查的歌词</string>
+    <string name="sub_clean_song_none_hint">请播放一首有逐行或逐字歌词的歌曲，等待锁屏歌词出现后重试。</string>
+    <string name="sub_clean_pickfirst">先在上方选择第一句正式歌词。</string>
+    <string name="sub_clean_suggestions_none">没有可安全复用的格式；保存后仍会只修正当前歌曲。</string>
+    <string name="sub_clean_learned_none">尚未学习任何额外格式。</string>
+    <string name="sub_clean_remove">删除</string>
+    <string name="sub_clean_learned_clear">清除全部已学习格式</string>
+    <string name="sub_clean_learned_clear_title">清除已学习格式？</string>
+    <string name="sub_clean_learned_clear_message">逐曲手动修正不会被清除。</string>
+    <string name="sub_clean_cancel">取消</string>
+    <string name="sub_clean_clear">清除</string>
+    <string name="sub_clean_formal">正式歌词候选</string>
+    <string name="sub_clean_rule_prefix">以“%1$s”开头</string>
+    <string name="sub_clean_rule_exact">整行为“%1$s”</string>
+    <string name="sub_clean_grant_failed">无法授权系统界面读取歌词开头清理设置</string>
+    <string name="sub_clean_applied">歌词开头信息清理已应用</string>
+    <!-- 主页：分区标题 -->
+    <string name="settings_section_presets">风格预设</string>
+    <string name="settings_section_color">颜色与光晕</string>
+    <string name="settings_section_motion_refresh">动效与刷新</string>
+    <string name="settings_section_compat">兼容与屏幕</string>
+    <string name="settings_section_typography">排版</string>
+    <!-- 主页：预设 -->
+    <string name="preset_default">默认</string>
+    <string name="preset_soft">柔和</string>
+    <string name="preset_vivid">醒目</string>
+    <string name="preset_minimal">极简</string>
+    <string name="preset_custom">自定义</string>
+    <string name="preset_custom_label">自定义 · 参数偏离所有预设</string>
+    <!-- 主页：绘制与动效 -->
+    <string name="setting_inactive_opacity">非活动行不透明度</string>
+    <string name="setting_blur">模糊非活动行</string>
+    <string name="setting_blur_radius">模糊半径</string>
+    <string name="setting_scroll_scale">缩放非活动行</string>
+    <string name="setting_inactive_scale">非活动行缩放</string>
+    <string name="setting_glow">光晕</string>
+    <string name="setting_glow_intensity">光晕强度</string>
+    <string name="setting_glow_radius">光晕半径</string>
+    <string name="setting_primary_color">主歌词颜色</string>
+    <string name="setting_glow_color">光晕颜色</string>
+    <string name="setting_motion">动效</string>
+    <string name="motion_standard">标准</string>
+    <string name="motion_reduced">减弱</string>
+    <string name="motion_off">关闭</string>
+    <string name="setting_passive_pan">长歌词自动纵向浏览</string>
+    <string name="setting_translation_marquee">长翻译自动横向滚动</string>
+    <!-- 主页：刷新策略 -->
+    <string name="setting_refresh_limit">歌词刷新上限</string>
+    <string name="refresh_follow_screen">不限制</string>
+    <string name="refresh_hz_format">%1$d Hz</string>
+    <string name="refresh_hint_short">仅限制重绘，不强制升频</string>
+    <!-- 主页：兼容与屏幕 -->
+    <string name="link_player_translation">播放器翻译设置</string>
+    <string name="link_player_translation_sub">按播放器记忆默认翻译开关</string>
+    <string name="link_opening_cleanup">歌词开头信息清理</string>
+    <string name="link_opening_cleanup_sub">已学习格式与首句规则</string>
+    <string name="setting_line_progress">普通逐行歌词进度</string>
+    <string name="setting_translation_progress">翻译进度</string>
+    <string name="setting_screen_timeout">歌词显示时保持屏幕点亮</string>
+    <string name="setting_screen_timeout_seconds_label">自定义秒数</string>
+    <string name="setting_screen_timeout_seconds_hint">留空则保持常亮</string>
+    <!-- 主页：高级排版 -->
+    <string name="setting_font_size">主歌词字号</string>
+    <string name="font_size_hint">有翻译：主歌词最高 28sp\n无翻译：自动增加 2sp，最高 30sp</string>
+    <string name="setting_translation_ratio">翻译字号比例</string>
+    <string name="setting_font_weight">字重</string>
+    <string name="weight_system">跟随系统</string>
+    <string name="weight_regular">常规</string>
+    <string name="weight_medium">中等</string>
+    <string name="weight_bold">粗体</string>
+    <string name="setting_alignment">对齐</string>
+    <string name="align_start">左对齐</string>
+    <string name="align_center">居中</string>
+    <string name="align_end">右对齐</string>
+    <string name="setting_line_spacing">歌词行间距（歌词之间）</string>
+    <string name="setting_wrapped_line_spacing">歌词内换行额外间距</string>
+    <!-- 主页：操作与回执 -->
+    <string name="action_restart_system_ui">重启系统界面</string>
+    <string name="action_apply_save">应用并保存</string>
+    <string name="snack_restart_requesting">正在请求重启系统界面…</string>
+    <string name="snack_restart_no_response">系统界面未响应；首次使用需先重启设备，让模块加载到 SystemUI</string>
+    <string name="snack_restart_failed">无法请求重启系统界面，请确认模块已启用</string>
+    <string name="snack_restart_acknowledged">系统界面已收到请求，正在重启</string>
+    <string name="color_error_format">请输入 6 位十六进制颜色代码（0–9、A–F）</string>
+    <string name="color_error_invalid">颜色值无效</string>
+    <string name="dialog_hex_hint">FFD68A</string>
+    <string name="cd_color_picker">取色器</string>
+    <string name="snack_save_sent">已应用并保存，等待 SystemUI 确认</string>
+    <string name="snack_save_pending">已应用并保存，但 SystemUI 未确认应用，请检查模块是否已启用</string>
+    <string name="snack_save_applied">已应用 · SystemUI 歌词层将刷新</string>
+    <string name="snack_save_rejected">SystemUI 拒绝了设置：%1$s</string>
+    <!-- 主页：无障碍与对话框 -->
+    <string name="dialog_cancel">取消</string>
+    <string name="dialog_ok">确定</string>
+    <string name="dialog_apply">应用</string>
+    <string name="dialog_custom_color_panel_title">自定义颜色</string>
+    <string name="cd_custom_color">%1$s 自定义颜色</string>
+    <string name="cd_slider">设置滑块</string>
+    <string name="cd_lyric_preview">歌词样式预览</string>
+    <string name="bar_unsaved">未保存</string>
+    <string name="back_discard_message">有未保存的更改，确定丢弃并退出吗？</string>
+    <string name="back_discard_title">未保存更改</string>
+    <string name="back_discard">丢弃</string>
+    <!-- 主页：预览示例文本 -->
+    <string-array name="preview_main_lines">
+        <item>\'Cause there were pages turned</item>
+        <item>With the bridges burned</item>
+        <item>Everything you lose is a step you take</item>
+    </string-array>
+    <string-array name="preview_translation_lines">
+        <item>因为过去的一切画上句点</item>
+        <item>你的人生将开启新的章节</item>
+        <item>失去铸就你前行的路</item>
+    </string-array>
 </resources>

@@ -90,6 +90,8 @@ android {
 dependencies {
     compileOnly(project(":libxposed-api-stubs"))
     implementation(project(":external-lyric-protocol"))
+    implementation("androidx.appcompat:appcompat:1.7.1")
+    implementation("com.google.android.material:material:1.11.0")
     implementation("com.mocharealm.accompanist:lyrics-core-jvm:0.4.7")
     implementation("org.jetbrains.kotlin:kotlin-stdlib:2.3.0")
     implementation("org.luckypray:dexkit:2.2.0")

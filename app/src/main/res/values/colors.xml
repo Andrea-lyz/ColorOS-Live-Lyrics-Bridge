@@ -1,4 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#FBF4E4</color>
+
+    <color name="settings_background">#FFF6F6F8</color>
+    <color name="settings_surface">#FFFFFFFF</color>
+    <color name="settings_text">#FF111111</color>
+    <color name="settings_text_secondary">#FF5F6368</color>
+    <color name="settings_text_muted">#FF9AA0A6</color>
+    <color name="settings_primary">#FFFFD68A</color>
+    <color name="settings_primary_deep">#FFF2C14E</color>
+    <color name="settings_secondary">#FF177286</color>
+    <color name="settings_success">#FF1E8E5A</color>
+    <color name="settings_error">#FFC04A3A</color>
 </resources>

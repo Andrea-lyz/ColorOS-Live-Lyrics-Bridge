@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="settings_screen_padding">14dp</dimen>
+    <dimen name="settings_screen_bottom_padding">24dp</dimen>
+    <dimen name="settings_card_corner_radius">22dp</dimen>
+    <dimen name="settings_card_inner_padding">16dp</dimen>
+    <dimen name="settings_section_spacing">16dp</dimen>
+    <dimen name="settings_row_spacing">12dp</dimen>
+    <dimen name="settings_title_text_size">17sp</dimen>
+    <dimen name="settings_body_text_size">14sp</dimen>
+    <dimen name="settings_secondary_text_size">13sp</dimen>
+    <dimen name="settings_caption_text_size">11sp</dimen>
+    <dimen name="settings_action_bar_height">56dp</dimen>
+</resources>

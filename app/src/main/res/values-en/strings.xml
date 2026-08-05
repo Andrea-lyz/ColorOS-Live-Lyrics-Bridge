@@ -1,0 +1,177 @@
+<resources>
+    <string name="app_name">ColorOS Live Lyrics Bridge</string>
+    <string name="module_description">Bridge lyrics from supported players to the ColorOS/OPlus lock screen, with customizable effects.</string>
+    <string name="lyric_ui_settings_title">Lyric Appearance</string>
+    <string name="settings_status_name">Live Lyrics Bridge</string>
+    <string name="player_translation_settings_title">Player translation settings</string>
+    <string name="opening_cleanup_settings_title">Opening lyric cleanup</string>
+    <string name="settings_module_icon_description">Module icon</string>
+    <string name="settings_appbar_version">v%1$s</string>
+    <string name="settings_module_status_checking">Checking…</string>
+    <string name="settings_module_status_active">Module active · SystemUI loaded · just now</string>
+    <string name="settings_module_status_active_restart">Module updated; restart SystemUI to apply</string>
+    <string name="settings_module_status_inactive">Not active</string>
+    <string name="settings_language_current">EN</string>
+    <string name="settings_language_description">Switch language</string>
+    <string name="cleanup_current_song_artist">%1$s\n%2$s</string>
+    <string name="cleanup_hidden_count">The module currently hides %1$d lines. Tap a line to set it as the first official lyric line for this song.</string>
+    <string name="cleanup_learn_similar">Hide similar formats in the future: %1$s</string>
+    <string name="cleanup_loading_current_lyrics">Reading the current lyrics from SystemUI…</string>
+    <!-- Player names -->
+    <string name="player_salt">Salt Player</string>
+    <string name="player_cone">ConePlayer</string>
+    <string name="player_qq">QQ Music</string>
+    <string name="player_netease">NetEase Music</string>
+    <string name="player_apple">Apple Music</string>
+    <string name="player_lx">LX Music</string>
+    <string name="player_poweramp">Poweramp</string>
+    <string name="player_spotify">Spotify</string>
+    <string name="player_qishui">QiShui Music</string>
+    <string name="player_kugou">KuGou Music</string>
+    <!-- Sub page: player translation settings -->
+    <string name="sub_trans_desc">The player\'s own translation toggle takes priority over these defaults. You can clear per-player memory individually.</string>
+    <string name="sub_trans_fallback">Default translation for other players</string>
+    <string name="sub_trans_default">Default show translation</string>
+    <string name="sub_trans_clear">Clear this player\'s translation memory</string>
+    <string name="sub_trans_clear_toast">Will clear %1$s memory on save</string>
+    <string name="sub_trans_status_builtin">Built-in adapter</string>
+    <string name="sub_trans_status_detected">LyricProvider detected</string>
+    <string name="sub_trans_status_missing">LyricProvider not installed</string>
+    <string name="sub_trans_save">Apply &amp; save</string>
+    <string name="sub_trans_saved">Saved, waiting for SystemUI confirmation</string>
+    <string name="sub_trans_saved_pending">Saved, but SystemUI did not confirm; check that the module is enabled</string>
+    <string name="sub_trans_applied">Player translation settings applied</string>
+    <string name="sub_trans_rejected">SystemUI rejected the settings: %1$s</string>
+    <!-- Sub page: opening lyric cleanup -->
+    <string name="sub_clean_notice">Only opening production / copyright info is cleaned. Timestamps, word timing, and song metadata are never modified. If detection is incomplete, select the first formal lyric line below.</string>
+    <string name="sub_clean_builtin">Built-in rules</string>
+    <string name="sub_clean_copyright">Copyright &amp; rights notices</string>
+    <string name="sub_clean_production">Production credits &amp; instruments</string>
+    <string name="sub_clean_titleartist">Opening “Title - Artist”</string>
+    <string name="sub_clean_protected">Translation-source placeholders and other parse-protection rules are always enabled.</string>
+    <string name="sub_clean_reset">Reset built-in defaults</string>
+    <string name="sub_clean_current">Check &amp; fix current song</string>
+    <string name="sub_clean_song_loading">Reading current song…</string>
+    <string name="sub_clean_status_hint">Keep the song playing and make sure lock-screen lyrics are loaded.</string>
+    <string name="sub_clean_refresh">Reload current lyrics</string>
+    <string name="sub_clean_clearper">Clear manual correction for this song</string>
+    <string name="sub_clean_suggestions">Formats to learn</string>
+    <string name="sub_clean_suggestions_hint">After selecting the first formal lyric line, the module extracts safe formats from the unrecognized lines above it. Checked formats apply to other songs; overly long or unstable content only fixes the current song.</string>
+    <string name="sub_clean_learned">Learned rules</string>
+    <string name="sub_clean_save">Apply &amp; save</string>
+    <string name="sub_clean_song_current">Current song</string>
+    <string name="sub_clean_song_none">No lyrics available to check</string>
+    <string name="sub_clean_song_none_hint">Play a song with line or word-timed lyrics, wait for the lock-screen lyrics, then retry.</string>
+    <string name="sub_clean_pickfirst">Select the first formal lyric line above first.</string>
+    <string name="sub_clean_suggestions_none">No safe reusable formats; saving will still only fix the current song.</string>
+    <string name="sub_clean_learned_none">No extra formats learned yet.</string>
+    <string name="sub_clean_remove">Remove</string>
+    <string name="sub_clean_learned_clear">Clear all learned formats</string>
+    <string name="sub_clean_learned_clear_title">Clear learned formats?</string>
+    <string name="sub_clean_learned_clear_message">Per-song manual corrections will not be cleared.</string>
+    <string name="sub_clean_cancel">Cancel</string>
+    <string name="sub_clean_clear">Clear</string>
+    <string name="sub_clean_formal">First formal line candidate</string>
+    <string name="sub_clean_rule_prefix">Starts with “%1$s”</string>
+    <string name="sub_clean_rule_exact">Exactly “%1$s”</string>
+    <string name="sub_clean_grant_failed">Unable to grant SystemUI read access to opening-cleanup settings</string>
+    <string name="sub_clean_applied">Opening lyric cleanup applied</string>
+    <!-- Main page: section titles -->
+    <string name="settings_section_presets">Style presets</string>
+    <string name="settings_section_color">Color &amp; glow</string>
+    <string name="settings_section_motion_refresh">Motion &amp; refresh</string>
+    <string name="settings_section_compat">Compatibility &amp; screen</string>
+    <string name="settings_section_typography">Typography</string>
+    <!-- Main page: presets -->
+    <string name="preset_default">Default</string>
+    <string name="preset_soft">Soft</string>
+    <string name="preset_vivid">Vivid</string>
+    <string name="preset_minimal">Minimal</string>
+    <string name="preset_custom">Custom</string>
+    <string name="preset_custom_label">Custom · parameters deviate from all presets</string>
+    <!-- Main page: drawing & motion -->
+    <string name="setting_inactive_opacity">Inactive opacity</string>
+    <string name="setting_blur">Blur inactive lines</string>
+    <string name="setting_blur_radius">Blur radius</string>
+    <string name="setting_scroll_scale">Scale inactive lines</string>
+    <string name="setting_inactive_scale">Inactive scale</string>
+    <string name="setting_glow">Glow</string>
+    <string name="setting_glow_intensity">Glow intensity</string>
+    <string name="setting_glow_radius">Glow radius</string>
+    <string name="setting_primary_color">Primary lyric color</string>
+    <string name="setting_glow_color">Glow color</string>
+    <string name="setting_motion">Motion</string>
+    <string name="motion_standard">Standard</string>
+    <string name="motion_reduced">Reduced</string>
+    <string name="motion_off">Off</string>
+    <string name="setting_passive_pan">Auto vertical pan for long lyrics</string>
+    <string name="setting_translation_marquee">Auto horizontal scroll for long translations</string>
+    <!-- Main page: refresh policy -->
+    <string name="setting_refresh_limit">Lyric refresh limit</string>
+    <string name="refresh_follow_screen">Unlimited</string>
+    <string name="refresh_hz_format">%1$d Hz</string>
+    <string name="refresh_hint_short">limits redraws only, never forces Hz</string>
+    <!-- Main page: compatibility & screen -->
+    <string name="link_player_translation">Player translation settings</string>
+    <string name="link_player_translation_sub">Per-player default &amp; memory</string>
+    <string name="link_opening_cleanup">Opening lyric cleanup</string>
+    <string name="link_opening_cleanup_sub">Learned formats &amp; first-line rules</string>
+    <string name="setting_line_progress">Line-timed lyric progress</string>
+    <string name="setting_translation_progress">Translation progress</string>
+    <string name="setting_screen_timeout">Keep screen on while lyrics are shown</string>
+    <string name="setting_screen_timeout_seconds_label">Timeout seconds</string>
+    <string name="setting_screen_timeout_seconds_hint">Empty = keep on</string>
+    <!-- Main page: typography -->
+    <string name="setting_font_size">Main lyric font size</string>
+    <string name="font_size_hint">With translation: up to 28sp\nWithout translation: +2sp, up to 30sp</string>
+    <string name="setting_translation_ratio">Translation font ratio</string>
+    <string name="setting_font_weight">Font weight</string>
+    <string name="weight_system">System</string>
+    <string name="weight_regular">Regular</string>
+    <string name="weight_medium">Medium</string>
+    <string name="weight_bold">Bold</string>
+    <string name="setting_alignment">Alignment</string>
+    <string name="align_start">Left</string>
+    <string name="align_center">Center</string>
+    <string name="align_end">Right</string>
+    <string name="setting_line_spacing">Line spacing (between lyric lines)</string>
+    <string name="setting_wrapped_line_spacing">Extra spacing for wrapped lyric lines</string>
+    <!-- Main page: actions & receipts -->
+    <string name="action_restart_system_ui">Restart System UI</string>
+    <string name="action_apply_save">Apply &amp; save</string>
+    <string name="snack_restart_requesting">Restarting SystemUI…</string>
+    <string name="snack_restart_no_response">SystemUI did not respond; on first use, reboot the device so the module loads into SystemUI</string>
+    <string name="snack_restart_failed">Could not request SystemUI restart; check that the module is enabled</string>
+    <string name="snack_restart_acknowledged">SystemUI received the request and is restarting</string>
+    <string name="color_error_format">Enter a 6-digit hex code (0–9, A–F)</string>
+    <string name="color_error_invalid">Invalid color value</string>
+    <string name="dialog_hex_hint">FFD68A</string>
+    <string name="cd_color_picker">Color picker</string>
+    <string name="snack_save_sent">Applied &amp; saved; waiting for SystemUI confirmation</string>
+    <string name="snack_save_pending">Applied &amp; saved, but SystemUI did not confirm; check that the module is enabled</string>
+    <string name="snack_save_applied">Applied · SystemUI lyric layer will refresh</string>
+    <string name="snack_save_rejected">SystemUI rejected the settings: %1$s</string>
+    <!-- Main page: accessibility & dialogs -->
+    <string name="dialog_cancel">Cancel</string>
+    <string name="dialog_ok">OK</string>
+    <string name="dialog_apply">Apply</string>
+    <string name="dialog_custom_color_panel_title">Custom color</string>
+    <string name="cd_custom_color">%1$s custom color</string>
+    <string name="cd_slider">Settings slider</string>
+    <string name="cd_lyric_preview">Lyric style preview</string>
+    <string name="bar_unsaved">UNSAVED</string>
+    <string name="back_discard_message">You have unsaved changes. Discard them and leave?</string>
+    <string name="back_discard_title">Unsaved changes</string>
+    <string name="back_discard">Discard</string>
+    <!-- Main page: preview sample text -->
+    <string-array name="preview_main_lines">
+        <item>\'Cause there were pages turned</item>
+        <item>With the bridges burned</item>
+        <item>Everything you lose is a step you take</item>
+    </string-array>
+    <string-array name="preview_translation_lines">
+        <item>因为过去的一切画上句点</item>
+        <item>你的人生将开启新的章节</item>
+        <item>失去铸就你前行的路</item>
+    </string-array>
+</resources>
