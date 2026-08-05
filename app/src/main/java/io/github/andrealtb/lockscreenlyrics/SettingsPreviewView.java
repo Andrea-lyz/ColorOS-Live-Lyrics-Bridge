@@ -29,7 +29,10 @@ final class SettingsPreviewView extends View {
     private static final float MAIN_TRANSLATION_GAP_DP = 2f;
 
     private final Paint backgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint collapseHandlePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private LyricUiConfig config = LyricUiConfig.defaults();
+    private boolean collapseHandleVisible;
+    private float collapseHandleDragFraction;
     private GroupLayout[] groups = new GroupLayout[MAX_VISIBLE_GROUPS];
     private float density;
     private float scaledDensity;
@@ -64,6 +67,22 @@ final class SettingsPreviewView extends View {
         // in color/glow/blur fields, so the layouts must be rebuilt on every bind or the
         // preview keeps drawing the previous colors.
         requestLayout();
+    }
+
+    void setCollapseHandleVisible(boolean visible) {
+        if (collapseHandleVisible == visible) return;
+        collapseHandleVisible = visible;
+        if (!visible) {
+            collapseHandleDragFraction = 0f;
+        }
+        invalidate();
+    }
+
+    void setCollapseHandleDragFraction(float fraction) {
+        float clamped = Math.max(0f, Math.min(1f, fraction));
+        if (Math.abs(collapseHandleDragFraction - clamped) <= 0.01f) return;
+        collapseHandleDragFraction = clamped;
+        invalidate();
     }
 
     @Override
@@ -108,6 +127,30 @@ final class SettingsPreviewView extends View {
             y += group.height;
             if (index < MAX_VISIBLE_GROUPS - 1) y += lineGap;
         }
+        if (collapseHandleVisible) {
+            drawCollapseHandle(canvas, width, height);
+        }
+    }
+
+    private void drawCollapseHandle(Canvas canvas, int width, int height) {
+        float fraction = collapseHandleDragFraction;
+        float maximumWidth = Math.max(0f, width - dp(32f));
+        float handleWidth = Math.min(
+                maximumWidth,
+                dp(104f) * (1f + 0.05f * fraction));
+        float handleHeight = dp(4f);
+        float bottom = height - dp(5f) - dp(4f) * fraction;
+        float left = (width - handleWidth) / 2f;
+        float top = bottom - handleHeight;
+        collapseHandlePaint.setColor(0xFFF5F6F8);
+        canvas.drawRoundRect(
+                left,
+                top,
+                left + handleWidth,
+                bottom,
+                handleHeight / 2f,
+                handleHeight / 2f,
+                collapseHandlePaint);
     }
 
     private void rebuildLayouts(int width) {

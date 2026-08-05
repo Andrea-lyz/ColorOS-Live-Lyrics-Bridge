@@ -151,7 +151,6 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
     private FrameLayout floatingPreviewRoot;
     private View floatingPreviewCard;
     private View previewGestureSurface;
-    private View previewGestureHandle;
     private TextView previewRestoreButton;
     private boolean floatingPreviewUpdatePosted;
     private boolean previewFloating;
@@ -246,9 +245,6 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
         }
         if (previewRestoreButton != null) {
             previewRestoreButton.animate().cancel();
-        }
-        if (previewGestureHandle != null) {
-            previewGestureHandle.animate().cancel();
         }
         releaseScrollCachedPreviewLayer();
         super.onDestroy();
@@ -734,24 +730,8 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
         FrameLayout surface = new FrameLayout(this);
         surface.setClickable(true);
         surface.setFocusable(true);
-        // SettingsPreviewView has a 4dp elevation. Keep the gesture surface above it so the
-        // touch target and its white handle are both rendered over the dark preview pixels.
-        surface.setElevation(dp(6));
         surface.setContentDescription(getString(R.string.cd_preview_collapse_gesture));
         surface.setVisibility(View.GONE);
-
-        View handle = new View(this);
-        GradientDrawable handleBackground = new GradientDrawable();
-        handleBackground.setColor(0xFFF5F6F8);
-        handleBackground.setCornerRadius(dp(99));
-        handle.setBackground(handleBackground);
-        FrameLayout.LayoutParams handleParams = new FrameLayout.LayoutParams(
-                dp(104),
-                dp(4),
-                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        handleParams.bottomMargin = dp(5);
-        surface.addView(handle, handleParams);
-        previewGestureHandle = handle;
 
         surface.setOnTouchListener((view, event) -> {
             if (!previewFloating || previewCollapsed || previewTransitionRunning) {
@@ -766,26 +746,24 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
                     if (parent != null) {
                         parent.requestDisallowInterceptTouchEvent(true);
                     }
-                    handle.animate()
-                            .translationY(-dp(1))
-                            .scaleX(1.05f)
-                            .setDuration(90L)
-                            .start();
+                    if (previewView != null) {
+                        previewView.setCollapseHandleDragFraction(0.18f);
+                    }
                     return true;
                 case android.view.MotionEvent.ACTION_MOVE:
                     float dragY = Math.min(0f, event.getRawY() - previewGestureDownY);
-                    float progress = Math.min(1f, -dragY / dp(48f));
-                    handle.setTranslationY(-dp(1f + 4f * progress));
+                    if (previewView != null) {
+                        previewView.setCollapseHandleDragFraction(
+                                Math.min(1f, -dragY / dp(48f)));
+                    }
                     return true;
                 case android.view.MotionEvent.ACTION_UP:
                     float deltaX = event.getRawX() - previewGestureDownX;
                     float deltaY = event.getRawY() - previewGestureDownY;
                     view.setPressed(false);
-                    handle.animate()
-                            .translationY(0f)
-                            .scaleX(1f)
-                            .setDuration(140L)
-                            .start();
+                    if (previewView != null) {
+                        previewView.setCollapseHandleDragFraction(0f);
+                    }
                     if (deltaY <= -dp(PREVIEW_COLLAPSE_SWIPE_DP)
                             && Math.abs(deltaY) > Math.abs(deltaX) * 1.1f) {
                         collapseFloatingPreview();
@@ -795,11 +773,9 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
                     return true;
                 case android.view.MotionEvent.ACTION_CANCEL:
                     view.setPressed(false);
-                    handle.animate()
-                            .translationY(0f)
-                            .scaleX(1f)
-                            .setDuration(140L)
-                            .start();
+                    if (previewView != null) {
+                        previewView.setCollapseHandleDragFraction(0f);
+                    }
                     return true;
                 default:
                     return true;
@@ -1008,26 +984,13 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
     }
 
     private void setPreviewGestureVisible(boolean visible) {
+        if (previewView != null) {
+            previewView.setCollapseHandleVisible(visible);
+        }
         if (previewGestureSurface == null) return;
         previewGestureSurface.animate().cancel();
-        if (visible) {
-            if (previewGestureSurface.getVisibility() != View.VISIBLE) {
-                previewGestureSurface.setAlpha(0f);
-                previewGestureSurface.setVisibility(View.VISIBLE);
-                previewGestureSurface.animate()
-                        .alpha(1f)
-                        .setDuration(160L)
-                        .start();
-            }
-            return;
-        }
-        previewGestureSurface.setVisibility(View.GONE);
         previewGestureSurface.setAlpha(1f);
-        if (previewGestureHandle != null) {
-            previewGestureHandle.animate().cancel();
-            previewGestureHandle.setTranslationY(0f);
-            previewGestureHandle.setScaleX(1f);
-        }
+        previewGestureSurface.setVisibility(visible ? View.VISIBLE : View.GONE);
     }
 
     private void collapseFloatingPreview() {
