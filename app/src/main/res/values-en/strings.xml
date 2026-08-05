@@ -159,6 +159,8 @@
     <string name="cd_custom_color">%1$s custom color</string>
     <string name="cd_slider">Settings slider</string>
     <string name="cd_lyric_preview">Lyric style preview</string>
+    <string name="cd_preview_collapse_gesture">Swipe up to hide preview</string>
+    <string name="action_show_preview">Preview</string>
     <string name="bar_unsaved">UNSAVED</string>
     <string name="back_discard_message">You have unsaved changes. Discard them and leave?</string>
     <string name="back_discard_title">Unsaved changes</string>

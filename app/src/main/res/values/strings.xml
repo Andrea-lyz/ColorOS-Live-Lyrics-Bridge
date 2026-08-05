@@ -159,6 +159,8 @@
     <string name="cd_custom_color">%1$s 自定义颜色</string>
     <string name="cd_slider">设置滑块</string>
     <string name="cd_lyric_preview">歌词样式预览</string>
+    <string name="cd_preview_collapse_gesture">上滑收起预览</string>
+    <string name="action_show_preview">预览</string>
     <string name="bar_unsaved">未保存</string>
     <string name="back_discard_message">有未保存的更改，确定丢弃并退出吗？</string>
     <string name="back_discard_title">未保存更改</string>

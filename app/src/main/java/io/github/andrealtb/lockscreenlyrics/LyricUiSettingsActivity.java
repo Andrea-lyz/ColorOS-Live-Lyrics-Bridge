@@ -57,6 +57,9 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
     private static final String TAG = "LockscreenLyrics";
     private static final String STATE_DRAFT_CONFIG = "draft_config";
     private static final long PREVIEW_SCROLL_LAYER_RELEASE_DELAY_MS = 160L;
+    private static final long PREVIEW_COLLAPSE_ANIMATION_MS = 280L;
+    private static final int PREVIEW_COLLAPSE_SWIPE_DP = 30;
+    private static final int PREVIEW_RESTORE_HYSTERESIS_DP = 12;
     private static final int MATERIAL_SLIDER_LABEL_BEHAVIOR_GONE = 2;
     private static final long SYSTEM_UI_RESTART_ACK_TIMEOUT_MS = 2_500L;
     private static final long MODULE_STATUS_QUERY_TIMEOUT_MS = 2_500L;
@@ -145,7 +148,17 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
     private Slider wrappedLineSpacing;
     private SettingsPreviewView previewView;
     private FrameLayout previewAnchor;
+    private FrameLayout floatingPreviewRoot;
+    private View floatingPreviewCard;
+    private View previewGestureSurface;
+    private View previewGestureHandle;
+    private TextView previewRestoreButton;
     private boolean floatingPreviewUpdatePosted;
+    private boolean previewFloating;
+    private boolean previewCollapsed;
+    private boolean previewTransitionRunning;
+    private float previewGestureDownX;
+    private float previewGestureDownY;
     private View scrollCachedPreview;
     private final Runnable releaseScrollCachedPreview = this::releaseScrollCachedPreviewLayer;
     private final int[] floatingPreviewRootLocation = new int[2];
@@ -226,6 +239,17 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
             activationPulse = null;
         }
         pendingSystemUiRestartRequestId = -1L;
+        previewTransitionRunning = false;
+        previewCollapsed = false;
+        if (floatingPreviewCard != null) {
+            floatingPreviewCard.animate().cancel();
+        }
+        if (previewRestoreButton != null) {
+            previewRestoreButton.animate().cancel();
+        }
+        if (previewGestureHandle != null) {
+            previewGestureHandle.animate().cancel();
+        }
         releaseScrollCachedPreviewLayer();
         super.onDestroy();
     }
@@ -270,7 +294,17 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
         previewView = new SettingsPreviewView(this);
         previewView.setPadding(dp(16), dp(8), dp(16), dp(8));
         previewView.setElevation(dp(4));
-        preview.addView(previewView, matchWrap());
+        FrameLayout previewContent = new FrameLayout(this);
+        previewContent.addView(previewView, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT));
+        previewGestureSurface = createPreviewGestureSurface();
+        FrameLayout.LayoutParams gestureParams = new FrameLayout.LayoutParams(
+                dp(120),
+                dp(32),
+                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        previewContent.addView(previewGestureSurface, gestureParams);
+        preview.addView(previewContent, matchWrap());
         previewAnchor = new FrameLayout(this);
         previewAnchor.addView(preview, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
@@ -523,10 +557,19 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
         page.setBackgroundColor(settingsBackgroundColor());
-        View appBar = settingsAppBar(
+        LinearLayout appBar = (LinearLayout) settingsAppBar(
                 getString(R.string.lyric_ui_settings_title),
                 getString(R.string.settings_appbar_version, BuildConfig.VERSION_NAME),
                 () -> getOnBackPressedDispatcher().onBackPressed());
+        previewRestoreButton = createPreviewRestoreButton();
+        LinearLayout.LayoutParams previewButtonParams = new LinearLayout.LayoutParams(
+                dp(54),
+                dp(28));
+        previewButtonParams.rightMargin = dp(8);
+        appBar.addView(
+                previewRestoreButton,
+                Math.max(0, appBar.getChildCount() - 1),
+                previewButtonParams);
         actionBarBoundaryView = appBar;
         page.addView(appBar, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -687,11 +730,115 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
         return button;
     }
 
+    private View createPreviewGestureSurface() {
+        FrameLayout surface = new FrameLayout(this);
+        surface.setClickable(true);
+        surface.setFocusable(true);
+        surface.setContentDescription(getString(R.string.cd_preview_collapse_gesture));
+        surface.setVisibility(View.GONE);
+
+        View handle = new View(this);
+        GradientDrawable handleBackground = new GradientDrawable();
+        handleBackground.setColor(0xFFF5F6F8);
+        handleBackground.setCornerRadius(dp(99));
+        handle.setBackground(handleBackground);
+        FrameLayout.LayoutParams handleParams = new FrameLayout.LayoutParams(
+                dp(104),
+                dp(4),
+                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        handleParams.bottomMargin = dp(5);
+        surface.addView(handle, handleParams);
+        previewGestureHandle = handle;
+
+        surface.setOnTouchListener((view, event) -> {
+            if (!previewFloating || previewCollapsed || previewTransitionRunning) {
+                return false;
+            }
+            switch (event.getActionMasked()) {
+                case android.view.MotionEvent.ACTION_DOWN:
+                    previewGestureDownX = event.getRawX();
+                    previewGestureDownY = event.getRawY();
+                    view.setPressed(true);
+                    ViewParent parent = view.getParent();
+                    if (parent != null) {
+                        parent.requestDisallowInterceptTouchEvent(true);
+                    }
+                    handle.animate()
+                            .translationY(-dp(1))
+                            .scaleX(1.05f)
+                            .setDuration(90L)
+                            .start();
+                    return true;
+                case android.view.MotionEvent.ACTION_MOVE:
+                    float dragY = Math.min(0f, event.getRawY() - previewGestureDownY);
+                    float progress = Math.min(1f, -dragY / dp(48f));
+                    handle.setTranslationY(-dp(1f + 4f * progress));
+                    return true;
+                case android.view.MotionEvent.ACTION_UP:
+                    float deltaX = event.getRawX() - previewGestureDownX;
+                    float deltaY = event.getRawY() - previewGestureDownY;
+                    view.setPressed(false);
+                    handle.animate()
+                            .translationY(0f)
+                            .scaleX(1f)
+                            .setDuration(140L)
+                            .start();
+                    if (deltaY <= -dp(PREVIEW_COLLAPSE_SWIPE_DP)
+                            && Math.abs(deltaY) > Math.abs(deltaX) * 1.1f) {
+                        collapseFloatingPreview();
+                    } else {
+                        view.performClick();
+                    }
+                    return true;
+                case android.view.MotionEvent.ACTION_CANCEL:
+                    view.setPressed(false);
+                    handle.animate()
+                            .translationY(0f)
+                            .scaleX(1f)
+                            .setDuration(140L)
+                            .start();
+                    return true;
+                default:
+                    return true;
+            }
+        });
+        return surface;
+    }
+
+    private TextView createPreviewRestoreButton() {
+        TextView button = text(
+                getString(R.string.action_show_preview),
+                10.5f,
+                0xFF9A6A12);
+        button.setTypeface(Typeface.create(Typeface.DEFAULT, 500));
+        button.setGravity(Gravity.CENTER);
+        button.setSingleLine(true);
+        GradientDrawable content = new GradientDrawable();
+        content.setColor(0x24F2C14E);
+        content.setStroke(dp(1), 0x80F2C14E);
+        content.setCornerRadius(dp(99));
+        GradientDrawable mask = new GradientDrawable();
+        mask.setColor(Color.WHITE);
+        mask.setCornerRadius(dp(99));
+        button.setBackground(new android.graphics.drawable.RippleDrawable(
+                ColorStateList.valueOf(0x24F2C14E),
+                content,
+                mask));
+        button.setVisibility(View.INVISIBLE);
+        button.setAlpha(0f);
+        button.setScaleX(0.84f);
+        button.setScaleY(0.84f);
+        button.setOnClickListener(view -> expandCollapsedPreview());
+        return button;
+    }
+
     private void installFloatingPreview(
             FrameLayout root,
             ScrollView scroll,
             FrameLayout anchor,
             View preview) {
+        floatingPreviewRoot = root;
+        floatingPreviewCard = preview;
         Runnable update = () -> scheduleFloatingPreviewUpdate(root, anchor, preview);
         preview.addOnLayoutChangeListener((view, left, top, right, bottom,
                 oldLeft, oldTop, oldRight, oldBottom) -> {
@@ -713,7 +860,7 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
             update.run();
         });
         scroll.setOnScrollChangeListener((view, scrollX, scrollY, oldScrollX, oldScrollY) -> {
-            if (scrollY != oldScrollY) {
+            if (scrollY != oldScrollY && !previewCollapsed) {
                 holdPreviewHardwareLayerDuringScroll(preview);
             }
             update.run();
@@ -785,11 +932,45 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
                 floatingPreviewRootLocation[1],
                 5f);
         boolean floating = naturalTop <= stickyTop;
+        previewFloating = floating;
         logFloatingPreviewGeometry(
                 topUiBoundary,
                 floatingPreviewRootLocation[1],
                 Math.round(stickyTop),
                 floating);
+
+        if (previewCollapsed) {
+            setPreviewGestureVisible(false);
+            if (!previewTransitionRunning
+                    && LyricUiLayoutPolicy.shouldRestoreCollapsedPreview(
+                            naturalTop,
+                            stickyTop,
+                            dp(PREVIEW_RESTORE_HYSTERESIS_DP))) {
+                expandCollapsedPreview();
+            } else if (!previewTransitionRunning) {
+                showPreviewRestoreButtonImmediately();
+            }
+            return;
+        }
+        if (previewTransitionRunning) {
+            return;
+        }
+
+        placePreviewAtCurrentScroll(root, anchor, preview, naturalTop, stickyTop, floating);
+        hidePreviewRestoreButtonImmediately();
+        setPreviewGestureVisible(floating);
+        if (preview.getVisibility() != View.VISIBLE) {
+            preview.setVisibility(View.VISIBLE);
+        }
+    }
+
+    private void placePreviewAtCurrentScroll(
+            FrameLayout root,
+            FrameLayout anchor,
+            View preview,
+            float naturalTop,
+            float stickyTop,
+            boolean floating) {
         ViewParent previewParent = preview.getParent();
         // Keep the preview inside the ScrollView until it actually becomes sticky. This lets
         // Android's overscroll stretch and rebound transform the preview together with the page.
@@ -821,9 +1002,261 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
                 0f,
                 Math.min(1f, (naturalTop - stickyTop) / transitionDistance));
         setElevationIfChanged(preview, dp(8) * floatingAmount);
-        if (preview.getVisibility() != View.VISIBLE) {
-            preview.setVisibility(View.VISIBLE);
+    }
+
+    private void setPreviewGestureVisible(boolean visible) {
+        if (previewGestureSurface == null) return;
+        previewGestureSurface.animate().cancel();
+        if (visible) {
+            if (previewGestureSurface.getVisibility() != View.VISIBLE) {
+                previewGestureSurface.setAlpha(0f);
+                previewGestureSurface.setVisibility(View.VISIBLE);
+                previewGestureSurface.animate()
+                        .alpha(1f)
+                        .setDuration(160L)
+                        .start();
+            }
+            return;
         }
+        previewGestureSurface.setVisibility(View.GONE);
+        previewGestureSurface.setAlpha(1f);
+        if (previewGestureHandle != null) {
+            previewGestureHandle.animate().cancel();
+            previewGestureHandle.setTranslationY(0f);
+            previewGestureHandle.setScaleX(1f);
+        }
+    }
+
+    private void collapseFloatingPreview() {
+        View preview = floatingPreviewCard;
+        TextView button = previewRestoreButton;
+        if (!previewFloating
+                || previewCollapsed
+                || previewTransitionRunning
+                || preview == null
+                || button == null) {
+            return;
+        }
+        releaseScrollCachedPreviewLayer();
+        previewCollapsed = true;
+        previewTransitionRunning = true;
+        setPreviewGestureVisible(false);
+
+        preview.animate().cancel();
+        button.animate().cancel();
+        button.setVisibility(View.VISIBLE);
+        button.setAlpha(0f);
+        button.setScaleX(0.84f);
+        button.setScaleY(0.84f);
+
+        if (preview.getWidth() <= 0
+                || preview.getHeight() <= 0
+                || button.getWidth() <= 0
+                || button.getHeight() <= 0) {
+            preview.setVisibility(View.INVISIBLE);
+            resetFloatingPreviewTransform(preview, preview.getTranslationY());
+            previewTransitionRunning = false;
+            showPreviewRestoreButtonImmediately();
+            return;
+        }
+
+        int[] previewLocation = new int[2];
+        int[] buttonLocation = new int[2];
+        preview.getLocationOnScreen(previewLocation);
+        button.getLocationOnScreen(buttonLocation);
+        float deltaX = buttonLocation[0] + button.getWidth() / 2f
+                - (previewLocation[0] + preview.getWidth() / 2f);
+        float deltaY = buttonLocation[1] + button.getHeight() / 2f
+                - (previewLocation[1] + preview.getHeight() / 2f);
+        float settledTranslationY = preview.getTranslationY();
+        float targetScale = Math.max(
+                0.13f,
+                Math.min(0.28f, button.getWidth() / (float) preview.getWidth()));
+        preview.setPivotX(preview.getWidth() / 2f);
+        preview.setPivotY(preview.getHeight() / 2f);
+
+        button.animate()
+                .alpha(1f)
+                .scaleX(1f)
+                .scaleY(1f)
+                .setDuration(PREVIEW_COLLAPSE_ANIMATION_MS)
+                .setInterpolator(new DecelerateInterpolator(1.8f))
+                .start();
+        preview.animate()
+                .translationX(deltaX)
+                .translationY(settledTranslationY + deltaY)
+                .scaleX(targetScale)
+                .scaleY(targetScale)
+                .alpha(0f)
+                .setDuration(PREVIEW_COLLAPSE_ANIMATION_MS)
+                .setInterpolator(new DecelerateInterpolator(1.8f))
+                .withLayer()
+                .withEndAction(() -> {
+                    if (!previewCollapsed) return;
+                    preview.setVisibility(View.INVISIBLE);
+                    resetFloatingPreviewTransform(preview, settledTranslationY);
+                    previewTransitionRunning = false;
+                    showPreviewRestoreButtonImmediately();
+                    if (floatingPreviewRoot != null && previewAnchor != null) {
+                        scheduleFloatingPreviewUpdate(
+                                floatingPreviewRoot,
+                                previewAnchor,
+                                preview);
+                    }
+                })
+                .start();
+    }
+
+    private void expandCollapsedPreview() {
+        FrameLayout root = floatingPreviewRoot;
+        FrameLayout anchor = previewAnchor;
+        View preview = floatingPreviewCard;
+        TextView button = previewRestoreButton;
+        if (!previewCollapsed
+                || previewTransitionRunning
+                || root == null
+                || anchor == null
+                || preview == null
+                || button == null
+                || root.getHeight() <= 0
+                || anchor.getHeight() <= 0) {
+            return;
+        }
+
+        previewTransitionRunning = true;
+        previewCollapsed = false;
+        preview.animate().cancel();
+        button.animate().cancel();
+
+        root.getLocationOnScreen(floatingPreviewRootLocation);
+        anchor.getLocationOnScreen(floatingPreviewAnchorLocation);
+        float naturalTop = floatingPreviewAnchorLocation[1] - floatingPreviewRootLocation[1];
+        TopUiBoundary topUiBoundary = resolveCachedTopUiBoundaryOnScreen(
+                floatingPreviewRootLocation[1]);
+        float stickyTop = LyricUiLayoutPolicy.floatingPreviewTopInRoot(
+                topUiBoundary.bottomOnScreen,
+                floatingPreviewRootLocation[1],
+                5f);
+        previewFloating = naturalTop <= stickyTop;
+        placePreviewAtCurrentScroll(
+                root,
+                anchor,
+                preview,
+                naturalTop,
+                stickyTop,
+                previewFloating);
+        preview.setVisibility(View.INVISIBLE);
+
+        root.postOnAnimation(() -> startCollapsedPreviewExpansion(
+                root,
+                anchor,
+                preview,
+                button));
+    }
+
+    private void startCollapsedPreviewExpansion(
+            FrameLayout root,
+            FrameLayout anchor,
+            View preview,
+            TextView button) {
+        if (isFinishing() || isDestroyed() || previewCollapsed) {
+            previewTransitionRunning = false;
+            return;
+        }
+        float settledTranslationY = preview.getTranslationY();
+        if (preview.getWidth() <= 0
+                || preview.getHeight() <= 0
+                || button.getWidth() <= 0
+                || button.getHeight() <= 0) {
+            finishCollapsedPreviewExpansion(root, anchor, preview, button, settledTranslationY);
+            return;
+        }
+
+        int[] previewLocation = new int[2];
+        int[] buttonLocation = new int[2];
+        preview.getLocationOnScreen(previewLocation);
+        button.getLocationOnScreen(buttonLocation);
+        float deltaX = buttonLocation[0] + button.getWidth() / 2f
+                - (previewLocation[0] + preview.getWidth() / 2f);
+        float deltaY = buttonLocation[1] + button.getHeight() / 2f
+                - (previewLocation[1] + preview.getHeight() / 2f);
+        float startScale = Math.max(
+                0.13f,
+                Math.min(0.28f, button.getWidth() / (float) preview.getWidth()));
+
+        preview.setPivotX(preview.getWidth() / 2f);
+        preview.setPivotY(preview.getHeight() / 2f);
+        preview.setTranslationX(deltaX);
+        preview.setTranslationY(settledTranslationY + deltaY);
+        preview.setScaleX(startScale);
+        preview.setScaleY(startScale);
+        preview.setAlpha(0f);
+        preview.setVisibility(View.VISIBLE);
+
+        button.animate()
+                .alpha(0f)
+                .scaleX(0.84f)
+                .scaleY(0.84f)
+                .setDuration(PREVIEW_COLLAPSE_ANIMATION_MS)
+                .setInterpolator(new DecelerateInterpolator(1.8f))
+                .start();
+        preview.animate()
+                .translationX(0f)
+                .translationY(settledTranslationY)
+                .scaleX(1f)
+                .scaleY(1f)
+                .alpha(1f)
+                .setDuration(PREVIEW_COLLAPSE_ANIMATION_MS)
+                .setInterpolator(new DecelerateInterpolator(1.8f))
+                .withLayer()
+                .withEndAction(() -> finishCollapsedPreviewExpansion(
+                        root,
+                        anchor,
+                        preview,
+                        button,
+                        settledTranslationY))
+                .start();
+    }
+
+    private void finishCollapsedPreviewExpansion(
+            FrameLayout root,
+            FrameLayout anchor,
+            View preview,
+            TextView button,
+            float settledTranslationY) {
+        if (previewCollapsed) return;
+        resetFloatingPreviewTransform(preview, settledTranslationY);
+        preview.setVisibility(View.VISIBLE);
+        previewTransitionRunning = false;
+        hidePreviewRestoreButtonImmediately();
+        setPreviewGestureVisible(previewFloating);
+        scheduleFloatingPreviewUpdate(root, anchor, preview);
+    }
+
+    private static void resetFloatingPreviewTransform(View preview, float translationY) {
+        preview.setAlpha(1f);
+        preview.setScaleX(1f);
+        preview.setScaleY(1f);
+        preview.setTranslationX(0f);
+        preview.setTranslationY(translationY);
+    }
+
+    private void showPreviewRestoreButtonImmediately() {
+        if (previewRestoreButton == null) return;
+        previewRestoreButton.animate().cancel();
+        previewRestoreButton.setVisibility(View.VISIBLE);
+        previewRestoreButton.setAlpha(1f);
+        previewRestoreButton.setScaleX(1f);
+        previewRestoreButton.setScaleY(1f);
+    }
+
+    private void hidePreviewRestoreButtonImmediately() {
+        if (previewRestoreButton == null) return;
+        previewRestoreButton.animate().cancel();
+        previewRestoreButton.setAlpha(0f);
+        previewRestoreButton.setScaleX(0.84f);
+        previewRestoreButton.setScaleY(0.84f);
+        previewRestoreButton.setVisibility(View.INVISIBLE);
     }
 
     private TopUiBoundary resolveCachedTopUiBoundaryOnScreen(int rootTopOnScreen) {
