@@ -90,8 +90,11 @@ public final class LockscreenLyricsModule extends XposedModule {
     private static final String LYRIC_PARSE_TRACE_TAG = "LockscreenLyricsParse";
     private static final String LYRIC_RENDER_PIPELINE_REVISION =
             "official-ownership-r4-geometry-reveal";
-    private static final boolean LYRIC_DEBUG_DIAGNOSTICS_ENABLED = false;
-    private static final boolean TRANSLATION_BUTTON_DIAGNOSTICS_ENABLED = false;
+    // Debug builds keep module diagnostics enabled by default (reporting users only send LSP
+    // logs), while release builds stay at the production defaults; no log.tag.* properties
+    // are required either way.
+    private static final boolean LYRIC_DEBUG_DIAGNOSTICS_ENABLED = BuildConfig.DEBUG;
+    private static final boolean TRANSLATION_BUTTON_DIAGNOSTICS_ENABLED = BuildConfig.DEBUG;
     private static final boolean LYRIC_VERBOSE_DIAGNOSTICS_ENABLED = false;
     private static final boolean LYRIC_PARSE_TRACE_ENABLED = false;
     private static final int LYRIC_PARSE_TRACE_CHUNK_SIZE = 3000;
@@ -1029,7 +1032,8 @@ public final class LockscreenLyricsModule extends XposedModule {
             try {
                 cached = SystemUiDexKitAdapter.resolve(classLoader);
                 systemUiDexKitTargets = cached;
-                info("Resolved SystemUI private hooks via DexKit");
+                info("Resolved SystemUI private hooks via DexKit (rusVariant=" + cached.rusVariant
+                        + ", whitelistGetter=" + whitelistGetterLabel(cached) + ")");
                 return cached;
             } catch (Throwable dexKitFailure) {
                 error("Failed to resolve SystemUI private hooks via DexKit; trying legacy names",
@@ -1038,13 +1042,25 @@ public final class LockscreenLyricsModule extends XposedModule {
             try {
                 cached = SystemUiDexKitAdapter.resolveLegacy(classLoader);
                 systemUiDexKitTargets = cached;
-                info("Resolved SystemUI private hooks via legacy-name fallback");
+                info("Resolved SystemUI private hooks via legacy-name fallback (rusVariant="
+                        + cached.rusVariant + ", whitelistGetter=" + whitelistGetterLabel(cached)
+                        + ")");
                 return cached;
             } catch (Throwable fallbackFailure) {
                 error("Failed to resolve SystemUI private hook targets", fallbackFailure);
                 return null;
             }
         }
+    }
+
+    private static String whitelistGetterLabel(SystemUiDexKitAdapter.Targets targets) {
+        if (targets.getRusWhiteList != null) {
+            return "getRusWhiteList";
+        }
+        if (targets.mediaRusConfigWhiteListGetter != null) {
+            return "MediaRusConfig.getWhiteList";
+        }
+        return "none";
     }
 
     private static boolean isSupportedProcess(String processName) {
@@ -1291,11 +1307,28 @@ public final class LockscreenLyricsModule extends XposedModule {
             }
             try {
                 Method getRusWhiteList = targets.getRusWhiteList;
-                getRusWhiteList.setAccessible(true);
-                hook(getRusWhiteList)
-                        .setId(HOOK_ID_RUS_GET_WHITE_LIST)
-                        .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
-                        .intercept(this::onOplusMediaRusGetWhiteList);
+                if (getRusWhiteList != null) {
+                    getRusWhiteList.setAccessible(true);
+                    hook(getRusWhiteList)
+                            .setId(HOOK_ID_RUS_GET_WHITE_LIST)
+                            .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                            .intercept(this::onOplusMediaRusGetWhiteList);
+                } else {
+                    Method mediaRusConfigWhiteListGetter = targets.mediaRusConfigWhiteListGetter;
+                    if (mediaRusConfigWhiteListGetter != null) {
+                        mediaRusConfigWhiteListGetter.setAccessible(true);
+                        hook(mediaRusConfigWhiteListGetter)
+                                .setId(HOOK_ID_RUS_GET_WHITE_LIST)
+                                .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                                .intercept(this::onOplusMediaRusGetWhiteList);
+                    } else {
+                        warn(
+                                LyricLogFormatter.Area.SYSTEM_UI,
+                                "bypass",
+                                "Skipped OPlus media whitelist bypass: no whitelist getter "
+                                        + "available on this build");
+                    }
+                }
 
                 Method getLyricEntrance = targets.getLyricEntrance;
                 getLyricEntrance.setAccessible(true);
@@ -15387,7 +15420,9 @@ public final class LockscreenLyricsModule extends XposedModule {
             return;
         }
         LyricLogFormatter.Area area = LyricLogFormatter.classifyArea(message);
-        Log.i(TAG, formatLog(area, LyricLogFormatter.classifyEvent(message), message));
+        String formatted = formatLog(area, LyricLogFormatter.classifyEvent(message), message);
+        Log.i(TAG, formatted);
+        log(Log.INFO, TAG, formatted);
     }
 
     private void settingsInfo(String event, String message) {
