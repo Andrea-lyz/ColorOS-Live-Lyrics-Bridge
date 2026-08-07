@@ -95,7 +95,7 @@ final class SystemUiDexKitAdapter {
             Method getRusWhiteList = findOptionalMethod(
                     rusManagerClass,
                     "RUS whitelist getter",
-                    SystemUiDexKitAdapter::isWhiteListGetterShape);
+                    SystemUiDexKitAdapter::isRusWhiteListGetterShape);
             Method mediaRusConfigWhiteListGetter = findMediaRusConfigWhiteListGetter(classLoader);
             Method getLyricEntrance = requireUniqueMethod(
                     selectorClass,
@@ -460,8 +460,14 @@ final class SystemUiDexKitAdapter {
                 && "getLyricEntrance".equals(method.getName());
     }
 
-    static boolean isWhiteListGetterShape(Method method) {
-        return !Modifier.isStatic(method.getModifiers())
+    /**
+     * Legacy {@code OplusMediaRusUpdateManager.getRusWhiteList()} on ColorOS 16.0.9.x style
+     * builds. The exact name is required so a future sibling zero-arg {@code List} getter
+     * cannot make optional resolution ambiguous (which would abort all SystemUI hooks).
+     */
+    static boolean isRusWhiteListGetterShape(Method method) {
+        return "getRusWhiteList".equals(method.getName())
+                && !Modifier.isStatic(method.getModifiers())
                 && method.getParameterCount() == 0
                 && List.class.isAssignableFrom(method.getReturnType());
     }

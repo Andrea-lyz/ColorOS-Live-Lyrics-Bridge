@@ -169,12 +169,12 @@ public class SystemUiDexKitAdapterTest {
     }
 
     @Test
-    public void whiteListGetterShapeMatchesBothGenerations() throws Exception {
-        assertTrue(SystemUiDexKitAdapter.isWhiteListGetterShape(
+    public void rusWhiteListGetterShapeMatchesOnlyLegacyName() throws Exception {
+        assertTrue(SystemUiDexKitAdapter.isRusWhiteListGetterShape(
                 method(OldRusShapes.class, "getRusWhiteList")));
-        assertTrue(SystemUiDexKitAdapter.isWhiteListGetterShape(
+        assertFalse(SystemUiDexKitAdapter.isRusWhiteListGetterShape(
                 method(NewRusShapes.class, "getWhiteList")));
-        assertFalse(SystemUiDexKitAdapter.isWhiteListGetterShape(
+        assertFalse(SystemUiDexKitAdapter.isRusWhiteListGetterShape(
                 method(OldRusShapes.class, "saveListToSP", Context.class, Set.class, Set.class, Map.class, Map.class, Map.class, Map.class, Map.class)));
     }
 
@@ -203,16 +203,16 @@ public class SystemUiDexKitAdapterTest {
         assertNull(SystemUiDexKitAdapter.findOptionalMethod(
                 NoWhiteListGetter.class,
                 "test",
-                SystemUiDexKitAdapter::isWhiteListGetterShape));
+                SystemUiDexKitAdapter::isRusWhiteListGetterShape));
     }
 
     @Test
     public void findOptionalMethodReturnsMatchingGetter() throws Exception {
         Method found = SystemUiDexKitAdapter.findOptionalMethod(
-                NewRusShapes.class,
+                OldRusShapes.class,
                 "test",
-                SystemUiDexKitAdapter::isWhiteListGetterShape);
-        assertEquals(method(NewRusShapes.class, "getWhiteList"), found);
+                SystemUiDexKitAdapter::isRusWhiteListGetterShape);
+        assertEquals(method(OldRusShapes.class, "getRusWhiteList"), found);
     }
 
     @Test

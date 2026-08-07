@@ -90,10 +90,11 @@ public final class LockscreenLyricsModule extends XposedModule {
     private static final String LYRIC_PARSE_TRACE_TAG = "LockscreenLyricsParse";
     private static final String LYRIC_RENDER_PIPELINE_REVISION =
             "official-ownership-r4-geometry-reveal";
-    // Test build: the reporting user can only send LSP logs, so module diagnostics are
-    // enabled by default instead of relying on log.tag.* system properties.
-    private static final boolean LYRIC_DEBUG_DIAGNOSTICS_ENABLED = true;
-    private static final boolean TRANSLATION_BUTTON_DIAGNOSTICS_ENABLED = true;
+    // Debug builds keep module diagnostics enabled by default (reporting users only send LSP
+    // logs), while release builds stay at the production defaults; no log.tag.* properties
+    // are required either way.
+    private static final boolean LYRIC_DEBUG_DIAGNOSTICS_ENABLED = BuildConfig.DEBUG;
+    private static final boolean TRANSLATION_BUTTON_DIAGNOSTICS_ENABLED = BuildConfig.DEBUG;
     private static final boolean LYRIC_VERBOSE_DIAGNOSTICS_ENABLED = false;
     private static final boolean LYRIC_PARSE_TRACE_ENABLED = false;
     private static final int LYRIC_PARSE_TRACE_CHUNK_SIZE = 3000;
