@@ -360,7 +360,10 @@ final class SystemUiDexKitAdapter {
     /**
      * ColorOS 16.0.10.x moved the persisted media RUS whitelist into a dedicated config value
      * object; the old {@code OplusMediaRusUpdateManager.getRusWhiteList()} was removed. The
-     * getter keeps the same shape, so the same predicate applies.
+     * config class is a Kotlin data class, so shape matching is ambiguous (its synthetic
+     * {@code component2()}/{@code component3()} and {@code getBlackList()} all return
+     * zero-arg {@code List}); the class itself is resolved by un-obfuscated name, so the
+     * getter is resolved by exact name as well.
      */
     private static Method findMediaRusConfigWhiteListGetter(ClassLoader classLoader)
             throws ReflectiveOperationException {
@@ -371,10 +374,13 @@ final class SystemUiDexKitAdapter {
         } catch (ClassNotFoundException e) {
             return null;
         }
-        return findOptionalMethod(
-                mediaRusConfigClass,
-                "media RUS config whitelist getter",
-                SystemUiDexKitAdapter::isWhiteListGetterShape);
+        try {
+            Method getWhiteList = mediaRusConfigClass.getDeclaredMethod("getWhiteList");
+            getWhiteList.setAccessible(true);
+            return getWhiteList;
+        } catch (NoSuchMethodException e) {
+            return null;
+        }
     }
 
     static boolean isDealEndTagShape(Method method) {
