@@ -70,6 +70,14 @@ public class SystemUiDexKitAdapterTest {
 
     /** Mirrors MediaActionPrioritySelectorImpl before/after the sixth map. */
     private static final class SelectorShapes {
+        public int getLyricEnable(String packageName) {
+            return 0;
+        }
+
+        public int getLyricEntrance(String packageName) {
+            return 0;
+        }
+
         public void updatePkgActionsRule(Map map, Map map2, Map map3, Map map4, Map map5) {
         }
 
@@ -150,6 +158,14 @@ public class SystemUiDexKitAdapterTest {
         assertTrue(SystemUiDexKitAdapter.isUpdatePkgActionsRuleShape(sixMaps));
         assertFalse(SystemUiDexKitAdapter.isUpdatePkgActionsRuleShape(
                 method(SelectorShapes.class, "staticUpdatePkgActionsRule", Map.class, Map.class, Map.class, Map.class, Map.class, Map.class)));
+    }
+
+    @Test
+    public void lyricEntranceLookupShapeSelectsOnlyEntranceDespiteEnableTwin() throws Exception {
+        Method entrance = method(SelectorShapes.class, "getLyricEntrance", String.class);
+        Method enable = method(SelectorShapes.class, "getLyricEnable", String.class);
+        assertTrue(SystemUiDexKitAdapter.isLyricEntranceLookupShape(entrance));
+        assertFalse(SystemUiDexKitAdapter.isLyricEntranceLookupShape(enable));
     }
 
     @Test

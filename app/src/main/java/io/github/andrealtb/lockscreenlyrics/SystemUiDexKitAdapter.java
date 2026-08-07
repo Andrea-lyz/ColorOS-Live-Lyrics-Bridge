@@ -100,21 +100,11 @@ final class SystemUiDexKitAdapter {
             Method getLyricEntrance = requireUniqueMethod(
                     selectorClass,
                     "lyric entrance lookup",
-                    method -> !Modifier.isStatic(method.getModifiers())
-                            && method.getReturnType() == int.class
-                            && hasParameterTypes(method, String.class));
+                    SystemUiDexKitAdapter::isLyricEntranceLookupShape);
             Method updatePkgActionsRule = requireUniqueMethod(
                     selectorClass,
                     "media action rule update",
-                    method -> !Modifier.isStatic(method.getModifiers())
-                            && method.getReturnType() == void.class
-                            && hasParameterTypes(
-                            method,
-                            Map.class,
-                            Map.class,
-                            Map.class,
-                            Map.class,
-                            Map.class));
+                    SystemUiDexKitAdapter::isUpdatePkgActionsRuleShape);
             Method createActionsFromState = requireUniqueMethod(
                     strategyClass,
                     "media action builder",
@@ -456,6 +446,18 @@ final class SystemUiDexKitAdapter {
                 Map.class,
                 Map.class,
                 Map.class);
+    }
+
+    /**
+     * ColorOS 16.0.10.x added a sibling {@code getLyricEnable(String):int} lookup with the
+     * same shape as the lyric-entrance lookup, so the exact name is required here; the class
+     * itself is still resolved by DexKit anchors.
+     */
+    static boolean isLyricEntranceLookupShape(Method method) {
+        return !Modifier.isStatic(method.getModifiers())
+                && method.getReturnType() == int.class
+                && hasParameterTypes(method, String.class)
+                && "getLyricEntrance".equals(method.getName());
     }
 
     static boolean isWhiteListGetterShape(Method method) {
