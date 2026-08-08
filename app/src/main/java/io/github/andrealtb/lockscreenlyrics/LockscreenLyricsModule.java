@@ -17285,8 +17285,9 @@ public final class LockscreenLyricsModule extends XposedModule {
                         aodLineFillAmount);
             } else {
                 // The active line keeps full-opacity highlight even when it has no word
-                // timing to draw a reveal for; AOD low frame rate always lands here because
-                // drawProgress is false in that mode, so this also preserves the AOD fill.
+                // timing to draw a reveal for. In AOD low frame rate this branch is only
+                // reached once the fill transition completes or for wordless lines, which
+                // preserves the AOD fill behavior.
                 canvas.drawText(
                         line.text,
                         x,
