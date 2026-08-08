@@ -17311,6 +17311,9 @@ public final class LockscreenLyricsModule extends XposedModule {
             canvas.drawText(line.text, x, y, inactivePaint);
             int wordIndex = line.findWordIndex(position);
             if (wordIndex < 0 || wordIndex >= line.words.size()) {
+                // Line without word timing: keep the active row at full opacity even when
+                // line-timed progress is enabled (the reveal path needs word ranges).
+                canvas.drawText(line.text, x, y, activePaint);
                 return;
             }
             WordRange activeWord = line.words.get(wordIndex);
@@ -17402,14 +17405,18 @@ public final class LockscreenLyricsModule extends XposedModule {
             float segmentWidth = drawLine.width;
             if (activeWord == null) {
                 if (activeLine) {
-                    drawFullLineOverlayIfNeeded(
-                            canvas,
-                            text,
-                            drawLine.start,
-                            drawLine.end,
-                            x,
-                            y,
-                            fullLineOverlayAmount);
+                    if (fullLineOverlayAmount > 0.001f) {
+                        drawFullLineOverlayIfNeeded(
+                                canvas,
+                                text,
+                                drawLine.start,
+                                drawLine.end,
+                                x,
+                                y,
+                                fullLineOverlayAmount);
+                    } else {
+                        canvas.drawText(text, drawLine.start, drawLine.end, x, y, activePaint);
+                    }
                 }
                 return;
             }
