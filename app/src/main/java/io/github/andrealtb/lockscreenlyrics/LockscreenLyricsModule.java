@@ -17284,12 +17284,15 @@ public final class LockscreenLyricsModule extends XposedModule {
                         y,
                         aodLineFillAmount);
             } else {
-                boolean completedAodFill = activeLine && aodLowFrameRateMode;
+                // The active line keeps full-opacity highlight even when it has no word
+                // timing to draw a reveal for. In AOD low frame rate this branch is only
+                // reached once the fill transition completes or for wordless lines, which
+                // preserves the AOD fill behavior.
                 canvas.drawText(
                         line.text,
                         x,
                         y,
-                        completedAodFill ? activePaint : inactivePaint);
+                        activeLine ? activePaint : inactivePaint);
             }
             canvas.restore();
 
@@ -17309,6 +17312,9 @@ public final class LockscreenLyricsModule extends XposedModule {
             canvas.drawText(line.text, x, y, inactivePaint);
             int wordIndex = line.findWordIndex(position);
             if (wordIndex < 0 || wordIndex >= line.words.size()) {
+                // Line without word timing: keep the active row at full opacity even when
+                // line-timed progress is enabled (the reveal path needs word ranges).
+                canvas.drawText(line.text, x, y, activePaint);
                 return;
             }
             WordRange activeWord = line.words.get(wordIndex);
@@ -17386,14 +17392,13 @@ public final class LockscreenLyricsModule extends XposedModule {
                 boolean activeLine,
                 boolean drawProgress,
                 float fullLineOverlayAmount) {
-            boolean completedAodFill = activeLine && aodLowFrameRateMode && !drawProgress;
             canvas.drawText(
                     text,
                     drawLine.start,
                     drawLine.end,
                     x,
                     y,
-                    completedAodFill ? activePaint : inactivePaint);
+                    activeLine && !drawProgress ? activePaint : inactivePaint);
             if (!drawProgress) {
                 return;
             }
@@ -17401,14 +17406,18 @@ public final class LockscreenLyricsModule extends XposedModule {
             float segmentWidth = drawLine.width;
             if (activeWord == null) {
                 if (activeLine) {
-                    drawFullLineOverlayIfNeeded(
-                            canvas,
-                            text,
-                            drawLine.start,
-                            drawLine.end,
-                            x,
-                            y,
-                            fullLineOverlayAmount);
+                    if (fullLineOverlayAmount > 0.001f) {
+                        drawFullLineOverlayIfNeeded(
+                                canvas,
+                                text,
+                                drawLine.start,
+                                drawLine.end,
+                                x,
+                                y,
+                                fullLineOverlayAmount);
+                    } else {
+                        canvas.drawText(text, drawLine.start, drawLine.end, x, y, activePaint);
+                    }
                 }
                 return;
             }
