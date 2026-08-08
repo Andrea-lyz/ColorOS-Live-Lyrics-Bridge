@@ -17284,12 +17284,14 @@ public final class LockscreenLyricsModule extends XposedModule {
                         y,
                         aodLineFillAmount);
             } else {
-                boolean completedAodFill = activeLine && aodLowFrameRateMode;
+                // The active line keeps full-opacity highlight even when it has no word
+                // timing to draw a reveal for; AOD low frame rate always lands here because
+                // drawProgress is false in that mode, so this also preserves the AOD fill.
                 canvas.drawText(
                         line.text,
                         x,
                         y,
-                        completedAodFill ? activePaint : inactivePaint);
+                        activeLine ? activePaint : inactivePaint);
             }
             canvas.restore();
 
@@ -17386,14 +17388,13 @@ public final class LockscreenLyricsModule extends XposedModule {
                 boolean activeLine,
                 boolean drawProgress,
                 float fullLineOverlayAmount) {
-            boolean completedAodFill = activeLine && aodLowFrameRateMode && !drawProgress;
             canvas.drawText(
                     text,
                     drawLine.start,
                     drawLine.end,
                     x,
                     y,
-                    completedAodFill ? activePaint : inactivePaint);
+                    activeLine && !drawProgress ? activePaint : inactivePaint);
             if (!drawProgress) {
                 return;
             }
