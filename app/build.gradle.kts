@@ -38,7 +38,7 @@ android {
         applicationId = "io.github.andrealtb.lockscreenlyrics"
         minSdk = 26
         targetSdk = 35
-        versionCode = 130
+        versionCode = 131
         versionName = releaseVersionName.get()
     }
 
