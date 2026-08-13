@@ -38,6 +38,10 @@ final class LyricUiSettings {
             "clear_translation_packages";
     static final String EXTRA_DEFAULT_TRANSLATION_ENABLED =
             "default_translation_enabled";
+    static final String EXTRA_TRANSLATION_BUTTON_PACKAGES =
+            "translation_button_packages";
+    static final String EXTRA_TRANSLATION_BUTTON_VALUES =
+            "translation_button_values";
     static final String EXTRA_RESULT_RECEIVER = "result_receiver";
     static final String EXTRA_CONFIG_REVISION = "config_revision";
     static final String EXTRA_SETTINGS_SOURCE = "settings_source";
@@ -60,6 +64,7 @@ final class LyricUiSettings {
     static final String SOURCE_PLAYER_TRANSLATION = "player-translation";
     static final String TRANSLATION_PREFERENCE_KEY = "lyric_info_translation_enabled";
     private static final String TRANSLATION_DEFAULT_KEY = "lyric_info_translation_default";
+    private static final String TRANSLATION_BUTTON_KEY = "lyric_info_translation_button";
     static final String EXTRA_SCROLL_SCALE_ENABLED = "scroll_scale_enabled";
     static final String EXTRA_INACTIVE_BLUR_ENABLED = "inactive_blur_enabled";
     static final String EXTRA_LINE_TIMED_PROGRESS_ENABLED = "line_timed_progress_enabled";
@@ -93,6 +98,10 @@ final class LyricUiSettings {
 
     static String translationDefaultKeyForPackage(String packageName) {
         return TRANSLATION_DEFAULT_KEY + "." + packageName;
+    }
+
+    static String translationButtonKeyForPackage(String packageName) {
+        return TRANSLATION_BUTTON_KEY + "." + packageName;
     }
 
     static LyricUiConfig withGlobalTranslationDefault(

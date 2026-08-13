@@ -108,13 +108,22 @@ public final class PlayerTranslationSettingsActivity extends SettingsBaseActivit
             TextView title = text(playerName, 13.5f, settingsTextColor());
             title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
             labels.addView(title, matchWrap());
-            TextView status = text(
-                    entry.isBuiltIn()
-                            ? getString(R.string.sub_trans_status_builtin)
-                            : available
-                            ? getString(R.string.sub_trans_status_detected)
-                            : getString(R.string.sub_trans_status_missing),
-                    10.5f,
+            String statusText;
+            if (!entry.supportsTranslation) {
+                statusText = getString(R.string.sub_trans_status_unsupported);
+                if (!entry.isBuiltIn() && !available) {
+                    statusText = statusText
+                            + " · "
+                            + getString(R.string.sub_trans_status_missing);
+                }
+            } else {
+                statusText = entry.isBuiltIn()
+                        ? getString(R.string.sub_trans_status_builtin)
+                        : available
+                        ? getString(R.string.sub_trans_status_detected)
+                        : getString(R.string.sub_trans_status_missing);
+            }
+            TextView status = text(statusText, 10.5f,
                     available ? 0xFF5F6368 : 0xFF9AA0A6);
             status.setPadding(0, dp(2), 0, 0);
             labels.addView(status, matchWrap());
@@ -123,28 +132,47 @@ public final class PlayerTranslationSettingsActivity extends SettingsBaseActivit
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     1f));
             card.addView(header, matchWrap());
-            boolean defaultEnabled = preferences.getBoolean(
-                    LyricUiSettings.translationDefaultKeyForPackage(entry.playerPackages[0]),
-                    config.defaultTranslationEnabled);
-            MaterialSwitch defaultMaterialSwitch = toggle(
-                    getString(R.string.sub_trans_default),
-                    defaultEnabled);
-            defaultMaterialSwitch.setPadding(0, 0, 0, 0);
-            Button clear = button(getString(R.string.sub_trans_clear));
-            clear.setOnClickListener(view -> {
-                for (String packageName : entry.playerPackages) {
-                    clearRequestedPackages.add(packageName);
-                }
-                Toast.makeText(this,
-                        getString(R.string.sub_trans_clear_toast, playerName),
-                        Toast.LENGTH_SHORT).show();
-            });
-            defaultMaterialSwitch.setEnabled(available);
-            clear.setEnabled(available);
+            MaterialSwitch defaultMaterialSwitch = null;
+            MaterialSwitch buttonMaterialSwitch = null;
+            if (entry.supportsTranslation) {
+                boolean defaultEnabled = preferences.getBoolean(
+                        LyricUiSettings.translationDefaultKeyForPackage(
+                                entry.playerPackages[0]),
+                        config.defaultTranslationEnabled);
+                defaultMaterialSwitch = toggle(
+                        getString(R.string.sub_trans_default),
+                        defaultEnabled);
+                defaultMaterialSwitch.setPadding(0, 0, 0, 0);
+                boolean buttonEnabled = preferences.getBoolean(
+                        LyricUiSettings.translationButtonKeyForPackage(
+                                entry.playerPackages[0]),
+                        true);
+                buttonMaterialSwitch = toggle(
+                        getString(R.string.sub_trans_button),
+                        buttonEnabled);
+                buttonMaterialSwitch.setPadding(0, 0, 0, 0);
+                Button clear = button(getString(R.string.sub_trans_clear));
+                clear.setOnClickListener(view -> {
+                    for (String packageName : entry.playerPackages) {
+                        clearRequestedPackages.add(packageName);
+                    }
+                    Toast.makeText(this,
+                            getString(R.string.sub_trans_clear_toast, playerName),
+                            Toast.LENGTH_SHORT).show();
+                });
+                defaultMaterialSwitch.setEnabled(available);
+                buttonMaterialSwitch.setEnabled(available);
+                clear.setEnabled(available);
+                card.addView(defaultMaterialSwitch, matchWrap());
+                card.addView(buttonMaterialSwitch, matchWrap());
+                card.addView(clear, matchWrap());
+            }
             card.setAlpha(available ? 1f : 0.48f);
-            card.addView(defaultMaterialSwitch, matchWrap());
-            card.addView(clear, matchWrap());
-            entryViews.add(new EntryView(entry, defaultMaterialSwitch, available));
+            entryViews.add(new EntryView(
+                    entry,
+                    defaultMaterialSwitch,
+                    buttonMaterialSwitch,
+                    available));
             content.addView(card, marginBottom(dp(12)));
             entryIndex++;
         }
@@ -194,22 +222,34 @@ public final class PlayerTranslationSettingsActivity extends SettingsBaseActivit
 
         ArrayList<String> packages = new ArrayList<>();
         ArrayList<Boolean> defaults = new ArrayList<>();
+        ArrayList<String> buttonPackages = new ArrayList<>();
+        ArrayList<Boolean> buttonValues = new ArrayList<>();
         SharedPreferences.Editor editor = preferences.edit();
         for (EntryView entryView : entryViews) {
-            if (!entryView.available) continue;
+            if (!entryView.available || entryView.defaultMaterialSwitch == null) continue;
             boolean enabled = entryView.defaultMaterialSwitch.isChecked();
+            boolean buttonEnabled = entryView.buttonMaterialSwitch.isChecked();
             for (String packageName : entryView.entry.playerPackages) {
                 packages.add(packageName);
                 defaults.add(enabled);
                 editor.putBoolean(
                         LyricUiSettings.translationDefaultKeyForPackage(packageName),
                         enabled);
+                buttonPackages.add(packageName);
+                buttonValues.add(buttonEnabled);
+                editor.putBoolean(
+                        LyricUiSettings.translationButtonKeyForPackage(packageName),
+                        buttonEnabled);
             }
         }
         editor.apply();
 
         boolean[] defaultValues = new boolean[defaults.size()];
         for (int i = 0; i < defaults.size(); i++) defaultValues[i] = defaults.get(i);
+        boolean[] buttonValueArray = new boolean[buttonValues.size()];
+        for (int i = 0; i < buttonValues.size(); i++) {
+            buttonValueArray[i] = buttonValues.get(i);
+        }
         long revision = LyricUiSettings.newSettingsRevision();
         pendingSettingsRevision = revision;
         Intent intent = new Intent(LyricUiSettings.ACTION_PLAYER_TRANSLATION_SETTINGS_CHANGED)
@@ -223,6 +263,12 @@ public final class PlayerTranslationSettingsActivity extends SettingsBaseActivit
                 .putExtra(
                         LyricUiSettings.EXTRA_PLAYER_TRANSLATION_DEFAULTS,
                         defaultValues)
+                .putExtra(
+                        LyricUiSettings.EXTRA_TRANSLATION_BUTTON_PACKAGES,
+                        buttonPackages.toArray(new String[0]))
+                .putExtra(
+                        LyricUiSettings.EXTRA_TRANSLATION_BUTTON_VALUES,
+                        buttonValueArray)
                 .putExtra(
                         LyricUiSettings.EXTRA_CLEAR_TRANSLATION_PACKAGES,
                         clearRequestedPackages.toArray(new String[0]))
@@ -319,14 +365,17 @@ public final class PlayerTranslationSettingsActivity extends SettingsBaseActivit
     private static final class EntryView {
         final PlayerTranslationSettings.Entry entry;
         final MaterialSwitch defaultMaterialSwitch;
+        final MaterialSwitch buttonMaterialSwitch;
         final boolean available;
 
         EntryView(
                 PlayerTranslationSettings.Entry entry,
                 MaterialSwitch defaultMaterialSwitch,
+                MaterialSwitch buttonMaterialSwitch,
                 boolean available) {
             this.entry = entry;
             this.defaultMaterialSwitch = defaultMaterialSwitch;
+            this.buttonMaterialSwitch = buttonMaterialSwitch;
             this.available = available;
         }
     }

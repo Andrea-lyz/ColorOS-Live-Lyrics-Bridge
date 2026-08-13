@@ -15,6 +15,7 @@
         <package android:name="io.github.proify.lyricon.spotifyprovider" />
         <package android:name="io.github.proify.lyricon.qishuiprovider" />
         <package android:name="io.github.proify.lyricon.kgprovider" />
+        <package android:name="io.github.proify.lyricon.metrolistprovider" />
     </queries>
 
     <application
