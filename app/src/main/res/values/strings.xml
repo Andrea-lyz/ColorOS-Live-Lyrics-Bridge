@@ -28,15 +28,18 @@
     <string name="player_spotify">Spotify</string>
     <string name="player_qishui">汽水音乐</string>
     <string name="player_kugou">酷狗音乐</string>
+    <string name="player_metrolist">Metrolist</string>
     <!-- 子页面：播放器翻译设置 -->
     <string name="sub_trans_desc">播放器自己的翻译按钮选择会优先于这里的默认值；可按播放器单独清除该记忆。</string>
     <string name="sub_trans_fallback">其他播放器默认显示翻译</string>
     <string name="sub_trans_default">默认显示翻译</string>
+    <string name="sub_trans_button">锁屏媒体卡翻译按钮</string>
     <string name="sub_trans_clear">清除该播放器的翻译记忆</string>
     <string name="sub_trans_clear_toast">将在保存时清除 %1$s 的记忆</string>
     <string name="sub_trans_status_builtin">内置适配</string>
     <string name="sub_trans_status_detected">已检测到 LyricProvider</string>
     <string name="sub_trans_status_missing">未安装对应 LyricProvider</string>
+    <string name="sub_trans_status_unsupported">不支持翻译</string>
     <string name="sub_trans_save">保存并应用</string>
     <string name="sub_trans_saved">已保存，等待 SystemUI 确认</string>
     <string name="sub_trans_saved_pending">已保存，但 SystemUI 未确认应用，请检查模块是否已启用</string>

@@ -24,7 +24,6 @@ import android.graphics.Shader;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.BitmapDrawable;
-import android.graphics.drawable.Icon;
 import android.media.MediaMetadata;
 import android.media.session.MediaController;
 import android.media.session.MediaSession;
@@ -107,6 +106,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             "com.android.server.media.OplusMediaControlService";
     private static final String OPLUS_HISTORY_WHITELIST_METHOD =
             "isInHistoryPlayInfoWhiteList";
+    private static final String OPLUS_MEDIA_BLACKLIST_METHOD = "isInMediaBlackList";
     private static final String OPLUS_PLUGIN_CLASS_LOADER_CLASS =
             "com.android.systemui.shared.plugins.OPlusPluginClassLoader";
     private static final String LYRICS_RECYCLER_VIEW_CLASS =
@@ -146,9 +146,10 @@ public final class LockscreenLyricsModule extends XposedModule {
             "oplus-media-translation-toggle-action";
     private static final String HOOK_ID_OPLUS_HISTORY_WHITELIST =
             "oplus-media-history-whitelist-salt";
+    private static final String HOOK_ID_OPLUS_MEDIA_BLACKLIST =
+            "oplus-media-blacklist-bypass";
     private static final String HOOK_ID_AOD_MEDIA_SUPPORT =
             "oplus-aod-media-support";
-    private static final String SALT_DESKTOP_LYRIC_ACTION = "com.salt.music.desktop_lyrics";
     private static final String TRANSLATION_TOGGLE_ACTION =
             LyricInfoContract.ACTION_TOGGLE_TRANSLATION;
     private static final String EXTRA_EXTERNAL_PROTOCOL_VERSION =
@@ -200,7 +201,6 @@ public final class LockscreenLyricsModule extends XposedModule {
             LyricInfoContract.EVENT_EXTERNAL_TRACK_CHANGED;
     private static final String EVENT_EXTERNAL_LYRIC_READY =
             LyricInfoContract.EVENT_EXTERNAL_LYRIC_READY;
-    private static final String TRANSLATION_ICON_RESOURCE_NAME = "ic_translation";
     private static final String TRANSLATION_PREFERENCES_NAME = LyricUiSettings.PREFERENCES_NAME;
     private static final String TRANSLATION_PREFERENCE_KEY =
             LyricUiSettings.TRANSLATION_PREFERENCE_KEY;
@@ -299,8 +299,6 @@ public final class LockscreenLyricsModule extends XposedModule {
             LyricTimingTuningConstants.LyricGeneral.SURFACE_RENDER_PASS_MAX_FRAMES;
     private static final long LYRIC_SURFACE_RENDER_PASS_MAX_MS =
             LyricTimingTuningConstants.LyricGeneral.SURFACE_RENDER_PASS_MAX_MS;
-    private static final long TRANSLATION_TOGGLE_CONFIG_LOG_THROTTLE_MS =
-            LyricTimingTuningConstants.Translation.TOGGLE_CONFIG_LOG_THROTTLE_MS;
     private static final long LYRIC_UI_STYLE_SETTINGS_RELOAD_MS =
             LyricTimingTuningConstants.LyricGeneral.UI_STYLE_SETTINGS_RELOAD_MS;
     private static final long LYRIC_VISIBILITY_RECOVERY_FIRST_DELAY_MS =
@@ -411,10 +409,13 @@ public final class LockscreenLyricsModule extends XposedModule {
     private volatile boolean systemUiMetadataRefreshMethodUnavailableLogged;
     private volatile boolean oplusMediaPolicyHooksInstalled;
     private volatile boolean oplusHistoryWhitelistHookInstalled;
+    private volatile boolean oplusMediaBlacklistHookInstalled;
     private volatile boolean aodMediaSupportHookInstalled;
     private final Set<String> loggedOplusHistoryIntegrationPackages =
             ConcurrentHashMap.newKeySet();
     private final Set<String> loggedOplusHistoryManifestFailures =
+            ConcurrentHashMap.newKeySet();
+    private final Set<String> loggedOplusBlacklistBypassPackages =
             ConcurrentHashMap.newKeySet();
     private final Set<String> loggedAodMediaSupportPackages =
             ConcurrentHashMap.newKeySet();
@@ -422,8 +423,6 @@ public final class LockscreenLyricsModule extends XposedModule {
     private volatile boolean injectedTranslationToggleActionHookInstalled;
     private volatile boolean injectedTranslationToggleActionLogged;
     private volatile boolean injectedTranslationToggleActionFailureLogged;
-    private volatile String lastTranslationToggleConfigLogKey = "";
-    private volatile long lastTranslationToggleConfigLogAt;
     private volatile Object oplusMediaActionPrioritySelector;
     private volatile Method oplusUpdatePkgActionsRuleMethod;
     private volatile Object[] lastOplusPkgActionsRuleArgs;
@@ -435,6 +434,35 @@ public final class LockscreenLyricsModule extends XposedModule {
             ConcurrentHashMap.newKeySet();
     private final Set<String> providerDeclaredTranslationTogglePackages =
             ConcurrentHashMap.newKeySet();
+    private final Map<String, Boolean> translationButtonEnabledByPackage =
+            new ConcurrentHashMap<>();
+    private final TranslationToggleMediaActionBinder translationToggleActionBinder =
+            new TranslationToggleMediaActionBinder(new TranslationToggleMediaActionBinder.Host() {
+                @Override
+                public Context currentApplicationContext() {
+                    return LockscreenLyricsModule.currentApplicationContext();
+                }
+
+                @Override
+                public String logProcessName() {
+                    return logProcessName;
+                }
+
+                @Override
+                public boolean isLyricInfoTranslationEnabled(String packageName) {
+                    return LockscreenLyricsModule.this.isLyricInfoTranslationEnabled(packageName);
+                }
+
+                @Override
+                public void rememberTranslationIconFingerprint(Drawable drawable) {
+                    LockscreenLyricsModule.this.rememberTranslationIconFingerprint(drawable);
+                }
+
+                @Override
+                public void onTranslationToggleClicked(String packageName) {
+                    LockscreenLyricsModule.this.toggleLyricInfoTranslation(packageName);
+                }
+            });
     private final Set<String> loadedTranslationPreferencePackages =
             ConcurrentHashMap.newKeySet();
     private final Map<String, Boolean> lyricInfoTranslationEnabledByPackage =
@@ -1007,6 +1035,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     @Override
     public void onSystemServerStarting(SystemServerStartingParam param) {
         installOplusHistoryWhitelistHook(param.getClassLoader());
+        installOplusMediaBlacklistBypassHook(param.getClassLoader());
     }
 
     @Override
@@ -1162,6 +1191,70 @@ public final class LockscreenLyricsModule extends XposedModule {
                     : " via manifest opt-in"));
         }
         return true;
+    }
+
+    @SuppressLint("PrivateApi") // LSPosed hook resolves the OPlus media control service by name.
+    private void installOplusMediaBlacklistBypassHook(ClassLoader classLoader) {
+        if (oplusMediaBlacklistHookInstalled) {
+            return;
+        }
+        synchronized (this) {
+            if (oplusMediaBlacklistHookInstalled) {
+                return;
+            }
+            try {
+                Class<?> serviceClass = classLoader.loadClass(
+                        OPLUS_MEDIA_CONTROL_SERVICE_CLASS);
+                Method blacklistMethod = serviceClass.getDeclaredMethod(
+                        OPLUS_MEDIA_BLACKLIST_METHOD,
+                        String.class);
+                blacklistMethod.setAccessible(true);
+                hook(blacklistMethod)
+                        .setId(HOOK_ID_OPLUS_MEDIA_BLACKLIST)
+                        .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                        .intercept(this::onOplusMediaBlackListLookup);
+                oplusMediaBlacklistHookInstalled = true;
+                info("Hooked OPlus media blacklist bypass");
+            } catch (ClassNotFoundException | NoSuchMethodException e) {
+                info("OPlus media blacklist bypass hook is unavailable on this system");
+            } catch (Throwable t) {
+                error("Failed to hook OPlus media blacklist bypass", t);
+            }
+        }
+    }
+
+    private Object onOplusMediaBlackListLookup(
+            XposedInterface.Chain chain) throws Throwable {
+        Object originalResult = chain.proceed();
+        boolean blacklisted = Boolean.TRUE.equals(originalResult);
+        if (!blacklisted) {
+            return originalResult;
+        }
+        Object packageNameArg = chain.getArg(0);
+        if (!(packageNameArg instanceof String)
+                || TextUtils.isEmpty((String) packageNameArg)) {
+            return originalResult;
+        }
+
+        String packageName = (String) packageNameArg;
+        boolean moduleManagedPackage = isModuleManagedPlayerPackage(packageName);
+        boolean manifestOptIn = !moduleManagedPackage
+                && isOplusHistoryIntegrationDeclared(
+                        chain.getThisObject(),
+                        packageName);
+        if (!LockscreenIntegrationPolicy.shouldEnableOplusHistoryIntegration(
+                false,
+                moduleManagedPackage,
+                manifestOptIn)) {
+            return originalResult;
+        }
+        if (loggedOplusBlacklistBypassPackages.add(packageName)) {
+            info("Bypassed OPlus media blacklist for " + packageName
+                    + (moduleManagedPackage
+                    ? " via " + moduleManagedPlayerKind(packageName) + " integration"
+                    : " via manifest opt-in"));
+        }
+        return false;
     }
 
     private boolean isOplusHistoryIntegrationDeclared(
@@ -1431,7 +1524,10 @@ public final class LockscreenLyricsModule extends XposedModule {
         String packageName = packageNameArg instanceof String ? (String) packageNameArg : "";
         boolean hasTranslationAction = !TextUtils.isEmpty(packageName)
                 && controllerHasTranslationAction(controllerArg);
-        boolean canOverrideWithTranslation = canOverrideFavoriteActionWithTranslation(packageName);
+        boolean canOverrideWithTranslation =
+                PlayerTranslationTogglePolicy.canOverrideFavoriteActionWithTranslation(
+                        packageName,
+                        providerDeclaredTranslationTogglePackages);
         translationButtonDebug("createActionsFromState package=" + nullToEmpty(packageName)
                 + ", hasPublicAction=" + hasTranslationAction
                 + ", canOverride=" + canOverrideWithTranslation
@@ -1452,7 +1548,30 @@ public final class LockscreenLyricsModule extends XposedModule {
                     translationButtonDebug("createActionsFromState result for "
                             + packageName
                             + ", class=" + result.getClass().getName());
-                    replaceTranslationToggleAction(packageName, result);
+                    boolean userWantsButton = userWantsTranslationButton(packageName);
+                    translationToggleActionBinder.applyTranslationToggle(
+                            packageName,
+                            result,
+                            PlayerTranslationTogglePolicy
+                                    .shouldReplaceFavoriteActionWithTranslation(
+                                            canOverrideWithTranslation,
+                                            isCurrentLyricProviderPackage(packageName),
+                                            currentWordLyricModel == null
+                                                    ? -1
+                                                    : currentWordLyricModel.translationCount(),
+                                            currentLyricProviderPayload == null
+                                                    ? null
+                                                    : currentLyricProviderPayload.translationLyric)
+                                    && userWantsButton,
+                            userWantsButton,
+                            currentLyricProviderPackage,
+                            currentWordLyricModel == null
+                                    ? -1
+                                    : currentWordLyricModel.translationCount(),
+                            currentLyricProviderPayload == null
+                                    || currentLyricProviderPayload.translationLyric == null
+                                    ? -1
+                                    : currentLyricProviderPayload.translationLyric.length());
                 } else {
                     translationButtonDebug("createActionsFromState result null for "
                             + packageName);
@@ -1565,303 +1684,6 @@ public final class LockscreenLyricsModule extends XposedModule {
             }
             refreshedTranslationToggleRule0Packages.add(packageName);
             pendingTranslationToggleRule0Packages.remove(packageName);
-        }
-    }
-
-    private void replaceTranslationToggleAction(
-            String packageName, Object mediaButton) {
-        if (TextUtils.isEmpty(packageName) || mediaButton == null) {
-            translationButtonDebug("replace action skipped, package="
-                    + nullToEmpty(packageName)
-                    + ", mediaButton=" + (mediaButton != null));
-            return;
-        }
-
-        Object mediaButtonEx = invokeNoArgByName(mediaButton, "getMediaButtonEx");
-        Object actions = invokeNoArgByName(mediaButtonEx, "getRule0CustomActions");
-        if (!(actions instanceof List)) {
-            translationButtonDebug("replace action skipped: Rule0 actions missing"
-                    + ", package=" + packageName
-                    + ", mediaButtonEx=" + (mediaButtonEx == null
-                    ? "null"
-                    : mediaButtonEx.getClass().getName())
-                    + ", actions=" + (actions == null ? "null" : actions.getClass().getName()));
-            return;
-        }
-        List<?> actionList = (List<?>) actions;
-        translationButtonDebug("inspect Rule0 actions, package=" + packageName
-                + ", count=" + actionList.size()
-                + ", actions=" + describeRule0ActionIds(actionList));
-
-        Object overrideCandidate = null;
-        String overrideActionId = "";
-        for (Object mediaAction : actionList) {
-            Object runnable = invokeNoArgByName(mediaAction, "getAction");
-            PlaybackState.CustomAction customAction = findPlaybackStateCustomAction(runnable);
-            if (customAction == null) {
-                continue;
-            }
-
-            String actionId = customAction.getAction();
-            boolean integrationAction = TRANSLATION_TOGGLE_ACTION.equals(actionId);
-            boolean legacySaltAction = isBuiltInPlayerPackage(packageName)
-                    && SALT_DESKTOP_LYRIC_ACTION.equals(actionId);
-            if (!integrationAction && !legacySaltAction) {
-                if (overrideCandidate == null
-                        && shouldOverridePlayerActionWithTranslation(packageName)) {
-                    overrideCandidate = mediaAction;
-                    overrideActionId = actionId;
-                }
-                continue;
-            }
-
-            configureTranslationMediaAction(
-                    packageName,
-                    mediaButtonEx,
-                    actionList,
-                    mediaAction,
-                    integrationAction ? "public" : "salt-legacy",
-                    actionId);
-            return;
-        }
-        if (overrideCandidate != null) {
-            configureTranslationMediaAction(
-                    packageName,
-                    mediaButtonEx,
-                    actionList,
-                    overrideCandidate,
-                    "player-override",
-                    overrideActionId);
-        } else {
-            translationButtonDebug("no translation action candidate, package=" + packageName
-                    + ", currentProvider=" + nullToEmpty(currentLyricProviderPackage)
-                    + ", modelTranslations="
-                    + (currentWordLyricModel == null ? -1 : currentWordLyricModel.translationCount())
-                    + ", payloadTranslationChars="
-                    + (currentLyricProviderPayload == null
-                    || currentLyricProviderPayload.translationLyric == null
-                    ? -1
-                    : currentLyricProviderPayload.translationLyric.length()));
-        }
-    }
-
-    private void configureTranslationMediaAction(
-            String packageName,
-            Object mediaButtonEx,
-            List<?> actions,
-            Object mediaAction,
-            String protocol,
-            String originalActionId) {
-        boolean publicProtocol = "public".equals(protocol);
-        boolean overrideProtocol = "player-override".equals(protocol);
-        translationButtonDebug("configure translation action, package=" + packageName
-                + ", protocol=" + protocol
-                + ", originalAction=" + nullToEmpty(originalActionId)
-                + ", enabledBefore=" + isLyricInfoTranslationEnabled(packageName)
-                + ", mediaAction=" + (mediaAction == null
-                ? "null"
-                : mediaAction.getClass().getName()));
-        if (publicProtocol || overrideProtocol) {
-            promoteTranslationToggleAction(mediaButtonEx, actions, mediaAction);
-            if (!replaceMediaActionIcon(mediaAction, packageName) && publicProtocol) {
-                rememberCurrentMediaActionIcon(mediaAction);
-            }
-        } else {
-            replaceMediaActionIcon(mediaAction, packageName);
-        }
-
-        updateTranslationActionPresentation(mediaAction, packageName);
-        tryInvokeOneArgByName(mediaAction, "setAction", (Runnable) () -> {
-            boolean before = isLyricInfoTranslationEnabled(packageName);
-            translationButtonDebug("translation action clicked, package=" + packageName
-                    + ", enabledBefore=" + before);
-            toggleLyricInfoTranslation(packageName);
-            translationButtonDebug("translation action click applied, package=" + packageName
-                    + ", enabledAfter=" + isLyricInfoTranslationEnabled(packageName));
-            updateTranslationActionPresentation(mediaAction, packageName);
-        });
-        maybeLogConfiguredTranslationMediaAction(packageName, protocol, originalActionId);
-    }
-
-    private void maybeLogConfiguredTranslationMediaAction(
-            String packageName, String protocol, String originalActionId) {
-        String actionId = TextUtils.isEmpty(originalActionId) ? "" : originalActionId;
-        String logKey = packageName + "|" + protocol + "|" + actionId;
-        long now = SystemClock.elapsedRealtime();
-        if (logKey.equals(lastTranslationToggleConfigLogKey)
-                && now - lastTranslationToggleConfigLogAt
-                < TRANSLATION_TOGGLE_CONFIG_LOG_THROTTLE_MS) {
-            return;
-        }
-        lastTranslationToggleConfigLogKey = logKey;
-        lastTranslationToggleConfigLogAt = now;
-        translationButtonDebug("Configured lyricInfo translation toggle for " + packageName
-                + ", protocol=" + protocol
-                + (TextUtils.isEmpty(actionId)
-                ? ""
-                : ", originalAction=" + actionId));
-    }
-
-    private boolean shouldOverridePlayerActionWithTranslation(String packageName) {
-        if (!canOverrideFavoriteActionWithTranslation(packageName)
-                || !isCurrentLyricProviderPackage(packageName)) {
-            return false;
-        }
-        WordLyricModel model = currentWordLyricModel;
-        if (model != null && model.translationCount() > 0) {
-            return true;
-        }
-        LyricInfoContract.Payload payload = currentLyricProviderPayload;
-        return payload != null
-                && LyricInfoContract.containsTimedLrc(payload.translationLyric);
-    }
-
-    private boolean canOverrideFavoriteActionWithTranslation(String packageName) {
-        return ExternalLyricProviderSpecialCases.supportsRegisteredProviderTranslationToggle(packageName)
-                || providerDeclaredTranslationTogglePackages.contains(packageName);
-    }
-
-    private void promoteTranslationToggleAction(
-            Object mediaButtonEx, List<?> actions, Object translationAction) {
-        if (actions.isEmpty() || actions.get(0) == translationAction) {
-            return;
-        }
-        ArrayList<Object> ordered = new ArrayList<>(actions.size());
-        ordered.add(translationAction);
-        for (Object action : actions) {
-            if (action != translationAction) {
-                ordered.add(action);
-            }
-        }
-
-        tryInvokeOneArgByName(mediaButtonEx, "setRule0CustomActions", ordered);
-        Object applied = invokeNoArgByName(mediaButtonEx, "getRule0CustomActions");
-        if (!(applied instanceof List)
-                || ((List<?>) applied).isEmpty()
-                || ((List<?>) applied).get(0) != translationAction) {
-            writeFieldValue(mediaButtonEx, "rule0CustomActions", ordered);
-        }
-        translationButtonDebug("Promoted lyricInfo translation toggle within OPlus Rule0 custom actions");
-    }
-
-    private void rememberCurrentMediaActionIcon(Object mediaAction) {
-        Object icon = invokeNoArgByName(mediaAction, "getIcon");
-        if (icon instanceof Drawable) {
-            rememberTranslationIconFingerprint((Drawable) icon);
-        }
-    }
-
-    private static PlaybackState.CustomAction findPlaybackStateCustomAction(Object runnable) {
-        if (runnable == null) {
-            return null;
-        }
-        Class<?> current = runnable.getClass();
-        while (current != null) {
-            for (Field field : current.getDeclaredFields()) {
-                try {
-                    field.setAccessible(true);
-                    Object value = field.get(runnable);
-                    if (value instanceof PlaybackState.CustomAction) {
-                        return (PlaybackState.CustomAction) value;
-                    }
-                } catch (Throwable ignored) {
-                    // Continue through synthetic fields and superclass fields.
-                }
-            }
-            current = current.getSuperclass();
-        }
-        return null;
-    }
-
-    private static String describeRule0ActionIds(List<?> actions) {
-        if (actions == null) {
-            return "null";
-        }
-        StringBuilder builder = new StringBuilder("[");
-        int limit = Math.min(actions.size(), 8);
-        for (int i = 0; i < limit; i++) {
-            if (i > 0) {
-                builder.append(", ");
-            }
-            Object mediaAction = actions.get(i);
-            Object runnable = invokeNoArgByName(mediaAction, "getAction");
-            PlaybackState.CustomAction customAction = findPlaybackStateCustomAction(runnable);
-            if (customAction != null) {
-                builder.append(customAction.getAction());
-            } else {
-                builder.append(mediaAction == null ? "null" : mediaAction.getClass().getSimpleName());
-            }
-        }
-        if (actions.size() > limit) {
-            builder.append(", +").append(actions.size() - limit);
-        }
-        return builder.append(']').toString();
-    }
-
-    private boolean replaceMediaActionIcon(Object mediaAction, String packageName) {
-        Context context = currentApplicationContext();
-        if (context == null || mediaAction == null || TextUtils.isEmpty(packageName)) {
-            return false;
-        }
-        try {
-            Icon icon = findTranslationIcon(context, packageName);
-            if (icon == null) {
-                return false;
-            }
-            Drawable drawable = icon.loadDrawable(context);
-            if (drawable != null) {
-                drawable = drawable.mutate();
-                rememberTranslationIconFingerprint(drawable);
-                tryInvokeOneArgByName(mediaAction, "setIcon", drawable);
-            }
-            Object mediaActionEx = invokeNoArgByName(mediaAction, "getMediaActionEx");
-            writeFieldValue(mediaActionEx, "icon", icon);
-            return true;
-        } catch (Throwable t) {
-            error("Failed to load lyric translation icon", t);
-            return false;
-        }
-    }
-
-    private static Icon findTranslationIcon(Context context, String providerPackage) {
-        Icon providerIcon = findTranslationIconInPackage(context, providerPackage);
-        return providerIcon != null
-                ? providerIcon
-                : findTranslationIconInPackage(context, MODULE_PACKAGE);
-    }
-
-    @SuppressLint("DiscouragedApi") // Resource IDs differ between the module and provider APKs.
-    private static Icon findTranslationIconInPackage(Context context, String packageName) {
-        if (context == null || TextUtils.isEmpty(packageName)) {
-            return null;
-        }
-        try {
-            Context packageContext = context.createPackageContext(
-                    packageName,
-                    Context.CONTEXT_IGNORE_SECURITY);
-            int resourceId = packageContext.getResources().getIdentifier(
-                    TRANSLATION_ICON_RESOURCE_NAME,
-                    "drawable",
-                    packageName);
-            return resourceId == 0 ? null : Icon.createWithResource(packageName, resourceId);
-        } catch (Throwable ignored) {
-            return null;
-        }
-    }
-
-    private void updateTranslationActionPresentation(Object mediaAction, String packageName) {
-        boolean enabled = isLyricInfoTranslationEnabled(packageName);
-        translationButtonDebug("update action presentation, package=" + nullToEmpty(packageName)
-                + ", enabled=" + enabled
-                + ", action=" + (mediaAction == null ? "null" : mediaAction.getClass().getName()));
-        tryInvokeOneArgByName(
-                mediaAction,
-                "setContentDescription",
-                translationActionDescription(enabled));
-        Object icon = invokeNoArgByName(mediaAction, "getIcon");
-        if (icon instanceof Drawable) {
-            ((Drawable) icon).setAlpha(enabled ? 255 : 135);
-            ((Drawable) icon).invalidateSelf();
         }
     }
 
@@ -2284,6 +2106,28 @@ public final class LockscreenLyricsModule extends XposedModule {
                 lyricUiConfig.defaultTranslationEnabled);
     }
 
+    private boolean userWantsTranslationButton(String packageName) {
+        if (TextUtils.isEmpty(packageName)) {
+            return true;
+        }
+        Boolean cached = translationButtonEnabledByPackage.get(packageName);
+        if (cached != null) {
+            return cached;
+        }
+        Context context = currentApplicationContext();
+        if (context == null) {
+            return true;
+        }
+        boolean enabled = context.getSharedPreferences(
+                        TRANSLATION_PREFERENCES_NAME,
+                        Context.MODE_PRIVATE)
+                .getBoolean(
+                        LyricUiSettings.translationButtonKeyForPackage(packageName),
+                        true);
+        translationButtonEnabledByPackage.put(packageName, enabled);
+        return enabled;
+    }
+
     private void handlePlayerTranslationSettingsChanged(Context context, Intent intent) {
         if (context == null || intent == null) return;
         Context appContext = context.getApplicationContext();
@@ -2341,6 +2185,23 @@ public final class LockscreenLyricsModule extends XposedModule {
                         LyricUiSettings.translationDefaultKeyForPackage(packageName),
                         defaults[i]);
                 affectedPackages.add(packageName);
+            }
+        }
+
+        String[] buttonPackages = intent.getStringArrayExtra(
+                LyricUiSettings.EXTRA_TRANSLATION_BUTTON_PACKAGES);
+        boolean[] buttonValues = intent.getBooleanArrayExtra(
+                LyricUiSettings.EXTRA_TRANSLATION_BUTTON_VALUES);
+        if (buttonPackages != null && buttonValues != null
+                && buttonPackages.length == buttonValues.length) {
+            int count = Math.min(buttonPackages.length, 32);
+            for (int i = 0; i < count; i++) {
+                String packageName = nullToEmpty(buttonPackages[i]);
+                if (!PlayerTranslationSettings.isSupportedPlayerPackage(packageName)) continue;
+                editor.putBoolean(
+                        LyricUiSettings.translationButtonKeyForPackage(packageName),
+                        buttonValues[i]);
+                translationButtonEnabledByPackage.put(packageName, buttonValues[i]);
             }
         }
 
@@ -2559,11 +2420,6 @@ public final class LockscreenLyricsModule extends XposedModule {
             root.invalidate();
             root.postInvalidateOnAnimation();
         }
-    }
-
-    private static String translationActionDescription(boolean enabled) {
-        return TRANSLATION_ACTION_DESCRIPTION_PREFIX
-                + (enabled ? "\u5f00\u542f" : "\u5173\u95ed");
     }
 
     private void installSystemUiWordLyricHooks(
@@ -4490,6 +4346,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         Object result;
         if (requestedVisibility == View.VISIBLE
                 && isRememberedTranslationActionView(view)
+                && stillShowsTranslationToggle(view)
                 && shouldManageTranslationActionViewVisibility()
                 && !shouldShowTranslationActionView()) {
             Object[] args = chain.getArgs().toArray();
@@ -4686,6 +4543,15 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (view == null || !isRememberedTranslationActionView(view)) {
             return;
         }
+        // The media card recycles button views across tracks. If this slot no longer shows the
+        // translation toggle (for example the player's own favorite returned for a song without
+        // translation), stop managing it so the player's button stays visible.
+        if (!stillShowsTranslationToggle(view)) {
+            forgetTranslationActionViewIfRebound(view);
+            if (!isRememberedTranslationActionView(view)) {
+                return;
+            }
+        }
         // Before the immersive lyric surface is attached, leave the action at ColorOS' requested
         // visibility. Hiding it during the pre-bind phase can strand a recycled view INVISIBLE.
         if (!shouldManageTranslationActionViewVisibility()) {
@@ -4707,6 +4573,14 @@ public final class LockscreenLyricsModule extends XposedModule {
                     + ", state=" + describeTranslationButtonState()
                     + ", view=" + describeViewForLog(view));
         }
+    }
+
+    private boolean stillShowsTranslationToggle(View view) {
+        if (isTranslationActionDescription(view.getContentDescription())) {
+            return true;
+        }
+        return view instanceof ImageView
+                && looksLikeTranslationIcon(((ImageView) view).getDrawable());
     }
 
     private boolean shouldManageTranslationActionViewVisibility() {

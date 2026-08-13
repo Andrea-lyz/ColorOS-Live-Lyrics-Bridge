@@ -9,11 +9,17 @@ final class PlayerTranslationSettings {
     static final class Entry {
         final int labelRes;
         final String providerPackage;
+        final boolean supportsTranslation;
         final String[] playerPackages;
 
-        Entry(int labelRes, String providerPackage, String... playerPackages) {
+        Entry(
+                int labelRes,
+                String providerPackage,
+                boolean supportsTranslation,
+                String... playerPackages) {
             this.labelRes = labelRes;
             this.providerPackage = providerPackage;
+            this.supportsTranslation = supportsTranslation;
             this.playerPackages = playerPackages.clone();
         }
 
@@ -23,24 +29,27 @@ final class PlayerTranslationSettings {
     }
 
     private static final List<Entry> ENTRIES = Collections.unmodifiableList(Arrays.asList(
-            new Entry(R.string.player_salt, "", "com.salt.music"),
-            new Entry(R.string.player_cone, "", "ink.trantor.coneplayer", "ink.trantor.coneplayer.gp"),
-            new Entry(R.string.player_qq, "io.github.proify.lyricon.qmprovider",
+            new Entry(R.string.player_salt, "", true, "com.salt.music"),
+            new Entry(R.string.player_cone, "", true,
+                    "ink.trantor.coneplayer", "ink.trantor.coneplayer.gp"),
+            new Entry(R.string.player_qq, "io.github.proify.lyricon.qmprovider", true,
                     "com.tencent.qqmusic", "com.tencent.qqmusicpad"),
-            new Entry(R.string.player_netease, "io.github.proify.lyricon.cmprovider",
+            new Entry(R.string.player_netease, "io.github.proify.lyricon.cmprovider", true,
                     "com.netease.cloudmusic", "com.hihonor.cloudmusic"),
-            new Entry(R.string.player_apple, "io.github.proify.lyricon.amprovider",
+            new Entry(R.string.player_apple, "io.github.proify.lyricon.amprovider", true,
                     "com.apple.android.music"),
-            new Entry(R.string.player_lx, "io.github.proify.lyricon.lxprovider",
+            new Entry(R.string.player_lx, "io.github.proify.lyricon.lxprovider", true,
                     "cn.toside.music.mobile", "com.lxwalnut.music.mobile"),
-            new Entry(R.string.player_poweramp, "io.github.proify.lyricon.paprovider",
+            new Entry(R.string.player_poweramp, "io.github.proify.lyricon.paprovider", true,
                     "com.maxmpz.audioplayer"),
-            new Entry(R.string.player_spotify, "io.github.proify.lyricon.spotifyprovider",
+            new Entry(R.string.player_spotify, "io.github.proify.lyricon.spotifyprovider", false,
                     "com.spotify.music"),
-            new Entry(R.string.player_qishui, "io.github.proify.lyricon.qishuiprovider",
+            new Entry(R.string.player_qishui, "io.github.proify.lyricon.qishuiprovider", true,
                     "com.luna.music"),
-            new Entry(R.string.player_kugou, "io.github.proify.lyricon.kgprovider",
-                    "com.kugou.android", "com.kugou.android.lite")
+            new Entry(R.string.player_kugou, "io.github.proify.lyricon.kgprovider", true,
+                    "com.kugou.android", "com.kugou.android.lite"),
+            new Entry(R.string.player_metrolist, "io.github.proify.lyricon.metrolistprovider",
+                    false, "com.metrolist.music")
     ));
 
     private PlayerTranslationSettings() {

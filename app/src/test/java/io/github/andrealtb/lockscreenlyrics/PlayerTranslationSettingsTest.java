@@ -33,14 +33,27 @@ public final class PlayerTranslationSettingsTest {
     }
 
     @Test
-    public void providerBackedPlayersExposeEightUniqueProviderPackages() {
+    public void providerBackedPlayersExposeNineUniqueProviderPackages() {
         String[] packages = PlayerTranslationSettings.providerPackages();
         HashSet<String> unique = new HashSet<>();
-        assertEquals(8, packages.length);
+        assertEquals(9, packages.length);
         for (String packageName : packages) {
             assertTrue(unique.add(packageName));
         }
         assertTrue(unique.contains("io.github.proify.lyricon.cmprovider"));
         assertTrue(unique.contains("io.github.proify.lyricon.qishuiprovider"));
+        assertTrue(unique.contains("io.github.proify.lyricon.metrolistprovider"));
+    }
+
+    @Test
+    public void translationSourceDrivesSupportedSwitches() {
+        for (PlayerTranslationSettings.Entry entry : PlayerTranslationSettings.entries()) {
+            if ("com.spotify.music".equals(entry.playerPackages[0])
+                    || "com.metrolist.music".equals(entry.playerPackages[0])) {
+                assertFalse(entry.supportsTranslation);
+            } else {
+                assertTrue(entry.supportsTranslation);
+            }
+        }
     }
 }
