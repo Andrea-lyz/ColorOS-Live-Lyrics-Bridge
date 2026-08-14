@@ -310,7 +310,8 @@ final class SaltPlayerAdapter implements PlayerAdapter {
                         chain,
                         lyricResultClass,
                         sourceEnumClass));
-        module.info("Using Salt Player final lyric publisher: " + publisher.getName());
+        module.info("Using Salt Player final lyric publisher: "
+                + publisher.getName() + "#" + invokeSuspend.getName());
     }
 
     private static ClassData findFinalLyricPublisherClass(
@@ -335,8 +336,35 @@ final class SaltPlayerAdapter implements PlayerAdapter {
                         + ": " + classes);
     }
 
-    private static Method findInvokeSuspendMethod(Class<?> publisherClass)
+    static Method findInvokeSuspendMethod(Class<?> publisherClass)
             throws NoSuchMethodException {
+        Method named = findNamedInvokeSuspend(publisherClass);
+        if (named != null) {
+            return named;
+        }
+        // Salt 12.2.1 obfuscates coroutine method names (invoke/create/invokeSuspend) with a
+        // non-printable CJK dictionary. Fall back to the unique structural signature of the
+        // suspended publisher body: exactly one java.lang.Object parameter. Fail loudly when
+        // the shape is ambiguous instead of hooking an unrelated method.
+        Method structural = null;
+        for (Method method : publisherClass.getDeclaredMethods()) {
+            Class<?>[] parameterTypes = method.getParameterTypes();
+            if (parameterTypes.length == 1 && parameterTypes[0] == Object.class) {
+                if (structural != null) {
+                    throw new NoSuchMethodException(
+                            "Ambiguous Salt Player publisher method candidates: "
+                                    + structural + " vs " + method);
+                }
+                structural = method;
+            }
+        }
+        if (structural != null) {
+            return structural;
+        }
+        throw new NoSuchMethodException(publisherClass.getName() + "#invokeSuspend(Object)");
+    }
+
+    static Method findNamedInvokeSuspend(Class<?> publisherClass) {
         for (Method method : publisherClass.getDeclaredMethods()) {
             Class<?>[] parameterTypes = method.getParameterTypes();
             if ("invokeSuspend".equals(method.getName())
@@ -345,7 +373,7 @@ final class SaltPlayerAdapter implements PlayerAdapter {
                 return method;
             }
         }
-        throw new NoSuchMethodException(publisherClass.getName() + "#invokeSuspend(Object)");
+        return null;
     }
 
     private static Object onFinalLyricPublication(
