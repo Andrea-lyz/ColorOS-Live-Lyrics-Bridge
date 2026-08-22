@@ -78,8 +78,7 @@ final class ExternalLyricProviderRegistry {
             KUGOU_CONCEPT_MUSIC_PLAYER_PACKAGE,
             METROLIST_PLAYER_PACKAGE,
             KUWO_MUSIC_PLAYER_PACKAGE,
-            HALCYON_PLAYER_PACKAGE
-            ,
+            HALCYON_PLAYER_PACKAGE,
             FLAMINGO_PLAYER_PACKAGE
     };
 
