@@ -59,21 +59,23 @@
 | Spotify | `LyricProvider-Spotify` | Bridge 已放行 v4 直达 Provider；目前只支持原文标准歌词，不支持翻译 |
 | 汽水音乐 | `LyricProvider-QiShui` | Bridge 已放行 v4 直达 Provider；支持逐字歌词、翻译歌词；需做好 Root 隐藏并完成下方特殊设置 |
 | 酷狗音乐 / 酷狗概念版 | `LyricProvider-KuGou` | Bridge 已放行 v4 直达 Provider；支持逐字歌词、翻译歌词 |
-| [Halcyon](https://github.com/Kifranei/Halcyon) | 否 | 主动 `lyricInfo` + 应用内 v4 广播（`lyricprovider/halcyon`）；支持逐字与翻译 |
+| 酷我音乐 | `LyricProvider-KuWo` | 通过酷我原生 `lyricInfo` 链路提供完整逐行、逐字和翻译歌词；无需开启车载歌词模式；保留酷我原生封面和媒体元数据 |
+| [Halcyon](https://github.com/Kifranei/Halcyon) | 否 | 原生 `lyricInfo` + 静态 source-to-player 绑定的应用内 v4 广播（`lyricprovider/halcyon`）；沿用原生 MediaSession 播放时钟，并兼容会丢弃 extras-only 更新的 ColorOS 版本 |
+| Flamingo | 否 | 通过 `yos.music.player` / `lyricprovider/flamingo` 静态绑定放行原生 v4 接入；播放状态沿用播放器本身，无需额外 Provider APK |
 
 [Metrolist](https://github.com/metrolistgroup/metrolist) 是**适用于安卓系统的 YouTube Music 客户端**。由于 Metrolist 本身没有稳定的歌词获取接口，本 Provider 采用与 Metrolist 相同的方式从第三方歌词提供商获取歌词，因此两者获取的歌词可能存在差异。
 
-上表以 Bridge 的 v4 直达放行注册表为准：Provider 的 `source` 与播放器包名已被 Bridge 静态放行，即视为已完成 Bridge 适配。目前放行的 Provider source 为：`qq-music`、`netease-cloud-music`、`apple-music`、`lx-music`、`lx-walnut-music`、`poweramp-music`、`spotify-music`、`qishui-music`、`kugou-music`、`kugou-concept-music`、`metrolist-music`、`halcyon` 和 `flamingo`。LyricProvider 仓库中其他模块虽然存在，但在加入 Bridge 注册表前不属于当前适配清单。
+上表以 Bridge 的 v4 直达放行注册表为准：Provider 的 `source` 与播放器包名已被 Bridge 静态放行，即视为已完成 Bridge 适配。目前放行的 Provider source 为：`qq-music`、`netease-cloud-music`、`apple-music`、`lx-music`、`lx-walnut-music`、`poweramp-music`、`spotify-music`、`qishui-music`、`kugou-music`、`kugou-concept-music`、`metrolist-music`、`halcyon` 和 `flamingo`。酷我不在这份直达 source 列表中，因为酷我 Provider 是通过酷我自己的 MediaSession 写入 `lyricInfo`，而不是发送 v4 直达广播。LyricProvider 仓库中其他模块虽然存在，但在加入 Bridge 注册表前不属于当前适配清单。
 
 播放器更新后，私有歌词接口可能发生变化。表格表示当前代码已经包含相应适配，不代表未来所有播放器版本都能永久兼容。
 
-已经主动支持公开 `lyricInfo` 协议的播放器通常不需要额外 Provider，也不需要加入 Bridge 的播放器作用域。当前已知主动接入项目包括 [Halcyon](https://github.com/Kifranei/Halcyon) 和 Flamingo。Halcyon 会同时发布 `lyricInfo` 并从播放器进程发送 v4 Provider 广播（`lyricprovider/halcyon` / `com.ella.music`），以便 ColorOS 16.9 起 extras-only 更新被丢弃后仍能收到歌词，无需额外 Provider APK。
+已经主动支持公开 `lyricInfo` 协议的播放器通常不需要额外 Provider，也不需要加入 Bridge 的播放器作用域。[Halcyon](https://github.com/Kifranei/Halcyon) 和 Flamingo 是当前已知的原生接入项目。Halcyon 会发布 `lyricInfo`，并从 `com.ella.music` 发送 `lyricprovider/halcyon` v4 广播，以便 ColorOS 16.9 起 extras-only 更新被丢弃后仍能收到歌词；播放状态继续沿用原生 MediaSession。Flamingo 则通过 `yos.music.player` 的 `lyricprovider/flamingo` 原生 v4 source 接入，不额外发送播放状态。两者都无需额外 Provider APK。
 
 ## 安装
 
 1. 打开 [Releases](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/releases/latest)，安装 `ColorOS-Live-Lyrics-Bridge-<版本>.apk`。
 2. 在 LSPosed 中启用 **ColorOS Live Lyrics Bridge**，保留模块推荐的默认作用域。
-3. 如果你使用 Metrolist、QQ 音乐、网易云、Apple Music、LX Music、Poweramp、Spotify、汽水音乐或酷狗，再安装同一版本中对应的 `LyricProvider-*.apk`。
+3. 如果你使用 Metrolist、QQ 音乐、网易云、Apple Music、LX Music、Poweramp、Spotify、汽水音乐、酷狗或酷我，再安装同一版本中对应的 `LyricProvider-*.apk`。
 4. 在 LSPosed 中分别启用这些 Provider，并只勾选它对应的音乐 App。
 5. 重启手机，让 SystemUI、系统服务和播放器里的模块完整加载。
 

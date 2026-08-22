@@ -59,21 +59,23 @@ There are two ways a player can work with the module:
 | Spotify | `LyricProvider-Spotify` | Direct v4 provider admitted by the Bridge; standard original lyrics only; translations are not currently supported |
 | QiShui Music | `LyricProvider-QiShui` | Direct v4 provider admitted by the Bridge; word-timed and translated lyrics; proper root hiding and the special setup below are required |
 | KuGou Music / Concept | `LyricProvider-KuGou` | Direct v4 provider admitted by the Bridge; word-timed and translated lyrics |
-| [Halcyon](https://github.com/Kifranei/Halcyon) | No | Native `lyricInfo` plus in-app direct v4 (`lyricprovider/halcyon`); word-timed and translated lyrics |
+| KuWo Music | `LyricProvider-KuWo` | Complete line-timed, word-timed, and translated lyrics through KuWo's native `lyricInfo` path; no car lyrics mode is required; original artwork and metadata are preserved |
+| [Halcyon](https://github.com/Kifranei/Halcyon) | No | Native `lyricInfo` plus a static source-to-player binding for in-app v4 (`lyricprovider/halcyon`); keeps the native MediaSession clock and allows title-only fallback for local files when ColorOS drops extras-only updates |
+| Flamingo | No | Native v4 integration admitted through the static `yos.music.player` / `lyricprovider/flamingo` binding; playback state remains native and no separate Provider APK is required |
 
 [Metrolist](https://github.com/metrolistgroup/metrolist) is a **YouTube Music client for Android**. Because Metrolist itself does not provide a stable lyric retrieval interface, this Provider retrieves lyrics from third-party lyric providers in the same way as Metrolist. The lyrics selected by the Provider may therefore differ from those shown inside Metrolist.
 
-The Provider list above follows the Bridge's direct v4 admission registry: a Provider is considered adapted when its source and player package are admitted by the Bridge. The current admitted Provider sources are `qq-music`, `netease-cloud-music`, `apple-music`, `lx-music`, `lx-walnut-music`, `poweramp-music`, `spotify-music`, `qishui-music`, `kugou-music`, `kugou-concept-music`, `metrolist-music`, `halcyon`, and `flamingo`. Other modules present in the LyricProvider repository are not included in this adapted list unless their source and host package are added to the Bridge registry.
+The Provider list above follows the Bridge's direct v4 admission registry: a Provider is considered adapted when its source and player package are admitted by the Bridge. The current admitted Provider sources are `qq-music`, `netease-cloud-music`, `apple-music`, `lx-music`, `lx-walnut-music`, `poweramp-music`, `spotify-music`, `qishui-music`, `kugou-music`, `kugou-concept-music`, `metrolist-music`, `halcyon`, and `flamingo`. KuWo is intentionally not in this direct-source list: its Provider writes `lyricInfo` into KuWo's own MediaSession instead of sending a direct v4 broadcast. Other modules present in the LyricProvider repository are not included in this adapted list unless their source and host package are added to the Bridge registry.
 
 Music apps can change their private lyric interfaces at any time. This table describes the adapters present in the current code; it is not a promise that every future player release will remain compatible.
 
-Players that publish the public `lyricInfo` protocol usually need neither a dedicated Provider nor Bridge scope in the player process. [Halcyon](https://github.com/Kifranei/Halcyon) and Flamingo are known native integrations. Halcyon also sends direct v4 Provider broadcasts (`lyricprovider/halcyon` from `com.ella.music`) so ColorOS 16.9+ can still receive lyrics after extras-only `lyricInfo` updates are dropped. No extra Provider APK is required.
+Players that publish the public `lyricInfo` protocol usually need neither a dedicated Provider nor Bridge scope in the player process. [Halcyon](https://github.com/Kifranei/Halcyon) and Flamingo are known native integrations. Halcyon publishes `lyricInfo` and also sends direct v4 broadcasts (`lyricprovider/halcyon` from `com.ella.music`) so ColorOS 16.9+ can still receive lyrics after extras-only updates are dropped; its playback state continues to come from the native MediaSession. Flamingo is admitted through its native v4 source (`lyricprovider/flamingo` from `yos.music.player`) without an external playback-state channel. Neither player needs an extra Provider APK.
 
 ## Installation
 
 1. Open the [latest release](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/releases/latest) and install `ColorOS-Live-Lyrics-Bridge-<version>.apk`.
 2. Enable **ColorOS Live Lyrics Bridge** in LSPosed and keep its recommended default scope.
-3. For Metrolist, QQ Music, NetEase, Apple Music, LX Music, Poweramp, Spotify, QiShui, or KuGou, also install the matching `LyricProvider-*.apk` from the same release.
+3. For Metrolist, QQ Music, NetEase, Apple Music, LX Music, Poweramp, Spotify, QiShui, KuGou, or KuWo, also install the matching `LyricProvider-*.apk` from the same release.
 4. Enable each Provider separately in LSPosed and select only its matching music app as the scope.
 5. Reboot the device so the hooks load in SystemUI, system services, and the player.
 
