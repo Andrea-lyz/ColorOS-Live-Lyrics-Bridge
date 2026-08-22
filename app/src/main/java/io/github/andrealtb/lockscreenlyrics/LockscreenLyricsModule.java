@@ -22,9 +22,14 @@ import android.graphics.Rect;
 import android.graphics.RenderEffect;
 import android.graphics.Shader;
 import android.graphics.Typeface;
+import android.graphics.BitmapFactory;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.Icon;
 import android.media.MediaMetadata;
+import android.net.Uri;
+import android.app.Notification;
+import android.service.notification.StatusBarNotification;
 import android.media.session.MediaController;
 import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
@@ -78,6 +83,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.regex.Pattern;
 
 import io.github.andrealtb.lockscreenlyrics.protocol.ExternalLyricProtocol;
@@ -109,6 +117,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     private static final String OPLUS_MEDIA_BLACKLIST_METHOD = "isInMediaBlackList";
     private static final String OPLUS_PLUGIN_CLASS_LOADER_CLASS =
             "com.android.systemui.shared.plugins.OPlusPluginClassLoader";
+    private static final String OPLUS_PLUGIN_MEDIA_MODEL_CLASS = "m6.t";
     private static final String LYRICS_RECYCLER_VIEW_CLASS =
             "com.oplus.systemui.plugins.shared.template.component.media.view.LyricsRecyclerView";
     private static final String LYRICS_SWITCHER_VIEW_CLASS =
@@ -119,6 +128,15 @@ public final class LockscreenLyricsModule extends XposedModule {
     private static final String HOOK_ID_SET_PLAYBACK_STATE_TRANSLATION_ACTION =
             "lockscreen-lyrics-set-playback-state-translation-action";
     private static final String HOOK_ID_SYSTEMUI_LOAD_LYRIC = "oplus-word-load-lyric";
+    private static final String HOOK_ID_SYSTEMUI_ARTWORK_ICON =
+            "oplus-word-artwork-icon";
+    private static final String HOOK_ID_SYSTEMUI_SEEDLING_ARTWORK =
+            "oplus-seedling-artwork-icon";
+    private static final String HOOK_ID_MEDIA_DATA_METADATA_CHANGED =
+            "oplus-media-data-metadata-changed";
+    private static final String HOOK_ID_MEDIA_DATA_LOAD_METADATA =
+            "oplus-media-data-load-metadata";
+    private static final String KUWO_PLAYER_PACKAGE = "cn.kuwo.player";
     private static final String HOOK_ID_SEEDLING_MEDIA_BUNDLE = "oplus-word-seedling-media-bundle";
     private static final String HOOK_ID_TEXTVIEW_ON_DRAW = "oplus-word-textview-on-draw";
     private static final String HOOK_ID_TEXTVIEW_SET_TEXT = "oplus-word-textview-set-text";
@@ -407,10 +425,28 @@ public final class LockscreenLyricsModule extends XposedModule {
     private volatile SystemUiLyricLoadContext latestSystemUiLyricLoadContext;
     private volatile Method systemUiMetadataRefreshMethod;
     private volatile boolean systemUiMetadataRefreshMethodUnavailableLogged;
+    private volatile boolean oplusLyricEntranceOverrideLogged;
+    private static final int KUWO_ARTWORK_SNAPSHOT_LIMIT = 16;
+    private static final int KUWO_ARTWORK_MIN_EDGE_PX = 96;
+    private final Object kuWoArtworkSnapshotLock = new Object();
+    private final LinkedHashMap<String, Icon> kuWoArtworkSnapshotByTrack =
+            new LinkedHashMap<>();
+    private volatile boolean kuWoArtworkRestoreLogged;
+    private volatile boolean kuWoArtworkFetchLogged;
+    private volatile boolean kuWoArtworkFetchFailureLogged;
+    private final Object kuWoMediaModelLock = new Object();
+    private String kuWoMediaModelTrackKey;
+    private String kuWoMediaModelTrackTitle;
+    private String kuWoMediaModelTrackArtist;
+    private Object kuWoMediaModelLastLyric;
+    private long kuWoMediaModelRetainLoggedAt;
+    private volatile boolean oplusPluginMediaModelHookInstalled;
+    private volatile boolean kuWoCarLyricIdentityNormalizedLogged;
     private volatile boolean oplusMediaPolicyHooksInstalled;
     private volatile boolean oplusHistoryWhitelistHookInstalled;
     private volatile boolean oplusMediaBlacklistHookInstalled;
     private volatile boolean aodMediaSupportHookInstalled;
+    private volatile long kuWoSeedlingArtworkRepairLoggedAt;
     private final Set<String> loggedOplusHistoryIntegrationPackages =
             ConcurrentHashMap.newKeySet();
     private final Set<String> loggedOplusHistoryManifestFailures =
@@ -1468,6 +1504,11 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
         if (isModuleManagedPlayerPackage(packageName)) {
             overrideResult = OPLUS_LYRIC_ENTRANCE_ALL;
+            if (!oplusLyricEntranceOverrideLogged) {
+                oplusLyricEntranceOverrideLogged = true;
+                info("OPlus lyric entrance normalized: package=" + packageName
+                        + ", " + original + "->" + overrideResult);
+            }
         }
         return overrideResult;
     }
@@ -2432,6 +2473,12 @@ public final class LockscreenLyricsModule extends XposedModule {
                     .setId(HOOK_ID_SYSTEMUI_LOAD_LYRIC)
                     .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                     .intercept(this::onSystemUiLoadLyricInBg);
+            installKuWoArtworkSnapshotHook(loadLyricInBg.getDeclaringClass());
+            installKuWoSeedlingArtworkHook(classLoader);
+            installKuWoCarLyricMetadataHook(loadLyricInBg.getDeclaringClass());
+            installKuWoCarLyricLoadMetadataHook(
+                    classLoader,
+                    "com.android.systemui.media.controls.domain.pipeline.LegacyMediaDataManagerImpl");
 
             Method mediaDataToBundle = targets.mediaDataToBundle;
             mediaDataToBundle.setAccessible(true);
@@ -2513,6 +2560,515 @@ public final class LockscreenLyricsModule extends XposedModule {
                     + (targets.resolvedByDexKit ? " via DexKit" : " via legacy fallback"));
         } catch (Throwable t) {
             error("Failed to hook SystemUI official lyric TextView draw hooks", t);
+        }
+    }
+
+    /**
+     * KuWo publishes its cover through an http artwork URI that ColorOS refuses to load and
+     * a Bitmap lane that does not survive the MediaSession binder crossing, so every
+     * metadata-driven MediaData rebuild resolves the artwork to null and the immersive card
+     * falls back to the default solid-color art. Capture the last non-null same-track icon
+     * seen at the common lookup point and hand it back when the metadata-derived lookup is
+     * empty again. Real track changes miss the snapshot and keep native behavior.
+     */
+    private void installKuWoArtworkSnapshotHook(Class<?> ownerClass) {
+        try {
+            Method getArtwork = null;
+            Class<?> current = ownerClass;
+            while (current != null && getArtwork == null) {
+                for (Method candidate : current.getDeclaredMethods()) {
+                    if ("getArtWorkIconByMediaMetaData".equals(candidate.getName())
+                            && candidate.getParameterCount() == 2
+                            && candidate.getParameterTypes()[0] == MediaMetadata.class
+                            && candidate.getParameterTypes()[1] == String.class) {
+                        getArtwork = candidate;
+                        break;
+                    }
+                }
+                current = current.getSuperclass();
+            }
+            if (getArtwork == null) {
+                warn(
+                        LyricLogFormatter.Area.SYSTEM_UI,
+                        "lyric-policy",
+                        "Skipped KuWo artwork snapshot hook:"
+                                + " getArtWorkIconByMediaMetaData not found");
+                return;
+            }
+            getArtwork.setAccessible(true);
+            hook(getArtwork)
+                    .setId(HOOK_ID_SYSTEMUI_ARTWORK_ICON)
+                    .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                    .intercept(this::onSystemUiKuWoArtworkLookup);
+            info("Hooked SystemUI media-metadata artwork lookup for KuWo cover snapshot: "
+                    + getArtwork.getDeclaringClass().getName());
+        } catch (Throwable t) {
+            warn(
+                    LyricLogFormatter.Area.SYSTEM_UI,
+                    "lyric-policy",
+                    "Failed to hook KuWo artwork snapshot: " + t);
+        }
+    }
+
+    private void installKuWoSeedlingArtworkHook(ClassLoader classLoader) {
+        try {
+            Class<?> dataClass = classLoader.loadClass(
+                    "com.oplus.systemui.seedlingservice.mediaControl.SeedlingMediaData");
+            Method setArtwork = dataClass.getDeclaredMethod(
+                    "setArtworkIcon",
+                    Icon.class);
+            setArtwork.setAccessible(true);
+            hook(setArtwork)
+                    .setId(HOOK_ID_SYSTEMUI_SEEDLING_ARTWORK)
+                    .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                    .intercept(this::onKuWoSeedlingArtworkChanged);
+            info("Hooked Seedling artwork for KuWo same-track cover repair");
+        } catch (Throwable t) {
+            warn(
+                    LyricLogFormatter.Area.SYSTEM_UI,
+                    "lyric-policy",
+                    "Failed to hook Seedling artwork: " + t);
+        }
+    }
+
+    private Object onKuWoSeedlingArtworkChanged(XposedInterface.Chain chain)
+            throws Throwable {
+        try {
+            Object data = chain.getThisObject();
+            if (data == null || !isKuwoSeedlingData(data)) {
+                return chain.proceed();
+            }
+            String title = invokeStringGetter(data, "getSong");
+            String artist = invokeStringGetter(data, "getArtist");
+            String trackKey = buildTrackKey(title, artist);
+            if (TextUtils.isEmpty(trackKey)) {
+                return chain.proceed();
+            }
+            Icon incoming = (Icon) chain.getArg(0);
+            if (isPlausibleKuWoCoverIcon(incoming)) {
+                return chain.proceed();
+            }
+            Icon snapshot = peekKuWoArtworkSnapshot(trackKey);
+            if (snapshot == null) {
+                return chain.proceed();
+            }
+            long now = SystemClock.elapsedRealtime();
+            if (now - kuWoSeedlingArtworkRepairLoggedAt >= 1_500L) {
+                kuWoSeedlingArtworkRepairLoggedAt = now;
+                info("Repaired Seedling album artwork from the same-track snapshot;"
+                        + " incoming=" + describeSeedlingIcon(incoming)
+                        + ", repaired=" + describeSeedlingIcon(snapshot));
+            }
+            Object[] args = chain.getArgs().toArray(new Object[0]);
+            args[0] = snapshot;
+            return chain.proceed(args);
+        } catch (Throwable t) {
+            warn(
+                    LyricLogFormatter.Area.SYSTEM_UI,
+                    "lyric-policy",
+                    "KuWo Seedling artwork repair failed: " + t);
+        }
+        return chain.proceed();
+    }
+
+    private static boolean isKuwoSeedlingData(Object data) {
+        try {
+            return KUWO_PLAYER_PACKAGE.equals(invokeStringGetter(data, "getPackageName"));
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private static String invokeStringGetter(Object owner, String methodName) {
+        if (owner == null) {
+            return "";
+        }
+        try {
+            Object value = owner.getClass()
+                    .getMethod(methodName)
+                    .invoke(owner);
+            return value instanceof CharSequence ? value.toString() : "";
+        } catch (Throwable ignored) {
+            return "";
+        }
+    }
+
+    private static String describeSeedlingIcon(Icon icon) {
+        if (icon == null) {
+            return "null";
+        }
+        Bitmap bitmap = extractIconBitmap(icon);
+        return bitmap == null
+                ? "icon"
+                : bitmap.getWidth() + "x" + bitmap.getHeight()
+                        + ":generation-" + bitmap.getGenerationId()
+                        + ":identity-" + System.identityHashCode(bitmap);
+    }
+
+    private void installKuWoCarLyricMetadataHook(Class<?> ownerClass) {
+        try {
+            Method changed = null;
+            Class<?> current = ownerClass;
+            while (current != null && changed == null) {
+                for (Method method : current.getDeclaredMethods()) {
+                    if ("onMetaDataChanged".equals(method.getName())
+                            && method.getParameterCount() == 2
+                            && method.getParameterTypes()[0] == String.class
+                            && method.getParameterTypes()[1] == MediaMetadata.class) {
+                        changed = method;
+                        break;
+                    }
+                }
+                current = current.getSuperclass();
+            }
+            if (changed == null) {
+                warn(
+                        LyricLogFormatter.Area.SYSTEM_UI,
+                        "lyric-policy",
+                        "Skipped KuWo car-lyric metadata hook: onMetaDataChanged not found");
+                return;
+            }
+            changed.setAccessible(true);
+            hook(changed)
+                    .setId(HOOK_ID_MEDIA_DATA_METADATA_CHANGED)
+                    .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                    .intercept(this::onOplusMediaDataMetadataChanged);
+            info("Hooked OPlus media metadata changed for KuWo car-lyric identity: "
+                    + changed.getDeclaringClass().getName());
+        } catch (Throwable t) {
+            warn(
+                    LyricLogFormatter.Area.SYSTEM_UI,
+                    "lyric-policy",
+                    "Failed to hook KuWo car-lyric metadata identity: " + t);
+        }
+    }
+
+    private Object onOplusMediaDataMetadataChanged(XposedInterface.Chain chain)
+            throws Throwable {
+        Object metadataArg = chain.getArg(1);
+        if (!(metadataArg instanceof MediaMetadata)) {
+            return chain.proceed();
+        }
+        MediaMetadata metadata = (MediaMetadata) metadataArg;
+        String incomingTitle = firstNonEmpty(
+                getText(metadata, MediaMetadata.METADATA_KEY_TITLE),
+                getText(metadata, MediaMetadata.METADATA_KEY_DISPLAY_TITLE));
+        String incomingArtist = firstNonEmpty(
+                getText(metadata, MediaMetadata.METADATA_KEY_ARTIST),
+                getText(metadata, MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE));
+        if (!KuWoMediaIdentityPolicy.isCarLyricMetadataMutation(
+                lastSystemUiSongName,
+                lastSystemUiArtistName,
+                incomingTitle,
+                incomingArtist)) {
+            return chain.proceed();
+        }
+        MediaMetadata stable = buildMetadataWithStableSystemUiIdentity(
+                metadata,
+                lastSystemUiSongName,
+                lastSystemUiArtistName);
+        Object[] args = chain.getArgs().toArray(new Object[0]);
+        args[1] = stable;
+        if (!kuWoCarLyricIdentityNormalizedLogged) {
+            kuWoCarLyricIdentityNormalizedLogged = true;
+            info("Normalized KuWo car-lyric identity before media data update");
+        }
+        return chain.proceed(args);
+    }
+
+    private void installKuWoCarLyricLoadMetadataHook(
+            ClassLoader classLoader,
+            String className) {
+        try {
+            Context context = currentApplicationContext();
+            Class<?> managerClass = classLoader.loadClass(className);
+            Method loadMediaDataInBg = null;
+            for (Method method : managerClass.getDeclaredMethods()) {
+                if ("loadMediaDataInBg".equals(method.getName())
+                        && method.getParameterCount() == 4
+                        && method.getParameterTypes()[0] == String.class
+                        && method.getParameterTypes()[1] == StatusBarNotification.class
+                        && method.getParameterTypes()[2] == String.class
+                        && method.getParameterTypes()[3] == boolean.class) {
+                    loadMediaDataInBg = method;
+                    break;
+                }
+            }
+            if (loadMediaDataInBg == null) {
+                warn(
+                        LyricLogFormatter.Area.SYSTEM_UI,
+                        "lyric-policy",
+                        "Skipped KuWo car-lyric load hook: loadMediaDataInBg not found");
+                return;
+            }
+            loadMediaDataInBg.setAccessible(true);
+            hook(loadMediaDataInBg)
+                    .setId(HOOK_ID_MEDIA_DATA_LOAD_METADATA)
+                    .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                    .intercept(this::onLegacyMediaDataLoad);
+            info("Hooked legacy media data loader for KuWo car-lyric identity: "
+                    + managerClass.getName());
+        } catch (Throwable t) {
+            warn(
+                    LyricLogFormatter.Area.SYSTEM_UI,
+                    "lyric-policy",
+                    "Failed to hook legacy media data loader: " + t);
+        }
+    }
+
+    private Object onLegacyMediaDataLoad(XposedInterface.Chain chain) throws Throwable {
+        Object notificationArg = chain.getArg(1);
+        if (!(notificationArg instanceof android.service.notification.StatusBarNotification)) {
+            return chain.proceed();
+        }
+        android.service.notification.StatusBarNotification notification =
+                (android.service.notification.StatusBarNotification) notificationArg;
+        if (!KUWO_PLAYER_PACKAGE.equals(notification.getPackageName())) {
+            return chain.proceed();
+        }
+        Notification nativeNotification = notification.getNotification();
+        Bundle extras = nativeNotification.extras;
+        MediaMetadata metadata = extras == null
+                ? null
+                : extras.getParcelable("android.mediaSession.metadata");
+        Icon notificationCover = nativeNotification.getLargeIcon();
+        if (notificationCover != null && isPlausibleKuWoCoverIcon(notificationCover)) {
+            rememberKuWoArtworkSnapshots(metadata, notificationCover);
+        }
+        String title = firstNonEmpty(
+                getText(metadata, MediaMetadata.METADATA_KEY_TITLE),
+                getText(metadata, MediaMetadata.METADATA_KEY_DISPLAY_TITLE));
+        String artist = firstNonEmpty(
+                getText(metadata, MediaMetadata.METADATA_KEY_ARTIST),
+                getText(metadata, MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE));
+        if (!KuWoMediaIdentityPolicy.isCarLyricMetadataMutation(
+                lastSystemUiSongName,
+                lastSystemUiArtistName,
+                title,
+                artist)) {
+            return chain.proceed();
+        }
+        extras.putParcelable(
+                "android.mediaSession.metadata",
+                buildMetadataWithStableSystemUiIdentity(
+                        metadata,
+                        lastSystemUiSongName,
+                        lastSystemUiArtistName));
+        nativeNotification.extras = extras;
+        if (!kuWoCarLyricIdentityNormalizedLogged) {
+            kuWoCarLyricIdentityNormalizedLogged = true;
+            info("Normalized KuWo car-lyric identity before legacy media data load");
+        }
+        return chain.proceed();
+    }
+
+    private Object onSystemUiKuWoArtworkLookup(XposedInterface.Chain chain) throws Throwable {
+        try {
+            Object packageNameArg = chain.getArg(1);
+            if (!KUWO_PLAYER_PACKAGE.equals(packageNameArg)) {
+                return chain.proceed();
+            }
+            MediaMetadata metadata = (MediaMetadata) chain.getArg(0);
+            if (metadata != null
+                    && KuWoMediaIdentityPolicy.isCarLyricMetadataMutation(
+                    lastSystemUiSongName,
+                    lastSystemUiArtistName,
+                    firstNonEmpty(
+                            getText(metadata, MediaMetadata.METADATA_KEY_TITLE),
+                            getText(metadata, MediaMetadata.METADATA_KEY_DISPLAY_TITLE)),
+                    firstNonEmpty(
+                            getText(metadata, MediaMetadata.METADATA_KEY_ARTIST),
+                            getText(metadata, MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE)))) {
+                MediaMetadata stable = buildMetadataWithStableSystemUiIdentity(
+                        metadata,
+                        lastSystemUiSongName,
+                        lastSystemUiArtistName);
+                Object[] args = chain.getArgs().toArray(new Object[0]);
+                args[0] = stable;
+                Object stableResult = chain.proceed(args);
+                if (stableResult instanceof Icon && isPlausibleKuWoCoverIcon((Icon) stableResult)) {
+                    rememberKuWoArtworkSnapshots(stable, (Icon) stableResult);
+                }
+                return stableResult;
+            }
+            Object result = chain.proceed();
+            String trackKey = kuWoArtworkSnapshotKey(metadata);
+            if (TextUtils.isEmpty(trackKey)) {
+                return result;
+            }
+            boolean realTrackWithDifferentCover = metadata != null
+                    && !TextUtils.isEmpty(metadata.getString(MediaMetadata.METADATA_KEY_MEDIA_ID))
+                    && !KuWoMediaIdentityPolicy.isCarLyricMetadataMutation(
+                    lastSystemUiSongName,
+                    lastSystemUiArtistName,
+                    firstNonEmpty(
+                            getText(metadata, MediaMetadata.METADATA_KEY_TITLE),
+                            getText(metadata, MediaMetadata.METADATA_KEY_DISPLAY_TITLE)),
+                    firstNonEmpty(
+                            getText(metadata, MediaMetadata.METADATA_KEY_ARTIST),
+                            getText(metadata, MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE)));
+            if (result instanceof Icon && isPlausibleKuWoCoverIcon((Icon) result)) {
+                rememberKuWoArtworkSnapshots(metadata, (Icon) result);
+                return result;
+            }
+            if (realTrackWithDifferentCover && result instanceof Icon) {
+                return result;
+            }
+            Icon snapshot = peekKuWoArtworkSnapshot(trackKey);
+            if (snapshot != null) {
+                if (!kuWoArtworkRestoreLogged) {
+                    kuWoArtworkRestoreLogged = true;
+                    info("Restored KuWo album artwork from same-track snapshot after"
+                            + (result == null ? " empty" : " implausible")
+                            + " metadata lookup");
+                }
+                return snapshot;
+            }
+            Icon fetched = loadKuWoHttpsCoverIcon(metadata);
+            if (isPlausibleKuWoCoverIcon(fetched)) {
+                rememberKuWoArtworkSnapshots(metadata, fetched);
+                if (!kuWoArtworkFetchLogged) {
+                    kuWoArtworkFetchLogged = true;
+                    info("Loaded KuWo album artwork from its https cover endpoint");
+                }
+                return fetched;
+            }
+        } catch (Throwable t) {
+            warn(
+                    LyricLogFormatter.Area.SYSTEM_UI,
+                    "lyric-policy",
+                    "KuWo artwork snapshot handling failed: " + t);
+        }
+        return chain.proceed();
+    }
+
+    private static String kuWoArtworkSnapshotKey(MediaMetadata metadata) {
+        if (metadata == null) {
+            return "";
+        }
+        String mediaId = metadata.getString(MediaMetadata.METADATA_KEY_MEDIA_ID);
+        if (!TextUtils.isEmpty(mediaId)) {
+            return "id:" + mediaId;
+        }
+        return buildTrackKey(
+                firstNonEmpty(
+                        getText(metadata, MediaMetadata.METADATA_KEY_TITLE),
+                        getText(metadata, MediaMetadata.METADATA_KEY_DISPLAY_TITLE)),
+                firstNonEmpty(
+                        getText(metadata, MediaMetadata.METADATA_KEY_ARTIST),
+                        getText(metadata, MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE)));
+    }
+
+    private static boolean isPlausibleKuWoCoverIcon(Icon icon) {
+        try {
+            Bitmap bitmap = extractIconBitmap(icon);
+            return bitmap != null
+                    && bitmap.getWidth() >= KUWO_ARTWORK_MIN_EDGE_PX
+                    && bitmap.getHeight() >= KUWO_ARTWORK_MIN_EDGE_PX;
+        } catch (Throwable ignored) {
+            return true;
+        }
+    }
+
+    private Icon loadKuWoHttpsCoverIcon(MediaMetadata metadata) {
+        String uri = firstNonEmpty(
+                metadata == null ? null : metadata.getString(MediaMetadata.METADATA_KEY_ART_URI),
+                metadata == null ? null : metadata.getString(
+                        MediaMetadata.METADATA_KEY_ALBUM_ART_URI),
+                metadata == null ? null : metadata.getString(
+                        MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI));
+        if (TextUtils.isEmpty(uri)) {
+            return null;
+        }
+        try {
+            Uri parsed = Uri.parse(uri);
+            String host = parsed.getHost();
+            if (!"http".equals(parsed.getScheme())
+                    || TextUtils.isEmpty(host)
+                    || !host.startsWith("img")
+                    || !host.endsWith(".kuwo.cn")) {
+                return null;
+            }
+            Uri httpsUri = parsed.buildUpon().scheme("https").build();
+            URL url = new URL(httpsUri.toString());
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            connection.setConnectTimeout(4_000);
+            connection.setReadTimeout(4_000);
+            connection.setInstanceFollowRedirects(true);
+            int code = connection.getResponseCode();
+            if (code < 200 || code >= 300) {
+                connection.disconnect();
+                return null;
+            }
+            Bitmap bitmap;
+            try (InputStream input = connection.getInputStream()) {
+                bitmap = BitmapFactory.decodeStream(input);
+            } finally {
+                connection.disconnect();
+            }
+            return bitmap == null ? null : Icon.createWithBitmap(bitmap);
+        } catch (Throwable t) {
+            if (!kuWoArtworkFetchFailureLogged) {
+                kuWoArtworkFetchFailureLogged = true;
+                warn(
+                        LyricLogFormatter.Area.SYSTEM_UI,
+                        "lyric-policy",
+                        "Failed to load KuWo https cover: " + t);
+            }
+            return null;
+        }
+    }
+
+    private static Bitmap extractIconBitmap(Icon icon) {
+        try {
+            android.content.Context context = currentApplicationContext();
+            if (context != null) {
+                Drawable drawable = icon.loadDrawable(context);
+                if (drawable instanceof BitmapDrawable) {
+                    return ((BitmapDrawable) drawable).getBitmap();
+                }
+            }
+        } catch (Throwable ignored) {
+            // Fall through to the framework-internal accessor below.
+        }
+        try {
+            return (Bitmap) icon.getClass().getMethod("getBitmap").invoke(icon);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private void rememberKuWoArtworkSnapshot(String trackKey, Icon icon) {
+        synchronized (kuWoArtworkSnapshotLock) {
+            kuWoArtworkSnapshotByTrack.remove(trackKey);
+            kuWoArtworkSnapshotByTrack.put(trackKey, icon);
+            while (kuWoArtworkSnapshotByTrack.size() > KUWO_ARTWORK_SNAPSHOT_LIMIT) {
+                String eldest = kuWoArtworkSnapshotByTrack.keySet().iterator().next();
+                kuWoArtworkSnapshotByTrack.remove(eldest);
+            }
+        }
+    }
+
+    private void rememberKuWoArtworkSnapshots(MediaMetadata metadata, Icon icon) {
+        if (metadata == null || icon == null) {
+            return;
+        }
+        rememberKuWoArtworkSnapshot(kuWoArtworkSnapshotKey(metadata), icon);
+        String trackKey = buildTrackKey(
+                firstNonEmpty(
+                        getText(metadata, MediaMetadata.METADATA_KEY_TITLE),
+                        getText(metadata, MediaMetadata.METADATA_KEY_DISPLAY_TITLE)),
+                firstNonEmpty(
+                        getText(metadata, MediaMetadata.METADATA_KEY_ARTIST),
+                        getText(metadata, MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE)));
+        if (!TextUtils.isEmpty(trackKey)) {
+            rememberKuWoArtworkSnapshot(trackKey, icon);
+        }
+    }
+
+    private Icon peekKuWoArtworkSnapshot(String trackKey) {
+        synchronized (kuWoArtworkSnapshotLock) {
+            return kuWoArtworkSnapshotByTrack.get(trackKey);
         }
     }
 
@@ -2797,6 +3353,26 @@ public final class LockscreenLyricsModule extends XposedModule {
                         externalDocument = currentModelDocument;
                     }
                 }
+                String carLyricStableTitle = null;
+                String carLyricStableArtist = null;
+                if (KUWO_PLAYER_PACKAGE.equals(packageName)
+                        && KuWoMediaIdentityPolicy.isCarLyricMetadataMutation(
+                                lastSystemUiSongName,
+                                lastSystemUiArtistName,
+                                title,
+                                artist)) {
+                    carLyricStableTitle = lastSystemUiSongName;
+                    carLyricStableArtist = lastSystemUiArtistName;
+                    metadata = buildMetadataWithStableSystemUiIdentity(
+                            metadata,
+                            title,
+                            artist);
+                    title = lastSystemUiSongName;
+                    artist = lastSystemUiArtistName;
+                    normalizedArgs = chain.getArgs().toArray(new Object[0]);
+                    normalizedArgs[1] = metadata;
+                    info("Normalized KuWo car-lyric metadata identity for SystemUI load");
+                }
                 if (externalDocument != null
                         && ExternalLyricProviderSpecialCases
                         .shouldNormalizeLxBluetoothLyricMetadataForSystemUi(
@@ -2813,8 +3389,8 @@ public final class LockscreenLyricsModule extends XposedModule {
                             metadata,
                             externalDocument.title,
                             externalDocument.artist);
-                    title = externalDocument.title;
-                    artist = externalDocument.artist;
+                    title = firstNonEmpty(carLyricStableTitle, externalDocument.title);
+                    artist = firstNonEmpty(carLyricStableArtist, externalDocument.artist);
                     normalizedArgs = chain.getArgs().toArray(new Object[0]);
                     normalizedArgs[1] = metadata;
                     if (blankBluetoothLyricTitle) {
@@ -2919,17 +3495,24 @@ public final class LockscreenLyricsModule extends XposedModule {
                     return chain.proceed(normalizedArgs);
                 }
                 if (payload != null) {
+                    MediaMetadata effectiveMetadata = metadata;
                     if (!TextUtils.equals(lyricInfo, normalizedPayload.lyricInfo)) {
                         MediaMetadata normalizedMetadata = externalEnvelope == null
-                                ? new MediaMetadata.Builder(metadata)
-                                .putString(OPLUS_LYRIC_INFO_KEY, normalizedPayload.lyricInfo)
-                                .build()
+                                ? buildMetadataWithLyricInfoPreservingArtwork(
+                                metadata,
+                                normalizedPayload.lyricInfo,
+                                title,
+                                artist)
                                 : externalEnvelope.metadataWithLyricInfo(metadata);
                         normalizedArgs = chain.getArgs().toArray(new Object[0]);
                         normalizedArgs[1] = normalizedMetadata;
+                        effectiveMetadata = normalizedMetadata;
                     }
                     acceptCurrentLyricProvider(chain, payload);
-                    maybeLogOfficialLyricPayload(payload, normalizedPayload.changed);
+                    maybeLogOfficialLyricPayload(
+                            payload,
+                            normalizedPayload.changed,
+                            effectiveMetadata);
                     cacheSystemUiLyricModel(payload);
                 } else {
                     clearCurrentLyricProvider(title, artist);
@@ -6196,9 +6779,235 @@ public final class LockscreenLyricsModule extends XposedModule {
         Object result = chain.proceed();
         Object thisObject = chain.getThisObject();
         if (thisObject instanceof ClassLoader) {
-            tryInstallLyricsRecyclerViewHook((ClassLoader) thisObject);
+            ClassLoader pluginLoader = (ClassLoader) thisObject;
+            tryInstallLyricsRecyclerViewHook(pluginLoader);
+            tryInstallKuWoPluginMediaModelHook(pluginLoader);
         }
         return result;
+    }
+
+    private void tryInstallKuWoPluginMediaModelHook(ClassLoader pluginLoader) {
+        if (oplusPluginMediaModelHookInstalled || pluginLoader == null) {
+            return;
+        }
+        try {
+            Class<?> modelClass = pluginLoader.loadClass(OPLUS_PLUGIN_MEDIA_MODEL_CLASS);
+            Constructor<?>[] constructors = modelClass.getDeclaredConstructors();
+            int hooked = 0;
+            for (Constructor<?> constructor : constructors) {
+                constructor.setAccessible(true);
+                hook(constructor)
+                        .setId(HOOK_ID_PLUGIN_CLASS_LOADER_CONSTRUCTOR
+                                + "-kuwo-model-" + hooked + "-"
+                                + constructor.getParameterTypes().length)
+                        .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                        .intercept(this::onKuWoPluginMediaModelBuilt);
+                hooked++;
+            }
+            if (hooked > 0) {
+                oplusPluginMediaModelHookInstalled = true;
+                info("Hooked OPlus KuWo plugin media model, constructors=" + hooked);
+            }
+        } catch (Throwable t) {
+            warn(
+                    LyricLogFormatter.Area.SYSTEM_UI,
+                    "lyric-policy",
+                    "Skipped KuWo plugin media model hook: " + t);
+        }
+    }
+
+    private Object onKuWoPluginMediaModelBuilt(XposedInterface.Chain chain) throws Throwable {
+        Object model = chain.proceed();
+        if (model == null) {
+            model = chain.getThisObject();
+        }
+        if (model == null || !isKuWoPluginMediaModel(model)) {
+            return model;
+        }
+        try {
+            String title = readStringFieldByName(model, "h", "f6173h");
+            String artist = readStringFieldByName(model, "i", "f6174i");
+            String trackKey = buildTrackKey(title, artist);
+            Field lyricField = findFieldOfType(model.getClass(), "s");
+            Object lyricModel = lyricField == null ? null : readField(model, lyricField);
+            int lineCount = countLyricModelLines(lyricModel);
+            synchronized (kuWoMediaModelLock) {
+                boolean trackChanged = !TextUtils.isEmpty(trackKey)
+                        && !trackKey.equals(kuWoMediaModelTrackKey);
+                if (trackChanged) {
+                    if (KuWoMediaIdentityPolicy.isCarLyricMetadataMutation(
+                            kuWoMediaModelTrackTitle,
+                            kuWoMediaModelTrackArtist,
+                            title,
+                            artist)) {
+                        if (kuWoMediaModelLastLyric != null) {
+                            if (lyricField != null) {
+                                lyricField.setAccessible(true);
+                                lyricField.set(model, kuWoMediaModelLastLyric);
+                            }
+                            Field supportedField = findBooleanSuffixField(model.getClass(), "u");
+                            if (supportedField != null) {
+                                supportedField.setAccessible(true);
+                                supportedField.setBoolean(model, true);
+                            }
+                            lineCount = countLyricModelLines(kuWoMediaModelLastLyric);
+                        }
+                        long now = SystemClock.elapsedRealtime();
+                        if (now - kuWoMediaModelRetainLoggedAt >= 1_500L) {
+                            kuWoMediaModelRetainLoggedAt = now;
+                            info("Ignored KuWo car-lyric metadata mutation while retaining"
+                                    + " same-track plugin model, lines=" + lineCount);
+                        }
+                    } else {
+                        kuWoMediaModelTrackKey = trackKey;
+                        kuWoMediaModelTrackTitle = title;
+                        kuWoMediaModelTrackArtist = artist;
+                        kuWoMediaModelLastLyric = null;
+                        long now = SystemClock.elapsedRealtime();
+                        if (now - kuWoMediaModelRetainLoggedAt >= 1_500L) {
+                            kuWoMediaModelRetainLoggedAt = now;
+                            info("Cleared KuWo plugin lyric retention for real track change: "
+                                    + trackKey);
+                        }
+                    }
+                } else if (lineCount <= 0 && kuWoMediaModelLastLyric != null) {
+                    if (lyricField != null) {
+                        lyricField.setAccessible(true);
+                        lyricField.set(model, kuWoMediaModelLastLyric);
+                    }
+                    Field supportedField = findBooleanSuffixField(model.getClass(), "u");
+                    if (supportedField != null) {
+                        supportedField.setAccessible(true);
+                        supportedField.setBoolean(model, true);
+                    }
+                    lineCount = countLyricModelLines(kuWoMediaModelLastLyric);
+                    long now = SystemClock.elapsedRealtime();
+                    if (now - kuWoMediaModelRetainLoggedAt >= 1_500L) {
+                        kuWoMediaModelRetainLoggedAt = now;
+                        info("Retained same-track KuWo plugin lyric model, lines=" + lineCount);
+                    }
+                } else if (lineCount > 0 && lyricModel != null) {
+                    kuWoMediaModelTrackKey = TextUtils.isEmpty(trackKey)
+                            ? kuWoMediaModelTrackKey
+                            : trackKey;
+                    if (!TextUtils.isEmpty(trackKey)) {
+                        kuWoMediaModelTrackTitle = title;
+                        kuWoMediaModelTrackArtist = artist;
+                    }
+                    kuWoMediaModelLastLyric = lyricModel;
+                }
+            }
+        } catch (Throwable t) {
+            warn(
+                    LyricLogFormatter.Area.SYSTEM_UI,
+                    "lyric-policy",
+                    "KuWo plugin media model retention failed: " + t);
+        }
+        return model;
+    }
+
+    private static boolean isKuWoPluginMediaModel(Object model) {
+        Class<?> current = model.getClass();
+        while (current != null) {
+            for (Field field : current.getDeclaredFields()) {
+                if (field.getType() != String.class) {
+                    continue;
+                }
+                try {
+                    field.setAccessible(true);
+                    if (KUWO_PLAYER_PACKAGE.equals(field.get(model))) {
+                        return true;
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+            current = current.getSuperclass();
+        }
+        return false;
+    }
+
+    private static String readStringFieldByName(
+            Object target,
+            String primaryName,
+            String fallbackName) {
+        Object value = readNamedFieldValue(target, primaryName);
+        if (!(value instanceof String)) {
+            value = readNamedFieldValue(target, fallbackName);
+        }
+        return value instanceof String ? (String) value : "";
+    }
+
+    private static Object readNamedFieldValue(Object target, String fieldName) {
+        if (target == null || TextUtils.isEmpty(fieldName)) {
+            return null;
+        }
+        try {
+            Field field = target.getClass().getDeclaredField(fieldName);
+            field.setAccessible(true);
+            return field.get(target);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static Object readField(Object target, Field field) {
+        if (target == null || field == null) {
+            return null;
+        }
+        try {
+            field.setAccessible(true);
+            return field.get(target);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static Field findFieldOfType(Class<?> type, String simpleName) {
+        Class<?> current = type;
+        while (current != null) {
+            for (Field field : current.getDeclaredFields()) {
+                if (field.getType().getSimpleName().equals(simpleName)) {
+                    field.setAccessible(true);
+                    return field;
+                }
+            }
+            current = current.getSuperclass();
+        }
+        return null;
+    }
+
+    private static Field findBooleanSuffixField(Class<?> type, String suffix) {
+        Class<?> current = type;
+        while (current != null) {
+            for (Field field : current.getDeclaredFields()) {
+                if (field.getType() == boolean.class && field.getName().endsWith(suffix)) {
+                    field.setAccessible(true);
+                    return field;
+                }
+            }
+            current = current.getSuperclass();
+        }
+        return null;
+    }
+
+    private static int countLyricModelLines(Object lyricModel) {
+        if (lyricModel == null) {
+            return 0;
+        }
+        Class<?> current = lyricModel.getClass();
+        while (current != null) {
+            for (Field field : current.getDeclaredFields()) {
+                if (field.getType() != List.class) {
+                    continue;
+                }
+                Object value = readField(lyricModel, field);
+                if (value instanceof List) {
+                    return ((List<?>) value).size();
+                }
+            }
+            current = current.getSuperclass();
+        }
+        return 0;
     }
 
     private synchronized void tryInstallLyricsRecyclerViewHook(Class<?> lyricsRecyclerViewClass) {
@@ -8925,25 +9734,6 @@ public final class LockscreenLyricsModule extends XposedModule {
         return type == boolean.class || type == Boolean.class;
     }
 
-    private static void writeFieldValue(Object target, String fieldName, Object value) {
-        if (target == null || TextUtils.isEmpty(fieldName)) {
-            return;
-        }
-        Class<?> current = target.getClass();
-        while (current != null) {
-            try {
-                Field field = current.getDeclaredField(fieldName);
-                field.setAccessible(true);
-                field.set(target, value);
-                return;
-            } catch (NoSuchFieldException ignored) {
-                current = current.getSuperclass();
-            } catch (Throwable ignored) {
-                return;
-            }
-        }
-    }
-
     private static Method findMethod(
             Class<?> clazz, String methodName, Class<?>... parameterTypes) throws NoSuchMethodException {
         Class<?> current = clazz;
@@ -11259,14 +12049,57 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     @SuppressLint("WrongConstant")
-    private MediaMetadata buildMetadataWithLyricInfoPreservingArtwork(
+    private static MediaMetadata buildMetadataWithLyricInfoPreservingArtwork(
             MediaMetadata base,
             String lyricInfo,
             String trackTitle,
             String trackArtist) {
-        return new MediaMetadata.Builder(base)
+        MediaMetadata.Builder builder = new MediaMetadata.Builder(base);
+        copyMediaMetadataArtwork(base, builder);
+        return builder
                 .putString(OPLUS_LYRIC_INFO_KEY, nullToEmpty(lyricInfo))
                 .build();
+    }
+
+    private static void copyMediaMetadataArtwork(
+            MediaMetadata source,
+            MediaMetadata.Builder target) {
+        if (source == null || target == null) {
+            return;
+        }
+        boolean hasArtworkUri = false;
+        String[] uriKeys = {
+                MediaMetadata.METADATA_KEY_ART_URI,
+                MediaMetadata.METADATA_KEY_ALBUM_ART_URI,
+                MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI
+        };
+        for (String key : uriKeys) {
+            if (!TextUtils.isEmpty(source.getString(key))) {
+                hasArtworkUri = true;
+                break;
+            }
+        }
+        String[] bitmapKeys = {
+                MediaMetadata.METADATA_KEY_ART,
+                MediaMetadata.METADATA_KEY_ALBUM_ART,
+                MediaMetadata.METADATA_KEY_DISPLAY_ICON
+        };
+        for (String key : bitmapKeys) {
+            Bitmap bitmap = source.getBitmap(key);
+            if (bitmap != null) {
+                if (hasArtworkUri && bitmap.getWidth() <= 1 && bitmap.getHeight() <= 1) {
+                    target.putBitmap(key, null);
+                } else {
+                    target.putBitmap(key, bitmap);
+                }
+            }
+        }
+        for (String key : uriKeys) {
+            String uri = source.getString(key);
+            if (!TextUtils.isEmpty(uri)) {
+                target.putString(key, uri);
+            }
+        }
     }
 
     @SuppressLint("WrongConstant")
@@ -14236,7 +15069,9 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private void maybeLogOfficialLyricPayload(
-            LyricInfoContract.Payload payload, boolean normalizedForOfficialList) {
+            LyricInfoContract.Payload payload,
+            boolean normalizedForOfficialList,
+            MediaMetadata metadata) {
         if (!isLyricVerboseDiagnosticsEnabled()) {
             return;
         }
@@ -14257,7 +15092,8 @@ public final class LockscreenLyricsModule extends XposedModule {
                 : payload.rawLyric.length())
                 + ", translationChars=" + (payload == null || payload.translationLyric == null
                 ? 0
-                : payload.translationLyric.length()));
+                : payload.translationLyric.length())
+                + ", artwork=" + describeMetadataArtwork(metadata));
     }
 
     private void maybeLogOfficialLyricGeometry(
@@ -15518,9 +16354,11 @@ public final class LockscreenLyricsModule extends XposedModule {
             if (cachedSource == metadata && cachedPatched != null) {
                 return cachedPatched;
             }
-            MediaMetadata patched = new MediaMetadata.Builder(metadata)
-                    .putString(OPLUS_LYRIC_INFO_KEY, normalizedPayload.lyricInfo)
-                    .build();
+            MediaMetadata patched = buildMetadataWithLyricInfoPreservingArtwork(
+                    metadata,
+                    normalizedPayload.lyricInfo,
+                    title,
+                    artist);
             sourceMetadata = new WeakReference<>(metadata);
             patchedMetadata = new WeakReference<>(patched);
             return patched;

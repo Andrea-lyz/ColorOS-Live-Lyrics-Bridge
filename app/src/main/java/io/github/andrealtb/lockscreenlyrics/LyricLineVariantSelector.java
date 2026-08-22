@@ -275,7 +275,7 @@ final class LyricLineVariantSelector {
         return false;
     }
 
-    private static boolean containsCjkScript(String text) {
+    static boolean containsCjkScript(String text) {
         if (text == null) {
             return false;
         }

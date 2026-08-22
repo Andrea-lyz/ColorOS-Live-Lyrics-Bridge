@@ -62,10 +62,24 @@ public class ExternalLyricProviderRegistryTest {
     @Test
     public void returnsProviderBackedPlayerPackagesWithoutExposingMutableRegistryState() {
         String[] packages = ExternalLyricProviderRegistry.trustedProviderHostPackages();
-        assertTrue(packages.length >= 12);
+        assertTrue(packages.length >= 13);
+        boolean hasKuWoPlayer = false;
+        for (String packageName : packages) {
+            hasKuWoPlayer |= ExternalLyricProviderRegistry.KUWO_MUSIC_PLAYER_PACKAGE
+                    .equals(packageName);
+        }
+        assertTrue(hasKuWoPlayer);
         packages[0] = "com.example.music";
         assertFalse("com.example.music".equals(
                 ExternalLyricProviderRegistry.trustedProviderHostPackages()[0]));
+    }
+
+    @Test
+    public void nativeKuWoLyricInfoHasNoDirectBroadcastSourceBinding() {
+        assertEquals("", ExternalLyricProviderRegistry.trustedHostPackageForSource(
+                "kuwo-internal"));
+        assertFalse(ExternalLyricProviderRegistry.isTrustedSourceBoundToHostPackage(
+                "kuwo-internal", ExternalLyricProviderRegistry.KUWO_MUSIC_PLAYER_PACKAGE));
     }
 
     @Test

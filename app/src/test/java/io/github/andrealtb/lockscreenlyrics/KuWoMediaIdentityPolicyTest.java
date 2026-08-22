@@ -1,0 +1,44 @@
+package io.github.andrealtb.lockscreenlyrics;
+
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+
+import org.junit.Test;
+
+public final class KuWoMediaIdentityPolicyTest {
+    @Test
+    public void exactIdentityRemainsCarLyricMutation() {
+        assertTrue(KuWoMediaIdentityPolicy.isCarLyricMetadataMutation(
+                "Light Ripple",
+                "HOYO-MiX",
+                " light ripple ",
+                "hoyo-mix"));
+    }
+
+    @Test
+    public void mergedTitleAndArtistRemainsCarLyricMutation() {
+        assertTrue(KuWoMediaIdentityPolicy.isCarLyricMetadataMutation(
+                "Light Ripple",
+                "HOYO-MiX",
+                "Light Ripple | HOYO-MiX",
+                null));
+    }
+
+    @Test
+    public void longerMultiArtistSpellingIsRealTrackChange() {
+        assertFalse(KuWoMediaIdentityPolicy.isCarLyricMetadataMutation(
+                "轻涟 La vaguelette",
+                "HOYO-MiX",
+                "轻涟 La vaguelette",
+                "胡夏&HOYO-MiX"));
+    }
+
+    @Test
+    public void differentTrackIsRealTrackChange() {
+        assertFalse(KuWoMediaIdentityPolicy.isCarLyricMetadataMutation(
+                "Renegades",
+                "ONE OK ROCK",
+                "360",
+                "Charli xcx"));
+    }
+}

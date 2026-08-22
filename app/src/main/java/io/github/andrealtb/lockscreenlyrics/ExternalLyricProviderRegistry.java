@@ -31,6 +31,7 @@ final class ExternalLyricProviderRegistry {
     static final String LX_WALNUT_MUSIC_SOURCE = "lyricprovider/lx-walnut-music";
     static final String METROLIST_PLAYER_PACKAGE = "com.metrolist.music";
     static final String METROLIST_SOURCE = "lyricprovider/metrolist-music";
+    static final String KUWO_MUSIC_PLAYER_PACKAGE = "cn.kuwo.player";
 
     private static final Source[] EXTERNAL_SOURCES = {
             new Source(APPLE_MUSIC_SOURCE, APPLE_MUSIC_PLAYER_PACKAGE, false, false, false),
@@ -66,7 +67,8 @@ final class ExternalLyricProviderRegistry {
             QISHUI_MUSIC_PLAYER_PACKAGE,
             KUGOU_MUSIC_PLAYER_PACKAGE,
             KUGOU_CONCEPT_MUSIC_PLAYER_PACKAGE,
-            METROLIST_PLAYER_PACKAGE
+            METROLIST_PLAYER_PACKAGE,
+            KUWO_MUSIC_PLAYER_PACKAGE
     };
 
     private ExternalLyricProviderRegistry() {
