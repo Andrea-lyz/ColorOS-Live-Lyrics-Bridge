@@ -59,14 +59,15 @@ There are two ways a player can work with the module:
 | Spotify | `LyricProvider-Spotify` | Direct v4 provider admitted by the Bridge; standard original lyrics only; translations are not currently supported |
 | QiShui Music | `LyricProvider-QiShui` | Direct v4 provider admitted by the Bridge; word-timed and translated lyrics; proper root hiding and the special setup below are required |
 | KuGou Music / Concept | `LyricProvider-KuGou` | Direct v4 provider admitted by the Bridge; word-timed and translated lyrics |
+| [Halcyon](https://github.com/Kifranei/Halcyon) | No | Native `lyricInfo` plus in-app direct v4 (`lyricprovider/halcyon`); word-timed and translated lyrics |
 
 [Metrolist](https://github.com/metrolistgroup/metrolist) is a **YouTube Music client for Android**. Because Metrolist itself does not provide a stable lyric retrieval interface, this Provider retrieves lyrics from third-party lyric providers in the same way as Metrolist. The lyrics selected by the Provider may therefore differ from those shown inside Metrolist.
 
-The Provider list above follows the Bridge's direct v4 admission registry: a Provider is considered adapted when its source and player package are admitted by the Bridge. The current admitted Provider sources are `qq-music`, `netease-cloud-music`, `apple-music`, `lx-music`, `lx-walnut-music`, `poweramp-music`, `spotify-music`, `qishui-music`, `kugou-music`, `kugou-concept-music`, and `metrolist-music`. Other modules present in the LyricProvider repository are not included in this adapted list unless their source and host package are added to the Bridge registry.
+The Provider list above follows the Bridge's direct v4 admission registry: a Provider is considered adapted when its source and player package are admitted by the Bridge. The current admitted Provider sources are `qq-music`, `netease-cloud-music`, `apple-music`, `lx-music`, `lx-walnut-music`, `poweramp-music`, `spotify-music`, `qishui-music`, `kugou-music`, `kugou-concept-music`, `metrolist-music`, and `halcyon`. Other modules present in the LyricProvider repository are not included in this adapted list unless their source and host package are added to the Bridge registry.
 
 Music apps can change their private lyric interfaces at any time. This table describes the adapters present in the current code; it is not a promise that every future player release will remain compatible.
 
-Players that publish the public `lyricInfo` protocol usually need neither a dedicated Provider nor Bridge scope in the player process. [Halcyon](https://github.com/Kifranei/Halcyon) is one known native integration.
+Players that publish the public `lyricInfo` protocol usually need neither a dedicated Provider nor Bridge scope in the player process. [Halcyon](https://github.com/Kifranei/Halcyon) is a known native integration and also sends direct v4 Provider broadcasts (`lyricprovider/halcyon` from `com.ella.music`) so ColorOS 16.9+ can still receive lyrics after extras-only `lyricInfo` updates are dropped. No extra Provider APK is required.
 
 ## Installation
 

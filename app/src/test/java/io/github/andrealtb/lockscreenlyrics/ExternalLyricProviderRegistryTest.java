@@ -30,6 +30,9 @@ public class ExternalLyricProviderRegistryTest {
         assertEquals("com.metrolist.music",
                 ExternalLyricProviderRegistry.trustedHostPackageForSource(
                         "lyricprovider/metrolist-music"));
+        assertEquals("com.ella.music",
+                ExternalLyricProviderRegistry.trustedHostPackageForSource(
+                        "lyricprovider/halcyon"));
         assertEquals("", ExternalLyricProviderRegistry.trustedHostPackageForSource("unknown"));
     }
 
@@ -49,6 +52,8 @@ public class ExternalLyricProviderRegistryTest {
                 "lyricprovider/lx-walnut-music", "com.lxwalnut.music.mobile"));
         assertTrue(ExternalLyricProviderRegistry.isTrustedSourceBoundToHostPackage(
                 "lyricprovider/metrolist-music", "com.metrolist.music"));
+        assertTrue(ExternalLyricProviderRegistry.isTrustedSourceBoundToHostPackage(
+                "lyricprovider/halcyon", "com.ella.music"));
         assertFalse(ExternalLyricProviderRegistry.isTrustedSourceBoundToHostPackage(
                 "lyricprovider/spotify-music", "com.tencent.qqmusic"));
         assertFalse(ExternalLyricProviderRegistry.isTrustedSourceBoundToHostPackage(
@@ -104,6 +109,13 @@ public class ExternalLyricProviderRegistryTest {
         assertTrue(metrolist.supportsTrackGeneration);
         assertTrue(metrolist.canPromoteAsAuthoritative);
         assertFalse(metrolist.allowsTitleOnlyFallbackMatch);
+
+        ExternalLyricSourceProfile halcyon =
+                ExternalLyricSourceProfile.registeredProviderDefaults(
+                        "lyricprovider/halcyon");
+        assertTrue(halcyon.canPromoteAsAuthoritative);
+        assertTrue(halcyon.allowsTitleOnlyFallbackMatch);
+        assertFalse(halcyon.supportsPlaybackState);
     }
 
     @Test
