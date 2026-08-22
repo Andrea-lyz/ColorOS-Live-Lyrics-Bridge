@@ -22,12 +22,19 @@ final class KuWoMediaIdentityPolicy {
             return true;
         }
 
-        // KuWo car lyrics may merge the stable title and artist into one field. A longer,
-        // multi-artist spelling is a different track and must keep its own identity.
-        return nextTitleNormalized.contains(title)
+        if (nextTitleNormalized.contains(title)
                 && nextTitleNormalized.contains(artist)
                 && (isBlank(nextArtistNormalized)
-                || artist.equals(nextArtistNormalized));
+                || artist.equals(nextArtistNormalized))) {
+            return true;
+        }
+
+        // KuWo also publishes the current lyric line as title while moving the stable
+        // "song-artist" identity into artist. That remains the same track.
+        return !isBlank(nextTitleNormalized)
+                && !nextTitleNormalized.equals(title)
+                && nextArtistNormalized.contains(title)
+                && nextArtistNormalized.contains(artist);
     }
 
     private static boolean isBlank(String value) {

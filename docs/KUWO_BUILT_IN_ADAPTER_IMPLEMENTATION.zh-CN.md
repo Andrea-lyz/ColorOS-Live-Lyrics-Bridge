@@ -122,8 +122,8 @@ Provider 内容链路应同时出现 lyricReady 和带有效 lyricInfo 的原生
    过小封面时，只允许用严格同曲身份的真实封面快照修复。
 3. 同曲封面快照按 mediaId 和 title|artist 双 key 记录，来源包括 SystemUI 已解析的
    有效封面和酷我原生通知 largeIcon；不得跨曲复用。
-4. 酷我车载歌词同曲判定必须使用 `KuWoMediaIdentityPolicy`：精确同曲，或 title 与
-   artist 被合并进同一字段时才归一化。多艺人拼写差异（例如
+4. 酷我车载歌词同曲判定必须使用 `KuWoMediaIdentityPolicy`：精确同曲；稳定身份可
+   合并进 title 或 artist 字段。多艺人拼写差异（例如
    `HOYO-MiX` 与 `胡夏&HOYO-MiX`）是真实换曲，不得合并身份。
 5. 真实换曲必须清空歌词保留、插件模型和封面身份；暂停、seek 和恢复播放可以保留
    同曲状态。

@@ -428,6 +428,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     private volatile boolean oplusLyricEntranceOverrideLogged;
     private static final int KUWO_ARTWORK_SNAPSHOT_LIMIT = 16;
     private static final int KUWO_ARTWORK_MIN_EDGE_PX = 96;
+    private static final int KUWO_ARTWORK_UNIFORM_SAMPLE_STRIDE = 24;
     private final Object kuWoArtworkSnapshotLock = new Object();
     private final LinkedHashMap<String, Icon> kuWoArtworkSnapshotByTrack =
             new LinkedHashMap<>();
@@ -6831,6 +6832,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             Field lyricField = findFieldOfType(model.getClass(), "s");
             Object lyricModel = lyricField == null ? null : readField(model, lyricField);
             int lineCount = countLyricModelLines(lyricModel);
+            boolean albumArtRepaired = false;
             synchronized (kuWoMediaModelLock) {
                 boolean trackChanged = !TextUtils.isEmpty(trackKey)
                         && !trackKey.equals(kuWoMediaModelTrackKey);
@@ -6840,6 +6842,10 @@ public final class LockscreenLyricsModule extends XposedModule {
                             kuWoMediaModelTrackArtist,
                             title,
                             artist)) {
+                        albumArtRepaired = repairKuWoPluginAlbumArt(
+                                model,
+                                kuWoMediaModelTrackTitle,
+                                kuWoMediaModelTrackArtist);
                         if (kuWoMediaModelLastLyric != null) {
                             if (lyricField != null) {
                                 lyricField.setAccessible(true);
@@ -6871,6 +6877,10 @@ public final class LockscreenLyricsModule extends XposedModule {
                         }
                     }
                 } else if (lineCount <= 0 && kuWoMediaModelLastLyric != null) {
+                    albumArtRepaired = repairKuWoPluginAlbumArt(
+                            model,
+                            title,
+                            artist);
                     if (lyricField != null) {
                         lyricField.setAccessible(true);
                         lyricField.set(model, kuWoMediaModelLastLyric);
@@ -6887,6 +6897,10 @@ public final class LockscreenLyricsModule extends XposedModule {
                         info("Retained same-track KuWo plugin lyric model, lines=" + lineCount);
                     }
                 } else if (lineCount > 0 && lyricModel != null) {
+                    albumArtRepaired = repairKuWoPluginAlbumArt(
+                            model,
+                            title,
+                            artist);
                     kuWoMediaModelTrackKey = TextUtils.isEmpty(trackKey)
                             ? kuWoMediaModelTrackKey
                             : trackKey;
@@ -6895,6 +6909,14 @@ public final class LockscreenLyricsModule extends XposedModule {
                         kuWoMediaModelTrackArtist = artist;
                     }
                     kuWoMediaModelLastLyric = lyricModel;
+                }
+            }
+            if (albumArtRepaired) {
+                long now = SystemClock.elapsedRealtime();
+                if (now - kuWoMediaModelRetainLoggedAt >= 1_500L) {
+                    kuWoMediaModelRetainLoggedAt = now;
+                    info("Repaired KuWo plugin album art from same-track snapshot, "
+                            + "lines=" + lineCount);
                 }
             }
         } catch (Throwable t) {
@@ -6926,6 +6948,198 @@ public final class LockscreenLyricsModule extends XposedModule {
         return false;
     }
 
+    private boolean repairKuWoPluginAlbumArt(
+            Object model,
+            String title,
+            String artist) {
+        Field albumArtField = readNamedField(model.getClass(), "d");
+        if (albumArtField == null || !"m6.v".equals(albumArtField.getType().getName())) {
+            albumArtField = findFieldOfType(model.getClass(), "f6128d");
+        }
+        Object albumArt = readField(model, albumArtField);
+        if (albumArt == null) {
+            logKuWoPluginAlbumArtSkip(title, artist, "no-album-art");
+            return false;
+        }
+        try {
+            Class<?> albumArtClass = albumArt.getClass();
+            Method staticIconMethod = albumArtClass.getMethod("b");
+            Object staticIcon = staticIconMethod.invoke(albumArt);
+            if (staticIcon == null) {
+                return false;
+            }
+            Method lottieMethod = albumArtClass.getMethod("a");
+            Object lottie = lottieMethod.invoke(albumArt);
+            Field iconField = readNamedField(staticIcon.getClass(), "a");
+            Field drawableField = readNamedField(staticIcon.getClass(), "b");
+            Field bitmapField = readNamedField(staticIcon.getClass(), "c");
+            Field miniModelField = readNamedField(staticIcon.getClass(), "d");
+            Field cardModelField = readNamedField(staticIcon.getClass(), "e");
+            if (iconField == null || drawableField == null || bitmapField == null
+                    || miniModelField == null || cardModelField == null) {
+                logKuWoPluginAlbumArtSkip(title, artist, "missing-m6z-field");
+                return false;
+            }
+            Object cardModel = readField(staticIcon, cardModelField);
+            Bitmap cardBitmap = invokeBitmapGetter(cardModel, "a");
+            Bitmap staticBitmap = readField(staticIcon, bitmapField) instanceof Bitmap
+                    ? (Bitmap) readField(staticIcon, bitmapField)
+                    : null;
+            Drawable staticDrawable = readField(staticIcon, drawableField) instanceof Drawable
+                    ? (Drawable) readField(staticIcon, drawableField)
+                    : null;
+            boolean cardInvalid = !isPlausibleKuWoCoverBitmap(cardBitmap);
+            boolean staticBitmapInvalid = !isPlausibleKuWoCoverBitmap(staticBitmap);
+            boolean drawableInvalid = staticDrawable != null
+                    && (staticDrawable.getIntrinsicWidth() < KUWO_ARTWORK_MIN_EDGE_PX
+                    || staticDrawable.getIntrinsicHeight() < KUWO_ARTWORK_MIN_EDGE_PX);
+            if (!cardInvalid && !staticBitmapInvalid && !drawableInvalid) {
+                return false;
+            }
+            Icon snapshot = peekKuWoArtworkSnapshot(buildTrackKey(title, artist));
+            if (snapshot == null) {
+                logKuWoPluginAlbumArtSkip(title, artist, "no-snapshot");
+                return false;
+            }
+            Bitmap bitmap = extractIconBitmap(snapshot);
+            if (!isPlausibleKuWoCoverBitmap(bitmap)) {
+                logKuWoPluginAlbumArtSkip(title, artist, "bad-snapshot");
+                return false;
+            }
+            Drawable repairedDrawable = snapshot.loadDrawable(currentApplicationContext());
+            ClassLoader pluginLoader = model.getClass().getClassLoader();
+            Class<?> staticIconClass = pluginLoader.loadClass("m6.z");
+            Constructor<?> staticIconConstructor = staticIconClass.getDeclaredConstructor(
+                    Icon.class,
+                    Drawable.class,
+                    Bitmap.class,
+                    pluginLoader.loadClass("m6.j"),
+                    pluginLoader.loadClass("m6.j"));
+            staticIconConstructor.setAccessible(true);
+            Class<?> normalIconClass = pluginLoader.loadClass("m6.i");
+            Constructor<?> normalIconConstructor = normalIconClass.getDeclaredConstructor(
+                    Bitmap.class,
+                    Integer.class);
+            normalIconConstructor.setAccessible(true);
+            Integer primaryColor = cardModel == null
+                    ? null
+                    : (Integer) cardModel.getClass()
+                            .getMethod("b")
+                            .invoke(cardModel);
+            Object repairedCardModel = normalIconConstructor.newInstance(
+                    bitmap,
+                    primaryColor);
+            Object repairedMiniModel = normalIconConstructor.newInstance(
+                    bitmap,
+                    primaryColor);
+            Object repairedStaticIcon = staticIconConstructor.newInstance(
+                    snapshot,
+                    repairedDrawable,
+                    bitmap,
+                    repairedMiniModel,
+                    repairedCardModel);
+            Class<?> multiIconClass = pluginLoader.loadClass("m6.v");
+            Constructor<?> multiIconConstructor = multiIconClass.getDeclaredConstructor(
+                    staticIconClass,
+                    pluginLoader.loadClass("m6.q"));
+            multiIconConstructor.setAccessible(true);
+            Object repairedAlbumArt = multiIconConstructor.newInstance(
+                    repairedStaticIcon,
+                    lottie);
+            albumArtField.setAccessible(true);
+            albumArtField.set(model, repairedAlbumArt);
+            return true;
+        } catch (Throwable t) {
+            warn(
+                    LyricLogFormatter.Area.SYSTEM_UI,
+                    "lyric-policy",
+                    "Failed to repair KuWo plugin album art: " + t);
+            return false;
+        }
+    }
+
+    private static Bitmap invokeBitmapGetter(Object owner, String methodName) {
+        if (owner == null) {
+            return null;
+        }
+        try {
+            Object value = owner.getClass().getMethod(methodName).invoke(owner);
+            return value instanceof Bitmap ? (Bitmap) value : null;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private void logKuWoPluginAlbumArtSkip(String title, String artist, String reason) {
+        long now = SystemClock.elapsedRealtime();
+        if (now - kuWoMediaModelRetainLoggedAt < 1_500L) {
+            return;
+        }
+        kuWoMediaModelRetainLoggedAt = now;
+        info("Skipped KuWo plugin album art repair; reason=" + reason
+                + ", track=" + buildTrackKey(title, artist));
+    }
+
+    private static boolean isPlausibleKuWoCoverBitmap(Bitmap bitmap) {
+        if (bitmap == null || bitmap.isRecycled()) {
+            return false;
+        }
+        int width = bitmap.getWidth();
+        int height = bitmap.getHeight();
+        if (width < KUWO_ARTWORK_MIN_EDGE_PX || height < KUWO_ARTWORK_MIN_EDGE_PX) {
+            return false;
+        }
+        return !isHighConfidenceUniformBitmap(bitmap, KUWO_ARTWORK_UNIFORM_SAMPLE_STRIDE);
+    }
+
+    private static boolean isHighConfidenceUniformBitmap(Bitmap bitmap, int stride) {
+        try {
+            int width = bitmap.getWidth();
+            int height = bitmap.getHeight();
+            int samplesX = Math.max(3, Math.min(9, width / stride));
+            int samplesY = Math.max(3, Math.min(9, height / stride));
+            long redTotal = 0L;
+            long greenTotal = 0L;
+            long blueTotal = 0L;
+            int count = 0;
+            for (int sampleY = 0; sampleY < samplesY; sampleY++) {
+                for (int sampleX = 0; sampleX < samplesX; sampleX++) {
+                    double fx = samplesX == 1 ? 0.5D : sampleX / (double) (samplesX - 1);
+                    double fy = samplesY == 1 ? 0.5D : sampleY / (double) (samplesY - 1);
+                    int x = Math.max(0, Math.min(width - 1, (int) Math.round(fx * (width - 1))));
+                    int y = Math.max(0, Math.min(height - 1, (int) Math.round(fy * (height - 1))));
+                    int pixel = bitmap.getPixel(x, y);
+                    redTotal += Color.red(pixel);
+                    greenTotal += Color.green(pixel);
+                    blueTotal += Color.blue(pixel);
+                    count++;
+                }
+            }
+            if (count == 0) {
+                return false;
+            }
+            long averageRed = redTotal / count;
+            long averageGreen = greenTotal / count;
+            long averageBlue = blueTotal / count;
+            long maximumDelta = 0L;
+            for (int sampleY = 0; sampleY < samplesY; sampleY++) {
+                for (int sampleX = 0; sampleX < samplesX; sampleX++) {
+                    double fx = samplesX == 1 ? 0.5D : sampleX / (double) (samplesX - 1);
+                    double fy = samplesY == 1 ? 0.5D : sampleY / (double) (samplesY - 1);
+                    int x = Math.max(0, Math.min(width - 1, (int) Math.round(fx * (width - 1))));
+                    int y = Math.max(0, Math.min(height - 1, (int) Math.round(fy * (height - 1))));
+                    int pixel = bitmap.getPixel(x, y);
+                    maximumDelta = Math.max(maximumDelta, Math.abs(Color.red(pixel) - averageRed));
+                    maximumDelta = Math.max(maximumDelta, Math.abs(Color.green(pixel) - averageGreen));
+                    maximumDelta = Math.max(maximumDelta, Math.abs(Color.blue(pixel) - averageBlue));
+                }
+            }
+            return maximumDelta <= 2L;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
     private static String readStringFieldByName(
             Object target,
             String primaryName,
@@ -6945,6 +7159,14 @@ public final class LockscreenLyricsModule extends XposedModule {
             Field field = target.getClass().getDeclaredField(fieldName);
             field.setAccessible(true);
             return field.get(target);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static Field readNamedField(Class<?> type, String fieldName) {
+        try {
+            return type.getDeclaredField(fieldName);
         } catch (Throwable ignored) {
             return null;
         }

@@ -25,6 +25,15 @@ public final class KuWoMediaIdentityPolicyTest {
     }
 
     @Test
+    public void lyricLineTitleWithMergedArtistRemainsCarLyricMutation() {
+        assertTrue(KuWoMediaIdentityPolicy.isCarLyricMetadataMutation(
+                "Your Type",
+                "Carly Rae Jepsen",
+                "I'm sorry I'm sorry I love you",
+                "Your Type-Carly Rae Jepsen"));
+    }
+
+    @Test
     public void longerMultiArtistSpellingIsRealTrackChange() {
         assertFalse(KuWoMediaIdentityPolicy.isCarLyricMetadataMutation(
                 "轻涟 La vaguelette",
