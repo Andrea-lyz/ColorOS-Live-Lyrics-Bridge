@@ -13,7 +13,7 @@ Bring lyrics from more music apps to the native ColorOS / OPlus lock-screen lyri
 
 This is not a floating overlay. It passes a player's full lyric timeline to the system UI, keeping the ColorOS look, transitions, and always-on display while adding word-by-word highlighting, translations, and appearance controls.
 
-> Current release: **v3.7.0**. Update the Bridge and the Providers you use from the same release. Mixing versions can cause track-change and lyric-timing issues.
+> Current release: **v3.8.0**. Update the Bridge and the Providers you use from the same release. Mixing versions can cause track-change and lyric-timing issues.
 
 ## What it does
 
@@ -76,7 +76,7 @@ Players that publish the public `lyricInfo` protocol usually need neither a dedi
 4. Enable each Provider separately in LSPosed and select only its matching music app as the scope.
 5. Reboot the device so the hooks load in SystemUI, system services, and the player.
 
-`LyricProvider-<version>.zip` is simply a bundle containing every Provider APK. It is not a Recovery-flashable package. You only need to install Providers for the players you use.
+`LyricProvider-All-<version>.zip` is simply a bundle containing every Provider APK. It is not a Recovery-flashable package. You only need to install Providers for the players you use.
 
 ### Extra step for QiShui Music
 

@@ -1,7 +1,7 @@
 # 酷我音乐阶段 1：稳定歌词按钮与 Provider 原生 lyricInfo
 
-> 状态：阶段 1 已完成静态实现，真机稳定性待验证。  
-> Bridge 基线：release 3.7.3，仅叠加本阶段的 MediaData policy 规范化。  
+> 状态：主线歌词、封面、暂停/seek、切歌、车载歌词与翻译按钮已完成真机验证。
+> Bridge 基线：release 3.8.0，包含酷我完整歌词、封面与按钮适配。
 > 目标播放器：cn.kuwo.player。
 
 ## 1. 阶段 1 的真实目标
@@ -13,7 +13,7 @@ MediaData 重建和 dispatch 前，都必须把酷我歌词入口策略稳定为
 暂停后的歌词页面动画，也不通过 UI 保留来掩盖数据问题。
 
 酷我歌词内容由 LyricProvider\kuwo-music 在酷我进程内生成官方 lyricInfo；Bridge
-只负责阶段 1 的入口策略稳定和 3.7.3 原有通用歌词消费链路。
+负责入口策略稳定和现有通用歌词消费链路。
 
 ## 2. Bridge 阶段 1 实现
 
@@ -71,7 +71,7 @@ Provider 不向 SystemUI 发送外部歌词广播，不修改播放状态或播�
 
 ### 4.1 前置条件
 
-1. Bridge 使用 3.7.3 基线加本阶段补丁。
+1. Bridge 使用 3.8.0。
 2. 仅启用当前 LyricProvider\kuwo-music，不同时启用旧 KuWo Provider APK。
 3. 重启酷我和 SystemUI 后采集完整 logcat；重启动作由测试者执行。
 4. 覆盖一首有歌词歌曲和一首无歌词歌曲。
@@ -135,3 +135,29 @@ Provider 内容链路应同时出现 lyricReady 和带有效 lyricInfo 的原生
 - 真机验收必须覆盖首播、切歌到同名不同艺人、暂停、继续和 seek 后的歌词与封面；
 - 新日志若出现错误归一化、上一首封面顶号、纯色封面或上一首歌词，应先回查本节
   不变量，而不是在下游 UI 继续叠补丁。
+
+## 7. 2026-08-22 DexKit 版本兼容层
+
+Provider 与 Bridge 均采用“DexKit 语义锚点优先、当前混淆名回退、反射结构严格校验”的
+发现策略；兼容层只替换目标发现，不改变已验收的数据流和 UI 行为。
+
+Provider：
+
+- 完整歌词获取方法通过 `settingLyricTransType`、`requestLyricTransType`、`cached` 三组
+  行为字符串定位，再校验 `(Music, boolean, Music) -> LyricsInfo`；`e0.f` 仅作回退。
+- 官方 LRCX 解析器通过逐字正则和多时间戳拆分字符串定位，再校验实例 `String -> result`
+  解析方法；`j6.f#a` 仅作回退。
+- 行、逐字字段增加类型与声明序位兜底，避免只改字段混淆名就丢失逐字歌词。
+
+Bridge：
+
+- SystemUI 的歌词入口、Rule0 更新和 action 构造继续由 `SystemUiDexKitAdapter` 以 OPlus
+  日志字符串和方法签名定位，酷我翻译/歌词按钮不依赖固定 owner 类名。
+- SystemUIPlugin 的 `MediaModel`、`MultiIconModel`、`StaticIcon`、`NormalIcon`、
+  `LottieIcon` 与 `LyricModel` 通过数据类 `toString` 语义锚点定位；`m6.*` 只作回退。
+- 插件字段、getter 和构造器按解析出的实际类型绑定，歌词模型保留与同曲封面修复不再依赖
+  `m6.t/m6.v/m6.z/m6.j/m6.i/m6.q/m6.s` 的固定名字。
+
+回归日志必须确认：Provider 出现 `KuWo DexKit resolved internals`，Bridge 出现
+`Hooked OPlus KuWo plugin media model ... resolver=dexkit`；若进入 fallback，当前版本仍可运行，
+但应保留日志用于下一版锚点更新。

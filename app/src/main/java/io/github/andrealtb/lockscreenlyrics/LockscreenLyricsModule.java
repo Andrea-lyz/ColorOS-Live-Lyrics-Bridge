@@ -117,7 +117,6 @@ public final class LockscreenLyricsModule extends XposedModule {
     private static final String OPLUS_MEDIA_BLACKLIST_METHOD = "isInMediaBlackList";
     private static final String OPLUS_PLUGIN_CLASS_LOADER_CLASS =
             "com.android.systemui.shared.plugins.OPlusPluginClassLoader";
-    private static final String OPLUS_PLUGIN_MEDIA_MODEL_CLASS = "m6.t";
     private static final String LYRICS_RECYCLER_VIEW_CLASS =
             "com.oplus.systemui.plugins.shared.template.component.media.view.LyricsRecyclerView";
     private static final String LYRICS_SWITCHER_VIEW_CLASS =
@@ -433,7 +432,6 @@ public final class LockscreenLyricsModule extends XposedModule {
     private final LinkedHashMap<String, Icon> kuWoArtworkSnapshotByTrack =
             new LinkedHashMap<>();
     private volatile boolean kuWoArtworkRestoreLogged;
-    private volatile boolean kuWoArtworkFetchLogged;
     private volatile boolean kuWoArtworkFetchFailureLogged;
     private final Object kuWoMediaModelLock = new Object();
     private String kuWoMediaModelTrackKey;
@@ -442,6 +440,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     private Object kuWoMediaModelLastLyric;
     private long kuWoMediaModelRetainLoggedAt;
     private volatile boolean oplusPluginMediaModelHookInstalled;
+    private volatile OplusPluginDexKitAdapter.Targets oplusPluginKuWoTargets;
     private volatile boolean kuWoCarLyricIdentityNormalizedLogged;
     private volatile boolean oplusMediaPolicyHooksInstalled;
     private volatile boolean oplusHistoryWhitelistHookInstalled;
@@ -2645,6 +2644,13 @@ public final class LockscreenLyricsModule extends XposedModule {
             if (TextUtils.isEmpty(trackKey)) {
                 return chain.proceed();
             }
+            String currentTrackKey = buildTrackKey(
+                    lastSystemUiSongName,
+                    lastSystemUiArtistName);
+            if (!TextUtils.isEmpty(currentTrackKey)
+                    && !trackKey.equals(currentTrackKey)) {
+                return chain.proceed();
+            }
             Icon incoming = (Icon) chain.getArg(0);
             if (isPlausibleKuWoCoverIcon(incoming)) {
                 return chain.proceed();
@@ -2897,22 +2903,8 @@ public final class LockscreenLyricsModule extends XposedModule {
             if (TextUtils.isEmpty(trackKey)) {
                 return result;
             }
-            boolean realTrackWithDifferentCover = metadata != null
-                    && !TextUtils.isEmpty(metadata.getString(MediaMetadata.METADATA_KEY_MEDIA_ID))
-                    && !KuWoMediaIdentityPolicy.isCarLyricMetadataMutation(
-                    lastSystemUiSongName,
-                    lastSystemUiArtistName,
-                    firstNonEmpty(
-                            getText(metadata, MediaMetadata.METADATA_KEY_TITLE),
-                            getText(metadata, MediaMetadata.METADATA_KEY_DISPLAY_TITLE)),
-                    firstNonEmpty(
-                            getText(metadata, MediaMetadata.METADATA_KEY_ARTIST),
-                            getText(metadata, MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE)));
             if (result instanceof Icon && isPlausibleKuWoCoverIcon((Icon) result)) {
                 rememberKuWoArtworkSnapshots(metadata, (Icon) result);
-                return result;
-            }
-            if (realTrackWithDifferentCover && result instanceof Icon) {
                 return result;
             }
             Icon snapshot = peekKuWoArtworkSnapshot(trackKey);
@@ -2928,10 +2920,8 @@ public final class LockscreenLyricsModule extends XposedModule {
             Icon fetched = loadKuWoHttpsCoverIcon(metadata);
             if (isPlausibleKuWoCoverIcon(fetched)) {
                 rememberKuWoArtworkSnapshots(metadata, fetched);
-                if (!kuWoArtworkFetchLogged) {
-                    kuWoArtworkFetchLogged = true;
-                    info("Loaded KuWo album artwork from its https cover endpoint");
-                }
+                info("Loaded KuWo album artwork from its https cover endpoint; key="
+                        + trackKey);
                 return fetched;
             }
         } catch (Throwable t) {
@@ -6792,7 +6782,19 @@ public final class LockscreenLyricsModule extends XposedModule {
             return;
         }
         try {
-            Class<?> modelClass = pluginLoader.loadClass(OPLUS_PLUGIN_MEDIA_MODEL_CLASS);
+            OplusPluginDexKitAdapter.Targets targets;
+            try {
+                targets = OplusPluginDexKitAdapter.resolve(pluginLoader);
+            } catch (Throwable dexKitFailure) {
+                warn(
+                        LyricLogFormatter.Area.SYSTEM_UI,
+                        "lyric-policy",
+                        "OPlus plugin DexKit resolution failed, using m6 fallback: "
+                                + dexKitFailure);
+                targets = OplusPluginDexKitAdapter.legacy(pluginLoader);
+            }
+            Class<?> modelClass = targets.mediaModelClass;
+            oplusPluginKuWoTargets = targets;
             Constructor<?>[] constructors = modelClass.getDeclaredConstructors();
             int hooked = 0;
             for (Constructor<?> constructor : constructors) {
@@ -6807,7 +6809,8 @@ public final class LockscreenLyricsModule extends XposedModule {
             }
             if (hooked > 0) {
                 oplusPluginMediaModelHookInstalled = true;
-                info("Hooked OPlus KuWo plugin media model, constructors=" + hooked);
+                info("Hooked OPlus KuWo plugin media model, constructors=" + hooked
+                        + ", resolver=" + (targets.resolvedByDexKit ? "dexkit" : "legacy"));
             }
         } catch (Throwable t) {
             warn(
@@ -6826,10 +6829,23 @@ public final class LockscreenLyricsModule extends XposedModule {
             return model;
         }
         try {
-            String title = readStringFieldByName(model, "h", "f6173h");
-            String artist = readStringFieldByName(model, "i", "f6174i");
+            OplusPluginDexKitAdapter.Targets targets = oplusPluginKuWoTargets;
+            String title = readKuWoMediaModelText(
+                    model,
+                    "h",
+                    "f6173h",
+                    "songName=",
+                    ", artist=");
+            String artist = readKuWoMediaModelText(
+                    model,
+                    "i",
+                    "f6174i",
+                    "artist=",
+                    ", iconBeforeArtist=");
             String trackKey = buildTrackKey(title, artist);
-            Field lyricField = findFieldOfType(model.getClass(), "s");
+            Field lyricField = targets == null
+                    ? findFieldOfType(model.getClass(), "s")
+                    : targets.lyricModelField;
             Object lyricModel = lyricField == null ? null : readField(model, lyricField);
             int lineCount = countLyricModelLines(lyricModel);
             boolean albumArtRepaired = false;
@@ -6851,11 +6867,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                                 lyricField.setAccessible(true);
                                 lyricField.set(model, kuWoMediaModelLastLyric);
                             }
-                            Field supportedField = findBooleanSuffixField(model.getClass(), "u");
-                            if (supportedField != null) {
-                                supportedField.setAccessible(true);
-                                supportedField.setBoolean(model, true);
-                            }
+                            setKuWoPluginLyricSupported(model, targets);
                             lineCount = countLyricModelLines(kuWoMediaModelLastLyric);
                         }
                         long now = SystemClock.elapsedRealtime();
@@ -6885,11 +6897,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                         lyricField.setAccessible(true);
                         lyricField.set(model, kuWoMediaModelLastLyric);
                     }
-                    Field supportedField = findBooleanSuffixField(model.getClass(), "u");
-                    if (supportedField != null) {
-                        supportedField.setAccessible(true);
-                        supportedField.setBoolean(model, true);
-                    }
+                    setKuWoPluginLyricSupported(model, targets);
                     lineCount = countLyricModelLines(kuWoMediaModelLastLyric);
                     long now = SystemClock.elapsedRealtime();
                     if (now - kuWoMediaModelRetainLoggedAt >= 1_500L) {
@@ -6952,41 +6960,37 @@ public final class LockscreenLyricsModule extends XposedModule {
             Object model,
             String title,
             String artist) {
-        Field albumArtField = readNamedField(model.getClass(), "d");
-        if (albumArtField == null || !"m6.v".equals(albumArtField.getType().getName())) {
-            albumArtField = findFieldOfType(model.getClass(), "f6128d");
+        OplusPluginDexKitAdapter.Targets targets = oplusPluginKuWoTargets;
+        if (targets == null) {
+            logKuWoPluginAlbumArtSkip(title, artist, "missing-plugin-targets");
+            return false;
         }
+        Field albumArtField = targets.albumArtField;
         Object albumArt = readField(model, albumArtField);
         if (albumArt == null) {
             logKuWoPluginAlbumArtSkip(title, artist, "no-album-art");
             return false;
         }
         try {
-            Class<?> albumArtClass = albumArt.getClass();
-            Method staticIconMethod = albumArtClass.getMethod("b");
-            Object staticIcon = staticIconMethod.invoke(albumArt);
+            Object staticIcon = targets.staticIconGetter.invoke(albumArt);
             if (staticIcon == null) {
                 return false;
             }
-            Method lottieMethod = albumArtClass.getMethod("a");
-            Object lottie = lottieMethod.invoke(albumArt);
-            Field iconField = readNamedField(staticIcon.getClass(), "a");
-            Field drawableField = readNamedField(staticIcon.getClass(), "b");
-            Field bitmapField = readNamedField(staticIcon.getClass(), "c");
-            Field miniModelField = readNamedField(staticIcon.getClass(), "d");
-            Field cardModelField = readNamedField(staticIcon.getClass(), "e");
-            if (iconField == null || drawableField == null || bitmapField == null
-                    || miniModelField == null || cardModelField == null) {
-                logKuWoPluginAlbumArtSkip(title, artist, "missing-m6z-field");
-                return false;
-            }
+            Object lottie = targets.lottieIconGetter.invoke(albumArt);
+            Field drawableField = targets.staticDrawableField;
+            Field bitmapField = targets.staticBitmapField;
+            Field cardModelField = targets.cardIconModelField;
             Object cardModel = readField(staticIcon, cardModelField);
-            Bitmap cardBitmap = invokeBitmapGetter(cardModel, "a");
-            Bitmap staticBitmap = readField(staticIcon, bitmapField) instanceof Bitmap
-                    ? (Bitmap) readField(staticIcon, bitmapField)
+            Bitmap cardBitmap = cardModel == null
+                    ? null
+                    : (Bitmap) targets.iconModelBitmapGetter.invoke(cardModel);
+            Object staticBitmapValue = readField(staticIcon, bitmapField);
+            Bitmap staticBitmap = staticBitmapValue instanceof Bitmap
+                    ? (Bitmap) staticBitmapValue
                     : null;
-            Drawable staticDrawable = readField(staticIcon, drawableField) instanceof Drawable
-                    ? (Drawable) readField(staticIcon, drawableField)
+            Object staticDrawableValue = readField(staticIcon, drawableField);
+            Drawable staticDrawable = staticDrawableValue instanceof Drawable
+                    ? (Drawable) staticDrawableValue
                     : null;
             boolean cardInvalid = !isPlausibleKuWoCoverBitmap(cardBitmap);
             boolean staticBitmapInvalid = !isPlausibleKuWoCoverBitmap(staticBitmap);
@@ -7007,43 +7011,22 @@ public final class LockscreenLyricsModule extends XposedModule {
                 return false;
             }
             Drawable repairedDrawable = snapshot.loadDrawable(currentApplicationContext());
-            ClassLoader pluginLoader = model.getClass().getClassLoader();
-            Class<?> staticIconClass = pluginLoader.loadClass("m6.z");
-            Constructor<?> staticIconConstructor = staticIconClass.getDeclaredConstructor(
-                    Icon.class,
-                    Drawable.class,
-                    Bitmap.class,
-                    pluginLoader.loadClass("m6.j"),
-                    pluginLoader.loadClass("m6.j"));
-            staticIconConstructor.setAccessible(true);
-            Class<?> normalIconClass = pluginLoader.loadClass("m6.i");
-            Constructor<?> normalIconConstructor = normalIconClass.getDeclaredConstructor(
-                    Bitmap.class,
-                    Integer.class);
-            normalIconConstructor.setAccessible(true);
             Integer primaryColor = cardModel == null
                     ? null
-                    : (Integer) cardModel.getClass()
-                            .getMethod("b")
-                            .invoke(cardModel);
-            Object repairedCardModel = normalIconConstructor.newInstance(
+                    : (Integer) targets.iconModelColorGetter.invoke(cardModel);
+            Object repairedCardModel = targets.normalIconConstructor.newInstance(
                     bitmap,
                     primaryColor);
-            Object repairedMiniModel = normalIconConstructor.newInstance(
+            Object repairedMiniModel = targets.normalIconConstructor.newInstance(
                     bitmap,
                     primaryColor);
-            Object repairedStaticIcon = staticIconConstructor.newInstance(
+            Object repairedStaticIcon = targets.staticIconConstructor.newInstance(
                     snapshot,
                     repairedDrawable,
                     bitmap,
                     repairedMiniModel,
                     repairedCardModel);
-            Class<?> multiIconClass = pluginLoader.loadClass("m6.v");
-            Constructor<?> multiIconConstructor = multiIconClass.getDeclaredConstructor(
-                    staticIconClass,
-                    pluginLoader.loadClass("m6.q"));
-            multiIconConstructor.setAccessible(true);
-            Object repairedAlbumArt = multiIconConstructor.newInstance(
+            Object repairedAlbumArt = targets.multiIconConstructor.newInstance(
                     repairedStaticIcon,
                     lottie);
             albumArtField.setAccessible(true);
@@ -7058,16 +7041,34 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
     }
 
-    private static Bitmap invokeBitmapGetter(Object owner, String methodName) {
-        if (owner == null) {
-            return null;
+    private static void setKuWoPluginLyricSupported(
+            Object model,
+            OplusPluginDexKitAdapter.Targets targets) throws IllegalAccessException {
+        Field supportedField = targets == null
+                ? findBooleanSuffixField(model.getClass(), "u")
+                : targets.lyricSupportedField;
+        if (supportedField != null) {
+            supportedField.setAccessible(true);
+            supportedField.setBoolean(model, true);
         }
-        try {
-            Object value = owner.getClass().getMethod(methodName).invoke(owner);
-            return value instanceof Bitmap ? (Bitmap) value : null;
-        } catch (Throwable ignored) {
-            return null;
+    }
+
+    private static String readKuWoMediaModelText(
+            Object model,
+            String primaryField,
+            String fallbackField,
+            String label,
+            String nextLabel) {
+        String description = String.valueOf(model);
+        int start = description.indexOf(label);
+        if (start >= 0) {
+            start += label.length();
+            int end = description.indexOf(nextLabel, start);
+            if (end >= start) {
+                return description.substring(start, end);
+            }
         }
+        return readStringFieldByName(model, primaryField, fallbackField);
     }
 
     private void logKuWoPluginAlbumArtSkip(String title, String artist, String reason) {
@@ -7159,14 +7160,6 @@ public final class LockscreenLyricsModule extends XposedModule {
             Field field = target.getClass().getDeclaredField(fieldName);
             field.setAccessible(true);
             return field.get(target);
-        } catch (Throwable ignored) {
-            return null;
-        }
-    }
-
-    private static Field readNamedField(Class<?> type, String fieldName) {
-        try {
-            return type.getDeclaredField(fieldName);
         } catch (Throwable ignored) {
             return null;
         }
@@ -16366,7 +16359,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (!TRANSLATION_BUTTON_DIAGNOSTICS_ENABLED) {
             return;
         }
-        Log.i(TAG, formatLog(LyricLogFormatter.Area.TRANSLATION, "button", message));
+        Log.d(TAG, formatLog(LyricLogFormatter.Area.TRANSLATION, "button", message));
     }
 
     private void warn(LyricLogFormatter.Area area, String event, String message) {

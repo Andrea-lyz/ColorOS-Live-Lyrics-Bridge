@@ -28,6 +28,7 @@
     <string name="player_spotify">Spotify</string>
     <string name="player_qishui">QiShui Music</string>
     <string name="player_kugou">KuGou Music</string>
+    <string name="player_kuwo">KuWo Music</string>
     <string name="player_metrolist">Metrolist</string>
     <!-- Sub page: player translation settings -->
     <string name="sub_trans_desc">The player\'s own translation toggle takes priority over these defaults. You can clear per-player memory individually.</string>

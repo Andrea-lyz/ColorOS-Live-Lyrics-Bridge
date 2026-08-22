@@ -28,6 +28,7 @@
     <string name="player_spotify">Spotify</string>
     <string name="player_qishui">汽水音乐</string>
     <string name="player_kugou">酷狗音乐</string>
+    <string name="player_kuwo">酷我音乐</string>
     <string name="player_metrolist">Metrolist</string>
     <!-- 子页面：播放器翻译设置 -->
     <string name="sub_trans_desc">播放器自己的翻译按钮选择会优先于这里的默认值；可按播放器单独清除该记忆。</string>

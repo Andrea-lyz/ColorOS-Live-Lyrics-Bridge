@@ -48,6 +48,8 @@ final class PlayerTranslationSettings {
                     "com.luna.music"),
             new Entry(R.string.player_kugou, "io.github.proify.lyricon.kgprovider", true,
                     "com.kugou.android", "com.kugou.android.lite"),
+            new Entry(R.string.player_kuwo, "io.github.proify.lyricon.kwprovider", true,
+                    "cn.kuwo.player"),
             new Entry(R.string.player_metrolist, "io.github.proify.lyricon.metrolistprovider",
                     false, "com.metrolist.music")
     ));

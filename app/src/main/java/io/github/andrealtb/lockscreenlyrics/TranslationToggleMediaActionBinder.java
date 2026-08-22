@@ -489,7 +489,7 @@ final class TranslationToggleMediaActionBinder {
         if (!TRANSLATION_BUTTON_DIAGNOSTICS_ENABLED) {
             return;
         }
-        Log.i("LockscreenLyrics", formatLog("button", message));
+        Log.d("LockscreenLyrics", formatLog("button", message));
     }
 
     private String formatLog(String event, String message) {

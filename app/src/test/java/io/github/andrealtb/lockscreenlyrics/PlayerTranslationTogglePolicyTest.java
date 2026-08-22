@@ -21,6 +21,9 @@ public class PlayerTranslationTogglePolicyTest {
         assertTrue(PlayerTranslationTogglePolicy.canOverrideFavoriteActionWithTranslation(
                 ExternalLyricProviderRegistry.NETEASE_MUSIC_PLAYER_PACKAGE,
                 Collections.emptySet()));
+        assertTrue(PlayerTranslationTogglePolicy.canOverrideFavoriteActionWithTranslation(
+                ExternalLyricProviderRegistry.KUWO_MUSIC_PLAYER_PACKAGE,
+                Collections.emptySet()));
     }
 
     @Test

@@ -29,19 +29,21 @@ public final class PlayerTranslationSettingsTest {
                 "cn.toside.music.mobile"));
         assertTrue(PlayerTranslationSettings.isSupportedPlayerPackage(
                 "com.lxwalnut.music.mobile"));
+        assertTrue(PlayerTranslationSettings.isSupportedPlayerPackage("cn.kuwo.player"));
         assertFalse(PlayerTranslationSettings.isSupportedPlayerPackage("com.example.unknown"));
     }
 
     @Test
-    public void providerBackedPlayersExposeNineUniqueProviderPackages() {
+    public void providerBackedPlayersExposeTenUniqueProviderPackages() {
         String[] packages = PlayerTranslationSettings.providerPackages();
         HashSet<String> unique = new HashSet<>();
-        assertEquals(9, packages.length);
+        assertEquals(10, packages.length);
         for (String packageName : packages) {
             assertTrue(unique.add(packageName));
         }
         assertTrue(unique.contains("io.github.proify.lyricon.cmprovider"));
         assertTrue(unique.contains("io.github.proify.lyricon.qishuiprovider"));
+        assertTrue(unique.contains("io.github.proify.lyricon.kwprovider"));
         assertTrue(unique.contains("io.github.proify.lyricon.metrolistprovider"));
     }
 

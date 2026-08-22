@@ -141,7 +141,8 @@ final class ExternalLyricProviderRegistry {
                 || QISHUI_MUSIC_PLAYER_PACKAGE.equals(packageName)
                 || KUGOU_MUSIC_PLAYER_PACKAGE.equals(packageName)
                 || KUGOU_CONCEPT_MUSIC_PLAYER_PACKAGE.equals(packageName)
-                || METROLIST_PLAYER_PACKAGE.equals(packageName);
+                || METROLIST_PLAYER_PACKAGE.equals(packageName)
+                || KUWO_MUSIC_PLAYER_PACKAGE.equals(packageName);
     }
 
     private static Source findBySource(String source) {

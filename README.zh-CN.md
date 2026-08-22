@@ -13,7 +13,7 @@
 
 它不是一套盖在锁屏上的悬浮窗，而是把播放器的完整歌词交给系统原生界面显示。这样既能保留 ColorOS 的锁屏风格、切歌动画和息屏显示，也能补上逐字高亮、翻译和外观设置。
 
-> 当前版本：**v3.7.0**。升级时请把 Bridge 和正在使用的 LyricProvider 从同一 Release 一起更新，避免新旧版本配合异常。
+> 当前版本：**v3.8.0**。升级时请把 Bridge 和正在使用的 LyricProvider 从同一 Release 一起更新，避免新旧版本配合异常。
 
 ## 主要功能
 
@@ -76,7 +76,7 @@
 4. 在 LSPosed 中分别启用这些 Provider，并只勾选它对应的音乐 App。
 5. 重启手机，让 SystemUI、系统服务和播放器里的模块完整加载。
 
-Release 中的 `LyricProvider-<版本>.zip` 只是全部 Provider APK 的合集，不是需要刷入 Recovery 的包。只安装自己用得到的 Provider 即可。
+Release 中的 `LyricProvider-All-<版本>.zip` 只是全部 Provider APK 的合集，不是需要刷入 Recovery 的包。只安装自己用得到的 Provider 即可。
 
 ### 汽水音乐的额外一步
 

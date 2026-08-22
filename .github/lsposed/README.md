@@ -59,7 +59,7 @@
 4. 在 LSPosed 中单独启用 Provider，只勾选它对应的音乐 App。
 5. 重启手机。
 
-`LyricProvider-<版本>.zip` 只是全部 Provider APK 的下载合集，不是 Recovery 刷机包。只安装自己需要的 Provider 即可。
+`LyricProvider-All-<版本>.zip` 只是全部 Provider APK 的下载合集，不是 Recovery 刷机包。只安装自己需要的 Provider 即可。
 
 **汽水音乐用户：**还需在 LSP 管理器中为汽水音乐开启“还原内联钩子”，并按管理器提示处理 `libart.so`；同时需做好 Root 隐藏。
 
@@ -130,7 +130,7 @@ This is not a floating overlay. The system still owns the lyric UI; the module a
 4. Enable each Provider separately in LSPosed and select only its matching music app.
 5. Reboot the device.
 
-`LyricProvider-<version>.zip` is only a bundle of all Provider APKs; it is not a Recovery-flashable package. Install only the Providers you need.
+`LyricProvider-All-<version>.zip` is only a bundle of all Provider APKs; it is not a Recovery-flashable package. Install only the Providers you need.
 
 **QiShui users:** also enable **Restore inline hooks** for QiShui in the LSP manager and follow its instructions for handling `libart.so`; ensure root hiding is properly configured as well.
 
