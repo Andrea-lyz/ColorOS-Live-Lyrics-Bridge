@@ -59,14 +59,15 @@
 | Spotify | `LyricProvider-Spotify` | Bridge 已放行 v4 直达 Provider；目前只支持原文标准歌词，不支持翻译 |
 | 汽水音乐 | `LyricProvider-QiShui` | Bridge 已放行 v4 直达 Provider；支持逐字歌词、翻译歌词；需做好 Root 隐藏并完成下方特殊设置 |
 | 酷狗音乐 / 酷狗概念版 | `LyricProvider-KuGou` | Bridge 已放行 v4 直达 Provider；支持逐字歌词、翻译歌词 |
+| [Halcyon](https://github.com/Kifranei/Halcyon) | 否 | 主动 `lyricInfo` + 应用内 v4 广播（`lyricprovider/halcyon`）；支持逐字与翻译 |
 
 [Metrolist](https://github.com/metrolistgroup/metrolist) 是**适用于安卓系统的 YouTube Music 客户端**。由于 Metrolist 本身没有稳定的歌词获取接口，本 Provider 采用与 Metrolist 相同的方式从第三方歌词提供商获取歌词，因此两者获取的歌词可能存在差异。
 
-上表以 Bridge 的 v4 直达放行注册表为准：Provider 的 `source` 与播放器包名已被 Bridge 静态放行，即视为已完成 Bridge 适配。目前放行的 Provider source 为：`qq-music`、`netease-cloud-music`、`apple-music`、`lx-music`、`lx-walnut-music`、`poweramp-music`、`spotify-music`、`qishui-music`、`kugou-music`、`kugou-concept-music` 和 `metrolist-music`。LyricProvider 仓库中其他模块虽然存在，但在加入 Bridge 注册表前不属于当前适配清单。
+上表以 Bridge 的 v4 直达放行注册表为准：Provider 的 `source` 与播放器包名已被 Bridge 静态放行，即视为已完成 Bridge 适配。目前放行的 Provider source 为：`qq-music`、`netease-cloud-music`、`apple-music`、`lx-music`、`lx-walnut-music`、`poweramp-music`、`spotify-music`、`qishui-music`、`kugou-music`、`kugou-concept-music`、`metrolist-music` 和 `halcyon`。LyricProvider 仓库中其他模块虽然存在，但在加入 Bridge 注册表前不属于当前适配清单。
 
 播放器更新后，私有歌词接口可能发生变化。表格表示当前代码已经包含相应适配，不代表未来所有播放器版本都能永久兼容。
 
-已经主动支持公开 `lyricInfo` 协议的播放器通常不需要额外 Provider，也不需要加入 Bridge 的播放器作用域。当前已知主动接入项目包括 [Halcyon](https://github.com/Kifranei/Halcyon)。
+已经主动支持公开 `lyricInfo` 协议的播放器通常不需要额外 Provider，也不需要加入 Bridge 的播放器作用域。[Halcyon](https://github.com/Kifranei/Halcyon) 会同时发布 `lyricInfo` 并从播放器进程发送 v4 Provider 广播（`lyricprovider/halcyon` / `com.ella.music`），以便 ColorOS 16.9 起 extras-only 更新被丢弃后仍能收到歌词，无需额外 Provider APK。
 
 ## 安装
 

@@ -31,6 +31,8 @@ final class ExternalLyricProviderRegistry {
     static final String LX_WALNUT_MUSIC_SOURCE = "lyricprovider/lx-walnut-music";
     static final String METROLIST_PLAYER_PACKAGE = "com.metrolist.music";
     static final String METROLIST_SOURCE = "lyricprovider/metrolist-music";
+    static final String HALCYON_PLAYER_PACKAGE = "com.ella.music";
+    static final String HALCYON_SOURCE = "lyricprovider/halcyon";
 
     private static final Source[] EXTERNAL_SOURCES = {
             new Source(APPLE_MUSIC_SOURCE, APPLE_MUSIC_PLAYER_PACKAGE, false, false, false),
@@ -50,7 +52,11 @@ final class ExternalLyricProviderRegistry {
                     true,
                     false),
             new Source(POWERAMP_SOURCE, POWERAMP_PLAYER_PACKAGE, false, true, true),
-            new Source(METROLIST_SOURCE, METROLIST_PLAYER_PACKAGE, true, true, false)
+            new Source(METROLIST_SOURCE, METROLIST_PLAYER_PACKAGE, true, true, false),
+            // Native player: Halcyon sends v4 from its own process after ColorOS 16.9
+            // started dropping extras-only lyricInfo. Keep MediaSession as the
+            // playback clock; allow title-only fallback for local files.
+            new Source(HALCYON_SOURCE, HALCYON_PLAYER_PACKAGE, false, true, true)
     };
 
     private static final String[] BRIDGE_PLAYER_PACKAGES = {
@@ -66,7 +72,8 @@ final class ExternalLyricProviderRegistry {
             QISHUI_MUSIC_PLAYER_PACKAGE,
             KUGOU_MUSIC_PLAYER_PACKAGE,
             KUGOU_CONCEPT_MUSIC_PLAYER_PACKAGE,
-            METROLIST_PLAYER_PACKAGE
+            METROLIST_PLAYER_PACKAGE,
+            HALCYON_PLAYER_PACKAGE
     };
 
     private ExternalLyricProviderRegistry() {
@@ -139,7 +146,8 @@ final class ExternalLyricProviderRegistry {
                 || QISHUI_MUSIC_PLAYER_PACKAGE.equals(packageName)
                 || KUGOU_MUSIC_PLAYER_PACKAGE.equals(packageName)
                 || KUGOU_CONCEPT_MUSIC_PLAYER_PACKAGE.equals(packageName)
-                || METROLIST_PLAYER_PACKAGE.equals(packageName);
+                || METROLIST_PLAYER_PACKAGE.equals(packageName)
+                || HALCYON_PLAYER_PACKAGE.equals(packageName);
     }
 
     private static Source findBySource(String source) {
