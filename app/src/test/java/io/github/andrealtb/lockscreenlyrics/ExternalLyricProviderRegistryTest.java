@@ -33,6 +33,9 @@ public class ExternalLyricProviderRegistryTest {
         assertEquals("com.ella.music",
                 ExternalLyricProviderRegistry.trustedHostPackageForSource(
                         "lyricprovider/halcyon"));
+        assertEquals("yos.music.player",
+                ExternalLyricProviderRegistry.trustedHostPackageForSource(
+                        "lyricprovider/flamingo"));
         assertEquals("", ExternalLyricProviderRegistry.trustedHostPackageForSource("unknown"));
     }
 
@@ -54,12 +57,16 @@ public class ExternalLyricProviderRegistryTest {
                 "lyricprovider/metrolist-music", "com.metrolist.music"));
         assertTrue(ExternalLyricProviderRegistry.isTrustedSourceBoundToHostPackage(
                 "lyricprovider/halcyon", "com.ella.music"));
+        assertTrue(ExternalLyricProviderRegistry.isTrustedSourceBoundToHostPackage(
+                "lyricprovider/flamingo", "yos.music.player"));
         assertFalse(ExternalLyricProviderRegistry.isTrustedSourceBoundToHostPackage(
                 "lyricprovider/spotify-music", "com.tencent.qqmusic"));
         assertFalse(ExternalLyricProviderRegistry.isTrustedSourceBoundToHostPackage(
                 "lyricprovider/lx-music", "com.lxwalnut.music.mobile"));
         assertFalse(ExternalLyricProviderRegistry.isTrustedSourceBoundToHostPackage(
                 "lyricprovider/metrolist-music", "com.spotify.music"));
+        assertFalse(ExternalLyricProviderRegistry.isTrustedSourceBoundToHostPackage(
+                "lyricprovider/flamingo", "yos.music.player.debug"));
         assertFalse(ExternalLyricProviderRegistry.isTrustedSourceBoundToHostPackage(
                 "lyricprovider/unknown", "com.example.music"));
     }
@@ -116,6 +123,13 @@ public class ExternalLyricProviderRegistryTest {
         assertTrue(halcyon.canPromoteAsAuthoritative);
         assertTrue(halcyon.allowsTitleOnlyFallbackMatch);
         assertFalse(halcyon.supportsPlaybackState);
+        ExternalLyricSourceProfile flamingo =
+                ExternalLyricSourceProfile.registeredProviderDefaults(
+                        "lyricprovider/flamingo");
+        assertFalse(flamingo.supportsPlaybackState);
+        assertFalse(flamingo.supportsTrackGeneration);
+        assertTrue(flamingo.canPromoteAsAuthoritative);
+        assertFalse(flamingo.allowsTitleOnlyFallbackMatch);
     }
 
     @Test
@@ -172,6 +186,18 @@ public class ExternalLyricProviderRegistryTest {
         assertTrue(lxWalnut.supportsTrackGeneration);
         assertTrue(lxWalnut.canOverrideFavoriteActionWithTranslation);
         assertFalse(lxWalnut.canPromoteAsAuthoritative);
+
+        ExternalLyricSourceProfile flamingo =
+                ExternalLyricSourceProfile.version4ProviderDeclaration(
+                        "lyricprovider/flamingo",
+                        "yos.music.player",
+                        "trackGeneration,currentTrackAuthority,translationToggle",
+                        "",
+                        "currentTrack");
+        assertFalse(flamingo.supportsPlaybackState);
+        assertTrue(flamingo.supportsTrackGeneration);
+        assertTrue(flamingo.canPromoteAsAuthoritative);
+        assertTrue(flamingo.canOverrideFavoriteActionWithTranslation);
 
         ExternalLyricSourceProfile rejected =
                 ExternalLyricSourceProfile.version4ProviderDeclaration(

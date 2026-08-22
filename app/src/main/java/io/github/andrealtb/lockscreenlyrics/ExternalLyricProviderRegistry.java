@@ -34,6 +34,8 @@ final class ExternalLyricProviderRegistry {
     static final String KUWO_MUSIC_PLAYER_PACKAGE = "cn.kuwo.player";
     static final String HALCYON_PLAYER_PACKAGE = "com.ella.music";
     static final String HALCYON_SOURCE = "lyricprovider/halcyon";
+    static final String FLAMINGO_PLAYER_PACKAGE = "yos.music.player";
+    static final String FLAMINGO_SOURCE = "lyricprovider/flamingo";
 
     private static final Source[] EXTERNAL_SOURCES = {
             new Source(APPLE_MUSIC_SOURCE, APPLE_MUSIC_PLAYER_PACKAGE, false, false, false),
@@ -57,7 +59,8 @@ final class ExternalLyricProviderRegistry {
             // Native player: Halcyon sends v4 from its own process after ColorOS 16.9
             // started dropping extras-only lyricInfo. Keep MediaSession as the
             // playback clock; allow title-only fallback for local files.
-            new Source(HALCYON_SOURCE, HALCYON_PLAYER_PACKAGE, false, true, true)
+            new Source(HALCYON_SOURCE, HALCYON_PLAYER_PACKAGE, false, true, true),
+            new Source(FLAMINGO_SOURCE, FLAMINGO_PLAYER_PACKAGE, false, true, false)
     };
 
     private static final String[] BRIDGE_PLAYER_PACKAGES = {
@@ -76,6 +79,8 @@ final class ExternalLyricProviderRegistry {
             METROLIST_PLAYER_PACKAGE,
             KUWO_MUSIC_PLAYER_PACKAGE,
             HALCYON_PLAYER_PACKAGE
+            ,
+            FLAMINGO_PLAYER_PACKAGE
     };
 
     private ExternalLyricProviderRegistry() {
