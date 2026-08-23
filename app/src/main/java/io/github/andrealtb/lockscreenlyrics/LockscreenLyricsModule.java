@@ -432,6 +432,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     private final LinkedHashMap<String, Icon> kuWoArtworkSnapshotByTrack =
             new LinkedHashMap<>();
     private volatile boolean kuWoArtworkRestoreLogged;
+    private volatile long kuWoSameIdentityArtworkRestoreLoggedAt;
     private volatile boolean kuWoArtworkFetchFailureLogged;
     private final Object kuWoMediaModelLock = new Object();
     private String kuWoMediaModelTrackKey;
@@ -2889,12 +2890,30 @@ public final class LockscreenLyricsModule extends XposedModule {
                 MediaMetadata stable = buildMetadataWithStableSystemUiIdentity(
                         metadata,
                         lastSystemUiSongName,
-                        lastSystemUiArtistName);
-                Object[] args = chain.getArgs().toArray(new Object[0]);
-                args[0] = stable;
-                Object stableResult = chain.proceed(args);
+                lastSystemUiArtistName);
+               Object[] args = chain.getArgs().toArray(new Object[0]);
+               args[0] = stable;
+               Object stableResult = chain.proceed(args);
                 if (stableResult instanceof Icon && isPlausibleKuWoCoverIcon((Icon) stableResult)) {
                     rememberKuWoArtworkSnapshots(stable, (Icon) stableResult);
+                    return stableResult;
+                }
+                Icon snapshot = peekKuWoArtworkSnapshot(kuWoArtworkSnapshotKey(stable));
+                if (snapshot != null) {
+                    long now = SystemClock.elapsedRealtime();
+                    if (now - kuWoSameIdentityArtworkRestoreLoggedAt >= 1_500L) {
+                        kuWoSameIdentityArtworkRestoreLoggedAt = now;
+                        info("Restored KuWo album artwork for same-identity metadata from"
+                                + " the same-track snapshot");
+                    }
+                    return snapshot;
+                }
+                Icon fetched = loadKuWoHttpsCoverIcon(stable);
+                if (isPlausibleKuWoCoverIcon(fetched)) {
+                    rememberKuWoArtworkSnapshots(stable, fetched);
+                    info("Loaded KuWo album artwork from its https cover endpoint; key="
+                            + kuWoArtworkSnapshotKey(stable));
+                    return fetched;
                 }
                 return stableResult;
             }
