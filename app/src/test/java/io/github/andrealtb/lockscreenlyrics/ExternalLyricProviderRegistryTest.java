@@ -33,6 +33,9 @@ public class ExternalLyricProviderRegistryTest {
         assertEquals("com.ella.music",
                 ExternalLyricProviderRegistry.trustedHostPackageForSource(
                         "lyricprovider/halcyon"));
+        assertEquals("com.lg.sllocalmusic",
+                ExternalLyricProviderRegistry.trustedHostPackageForSource(
+                        "lyricprovider/prismmusic"));
         assertEquals("yos.music.player",
                 ExternalLyricProviderRegistry.trustedHostPackageForSource(
                         "lyricprovider/flamingo"));
@@ -57,6 +60,10 @@ public class ExternalLyricProviderRegistryTest {
                 "lyricprovider/metrolist-music", "com.metrolist.music"));
         assertTrue(ExternalLyricProviderRegistry.isTrustedSourceBoundToHostPackage(
                 "lyricprovider/halcyon", "com.ella.music"));
+        assertTrue(ExternalLyricProviderRegistry.isTrustedSourceBoundToHostPackage(
+                "lyricprovider/prismmusic", "com.lg.sllocalmusic"));
+        assertFalse(ExternalLyricProviderRegistry.isTrustedSourceBoundToHostPackage(
+                "lyricprovider/prismmusic", "com.ella.music"));
         assertTrue(ExternalLyricProviderRegistry.isTrustedSourceBoundToHostPackage(
                 "lyricprovider/flamingo", "yos.music.player"));
         assertFalse(ExternalLyricProviderRegistry.isTrustedSourceBoundToHostPackage(
@@ -123,6 +130,12 @@ public class ExternalLyricProviderRegistryTest {
         assertTrue(halcyon.canPromoteAsAuthoritative);
         assertTrue(halcyon.allowsTitleOnlyFallbackMatch);
         assertFalse(halcyon.supportsPlaybackState);
+        ExternalLyricSourceProfile prismMusic =
+                ExternalLyricSourceProfile.registeredProviderDefaults(
+                        "lyricprovider/prismmusic");
+        assertTrue(prismMusic.canPromoteAsAuthoritative);
+        assertTrue(prismMusic.allowsTitleOnlyFallbackMatch);
+        assertFalse(prismMusic.supportsPlaybackState);
         ExternalLyricSourceProfile flamingo =
                 ExternalLyricSourceProfile.registeredProviderDefaults(
                         "lyricprovider/flamingo");

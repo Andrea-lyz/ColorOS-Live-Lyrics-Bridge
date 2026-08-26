@@ -34,6 +34,8 @@ final class ExternalLyricProviderRegistry {
     static final String KUWO_MUSIC_PLAYER_PACKAGE = "cn.kuwo.player";
     static final String HALCYON_PLAYER_PACKAGE = "com.ella.music";
     static final String HALCYON_SOURCE = "lyricprovider/halcyon";
+    static final String PRISM_MUSIC_PLAYER_PACKAGE = "com.lg.sllocalmusic";
+    static final String PRISM_MUSIC_SOURCE = "lyricprovider/prismmusic";
     static final String FLAMINGO_PLAYER_PACKAGE = "yos.music.player";
     static final String FLAMINGO_SOURCE = "lyricprovider/flamingo";
 
@@ -60,6 +62,9 @@ final class ExternalLyricProviderRegistry {
             // started dropping extras-only lyricInfo. Keep MediaSession as the
             // playback clock; allow title-only fallback for local files.
             new Source(HALCYON_SOURCE, HALCYON_PLAYER_PACKAGE, false, true, true),
+            // Native player: PrismMusic uses the same direct-v4 fallback as Halcyon when
+            // ColorOS drops extras-only lyricInfo for local and WebDAV tracks.
+            new Source(PRISM_MUSIC_SOURCE, PRISM_MUSIC_PLAYER_PACKAGE, false, true, true),
             new Source(FLAMINGO_SOURCE, FLAMINGO_PLAYER_PACKAGE, false, true, false)
     };
 
@@ -79,6 +84,7 @@ final class ExternalLyricProviderRegistry {
             METROLIST_PLAYER_PACKAGE,
             KUWO_MUSIC_PLAYER_PACKAGE,
             HALCYON_PLAYER_PACKAGE,
+            PRISM_MUSIC_PLAYER_PACKAGE,
             FLAMINGO_PLAYER_PACKAGE
     };
 
@@ -154,7 +160,8 @@ final class ExternalLyricProviderRegistry {
                 || KUGOU_CONCEPT_MUSIC_PLAYER_PACKAGE.equals(packageName)
                 || METROLIST_PLAYER_PACKAGE.equals(packageName)
                 || KUWO_MUSIC_PLAYER_PACKAGE.equals(packageName)
-                || HALCYON_PLAYER_PACKAGE.equals(packageName);
+                || HALCYON_PLAYER_PACKAGE.equals(packageName)
+                || PRISM_MUSIC_PLAYER_PACKAGE.equals(packageName);
     }
 
     private static Source findBySource(String source) {
