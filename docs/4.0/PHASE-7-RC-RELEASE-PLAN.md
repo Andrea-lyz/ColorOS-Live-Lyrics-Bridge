@@ -1,6 +1,6 @@
 # Bridge / Providers 4.0 Phase 7：RC 与正式发布计划
 
-> 状态：**Slice 7A / 7B 已完成；下一步进入 Slice 7C RC / Release 流水线重写**
+> 状态：**Slice 7A / 7B / 7C 本地实现已完成；进入 Slice 7D 静态回归，远端 RC dry-run 待源码推送后执行**
 >
 > 目标：Bridge `4.0.0` 与 12 个 v5 Provider 形成同一批次、可复现、可回滚说明完整的正式交付物。
 >
@@ -25,13 +25,13 @@
 |---|---|---|
 | Bridge 工作树 | 4.0 runtime 已提交为 `a342234`；Unicode test worker 修复为 `025bfc9`；本地生成物已 ignore | Release workflow、README、版本与 Phase 7 文档按后续 slice 独立提交 |
 | Provider 工作树 | Unicode test worker 修复 `d6f463b` 与 LX 最终修复 `5618582` 已提交；工作树干净 | 在 RC workflow/版本契约完成前保持本地，不推送和打 tag |
-| Bridge Release workflow | `.github/workflows/release.yml` 仍 checkout 旧 `Andrea-lyz/LyricProvider`，调用旧 module，并生成 `LyricProvider-*` / `LyricProvider-All-*` | 整体切换到 `ColorOS-Live-Lyrics-Providers` 的显式 12 模块 v5 矩阵；旧 workflow 不得用于 4.0 |
-| Provider CI | 新仓库已有 `testV5Matrix`、`assembleV5MatrixRelease` 和“恰好 12 APK”门禁，但当前 workflow 只做手动构建与 Actions artifact | 复用其矩阵任务，接入 Bridge 的协调 RC/GA 流水线，并补全签名、清单、哈希和发布模式 |
+| Bridge Release workflow | `6da07d8` 已重写为 metadata / Bridge / Providers / package / publish 五段拓扑 | 首次远端 RC 必须使用不可变 Provider SHA，验证 secrets、跨仓库 checkout 与完整 16 资产 artifact |
+| Provider CI | Bridge 协调流水线已调用 `testV5Matrix`、`assembleV5MatrixRelease`、机器契约和显式 collector | Provider 缺签名变量时配置阶段失败；正式签名正向构建留给远端 RC secrets |
 | Bridge 版本 | `00a8333` 已冻结 `4.0.0` / `versionCode=136`，并建立 `bridge-release-contract.json` | 7C workflow 必须从契约解析 tag、LSP tag、资产名和数量，不再复制常量 |
 | Provider 版本 | `cb57ce6` 已冻结独立内部版本、12 applicationId/scope/宿主基线、`providers-v1.0.0` source tag 与套件资产名 | 7C workflow 必须先运行机器契约校验，再构建和收集 APK |
 | Bridge 测试 | `file.encoding=COMPAT` 修复 Windows Unicode `@argfile` 后，标准 Gradle 70 suite / 477 tests 通过，6 项显式 skipped；标准 assembleDebug 通过 | Release CI 直接使用标准任务，不再保留 direct-JUnit classpath 旁路 |
-| LSPosed metadata | Bridge 内置 scope 与 `.github/lsposed/SCOPE` 已是 `system` + `com.android.systemui`；独立 `LSPRepo/SCOPE` 仍包含 Salt/Cone 三个播放器包 | 正式发布前同步 LSPRepo scope，否则仓库推荐作用域会把 4.0 Bridge 重新注入播放器进程 |
-| 面向用户文档 | 根 README 已在向 4.0 迁移，但版本横幅仍有旧值；`.github/lsposed/README.md` 仍是 v3.4.1 结构和旧 Provider/内置 adapter 说明 | 统一 README 中英文、LSPosed README、LSPRepo README/SUMMARY、安装/迁移/排错和支持矩阵 |
+| LSPosed metadata | Bridge 内重复的 `.github/lsposed` 镜像已删除；APK scope 仍只有两项；独立 `LSPRepo/SCOPE` 仍包含 Salt/Cone 三个播放器包 | 正式发布前只更新 LSPRepo，否则仓库推荐作用域会把 4.0 Bridge 重新注入播放器进程 |
+| 面向用户文档 | 根 README 已在向 4.0 迁移但仍待 7F 统一；公开 LSPosed 文档只由 LSPRepo 持有 | 统一 README 中英文、LSPRepo README/SUMMARY、安装/迁移/排错和支持矩阵 |
 | 发布流程文档 | `docs/RELEASE_PROCESS.md` 仍以旧 `LyricProvider master` 为发布源 | 改成新 Provider 仓库、不可变 commit/tag、RC dry-run、LSP metadata 先行和 12 APK 资产核验 |
 
 Slice 7A 证据与哈希见 `PHASE-7-RC-BASELINE.md`。其余项目均属于 Phase 7 本身；
@@ -113,7 +113,7 @@ Provider 仓库保留自己的源码 tag（首发采用 `providers-v1.0.0`），
    - Xposed API 与 scope；
    - APK 文件名、size、SHA-256、签名证书 SHA-256；
    - Bridge commit 与 Provider commit。
-4. Bridge scope 的两个正式所有者一致：APK `scope.list` 与独立 `LSPRepo/SCOPE` 均只保留 `system` 和 `com.android.systemui`；Bridge `.github/lsposed` 重复镜像在 7C 决定删除或降为内部契约。
+4. Bridge scope 的两个正式所有者一致：APK `scope.list` 与独立 `LSPRepo/SCOPE` 均只保留 `system` 和 `com.android.systemui`；Bridge `.github/lsposed` 重复镜像已在 7C 删除。
 5. Provider scope 必须只包含各自宿主/进程所需包，不把 Bridge、SystemUI 或其他播放器包塞入错误模块。
 6. 对 3.8.1 → 4.0.0 设置迁移做专项测试：schema v3、逐播放器翻译状态、歌词清理默认关闭、调试域、整包配置备份/恢复。
 7. 明确降级边界：4.0 配置不保证旧 codec 无损读取；文档要求降级前先备份，必要时重置旧版设置。
@@ -182,6 +182,31 @@ metadata / contract
 2. 用 RC mode 至少完整跑一次远端流水线，确认 secrets、跨仓库 checkout 权限、Gradle cache、artifact 下载与扁平打包均有效。
 3. 模拟缺一个 Provider、重复包名、错误签名、错误 version、错误 Provider ref，确认均 fail closed。
 4. 清理 keystore 和临时目录用 `if: always()`，日志不得输出密码、证书私钥或 Provider 网络凭据。
+
+### 6.5 Slice 7C 本地验证状态
+
+- Bridge 提交 `6da07d8`：RC/GA 五段 workflow、完整资产验证器、debug CI 更新、
+  单一 LSPRepo metadata 所有权。
+- Provider 提交 `99831e8` / `9908293` / `c8f50c3`：显式 release collector、
+  缺签名配置阶段失败、契约校验继续 fail closed。
+- RC mode 只上传 16 项私有 complete artifact；publish job 只允许 tag 事件，且拒绝
+  覆盖任何已存在的公开 Release。
+- Provider ref 只接受完整 40 位 SHA 或精确指向 HEAD 的 tag；GA 额外要求
+  `providers-v1.0.0` 指向该 commit。
+- v3.8.1 公开 Bridge APK 的正式证书 SHA-256 已核对并冻结为
+  `ff38544ba21922c35989097fe6f2ad0bda434b4d0bb611e016d51d7862d36195`。
+- 本地用 13 个 debug APK 做负向打包测试：包名/版本检查通过后，在第一项证书检查
+  精确失败，证明 debug/错误签名不能进入 RC bundle。
+- Provider 无签名变量的 `assembleV5MatrixRelease --dry-run` 在配置阶段按预期失败。
+- PowerShell 四个契约/collector/asset 脚本语法通过；跨仓库契约通过。
+- 官方固定版 actionlint `v1.7.12`（下载 SHA-256
+  `6e7241b51e6817ea6a047693d8e6fed13b31819c9a0dd6c5a726e1592d22f6e9`）
+  校验两个 workflow，0 error。
+- `lintDebug` 首次暴露 14 个 error；未创建 lint baseline，已用 `13bb491` 修复 API
+  门禁、vendor key 注解、正确字体/Slider/LineBreaker 常量与分 API theme；
+  `lintDebug`、`lintRelease` 随后均通过。
+- 正式签名正向构建、artifact 下载重验与 GitHub secrets 权限只能在源码推送后的
+  首次 RC workflow 关闭，当前不冒充本地已验证。
 
 ## 7. Slice 7D：测试体系与 RC 静态门禁
 
@@ -260,7 +285,7 @@ metadata / contract
 ### 9.1 必须更新的入口
 
 1. Bridge `README.md` / `README.zh-CN.md`。另重写中英`播放器主动接入协议`，提供更详细准确的接入适配技术文档。
-2. Bridge `.github/lsposed` 不再作为面向用户的文档入口；正式 LSPosed metadata 只维护独立 `LSPRepo`。7C 同步决定删除这份重复镜像，或仅保留最小 scope 契约而不再维护重复 README。
+2. Bridge `.github/lsposed` 重复镜像已删除；正式 LSPosed metadata 只维护独立 `LSPRepo`。
 3. 独立 `LSPRepo/README.md`、`SUMMARY`、`SCOPE`。
 4. Provider `README.md` / `README-English.md` 与 `docs/4.0/README.md`。另需新增适配技术文档（中英），为后续新增播放器Provider约定主要技术线路，在readme中简单介绍并设置跳转按钮。
 5. `docs/RELEASE_PROCESS.md`。
