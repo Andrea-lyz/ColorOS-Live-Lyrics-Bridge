@@ -1,4 +1,4 @@
-name: Release APK Bundle
+name: Build 4.0 RC and Release
 
 on:
   push:
@@ -6,56 +6,141 @@ on:
       - "v*"
   workflow_dispatch:
     inputs:
-      release_tag:
-        description: "Release tag, for example v2.0.0. Empty means current ref name."
-        required: false
+      mode:
+        description: "RC only uploads a private Actions artifact; release is tag-only."
+        required: true
+        type: choice
+        options:
+          - rc
+          - release
+        default: rc
+      rc_number:
+        description: "Positive RC sequence number. Used only in rc mode."
+        required: true
+        default: "1"
         type: string
-      lyric_provider_ref:
-        description: "LyricProvider ref to build."
-        required: false
-        default: "master"
+      providers_ref:
+        description: "Immutable Provider tag or full 40-character commit SHA."
+        required: true
+        default: "providers-v1.0.0"
         type: string
 
 permissions:
   contents: write
 
+concurrency:
+  group: cll-4-release-${{ github.ref }}-${{ inputs.mode || 'tag' }}
+  cancel-in-progress: false
+
 env:
   JAVA_VERSION: "21"
-  LSP_REPO: Xposed-Modules-Repo/io.github.andrealtb.lockscreenlyrics
+  PROVIDERS_REPOSITORY: Andrea-lyz/ColorOS-Live-Lyrics-Providers
+  LSP_REPOSITORY: Xposed-Modules-Repo/io.github.andrealtb.lockscreenlyrics
 
 jobs:
-  build-bridge:
-    name: Build ColorOS Live Lyrics Bridge
+  metadata:
+    name: Resolve immutable release inputs
     runs-on: ubuntu-latest
     outputs:
+      mode: ${{ steps.meta.outputs.mode }}
+      batch: ${{ steps.meta.outputs.batch }}
       release_tag: ${{ steps.meta.outputs.release_tag }}
       version_name: ${{ steps.meta.outputs.version_name }}
       lsp_tag: ${{ steps.meta.outputs.lsp_tag }}
+      bridge_sha: ${{ steps.meta.outputs.bridge_sha }}
+      providers_sha: ${{ steps.meta.outputs.providers_sha }}
+      providers_ref: ${{ steps.meta.outputs.providers_ref }}
     steps:
-      - name: Checkout bridge
+      - name: Checkout Bridge
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout immutable Provider source
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.PROVIDERS_REPOSITORY }}
+          ref: ${{ inputs.providers_ref || 'providers-v1.0.0' }}
+          path: provider-source
+          fetch-depth: 0
+          token: ${{ secrets.PROVIDERS_REPO_TOKEN || github.token }}
+
+      - name: Validate cross-repository contracts
+        shell: pwsh
+        run: ./scripts/validate-release-contract.ps1 -ProviderRepoRoot ./provider-source
+
+      - name: Resolve metadata and reject mutable inputs
+        id: meta
+        shell: pwsh
+        env:
+          REQUESTED_MODE: ${{ inputs.mode }}
+          REQUESTED_RC_NUMBER: ${{ inputs.rc_number }}
+          REQUESTED_PROVIDERS_REF: ${{ inputs.providers_ref }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $contract = Get-Content -LiteralPath release/bridge-release-contract.json -Raw | ConvertFrom-Json
+          $eventName = '${{ github.event_name }}'
+          $mode = if ($eventName -eq 'push') { 'release' } else { $env:REQUESTED_MODE }
+          if ($mode -notin @('rc', 'release')) {
+              throw "Unsupported release mode: $mode"
+          }
+          if ($mode -eq 'release') {
+              if ($eventName -ne 'push' -or '${{ github.ref_type }}' -ne 'tag') {
+                  throw 'Public release mode is allowed only from a pushed tag.'
+              }
+              if ('${{ github.ref_name }}' -ne $contract.releaseTag) {
+                  throw "Pushed tag does not match contract: ${{ github.ref_name }}"
+              }
+          }
+
+          $providersRef = if ([string]::IsNullOrWhiteSpace($env:REQUESTED_PROVIDERS_REF)) {
+              [string]$contract.providersSourceTag
+          } else {
+              $env:REQUESTED_PROVIDERS_REF
+          }
+          $providersSha = (git -C provider-source rev-parse HEAD).Trim()
+          $bridgeSha = (git rev-parse HEAD).Trim()
+          if ($providersSha -notmatch '^[0-9a-f]{40}$' -or $bridgeSha -notmatch '^[0-9a-f]{40}$') {
+              throw 'Unable to resolve full source commits.'
+          }
+
+          $providerTags = @((git -C provider-source tag --points-at HEAD) | ForEach-Object { $_.Trim() })
+          $isFullSha = $providersRef -match '^[0-9a-fA-F]{40}$'
+          $isExactTag = $providerTags -contains $providersRef
+          if (-not $isFullSha -and -not $isExactTag) {
+              throw "providers_ref must be a full SHA or a tag pointing at HEAD: $providersRef"
+          }
+          if ($mode -eq 'release' -and -not ($providerTags -contains $contract.providersSourceTag)) {
+              throw "GA Provider commit is not tagged $($contract.providersSourceTag)."
+          }
+
+          if ($mode -eq 'rc') {
+              if ($env:REQUESTED_RC_NUMBER -notmatch '^[1-9][0-9]*$') {
+                  throw 'rc_number must be a positive integer.'
+              }
+              $batch = "$($contract.suiteVersion)-rc.$($env:REQUESTED_RC_NUMBER)-$($bridgeSha.Substring(0, 7))-$($providersSha.Substring(0, 7))"
+          } else {
+              $batch = $contract.suiteVersion
+          }
+
+          "mode=$mode" >> $env:GITHUB_OUTPUT
+          "batch=$batch" >> $env:GITHUB_OUTPUT
+          "release_tag=$($contract.releaseTag)" >> $env:GITHUB_OUTPUT
+          "version_name=$($contract.suiteVersion)" >> $env:GITHUB_OUTPUT
+          "lsp_tag=$($contract.lspTag)" >> $env:GITHUB_OUTPUT
+          "bridge_sha=$bridgeSha" >> $env:GITHUB_OUTPUT
+          "providers_sha=$providersSha" >> $env:GITHUB_OUTPUT
+          "providers_ref=$providersRef" >> $env:GITHUB_OUTPUT
+
+  build-bridge:
+    name: Test and build signed Bridge
+    needs: metadata
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Bridge
         uses: actions/checkout@v4
 
-      - name: Resolve release metadata
-        id: meta
-        shell: bash
-        run: |
-          set -euo pipefail
-          tag="${{ github.event.inputs.release_tag || github.ref_name }}"
-          if [[ -z "$tag" || "$tag" == "main" ]]; then
-            echo "release_tag is required when workflow_dispatch is not running on a tag" >&2
-            exit 1
-          fi
-          version_name="${tag#v}"
-          version_code="$(sed -n 's/.*versionCode = \([0-9][0-9]*\).*/\1/p' app/build.gradle.kts | head -n1)"
-          if [[ -z "$version_code" ]]; then
-            echo "Unable to resolve versionCode from app/build.gradle.kts" >&2
-            exit 1
-          fi
-          echo "release_tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "version_name=$version_name" >> "$GITHUB_OUTPUT"
-          echo "lsp_tag=${version_code}-${version_name}" >> "$GITHUB_OUTPUT"
-
-      - name: Set up JDK
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -64,13 +149,17 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Validate Bridge release contract
+        shell: pwsh
+        run: ./scripts/validate-release-contract.ps1
+
       - name: Decode release keystore
         shell: bash
         run: |
           set -euo pipefail
-          printf '%s' "${{ secrets.SIGNING_KEY }}" | base64 --decode > "$RUNNER_TEMP/release.jks"
+          printf '%s' '${{ secrets.SIGNING_KEY }}' | base64 --decode > "$RUNNER_TEMP/release.jks"
 
-      - name: Build signed bridge release
+      - name: Test, lint, and build signed Bridge
         shell: bash
         env:
           SIGNING_STORE_FILE: ${{ runner.temp }}/release.jks
@@ -80,31 +169,45 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x ./gradlew
-          ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleRelease -PreleaseTag="${{ steps.meta.outputs.release_tag }}"
-          mkdir -p out
-          cp app/build/outputs/apk/release/app-release.apk \
-            "out/ColorOS-Live-Lyrics-Bridge-${{ steps.meta.outputs.release_tag }}.apk"
+          ./gradlew --no-daemon \
+            :app:testDebugUnitTest \
+            :app:lintRelease \
+            :app:assembleRelease \
+            -PreleaseTag='${{ needs.metadata.outputs.release_tag }}'
 
-      - name: Upload bridge artifact
+      - name: Stage canonical Bridge asset
+        shell: pwsh
+        run: |
+          $contract = Get-Content -LiteralPath release/bridge-release-contract.json -Raw | ConvertFrom-Json
+          New-Item -ItemType Directory -Path out -Force | Out-Null
+          Copy-Item -LiteralPath app/build/outputs/apk/release/app-release.apk -Destination (Join-Path out $contract.bridgeAsset)
+
+      - name: Upload Bridge APK
         uses: actions/upload-artifact@v4
         with:
-          name: bridge-apk
+          name: ${{ needs.metadata.outputs.batch }}-bridge
           path: out/*.apk
           if-no-files-found: error
+          retention-days: 14
 
-  build-qq-provider:
-    name: Build LyricProvider QQ
+      - name: Remove release keystore
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/release.jks"
+
+  build-providers:
+    name: Test and build signed 12-Provider matrix
+    needs: metadata
     runs-on: ubuntu-latest
-    needs: build-bridge
     steps:
-      - name: Checkout LyricProvider
+      - name: Checkout immutable Provider source
         uses: actions/checkout@v4
         with:
-          repository: Andrea-lyz/LyricProvider
-          ref: ${{ github.event.inputs.lyric_provider_ref || 'master' }}
-          token: ${{ secrets.LYRIC_PROVIDER_TOKEN || github.token }}
+          repository: ${{ env.PROVIDERS_REPOSITORY }}
+          ref: ${{ needs.metadata.outputs.providers_sha }}
+          token: ${{ secrets.PROVIDERS_REPO_TOKEN || github.token }}
 
-      - name: Set up JDK
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -113,13 +216,17 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Validate Provider release contract
+        shell: pwsh
+        run: ./scripts/validate-v5-release-contract.ps1
+
       - name: Decode release keystore
         shell: bash
         run: |
           set -euo pipefail
-          printf '%s' "${{ secrets.SIGNING_KEY }}" | base64 --decode > "$RUNNER_TEMP/release.jks"
+          printf '%s' '${{ secrets.SIGNING_KEY }}' | base64 --decode > "$RUNNER_TEMP/release.jks"
 
-      - name: Build signed QQ provider release
+      - name: Test and build signed Provider matrix
         shell: bash
         env:
           RELEASE_STORE_FILE: ${{ runner.temp }}/release.jks
@@ -129,660 +236,161 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x ./gradlew
-          ./gradlew --no-daemon :qq-music:assembleRelease
-          mkdir -p out
-          qq_apk="$(find qq-music/build/outputs/apk/release -name '*.apk' -type f | head -n1)"
-          if [[ -z "$qq_apk" ]]; then
-            echo "QQ provider APK not found" >&2
-            exit 1
-          fi
-          cp "$qq_apk" "out/LyricProvider-QQMusic-${{ needs.build-bridge.outputs.release_tag }}.apk"
+          ./gradlew --no-daemon testV5Matrix --rerun-tasks
+          ./gradlew --no-daemon assembleV5MatrixRelease --build-cache
 
-      - name: Upload QQ provider artifact
+      - name: Collect canonical Provider assets
+        shell: pwsh
+        run: ./scripts/collect-v5-release-apks.ps1 -OutputDir ./out
+
+      - name: Upload Provider APKs
         uses: actions/upload-artifact@v4
         with:
-          name: lyricprovider-qq-apk
-          path: out/*.apk
+          name: ${{ needs.metadata.outputs.batch }}-providers
+          path: |
+            out/*.apk
+            out/v5-provider-matrix.json
           if-no-files-found: error
+          retention-days: 14
 
-  build-163-provider:
-    name: Build LyricProvider 163 Music
+      - name: Remove release keystore
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/release.jks"
+
+  package:
+    name: Verify, inventory, and bundle RC assets
+    needs:
+      - metadata
+      - build-bridge
+      - build-providers
     runs-on: ubuntu-latest
-    needs: build-bridge
     steps:
-      - name: Checkout LyricProvider
+      - name: Checkout Bridge
+        uses: actions/checkout@v4
+
+      - name: Checkout immutable Provider source
         uses: actions/checkout@v4
         with:
-          repository: Andrea-lyz/LyricProvider
-          ref: ${{ github.event.inputs.lyric_provider_ref || 'master' }}
-          token: ${{ secrets.LYRIC_PROVIDER_TOKEN || github.token }}
+          repository: ${{ env.PROVIDERS_REPOSITORY }}
+          ref: ${{ needs.metadata.outputs.providers_sha }}
+          path: provider-source
+          token: ${{ secrets.PROVIDERS_REPO_TOKEN || github.token }}
 
-      - name: Set up JDK
-        uses: actions/setup-java@v4
+      - name: Download signed APK artifacts
+        uses: actions/download-artifact@v4
         with:
-          distribution: temurin
-          java-version: ${{ env.JAVA_VERSION }}
+          pattern: ${{ needs.metadata.outputs.batch }}-*
+          path: incoming
+          merge-multiple: true
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Decode release keystore
+      - name: Locate Android build tools
+        id: build_tools
         shell: bash
         run: |
           set -euo pipefail
-          printf '%s' "${{ secrets.SIGNING_KEY }}" | base64 --decode > "$RUNNER_TEMP/release.jks"
+          build_tools_dir="$(find "$ANDROID_SDK_ROOT/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          test -x "$build_tools_dir/aapt2"
+          test -x "$build_tools_dir/apksigner"
+          test -x "$build_tools_dir/zipalign"
+          echo "dir=$build_tools_dir" >> "$GITHUB_OUTPUT"
 
-      - name: Build signed 163 Music provider release
-        shell: bash
-        env:
-          RELEASE_STORE_FILE: ${{ runner.temp }}/release.jks
-          RELEASE_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
-          RELEASE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+      - name: Verify and package release assets
+        shell: pwsh
         run: |
-          set -euo pipefail
-          chmod +x ./gradlew
-          ./gradlew --no-daemon :163-music:assembleRelease
-          mkdir -p out
-          provider_apk="$(find 163-music/build/outputs/apk/release -name '*.apk' -type f | head -n1)"
-          if [[ -z "$provider_apk" ]]; then
-            echo "163 Music provider APK not found" >&2
-            exit 1
-          fi
-          cp "$provider_apk" "out/LyricProvider-163Music-${{ needs.build-bridge.outputs.release_tag }}.apk"
+          ./scripts/build-release-assets.ps1 `
+            -InputDir ./incoming `
+            -OutputDir ./release-assets `
+            -ProviderRepoRoot ./provider-source `
+            -BuildToolsDir '${{ steps.build_tools.outputs.dir }}' `
+            -Batch '${{ needs.metadata.outputs.batch }}' `
+            -BridgeCommit '${{ needs.metadata.outputs.bridge_sha }}' `
+            -ProviderCommit '${{ needs.metadata.outputs.providers_sha }}'
 
-      - name: Upload 163 Music provider artifact
+      - name: Upload complete RC batch
         uses: actions/upload-artifact@v4
         with:
-          name: lyricprovider-163-apk
-          path: out/*.apk
+          name: ${{ needs.metadata.outputs.batch }}-complete
+          path: release-assets/*
           if-no-files-found: error
-
-  build-apple-provider:
-    name: Build LyricProvider Apple Music
-    runs-on: ubuntu-latest
-    needs: build-bridge
-    steps:
-      - name: Checkout LyricProvider
-        uses: actions/checkout@v4
-        with:
-          repository: Andrea-lyz/LyricProvider
-          ref: ${{ github.event.inputs.lyric_provider_ref || 'master' }}
-          token: ${{ secrets.LYRIC_PROVIDER_TOKEN || github.token }}
-
-      - name: Set up JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: ${{ env.JAVA_VERSION }}
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Decode release keystore
-        shell: bash
-        run: |
-          set -euo pipefail
-          printf '%s' "${{ secrets.SIGNING_KEY }}" | base64 --decode > "$RUNNER_TEMP/release.jks"
-
-      - name: Build signed Apple Music provider release
-        shell: bash
-        env:
-          RELEASE_STORE_FILE: ${{ runner.temp }}/release.jks
-          RELEASE_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
-          RELEASE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          chmod +x ./gradlew
-          ./gradlew --no-daemon :apple-music:assembleRelease
-          mkdir -p out
-          provider_apk="$(find apple-music/build/outputs/apk/release -name '*.apk' -type f | head -n1)"
-          if [[ -z "$provider_apk" ]]; then
-            echo "Apple Music provider APK not found" >&2
-            exit 1
-          fi
-          cp "$provider_apk" "out/LyricProvider-AppleMusic-${{ needs.build-bridge.outputs.release_tag }}.apk"
-
-      - name: Upload Apple Music provider artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: lyricprovider-apple-apk
-          path: out/*.apk
-          if-no-files-found: error
-
-  build-poweramp-provider:
-    name: Build LyricProvider Poweramp
-    runs-on: ubuntu-latest
-    needs: build-bridge
-    steps:
-      - name: Checkout LyricProvider
-        uses: actions/checkout@v4
-        with:
-          repository: Andrea-lyz/LyricProvider
-          ref: ${{ github.event.inputs.lyric_provider_ref || 'master' }}
-          token: ${{ secrets.LYRIC_PROVIDER_TOKEN || github.token }}
-
-      - name: Set up JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: ${{ env.JAVA_VERSION }}
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Decode release keystore
-        shell: bash
-        run: |
-          set -euo pipefail
-          printf '%s' "${{ secrets.SIGNING_KEY }}" | base64 --decode > "$RUNNER_TEMP/release.jks"
-
-      - name: Build signed Poweramp provider release
-        shell: bash
-        env:
-          RELEASE_STORE_FILE: ${{ runner.temp }}/release.jks
-          RELEASE_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
-          RELEASE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          chmod +x ./gradlew
-          ./gradlew --no-daemon :poweramp-music:assembleRelease
-          mkdir -p out
-          provider_apk="$(find poweramp-music/build/outputs/apk/release -name '*.apk' -type f | head -n1)"
-          if [[ -z "$provider_apk" ]]; then
-            echo "Poweramp provider APK not found" >&2
-            exit 1
-          fi
-          cp "$provider_apk" "out/LyricProvider-Poweramp-${{ needs.build-bridge.outputs.release_tag }}.apk"
-
-      - name: Upload Poweramp provider artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: lyricprovider-poweramp-apk
-          path: out/*.apk
-          if-no-files-found: error
-
-  build-spotify-provider:
-    name: Build LyricProvider Spotify
-    runs-on: ubuntu-latest
-    needs: build-bridge
-    steps:
-      - name: Checkout LyricProvider
-        uses: actions/checkout@v4
-        with:
-          repository: Andrea-lyz/LyricProvider
-          ref: ${{ github.event.inputs.lyric_provider_ref || 'master' }}
-          token: ${{ secrets.LYRIC_PROVIDER_TOKEN || github.token }}
-
-      - name: Set up JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: ${{ env.JAVA_VERSION }}
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Decode release keystore
-        shell: bash
-        run: |
-          set -euo pipefail
-          printf '%s' "${{ secrets.SIGNING_KEY }}" | base64 --decode > "$RUNNER_TEMP/release.jks"
-
-      - name: Build signed Spotify provider release
-        shell: bash
-        env:
-          RELEASE_STORE_FILE: ${{ runner.temp }}/release.jks
-          RELEASE_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
-          RELEASE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          chmod +x ./gradlew
-          ./gradlew --no-daemon :spotify-music:assembleRelease
-          mkdir -p out
-          provider_apk="$(find spotify-music/build/outputs/apk/release -name '*.apk' -type f | head -n1)"
-          if [[ -z "$provider_apk" ]]; then
-            echo "Spotify provider APK not found" >&2
-            exit 1
-          fi
-          cp "$provider_apk" "out/LyricProvider-Spotify-${{ needs.build-bridge.outputs.release_tag }}.apk"
-
-      - name: Upload Spotify provider artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: lyricprovider-spotify-apk
-          path: out/*.apk
-          if-no-files-found: error
-
-  build-qishui-provider:
-    name: Build LyricProvider QiShui Music
-    runs-on: ubuntu-latest
-    needs: build-bridge
-    steps:
-      - name: Checkout LyricProvider
-        uses: actions/checkout@v4
-        with:
-          repository: Andrea-lyz/LyricProvider
-          ref: ${{ github.event.inputs.lyric_provider_ref || 'master' }}
-          token: ${{ secrets.LYRIC_PROVIDER_TOKEN || github.token }}
-
-      - name: Set up JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: ${{ env.JAVA_VERSION }}
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Decode release keystore
-        shell: bash
-        run: |
-          set -euo pipefail
-          printf '%s' "${{ secrets.SIGNING_KEY }}" | base64 --decode > "$RUNNER_TEMP/release.jks"
-
-      - name: Build signed QiShui Music provider release
-        shell: bash
-        env:
-          RELEASE_STORE_FILE: ${{ runner.temp }}/release.jks
-          RELEASE_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
-          RELEASE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          chmod +x ./gradlew
-          ./gradlew --no-daemon :qishui-music:assembleRelease
-          mkdir -p out
-          provider_apk="$(find qishui-music/build/outputs/apk/release -name '*.apk' -type f | head -n1)"
-          if [[ -z "$provider_apk" ]]; then
-            echo "QiShui Music provider APK not found" >&2
-            exit 1
-          fi
-          cp "$provider_apk" "out/LyricProvider-QiShui-${{ needs.build-bridge.outputs.release_tag }}.apk"
-
-      - name: Upload QiShui Music provider artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: lyricprovider-qishui-apk
-          path: out/*.apk
-          if-no-files-found: error
-
-  build-kugou-provider:
-    name: Build LyricProvider KuGou Music
-    runs-on: ubuntu-latest
-    needs: build-bridge
-    steps:
-      - name: Checkout LyricProvider
-        uses: actions/checkout@v4
-        with:
-          repository: Andrea-lyz/LyricProvider
-          ref: ${{ github.event.inputs.lyric_provider_ref || 'master' }}
-          token: ${{ secrets.LYRIC_PROVIDER_TOKEN || github.token }}
-
-      - name: Set up JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: ${{ env.JAVA_VERSION }}
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Decode release keystore
-        shell: bash
-        run: |
-          set -euo pipefail
-          printf '%s' "${{ secrets.SIGNING_KEY }}" | base64 --decode > "$RUNNER_TEMP/release.jks"
-
-      - name: Build signed KuGou Music provider release
-        shell: bash
-        env:
-          RELEASE_STORE_FILE: ${{ runner.temp }}/release.jks
-          RELEASE_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
-          RELEASE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          chmod +x ./gradlew
-          ./gradlew --no-daemon :kugou-music:assembleRelease
-          mkdir -p out
-          provider_apk="$(find kugou-music/build/outputs/apk/release -name '*.apk' -type f | head -n1)"
-          if [[ -z "$provider_apk" ]]; then
-            echo "KuGou Music provider APK not found" >&2
-            exit 1
-          fi
-          cp "$provider_apk" "out/LyricProvider-KuGou-${{ needs.build-bridge.outputs.release_tag }}.apk"
-
-      - name: Upload KuGou Music provider artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: lyricprovider-kugou-apk
-          path: out/*.apk
-          if-no-files-found: error
-
-  build-kuwo-provider:
-    name: Build LyricProvider KuWo Music
-    runs-on: ubuntu-latest
-    needs: build-bridge
-    steps:
-      - name: Checkout LyricProvider
-        uses: actions/checkout@v4
-        with:
-          repository: Andrea-lyz/LyricProvider
-          ref: ${{ github.event.inputs.lyric_provider_ref || 'master' }}
-          token: ${{ secrets.LYRIC_PROVIDER_TOKEN || github.token }}
-
-      - name: Set up JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: ${{ env.JAVA_VERSION }}
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Decode release keystore
-        shell: bash
-        run: |
-          set -euo pipefail
-          printf '%s' "${{ secrets.SIGNING_KEY }}" | base64 --decode > "$RUNNER_TEMP/release.jks"
-
-      - name: Build signed KuWo Music provider release
-        shell: bash
-        env:
-          RELEASE_STORE_FILE: ${{ runner.temp }}/release.jks
-          RELEASE_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
-          RELEASE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          chmod +x ./gradlew
-          ./gradlew --no-daemon :kuwo-music:assembleRelease
-          mkdir -p out
-          provider_apk="$(find kuwo-music/build/outputs/apk/release -name '*.apk' -type f | head -n1)"
-          if [[ -z "$provider_apk" ]]; then
-            echo "KuWo Music provider APK not found" >&2
-            exit 1
-          fi
-          cp "$provider_apk" "out/LyricProvider-KuWo-${{ needs.build-bridge.outputs.release_tag }}.apk"
-
-      - name: Upload KuWo Music provider artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: lyricprovider-kuwo-apk
-          path: out/*.apk
-          if-no-files-found: error
-
-  build-lx-provider:
-    name: Build LyricProvider LX Music
-    runs-on: ubuntu-latest
-    needs: build-bridge
-    steps:
-      - name: Checkout LyricProvider
-        uses: actions/checkout@v4
-        with:
-          repository: Andrea-lyz/LyricProvider
-          ref: ${{ github.event.inputs.lyric_provider_ref || 'master' }}
-          token: ${{ secrets.LYRIC_PROVIDER_TOKEN || github.token }}
-
-      - name: Set up JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: ${{ env.JAVA_VERSION }}
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Decode release keystore
-        shell: bash
-        run: |
-          set -euo pipefail
-          printf '%s' "${{ secrets.SIGNING_KEY }}" | base64 --decode > "$RUNNER_TEMP/release.jks"
-
-      - name: Build signed LX Music provider release
-        shell: bash
-        env:
-          RELEASE_STORE_FILE: ${{ runner.temp }}/release.jks
-          RELEASE_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
-          RELEASE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          chmod +x ./gradlew
-          ./gradlew --no-daemon :lx-music:assembleRelease
-          mkdir -p out
-          provider_apk="$(find lx-music/build/outputs/apk/release -name '*.apk' -type f | head -n1)"
-          if [[ -z "$provider_apk" ]]; then
-            echo "LX Music provider APK not found" >&2
-            exit 1
-          fi
-          cp "$provider_apk" "out/LyricProvider-LXMusic-${{ needs.build-bridge.outputs.release_tag }}.apk"
-
-      - name: Upload LX Music provider artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: lyricprovider-lx-apk
-          path: out/*.apk
-          if-no-files-found: error
-
-  build-metrolist-provider:
-    name: Build LyricProvider Metrolist
-    runs-on: ubuntu-latest
-    needs: build-bridge
-    steps:
-      - name: Checkout LyricProvider
-        uses: actions/checkout@v4
-        with:
-          repository: Andrea-lyz/LyricProvider
-          ref: ${{ github.event.inputs.lyric_provider_ref || 'master' }}
-          token: ${{ secrets.LYRIC_PROVIDER_TOKEN || github.token }}
-
-      - name: Set up JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: ${{ env.JAVA_VERSION }}
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Decode release keystore
-        shell: bash
-        run: |
-          set -euo pipefail
-          printf '%s' "${{ secrets.SIGNING_KEY }}" | base64 --decode > "$RUNNER_TEMP/release.jks"
-
-      - name: Build signed Metrolist provider release
-        shell: bash
-        env:
-          RELEASE_STORE_FILE: ${{ runner.temp }}/release.jks
-          RELEASE_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
-          RELEASE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          chmod +x ./gradlew
-          ./gradlew --no-daemon :metrolist-music:assembleRelease
-          mkdir -p out
-          provider_apk="$(find metrolist-music/build/outputs/apk/release -name '*.apk' -type f | head -n1)"
-          if [[ -z "$provider_apk" ]]; then
-            echo "Metrolist provider APK not found" >&2
-            exit 1
-          fi
-          cp "$provider_apk" "out/LyricProvider-Metrolist-${{ needs.build-bridge.outputs.release_tag }}.apk"
-
-      - name: Upload Metrolist provider artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: lyricprovider-metrolist-apk
-          path: out/*.apk
-          if-no-files-found: error
+          retention-days: 14
 
   publish:
     name: Publish GitHub and LSP releases
-    runs-on: ubuntu-latest
+    if: needs.metadata.outputs.mode == 'release'
     needs:
-      - build-bridge
-      - build-qq-provider
-      - build-163-provider
-      - build-apple-provider
-      - build-poweramp-provider
-      - build-spotify-provider
-      - build-qishui-provider
-      - build-kugou-provider
-      - build-kuwo-provider
-      - build-lx-provider
-      - build-metrolist-provider
+      - metadata
+      - package
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout bridge release notes
+      - name: Checkout Bridge
         uses: actions/checkout@v4
 
-      - name: Download APK artifacts
+      - name: Download verified release batch
         uses: actions/download-artifact@v4
         with:
-          path: dist
+          name: ${{ needs.metadata.outputs.batch }}-complete
+          path: release-assets
 
-      - name: Publish source repository release
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ needs.build-bridge.outputs.release_tag }}
-          VERSION_NAME: ${{ needs.build-bridge.outputs.version_name }}
-        run: |
-          set -euo pipefail
-          mapfile -t apk_files < <(find dist -name '*.apk' -type f | sort)
-          if [[ "${#apk_files[@]}" -eq 0 ]]; then
-            echo "No APK files found" >&2
-            exit 1
-          fi
-          mapfile -t provider_apks < <(find dist -name 'LyricProvider-*.apk' -type f | sort)
-          if [[ "${#provider_apks[@]}" -eq 0 ]]; then
-            echo "No LyricProvider APK files found" >&2
-            exit 1
-          fi
-          bundle_dir="$(mktemp -d)"
-          bundle_file="$RUNNER_TEMP/LyricProvider-All-${RELEASE_TAG}.zip"
-          cp "${provider_apks[@]}" "$bundle_dir/"
-          (cd "$bundle_dir" && zip -qr "$bundle_file" .)
-          release_assets=("${apk_files[@]}" "$bundle_file")
-          notes_file=".github/release-notes/${VERSION_NAME}.md"
-          body_file="$RUNNER_TEMP/source-release-body.md"
-          donation_image_url="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/main/PY_QR.png"
-          append_donation() {
-            local file="$1"
-            local image_url="$2"
-            perl -0pi -e 's/\n?<!-- donation:start -->.*?<!-- donation:end -->\n?/\n/s' "$file"
-            {
-              printf '\n\n<!-- donation:start -->\n'
-              printf '## Donate\n\n'
-              printf '<img src="%s" alt="WeChat and Alipay donation QR code" width="600" height="400">\n' "$image_url"
-              printf '<!-- donation:end -->\n'
-            } >> "$file"
-          }
-          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            if [[ -f "$notes_file" ]]; then
-              cp "$notes_file" "$body_file"
-            else
-              gh release view "$RELEASE_TAG" \
-                --repo "$GITHUB_REPOSITORY" \
-                --json body \
-                --jq '.body // ""' > "$body_file"
-            fi
-            append_donation "$body_file" "$donation_image_url"
-            gh release edit "$RELEASE_TAG" \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "$RELEASE_TAG" \
-              --notes-file "$body_file"
-            gh release upload "$RELEASE_TAG" "${release_assets[@]}" --repo "$GITHUB_REPOSITORY" --clobber
-          elif [[ -f "$notes_file" ]]; then
-            cp "$notes_file" "$body_file"
-            append_donation "$body_file" "$donation_image_url"
-            gh release create "$RELEASE_TAG" "${release_assets[@]}" \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "$RELEASE_TAG" \
-              --notes-file "$body_file"
-          else
-            gh api --method POST "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
-              -f tag_name="$RELEASE_TAG" \
-              --jq '.body // ""' > "$body_file"
-            append_donation "$body_file" "$donation_image_url"
-            gh release create "$RELEASE_TAG" "${release_assets[@]}" \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "$RELEASE_TAG" \
-              --notes-file "$body_file"
-          fi
-
-      - name: Publish LSP repository release
+      - name: Require release notes and pre-created LSP tag
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.LSP_REPO_TOKEN }}
-          LSP_REPO: ${{ env.LSP_REPO }}
-          LSP_TAG: ${{ needs.build-bridge.outputs.lsp_tag }}
-          RELEASE_TAG: ${{ needs.build-bridge.outputs.release_tag }}
-          VERSION_NAME: ${{ needs.build-bridge.outputs.version_name }}
+          LSP_TAG: ${{ needs.metadata.outputs.lsp_tag }}
         run: |
           set -euo pipefail
-          mapfile -t apk_files < <(find dist -name '*.apk' -type f | sort)
-          if [[ "${#apk_files[@]}" -eq 0 ]]; then
-            echo "No APK files found" >&2
+          test -f ".github/release-notes/${{ needs.metadata.outputs.version_name }}.md"
+          gh api "repos/${LSP_REPOSITORY}/git/ref/tags/${LSP_TAG}" >/dev/null
+
+      - name: Publish Bridge GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.metadata.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          notes_file=".github/release-notes/${{ needs.metadata.outputs.version_name }}.md"
+          mapfile -d '' assets < <(find release-assets -maxdepth 1 -type f -print0 | sort -z)
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Bridge Release already exists; refusing to overwrite public assets: $RELEASE_TAG" >&2
             exit 1
           fi
-          mapfile -t provider_apks < <(find dist -name 'LyricProvider-*.apk' -type f | sort)
-          if [[ "${#provider_apks[@]}" -eq 0 ]]; then
-            echo "No LyricProvider APK files found" >&2
-            exit 1
-          fi
-          bundle_dir="$(mktemp -d)"
-          bundle_file="$RUNNER_TEMP/LyricProvider-All-${RELEASE_TAG}.zip"
-          cp "${provider_apks[@]}" "$bundle_dir/"
-          (cd "$bundle_dir" && zip -qr "$bundle_file" .)
-          release_assets=("${apk_files[@]}" "$bundle_file")
-          notes_file=".github/release-notes/${VERSION_NAME}.md"
+          gh release create "$RELEASE_TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --title "$RELEASE_TAG" --notes-file "$notes_file"
+
+      - name: Publish LSP mirror Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.LSP_REPO_TOKEN }}
+          RELEASE_TAG: ${{ needs.metadata.outputs.release_tag }}
+          LSP_TAG: ${{ needs.metadata.outputs.lsp_tag }}
+        run: |
+          set -euo pipefail
+          notes_file=".github/release-notes/${{ needs.metadata.outputs.version_name }}.md"
           body_file="$RUNNER_TEMP/lsp-release-body.md"
-          donation_image_url="https://raw.githubusercontent.com/${LSP_REPO}/main/PY_QR.png"
-          notes="ColorOS Live Lyrics Bridge ${RELEASE_TAG}. Includes LyricProvider Metrolist, QQ Music, 163 Music, Apple Music, Poweramp, Spotify, QiShui Music, KuGou Music, KuWo Music, and LX Music APKs as auxiliary release assets, plus LyricProvider-All-${RELEASE_TAG}.zip for installing all providers together."
-          append_donation() {
-            local file="$1"
-            local image_url="$2"
-            perl -0pi -e 's/\n?<!-- donation:start -->.*?<!-- donation:end -->\n?/\n/s' "$file"
-            {
-              printf '\n\n<!-- donation:start -->\n'
-              printf '## Donate\n\n'
-              printf '<img src="%s" alt="WeChat and Alipay donation QR code" width="600" height="400">\n' "$image_url"
-              printf '<!-- donation:end -->\n'
-            } >> "$file"
-          }
-          if gh release view "$LSP_TAG" --repo "$LSP_REPO" >/dev/null 2>&1; then
-            if [[ -f "$notes_file" ]]; then
-              cp "$notes_file" "$body_file"
-            else
-              gh release view "$LSP_TAG" \
-                --repo "$LSP_REPO" \
-                --json body \
-                --jq '.body // ""' > "$body_file"
-            fi
-            append_donation "$body_file" "$donation_image_url"
-            gh release edit "$LSP_TAG" \
-              --repo "$LSP_REPO" \
-              --title "$RELEASE_TAG" \
-              --notes-file "$body_file"
-            gh release upload "$LSP_TAG" "${release_assets[@]}" --repo "$LSP_REPO" --clobber
-          elif [[ -f "$notes_file" ]]; then
-            cp "$notes_file" "$body_file"
-            append_donation "$body_file" "$donation_image_url"
-            gh release create "$LSP_TAG" "${release_assets[@]}" \
-              --repo "$LSP_REPO" \
-              --title "$RELEASE_TAG" \
-              --notes-file "$body_file"
-          else
-            printf '%s\n' "$notes" > "$body_file"
-            append_donation "$body_file" "$donation_image_url"
-            gh release create "$LSP_TAG" "${release_assets[@]}" \
-              --repo "$LSP_REPO" \
-              --title "$RELEASE_TAG" \
-              --notes-file "$body_file"
+          cp "$notes_file" "$body_file"
+          {
+            printf '\n\n<!-- donation:start -->\n'
+            printf '## Donate\n\n'
+            printf '<img src="https://raw.githubusercontent.com/%s/main/PY_QR.png" alt="WeChat and Alipay donation QR code" width="600" height="400">\n' "$LSP_REPOSITORY"
+            printf '<!-- donation:end -->\n'
+          } >> "$body_file"
+          mapfile -d '' assets < <(find release-assets -maxdepth 1 -type f -print0 | sort -z)
+          if gh release view "$LSP_TAG" --repo "$LSP_REPOSITORY" >/dev/null 2>&1; then
+            echo "LSP Release already exists; refusing to overwrite public assets: $LSP_TAG" >&2
+            exit 1
           fi
+          gh release create "$LSP_TAG" "${assets[@]}" --repo "$LSP_REPOSITORY" --title "$RELEASE_TAG" --notes-file "$body_file"
+
+      - name: Verify published release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.LSP_REPO_TOKEN }}
+          RELEASE_TAG: ${{ needs.metadata.outputs.release_tag }}
+          LSP_TAG: ${{ needs.metadata.outputs.lsp_tag }}
+        run: |
+          set -euo pipefail
+          expected="$(find release-assets -maxdepth 1 -type f | wc -l)"
+          bridge_count="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets | length')"
+          lsp_count="$(gh release view "$LSP_TAG" --repo "$LSP_REPOSITORY" --json assets --jq '.assets | length')"
+          test "$bridge_count" -eq "$expected"
+          test "$lsp_count" -eq "$expected"

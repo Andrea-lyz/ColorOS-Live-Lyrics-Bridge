@@ -12,10 +12,11 @@ on:
       - "settings.gradle.kts"
       - "gradle.properties"
       - "gradlew"
-      - ".github/lsposed/**"
+      - "release/**"
       - ".github/workflows/build-debug.yml"
       - ".github/workflows/release.yml"
-      - "scripts/validate-lsposed-metadata.ps1"
+      - "scripts/validate-release-contract.ps1"
+      - "scripts/build-release-assets.ps1"
   pull_request:
     paths:
       - "app/**"
@@ -25,10 +26,11 @@ on:
       - "settings.gradle.kts"
       - "gradle.properties"
       - "gradlew"
-      - ".github/lsposed/**"
+      - "release/**"
       - ".github/workflows/build-debug.yml"
       - ".github/workflows/release.yml"
-      - "scripts/validate-lsposed-metadata.ps1"
+      - "scripts/validate-release-contract.ps1"
+      - "scripts/build-release-assets.ps1"
 
 jobs:
   build:
@@ -51,12 +53,12 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
-      - name: Validate LSPosed repository metadata
+      - name: Validate Bridge release contract
         shell: pwsh
-        run: ./scripts/validate-lsposed-metadata.ps1
+        run: ./scripts/validate-release-contract.ps1
 
-      - name: Build debug APK
-        run: ./gradlew :app:assembleDebug
+      - name: Test, lint, and build debug APK
+        run: ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4

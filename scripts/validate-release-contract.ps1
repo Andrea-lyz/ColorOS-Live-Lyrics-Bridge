@@ -34,6 +34,7 @@ Assert-Contract ($contract.lspTag -eq "$($contract.versionCode)-$($contract.suit
 Assert-Contract ($buildFile -match ('val defaultVersionName = "' + [regex]::Escape($contract.suiteVersion) + '"')) 'defaultVersionName differs from contract'
 Assert-Contract ($buildFile -match ('versionCode = ' + [regex]::Escape([string]$contract.versionCode) + '(\D|$)')) 'versionCode differs from contract'
 Assert-Contract ($buildFile -match ('applicationId = "' + [regex]::Escape($contract.bridgeApplicationId) + '"')) 'Bridge applicationId differs from contract'
+Assert-Contract ($contract.releaseCertificateSha256 -match '^[0-9a-f]{64}$') 'release certificate SHA-256 must be lowercase hex'
 
 $expectedScope = @($contract.bridgeScopes)
 Assert-Contract ($scope.Count -eq $expectedScope.Count) 'Bridge scope count differs from contract'

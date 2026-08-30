@@ -8,6 +8,7 @@
   "providersSourceTag": "providers-v1.0.0",
   "providerContractPath": "release/v5-provider-matrix.json",
   "bridgeApplicationId": "io.github.andrealtb.lockscreenlyrics",
+  "releaseCertificateSha256": "ff38544ba21922c35989097fe6f2ad0bda434b4d0bb611e016d51d7862d36195",
   "bridgeScopes": [
     "system",
     "com.android.systemui"
