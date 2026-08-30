@@ -20,8 +20,9 @@ This is not a floating overlay. It passes a player's full lyric timeline to the 
 - Shows full lyrics on the native ColorOS lock screen and AOD lyric page.
 - Supports line-timed lyrics, word-by-word highlighting, and translations when the player provides the required data.
 - Wraps or smoothly browses long lines instead of shrinking them into tiny text.
-- Lets you adjust color, opacity, glow, blur, text size, weight, alignment, scaling, and motion, with separate spacing controls for lyric rows and wrapped lines inside a row.
-- Includes Default, Soft, Bold, and Minimal presets with a live preview.
+- Lets you adjust active, unrevealed, translation, and inactive lyric brightness independently, including top/bottom edge fading and an optional extra inactive-row fade.
+- Also controls color, glow, blur, text size, weight, alignment, scaling, motion, lyric-row spacing, and wrapped-line spacing.
+- Includes Default, Soft, Vivid, and Minimal presets with a live preview.
 - Remembers translation choices per player and can hide leading title, credit, and copyright lines.
 - Can keep the screen awake while lyrics are visible, either indefinitely or for a chosen duration.
 - Preserves the media card's original previous, play/pause, next, and other controls.
@@ -39,58 +40,50 @@ The APK has a minimum Android API level of 26, but that does not mean every Andr
 
 If the ROM has no native lock-screen lyric page, this module will not create a separate floating lyric window.
 
-## Player compatibility
+## 4.0 architecture and player compatibility
 
-There are two ways a player can work with the module:
+Bridge 4.0 runs only in `system` and `com.android.systemui`. It no longer enters player processes or receives private Provider broadcasts. Each independent Provider writes lyrics into the player's own `MediaSession` / `MediaMetadata["lyricInfo"]`; Bridge consumes that native ColorOS data and adds styling, word rendering, translation controls, AOD support, and compatibility enhancements.
 
-- **Built into the Bridge:** install only the main module.
-- **LyricProvider required:** install the main module plus the matching Provider APK. The Provider reads lyrics from the music app; the Bridge sends them to the lock screen.
+Providers and Bridge can be installed independently:
 
-| Player | Extra Provider | Current support |
+- Provider only: ColorOS SystemUI can consume the player's native `lyricInfo` directly.
+- Provider plus Bridge: Bridge adds generic enhancements without submitting a second lyric payload.
+- 4.0 Providers are independent Root / LSPosed modules.
+
+| Player | 4.0 Provider module | Lyric capability |
 | --- | --- | --- |
-| Salt Player | No | Built into the Bridge; word-timed and translated lyrics when supplied by the player |
-| ConePlayer (standard and Google Play packages) | No | Built into the Bridge; full lyric timelines and background recovery |
-| [Metrolist](https://github.com/metrolistgroup/metrolist) | `LyricProvider-Metrolist` | Direct v4 provider admitted by the Bridge; word-timed lyrics from BetterLyrics or KuGou, with LrcLib fallback; follows Metrolist's configured provider order; translations and Lyricon integration are not supported |
-| QQ Music / QQ Music HD | `LyricProvider-QQMusic` | Direct v4 provider admitted by the Bridge; word-timed and translated lyrics |
-| NetEase Cloud Music / Honor edition | `LyricProvider-163Music` | Direct v4 provider admitted by the Bridge; word-timed and translated lyrics |
-| Apple Music | `LyricProvider-AppleMusic` | Direct v4 provider admitted by the Bridge; word-timed and translated lyrics; background-vocal and duet lanes are excluded |
-| LX Music (ToSide / Walnut variants) | `LyricProvider-LXMusic` | Direct v4 provider admitted by the Bridge; full lyric timeline and translations when supplied by the player |
-| Poweramp | `LyricProvider-Poweramp` | Direct v4 provider admitted by the Bridge; embedded local lyrics and lyrics available through provider matching |
-| Spotify | `LyricProvider-Spotify` | Direct v4 provider admitted by the Bridge; standard original lyrics only; translations are not currently supported |
-| QiShui Music | `LyricProvider-QiShui` | Direct v4 provider admitted by the Bridge; word-timed and translated lyrics; proper root hiding and the special setup below are required |
-| KuGou Music / Concept | `LyricProvider-KuGou` | Direct v4 provider admitted by the Bridge; word-timed and translated lyrics |
-| KuWo Music | `LyricProvider-KuWo` | Complete line-timed, word-timed, and translated lyrics through KuWo's native `lyricInfo` path; no car lyrics mode is required; original artwork and metadata are preserved |
-| [Halcyon](https://github.com/Kifranei/Halcyon) | No | Native `lyricInfo` plus a static source-to-player binding for in-app v4 (`lyricprovider/halcyon`); keeps the native MediaSession clock and allows title-only fallback for local files when ColorOS drops extras-only updates |
-| Flamingo | No | Native v4 integration admitted through the static `yos.music.player` / `lyricprovider/flamingo` binding; playback state remains native and no separate Provider APK is required |
+| Salt Player | `player-salt` | Word timing, translations, public translation CustomAction |
+| ConePlayer (standard and Google Play) | `player-cone` | Full timeline, translations, public translation CustomAction |
+| KuWo Music | `kuwo-music` | Appends word timing and translations to official `lyricInfo` |
+| LX Music (ToSide / Walnut) | `player-lx` | Word timing, translations, Bluetooth identity and artwork compatibility |
+| Poweramp | `player-poweramp` | Sidecar `.lrc` / embedded tags and translations |
+| [Metrolist](https://github.com/metrolistgroup/metrolist) | `player-metrolist` | BetterLyrics / LrcLib / KuGou; no translations |
+| KuGou Music / Concept | `player-kugou` | Appends word timing and type-1 translations to the official payload |
+| QQ Music | `player-qq` | Appends word timing and translations; QQ Music HD is out of scope |
+| NetEase official / Honor / modified 9.0.40 | `player-netease` | Official append or profile-selected constructed word timing and translations |
+| Apple Music | `player-apple` | JNI TTML word timing and translations |
+| Spotify | `player-spotify` | Line- or word-timed Color Lyrics; no translations |
+| QiShui Music | `player-qishui` | Host TrackLyric / cache fallback with word timing and translations |
 
-[Metrolist](https://github.com/metrolistgroup/metrolist) is a **YouTube Music client for Android**. Because Metrolist itself does not provide a stable lyric retrieval interface, this Provider retrieves lyrics from third-party lyric providers in the same way as Metrolist. The lyrics selected by the Provider may therefore differ from those shown inside Metrolist.
+Private player interfaces can change after app updates. This table describes the current 4.0 implementation and device-validation matrix, not permanent compatibility with every future player release.
 
-The Provider list above follows the Bridge's direct v4 admission registry: a Provider is considered adapted when its source and player package are admitted by the Bridge. The current admitted Provider sources are `qq-music`, `netease-cloud-music`, `apple-music`, `lx-music`, `lx-walnut-music`, `poweramp-music`, `spotify-music`, `qishui-music`, `kugou-music`, `kugou-concept-music`, `metrolist-music`, `halcyon`, and `flamingo`. KuWo is intentionally not in this direct-source list: its Provider writes `lyricInfo` into KuWo's own MediaSession instead of sending a direct v4 broadcast. Other modules present in the LyricProvider repository are not included in this adapted list unless their source and host package are added to the Bridge registry.
-
-Music apps can change their private lyric interfaces at any time. This table describes the adapters present in the current code; it is not a promise that every future player release will remain compatible.
-
-Players that publish the public `lyricInfo` protocol usually need neither a dedicated Provider nor Bridge scope in the player process. [Halcyon](https://github.com/Kifranei/Halcyon) and Flamingo are known native integrations. Halcyon publishes `lyricInfo` and also sends direct v4 broadcasts (`lyricprovider/halcyon` from `com.ella.music`) so ColorOS 16.9+ can still receive lyrics after extras-only updates are dropped; its playback state continues to come from the native MediaSession. Flamingo is admitted through its native v4 source (`lyricprovider/flamingo` from `yos.music.player`) without an external playback-state channel. Neither player needs an extra Provider APK.
+Halcyon remains compatible when it publishes standard `lyricInfo`; its old in-app v4 broadcast fallback has been removed. Flamingo's former v4-only integration is not supported by 4.0 until it publishes standard `lyricInfo` through its own MediaSession.
 
 ## Installation
 
-1. Open the [latest release](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/releases/latest) and install `ColorOS-Live-Lyrics-Bridge-<version>.apk`.
-2. Enable **ColorOS Live Lyrics Bridge** in LSPosed and keep its recommended default scope.
-3. For Metrolist, QQ Music, NetEase, Apple Music, LX Music, Poweramp, Spotify, QiShui, KuGou, or KuWo, also install the matching `LyricProvider-*.apk` from the same release.
-4. Enable each Provider separately in LSPosed and select only its matching music app as the scope.
-5. Reboot the device so the hooks load in SystemUI, system services, and the player.
+1. Install the required 4.0 Provider APK, enable it in LSPosed, and select only its matching music app.
+2. If you want Bridge enhancements, install `ColorOS-Live-Lyrics-Bridge-<version>.apk` and keep its scope limited to `system` and `com.android.systemui`.
+3. Restart the player and SystemUI. Reboot after the first installation or any scope change.
+4. Do not let an old Lyricon Provider and a 4.0 Provider hook the same player.
 
-`LyricProvider-All-<version>.zip` is simply a bundle containing every Provider APK. It is not a Recovery-flashable package. You only need to install Providers for the players you use.
-
-### Extra step for QiShui Music
-
-Enable **Restore inline hooks** for QiShui Music in your LSP manager and follow its instructions for handling `libart.so` in listed apps. Also ensure root hiding is properly configured. Without these precautions, QiShui may report an unsafe version and the Provider may not work reliably.
-
+The Provider ZIP in a release is only an APK download bundle, not a Recovery-flashable package.
 ## Appearance and behavior
 
 Open **ColorOS Live Lyrics Bridge → Settings** from the module page in LSPosed.
 
 Choose a preset first, then fine-tune it if needed. Changes update only the preview until you tap **Apply and save**. The settings page also includes:
 
+- a dedicated **Lyric brightness & fading** page for active/unrevealed text, active translation and translation progress, inactive lyric/translation brightness, a follow-main switch, native RecyclerView edge-fade enable/length, and extra inactive-row fading;
 - per-player translation defaults and remembered translation-button state;
 - guided cleanup of title, credit, and copyright lines at the start of lyrics;
 - progress effects for line-timed lyrics and translations;
@@ -99,6 +92,12 @@ Choose a preset first, then fine-tune it if needed. Changes update only the prev
 - keep-screen-awake control with an optional custom duration.
 
 The refresh-rate setting limits lyric drawing only. It does not force the display to remain at a high refresh rate.
+
+The four presets explicitly own the new brightness and fading fields. Changing any preset-owned color, typography, motion, brightness, or fading value marks the result as **Custom**. Soft and Vivid retain the legacy 90% inactive-row fade that previously followed blur/scaling; Default and Minimal leave the extra row fade off.
+
+The main settings page has a separate **Bridge configuration backup & restore** entry. It copies and restores both Bridge preference domains, covering the main UI, global/per-player translation settings, opening-cleanup rules and corrections, debug settings, and settings language. A full reset is available there after confirmation. Downgrading from a schema-v3 build is not lossless: older codecs may reject the saved configuration, so create a complete Bridge backup first and be prepared to reset the older app's settings.
+
+See [Bridge 4.0 lyric visual controls](docs/4.0/LYRIC-VISUAL-CONTROLS.md) for the exact defaults, preset matrix, migration behavior, and downgrade boundary.
 
 ## Troubleshooting
 
@@ -120,7 +119,7 @@ The ColorOS lyric page is a private vendor SystemUI feature and can change betwe
 
 ### Does the module modify music files or upload lyrics?
 
-The Bridge only passes lyrics locally between the player, Android media session, and SystemUI. It does not modify music files. Whether lyrics are fetched online depends on the player or the matching LyricProvider.
+Bridge only reads native lyrics from the player's MediaSession and enhances their SystemUI presentation. It does not modify music files. Whether lyrics are fetched online depends on the player or its Provider.
 
 ## For player developers
 

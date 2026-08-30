@@ -20,7 +20,8 @@
 - 在 ColorOS 原生锁屏和 AOD 页面显示完整歌词。
 - 支持普通逐行歌词、逐字高亮和双语翻译；具体效果取决于播放器能提供什么数据。
 - 长歌词会自动换行或平滑浏览，不会为了塞进一行而缩成很小的字。
-- 可调整颜色、透明度、光晕、模糊、字号、字重、对齐、缩放和动效；歌词之间与同一句内部换行的间距可以分开设置。
+- 可分别调整实时高亮、当前行未高亮、实时翻译/进度、非实时正文/翻译亮度，以及上下边缘渐隐和非活动行额外淡化。
+- 还可调整颜色、光晕、模糊、字号、字重、对齐、缩放和动效；歌词之间与同一句内部换行的间距可以分开设置。
 - 内置“默认、柔和、醒目、极简”四种风格，设置时可以直接预览。
 - 可按播放器记住翻译开关，也可以清理歌词开头的歌名、制作人员和版权信息。
 - 歌词显示时可以保持屏幕常亮，也可以设置一个自定义的亮屏时长。
@@ -39,58 +40,50 @@
 
 如果系统原本没有锁屏歌词页面，本模块不会另外创建一个悬浮歌词窗口。
 
-## 播放器适配
+## 4.0 架构与播放器适配
 
-安装分为两种：
+Bridge 4.0 只运行在 `system` / `com.android.systemui`，不再进入播放器进程，也不再接收 Provider 私有广播。独立 Provider 在目标播放器进程内把歌词写入播放器自己的 `MediaSession` / `MediaMetadata["lyricInfo"]`；Bridge 只消费这份 ColorOS 原生数据并提供样式、逐字渲染、翻译按钮、AOD 和兼容增强。
 
-- **Bridge 直接支持**：只安装主模块即可。
-- **需要 LyricProvider**：除了主模块，还要安装对应播放器的 Provider APK。Provider 负责从音乐 App 里取得歌词，Bridge 负责把歌词交给锁屏界面。
+Provider 与 Bridge 可以独立安装：
 
-| 播放器 | 需要额外 Provider | 当前支持情况 |
+- 只安装 Provider：ColorOS SystemUI 可直接消费播放器的原生 `lyricInfo`。
+- 额外安装 Bridge：在原生链路之上增加通用增强；不会再次提交一份歌词。
+- 4.0 Provider 是独立的 Root / LSPosed 模块。
+
+| 播放器 | 4.0 Provider 模块 | 歌词能力 |
 | --- | --- | --- |
-| Salt Player | 否 | Bridge 内置适配；支持播放器提供的逐字与翻译歌词 |
-| ConePlayer / 光锥音乐（正式版、Google Play 版） | 否 | Bridge 内置适配；支持完整时间轴歌词和后台恢复 |
-| [Metrolist](https://github.com/metrolistgroup/metrolist) | `LyricProvider-Metrolist` | Bridge 已放行 v4 直达 Provider；按 Metrolist 中配置的供应商顺序搜索，支持 BetterLyrics / KuGou 逐字歌词及 LrcLib 回退；不支持翻译歌词，也不支持词幕（Lyricon） |
-| QQ 音乐 / QQ 音乐 HD | `LyricProvider-QQMusic` | Bridge 已放行 v4 直达 Provider；支持逐字歌词、翻译歌词 |
-| 网易云音乐 / 网易云音乐荣耀版 | `LyricProvider-163Music` | Bridge 已放行 v4 直达 Provider；支持逐字歌词、翻译歌词 |
-| Apple Music | `LyricProvider-AppleMusic` | Bridge 已放行 v4 直达 Provider；支持逐字歌词、翻译歌词；不输出背景人声和对唱分轨 |
-| LX Music（ToSide / Walnut 版本） | `LyricProvider-LXMusic` | Bridge 已放行 v4 直达 Provider；支持完整时间轴歌词；播放器提供时支持翻译歌词 |
-| Poweramp | `LyricProvider-Poweramp` | Bridge 已放行 v4 直达 Provider；支持本地内嵌歌词与可匹配的在线歌词 |
-| Spotify | `LyricProvider-Spotify` | Bridge 已放行 v4 直达 Provider；目前只支持原文标准歌词，不支持翻译 |
-| 汽水音乐 | `LyricProvider-QiShui` | Bridge 已放行 v4 直达 Provider；支持逐字歌词、翻译歌词；需做好 Root 隐藏并完成下方特殊设置 |
-| 酷狗音乐 / 酷狗概念版 | `LyricProvider-KuGou` | Bridge 已放行 v4 直达 Provider；支持逐字歌词、翻译歌词 |
-| 酷我音乐 | `LyricProvider-KuWo` | 通过酷我原生 `lyricInfo` 链路提供完整逐行、逐字和翻译歌词；无需开启车载歌词模式；保留酷我原生封面和媒体元数据 |
-| [Halcyon](https://github.com/Kifranei/Halcyon) | 否 | 原生 `lyricInfo` + 静态 source-to-player 绑定的应用内 v4 广播（`lyricprovider/halcyon`）；沿用原生 MediaSession 播放时钟，并兼容会丢弃 extras-only 更新的 ColorOS 版本 |
-| Flamingo | 否 | 通过 `yos.music.player` / `lyricprovider/flamingo` 静态绑定放行原生 v4 接入；播放状态沿用播放器本身，无需额外 Provider APK |
+| Salt Player | `player-salt` | 逐字、翻译、公开翻译 CustomAction |
+| ConePlayer / 光锥音乐（正式版、Google Play 版） | `player-cone` | 完整时间轴、翻译、公开翻译 CustomAction |
+| 酷我音乐 | `kuwo-music` | 官方 `lyricInfo` 追加逐字与翻译 |
+| LX Music（ToSide / Walnut） | `player-lx` | 逐字、翻译、蓝牙歌词身份与封面兼容 |
+| Poweramp | `player-poweramp` | 同目录 `.lrc` / 内嵌标签、翻译 |
+| [Metrolist](https://github.com/metrolistgroup/metrolist) | `player-metrolist` | BetterLyrics / LrcLib / KuGou；不支持翻译 |
+| 酷狗音乐 / 酷狗概念版 | `player-kugou` | 官方 payload 追加逐字与 type-1 翻译 |
+| QQ 音乐官方版 | `player-qq` | 官方 payload 追加逐字与翻译；QQ HD 不在范围 |
+| 网易云官方版 / 荣耀版 / 修改版 9.0.40 | `player-netease` | 官方追加或按运行 profile 构造逐字与翻译 |
+| Apple Music | `player-apple` | JNI TTML 逐字与翻译 |
+| Spotify | `player-spotify` | Color Lyrics 逐行或逐字；不支持翻译 |
+| 汽水音乐 | `player-qishui` | 宿主 TrackLyric / 缓存回退，逐字与翻译 |
 
-[Metrolist](https://github.com/metrolistgroup/metrolist) 是**适用于安卓系统的 YouTube Music 客户端**。由于 Metrolist 本身没有稳定的歌词获取接口，本 Provider 采用与 Metrolist 相同的方式从第三方歌词提供商获取歌词，因此两者获取的歌词可能存在差异。
+播放器更新后，私有歌词接口仍可能变化。上表表示当前 4.0 代码与真机验收矩阵，不代表未来所有播放器版本永久兼容。
 
-上表以 Bridge 的 v4 直达放行注册表为准：Provider 的 `source` 与播放器包名已被 Bridge 静态放行，即视为已完成 Bridge 适配。目前放行的 Provider source 为：`qq-music`、`netease-cloud-music`、`apple-music`、`lx-music`、`lx-walnut-music`、`poweramp-music`、`spotify-music`、`qishui-music`、`kugou-music`、`kugou-concept-music`、`metrolist-music`、`halcyon` 和 `flamingo`。酷我不在这份直达 source 列表中，因为酷我 Provider 是通过酷我自己的 MediaSession 写入 `lyricInfo`，而不是发送 v4 直达广播。LyricProvider 仓库中其他模块虽然存在，但在加入 Bridge 注册表前不属于当前适配清单。
-
-播放器更新后，私有歌词接口可能发生变化。表格表示当前代码已经包含相应适配，不代表未来所有播放器版本都能永久兼容。
-
-已经主动支持公开 `lyricInfo` 协议的播放器通常不需要额外 Provider，也不需要加入 Bridge 的播放器作用域。[Halcyon](https://github.com/Kifranei/Halcyon) 和 Flamingo 是当前已知的原生接入项目。Halcyon 会发布 `lyricInfo`，并从 `com.ella.music` 发送 `lyricprovider/halcyon` v4 广播，以便 ColorOS 16.9 起 extras-only 更新被丢弃后仍能收到歌词；播放状态继续沿用原生 MediaSession。Flamingo 则通过 `yos.music.player` 的 `lyricprovider/flamingo` 原生 v4 source 接入，不额外发送播放状态。两者都无需额外 Provider APK。
+Halcyon 若发布标准 `lyricInfo`，仍可走原生链路；旧的应用内 v4 广播 fallback 已删除。Flamingo 旧 v4-only 接入不再受 4.0 支持，需先改为向自身 MediaSession 发布标准 `lyricInfo`。
 
 ## 安装
 
-1. 打开 [Releases](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/releases/latest)，安装 `ColorOS-Live-Lyrics-Bridge-<版本>.apk`。
-2. 在 LSPosed 中启用 **ColorOS Live Lyrics Bridge**，保留模块推荐的默认作用域。
-3. 如果你使用 Metrolist、QQ 音乐、网易云、Apple Music、LX Music、Poweramp、Spotify、汽水音乐、酷狗或酷我，再安装同一版本中对应的 `LyricProvider-*.apk`。
-4. 在 LSPosed 中分别启用这些 Provider，并只勾选它对应的音乐 App。
-5. 重启手机，让 SystemUI、系统服务和播放器里的模块完整加载。
+1. 安装自己需要的 4.0 Provider APK，在 LSPosed 中启用它并只勾选对应音乐 App。
+2. 如需 Bridge 增强，再安装 `ColorOS-Live-Lyrics-Bridge-<版本>.apk`，作用域保持 `system` 与 `com.android.systemui`。
+3. 重启目标播放器与 SystemUI；首次安装或改变作用域后建议重启手机。
+4. 不要同时让旧词幕 Provider 与 4.0 Provider hook 同一播放器。
 
-Release 中的 `LyricProvider-All-<版本>.zip` 只是全部 Provider APK 的合集，不是需要刷入 Recovery 的包。只安装自己用得到的 Provider 即可。
-
-### 汽水音乐的额外一步
-
-在 LSP 管理器中为汽水音乐开启“还原内联钩子”，并按管理器提示对列表中的应用处理 `libart.so`；同时需做好 Root 隐藏。跳过这些设置时，汽水音乐可能提示版本不安全，Provider 也可能无法稳定工作。
-
+Release 中的 Provider ZIP 只是 APK 下载合集，不是 Recovery 刷机包。
 ## 怎么设置外观
 
 在 LSPosed 的模块页面打开 **ColorOS Live Lyrics Bridge → 设置**。
 
 你可以先选一个风格预设，再按喜好微调。修改时只会更新预览，点击“应用并保存”后才会真正应用到锁屏。设置页还提供：
 
+- 独立的“歌词亮度与渐隐”页面：实时/未高亮/翻译/翻译进度亮度、非实时正文与翻译跟随或独立亮度、RecyclerView 原生上下渐隐开关/长度、非活动行额外淡化；
 - 播放器翻译默认值和翻译按钮记忆；
 - 歌词开头信息清理；
 - 普通逐行歌词进度与翻译进度；
@@ -99,6 +92,12 @@ Release 中的 `LyricProvider-All-<版本>.zip` 只是全部 Provider APK 的合
 - “歌词显示时保持屏幕点亮”和自定义时长。
 
 设置页里的刷新率只限制歌词绘制，不会强制屏幕一直以高刷新率运行。
+
+默认、柔和、醒目、极简四套预设会显式设置新增亮度与渐隐字段；任一预设管理的颜色、排版、动效、亮度或渐隐参数发生偏离后，都会识别为“自定义”。柔和与醒目保留旧版随模糊/缩放启用的 90% 非活动行淡化，默认与极简关闭额外行淡化。
+
+主设置页提供独立的“Bridge 配置备份与恢复”入口。它会备份和恢复 Bridge 的两个配置域，覆盖主 UI、全局/逐播放器翻译设置、开头清理规则与逐曲修正、调试设置和设置页语言；页面内也提供二次确认后的全量重置。schema v3 无法保证无损降级：旧 codec 可能拒绝已保存配置，因此降级前应先创建完整 Bridge 备份，并准备在旧版中重置设置。
+
+完整默认值、预设矩阵、迁移规则与降级边界见 [Bridge 4.0 歌词亮度与渐隐设置说明](docs/4.0/LYRIC-VISUAL-CONTROLS.md)。
 
 ## 常见问题
 
@@ -120,7 +119,7 @@ ColorOS 的锁屏歌词属于厂商私有 SystemUI 功能，系统更新可能�
 
 ### 会不会修改音乐文件或上传歌词？
 
-Bridge 只在本机播放器、系统媒体会话和 SystemUI 之间传递歌词，不会修改音乐文件。是否联网获取歌词取决于对应播放器或 LyricProvider 的实现。
+Bridge 只读取本机播放器 MediaSession 中的原生歌词并增强 SystemUI 显示，不会修改音乐文件。是否联网获取歌词取决于对应播放器或 Provider 的实现。
 
 ## 给播放器开发者
 
