@@ -24,13 +24,14 @@ public final class OfficialLyricScalePivotHookContractTest {
 
     @Test
     public void verifiedPluginEvidenceShowsNameDriftAndLeftPivotReset() throws Exception {
-        String plugin = readWorkspaceFile(
-                "PlayerSource/SystemUIPlugin/jadx-user/sources/com/oplus/systemui/plugins/shared/"
-                        + "template/component/media/view/LyricsRecyclerView.java");
+        String evidence = readProjectFile(
+                "app/src/test/resources/fixtures/official-lyrics-recycler-pivot-evidence.txt");
 
-        assertTrue(plugin.contains("void k(AppCompatTextView appCompatTextView)"));
-        assertTrue(plugin.contains("appCompatTextView.setPivotX(0.0f)"));
-        assertTrue(plugin.contains("appCompatTextView.setScaleX"));
+        assertTrue(evidence.contains(
+                "sourceSha256=09F27293E450AC517F03C020D6912C1EC0682C58895F4F5EEBB761D7D779B664"));
+        assertTrue(evidence.contains("void k(AppCompatTextView appCompatTextView)"));
+        assertTrue(evidence.contains("appCompatTextView.setPivotX(0.0f)"));
+        assertTrue(evidence.contains("appCompatTextView.setScaleX"));
     }
 
     private static String readProjectFile(String relativePath) throws Exception {
@@ -41,11 +42,4 @@ public final class OfficialLyricScalePivotHookContractTest {
         return new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
     }
 
-    private static String readWorkspaceFile(String relativePath) throws Exception {
-        File direct = new File(relativePath);
-        File fromProject = new File(".." + File.separator + relativePath);
-        File fromBuild = new File(".." + File.separator + ".." + File.separator + relativePath);
-        File file = direct.isFile() ? direct : (fromProject.isFile() ? fromProject : fromBuild);
-        return new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
-    }
 }

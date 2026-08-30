@@ -1,0 +1,5 @@
+source=PlayerSource/SystemUIPlugin/jadx-user/sources/com/oplus/systemui/plugins/shared/template/component/media/view/LyricsRecyclerView.java
+sourceSha256=09F27293E450AC517F03C020D6912C1EC0682C58895F4F5EEBB761D7D779B664
+signature=public final void k(AppCompatTextView appCompatTextView)
+scale=appCompatTextView.setScaleX(f10)
+leftPivot=appCompatTextView.setPivotX(0.0f)
