@@ -27,6 +27,7 @@ Bridge 侧的 Provider/播放器信息集中在 `ExternalLyricSources`：
 | 酷狗音乐概念版 | `com.kugou.android.lite` | bridge 播放器包名、`lyricprovider/kugou-concept-music` source、历史播放器/AOD 放行、外部播放状态、翻译开关 |
 | Halcyon | `com.ella.music` | bridge 播放器包名、`lyricprovider/halcyon` source、历史播放器/AOD 放行、外部歌词提升、翻译开关；播放状态沿用原生 MediaSession |
 | Flamingo | `yos.music.player` | bridge 播放器包名、`lyricprovider/flamingo` source、历史播放器/AOD 放行；不发送外部播放状态 |
+| QZ Music | `love.qz.music` | bridge 播放器包名、`lyricprovider/qz-music` source、历史播放器/AOD 放行、外部歌词提升；播放器同时发布原生 `lyricInfo`，播放状态沿用原生 MediaSession |
 
 包名在 `BRIDGE_PLAYER_PACKAGES` 后，会自动进入 OPlus 历史播放器和 AOD 媒体面板放行逻辑。source 在 `EXTERNAL_SOURCES` 后，Bridge 才能把 Provider 广播反查到播放器包名，用于重试提升、无官方 `lyricInfo` 时的当前曲目绑定，以及可选的外部播放状态接收。
 

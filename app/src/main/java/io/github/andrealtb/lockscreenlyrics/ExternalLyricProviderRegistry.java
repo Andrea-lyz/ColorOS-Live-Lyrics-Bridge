@@ -36,6 +36,8 @@ final class ExternalLyricProviderRegistry {
     static final String HALCYON_SOURCE = "lyricprovider/halcyon";
     static final String FLAMINGO_PLAYER_PACKAGE = "yos.music.player";
     static final String FLAMINGO_SOURCE = "lyricprovider/flamingo";
+    static final String QZ_MUSIC_PLAYER_PACKAGE = "love.qz.music";
+    static final String QZ_MUSIC_SOURCE = "lyricprovider/qz-music";
 
     private static final Source[] EXTERNAL_SOURCES = {
             new Source(APPLE_MUSIC_SOURCE, APPLE_MUSIC_PLAYER_PACKAGE, false, false, false),
@@ -60,7 +62,8 @@ final class ExternalLyricProviderRegistry {
             // started dropping extras-only lyricInfo. Keep MediaSession as the
             // playback clock; allow title-only fallback for local files.
             new Source(HALCYON_SOURCE, HALCYON_PLAYER_PACKAGE, false, true, true),
-            new Source(FLAMINGO_SOURCE, FLAMINGO_PLAYER_PACKAGE, false, true, false)
+            new Source(FLAMINGO_SOURCE, FLAMINGO_PLAYER_PACKAGE, false, true, false),
+            new Source(QZ_MUSIC_SOURCE, QZ_MUSIC_PLAYER_PACKAGE, false, true, false)
     };
 
     private static final String[] BRIDGE_PLAYER_PACKAGES = {
@@ -79,7 +82,8 @@ final class ExternalLyricProviderRegistry {
             METROLIST_PLAYER_PACKAGE,
             KUWO_MUSIC_PLAYER_PACKAGE,
             HALCYON_PLAYER_PACKAGE,
-            FLAMINGO_PLAYER_PACKAGE
+            FLAMINGO_PLAYER_PACKAGE,
+            QZ_MUSIC_PLAYER_PACKAGE
     };
 
     private ExternalLyricProviderRegistry() {

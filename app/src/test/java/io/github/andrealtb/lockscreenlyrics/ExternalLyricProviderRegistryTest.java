@@ -36,6 +36,9 @@ public class ExternalLyricProviderRegistryTest {
         assertEquals("yos.music.player",
                 ExternalLyricProviderRegistry.trustedHostPackageForSource(
                         "lyricprovider/flamingo"));
+        assertEquals("love.qz.music",
+                ExternalLyricProviderRegistry.trustedHostPackageForSource(
+                        "lyricprovider/qz-music"));
         assertEquals("", ExternalLyricProviderRegistry.trustedHostPackageForSource("unknown"));
     }
 
@@ -59,6 +62,8 @@ public class ExternalLyricProviderRegistryTest {
                 "lyricprovider/halcyon", "com.ella.music"));
         assertTrue(ExternalLyricProviderRegistry.isTrustedSourceBoundToHostPackage(
                 "lyricprovider/flamingo", "yos.music.player"));
+        assertTrue(ExternalLyricProviderRegistry.isTrustedSourceBoundToHostPackage(
+                "lyricprovider/qz-music", "love.qz.music"));
         assertFalse(ExternalLyricProviderRegistry.isTrustedSourceBoundToHostPackage(
                 "lyricprovider/spotify-music", "com.tencent.qqmusic"));
         assertFalse(ExternalLyricProviderRegistry.isTrustedSourceBoundToHostPackage(
@@ -67,6 +72,8 @@ public class ExternalLyricProviderRegistryTest {
                 "lyricprovider/metrolist-music", "com.spotify.music"));
         assertFalse(ExternalLyricProviderRegistry.isTrustedSourceBoundToHostPackage(
                 "lyricprovider/flamingo", "yos.music.player.debug"));
+        assertFalse(ExternalLyricProviderRegistry.isTrustedSourceBoundToHostPackage(
+                "lyricprovider/qz-music", "love.qz.music.debug"));
         assertFalse(ExternalLyricProviderRegistry.isTrustedSourceBoundToHostPackage(
                 "lyricprovider/unknown", "com.example.music"));
     }
@@ -130,6 +137,13 @@ public class ExternalLyricProviderRegistryTest {
         assertFalse(flamingo.supportsTrackGeneration);
         assertTrue(flamingo.canPromoteAsAuthoritative);
         assertFalse(flamingo.allowsTitleOnlyFallbackMatch);
+
+        ExternalLyricSourceProfile qzMusic =
+                ExternalLyricSourceProfile.registeredProviderDefaults(
+                        "lyricprovider/qz-music");
+        assertFalse(qzMusic.supportsPlaybackState);
+        assertTrue(qzMusic.canPromoteAsAuthoritative);
+        assertFalse(qzMusic.allowsTitleOnlyFallbackMatch);
     }
 
     @Test
@@ -198,6 +212,19 @@ public class ExternalLyricProviderRegistryTest {
         assertTrue(flamingo.supportsTrackGeneration);
         assertTrue(flamingo.canPromoteAsAuthoritative);
         assertTrue(flamingo.canOverrideFavoriteActionWithTranslation);
+
+        ExternalLyricSourceProfile qzMusic =
+                ExternalLyricSourceProfile.version4ProviderDeclaration(
+                        "lyricprovider/qz-music",
+                        "love.qz.music",
+                        "trackGeneration,currentTrackAuthority",
+                        "",
+                        "");
+        assertFalse(qzMusic.supportsPlaybackState);
+        assertTrue(qzMusic.supportsTrackGeneration);
+        assertTrue(qzMusic.canPromoteAsAuthoritative);
+        assertFalse(qzMusic.allowsTitleOnlyFallbackMatch);
+        assertFalse(qzMusic.canOverrideFavoriteActionWithTranslation);
 
         ExternalLyricSourceProfile rejected =
                 ExternalLyricSourceProfile.version4ProviderDeclaration(

@@ -19,6 +19,16 @@ public final class ExternalLyricSenderPolicyTest {
     }
 
     @Test
+    public void staticWhitelistAcceptsNativeQzMusicProviderBinding() {
+        assertTrue(ExternalLyricSenderPolicy.authorizeStaticWhitelist(
+                ExternalLyricProtocol.Transport.DIRECT,
+                ExternalLyricProtocol.SENDER_KIND_PROVIDER,
+                "lyricprovider/qz-music",
+                "love.qz.music",
+                "love.qz.music").accepted);
+    }
+
+    @Test
     public void staticWhitelistRejectsMismatchedProviderClaims() {
         assertFalse(ExternalLyricSenderPolicy.authorizeStaticWhitelist(
                 ExternalLyricProtocol.Transport.DIRECT,
