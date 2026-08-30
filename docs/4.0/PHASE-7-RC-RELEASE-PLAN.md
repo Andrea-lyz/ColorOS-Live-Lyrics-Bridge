@@ -1,6 +1,6 @@
 # Bridge / Providers 4.0 Phase 7：RC 与正式发布计划
 
-> 状态：**Slice 7A 本地基线已完成；下一步进入 Slice 7B 版本、包名、scope 与升级契约**
+> 状态：**Slice 7A / 7B 已完成；下一步进入 Slice 7C RC / Release 流水线重写**
 >
 > 目标：Bridge `4.0.0` 与 12 个 v5 Provider 形成同一批次、可复现、可回滚说明完整的正式交付物。
 >
@@ -27,8 +27,8 @@
 | Provider 工作树 | Unicode test worker 修复 `d6f463b` 与 LX 最终修复 `5618582` 已提交；工作树干净 | 在 RC workflow/版本契约完成前保持本地，不推送和打 tag |
 | Bridge Release workflow | `.github/workflows/release.yml` 仍 checkout 旧 `Andrea-lyz/LyricProvider`，调用旧 module，并生成 `LyricProvider-*` / `LyricProvider-All-*` | 整体切换到 `ColorOS-Live-Lyrics-Providers` 的显式 12 模块 v5 矩阵；旧 workflow 不得用于 4.0 |
 | Provider CI | 新仓库已有 `testV5Matrix`、`assembleV5MatrixRelease` 和“恰好 12 APK”门禁，但当前 workflow 只做手动构建与 Actions artifact | 复用其矩阵任务，接入 Bridge 的协调 RC/GA 流水线，并补全签名、清单、哈希和发布模式 |
-| Bridge 版本 | `defaultVersionName=3.8.1`、`versionCode=135` | 确定 `4.0.0` 的最终 versionCode，并确保 tag、APK、LSP tag、Release 标题完全一致 |
-| Provider 版本 | 12 个新 applicationId 的 `versionName` 当前均为 `1.0.0`；Salt `versionCode=5`，其余当前为 `1` | 审阅并冻结“Provider 独立版本”还是“跟随 Bridge 4.0.0”的策略；不能临发布时临时改口 |
+| Bridge 版本 | `00a8333` 已冻结 `4.0.0` / `versionCode=136`，并建立 `bridge-release-contract.json` | 7C workflow 必须从契约解析 tag、LSP tag、资产名和数量，不再复制常量 |
+| Provider 版本 | `cb57ce6` 已冻结独立内部版本、12 applicationId/scope/宿主基线、`providers-v1.0.0` source tag 与套件资产名 | 7C workflow 必须先运行机器契约校验，再构建和收集 APK |
 | Bridge 测试 | `file.encoding=COMPAT` 修复 Windows Unicode `@argfile` 后，标准 Gradle 70 suite / 477 tests 通过，6 项显式 skipped；标准 assembleDebug 通过 | Release CI 直接使用标准任务，不再保留 direct-JUnit classpath 旁路 |
 | LSPosed metadata | Bridge 内置 scope 与 `.github/lsposed/SCOPE` 已是 `system` + `com.android.systemui`；独立 `LSPRepo/SCOPE` 仍包含 Salt/Cone 三个播放器包 | 正式发布前同步 LSPRepo scope，否则仓库推荐作用域会把 4.0 Bridge 重新注入播放器进程 |
 | 面向用户文档 | 根 README 已在向 4.0 迁移，但版本横幅仍有旧值；`.github/lsposed/README.md` 仍是 v3.4.1 结构和旧 Provider/内置 adapter 说明 | 统一 README 中英文、LSPosed README、LSPRepo README/SUMMARY、安装/迁移/排错和支持矩阵 |
@@ -117,6 +117,22 @@ Provider 仓库保留自己的源码 tag（首发采用 `providers-v1.0.0`），
 5. Provider scope 必须只包含各自宿主/进程所需包，不把 Bridge、SystemUI 或其他播放器包塞入错误模块。
 6. 对 3.8.1 → 4.0.0 设置迁移做专项测试：schema v3、逐播放器翻译状态、歌词清理默认关闭、调试域、整包配置备份/恢复。
 7. 明确降级边界：4.0 配置不保证旧 codec 无损读取；文档要求降级前先备份，必要时重置旧版设置。
+
+### 5.1 Slice 7B 验证状态
+
+- Bridge 提交 `00a8333`：`4.0.0` / `versionCode=136`、发布契约与跨仓库校验脚本。
+- Provider 提交 `cb57ce6`：12 模块机器矩阵与源码一致性校验脚本。
+- Provider 继续使用独立内部版本：Salt `1.0.0` / code 5，其余首发模块
+  `1.0.0` / code 1；套件资产统一使用 `v4.0.0`。
+- 跨仓库校验通过：12 个唯一 module/applicationId/asset，Gradle 根矩阵、
+  `settings.gradle.kts`、每个 build file、manifest、scope array、process evidence 和
+  validated host 均一致。
+- Bridge 标准 Gradle 复跑：477 tests，0 failure/error，6 skipped；
+  `assembleDebug` 通过。
+- 生成 APK 经 `aapt2 dump badging` 确认：
+  `io.github.andrealtb.lockscreenlyrics`、`versionCode=136`、`versionName=4.0.0`。
+- Slice 7B debug APK SHA-256：
+  `CF4B85ECFAF9EB21D664ABB22EC4BC99F765AC212CD28790094789F1AD483BBE`。
 
 ## 6. Slice 7C：重写 4.0 RC / Release 流水线
 

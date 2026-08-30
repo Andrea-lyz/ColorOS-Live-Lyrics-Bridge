@@ -8,8 +8,8 @@
 
 | 仓库 | 分支 | 本地基线 | 状态 |
 |---|---|---|---|
-| `ColorOS-Live-Lyrics-Bridge` | `4.0` | `a342234`：完整 4.0 runtime / v4 删除 / Phase 6 / 视觉控制；`025bfc9`：Windows Unicode 路径测试 worker 修复 | Release workflow、README 与 Phase 7 文档按后续 slice 继续修改；核心实现已提交 |
-| `ColorOS-Live-Lyrics-Providers` | `4.0` | `d6f463b`：Windows Unicode 路径测试 worker 修复；`5618582`：LX buffering 歌词投影身份最终修复 | 工作树干净，本地领先 `origin/4.0` 两个提交；尚未推送 |
+| `ColorOS-Live-Lyrics-Bridge` | `4.0` | `a342234`：完整 4.0 runtime；`025bfc9`：Unicode test worker；`90588f4`：RC 基线；`00a8333`：4.0 发布契约 | Release workflow 与 README 按后续 slice 继续修改；核心实现和 7B 契约已提交 |
+| `ColorOS-Live-Lyrics-Providers` | `4.0` | `d6f463b`：Unicode test worker；`5618582`：LX 最终修复；`cb57ce6`：12 Provider 发布契约 | 工作树干净，本地领先 `origin/4.0` 三个提交；尚未推送 |
 | `LSPRepo` | `main` | `d505f18` / `135-3.8.1` | 仍是 3.8.1 metadata；4.0 scope 和说明留到 7F/7G |
 
 Bridge 的 `a342234` 是 Phase 3–6 与后续视觉控制已经互相依赖后的集成基线，包含
@@ -119,10 +119,23 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\validate-lsposed
 - 两仓库 `git diff --check` 无 whitespace error；PowerShell 显示的 LF→CRLF 提示是
   checkout 行尾告警，不是 diff 错误。
 
-## 6. 进入 Slice 7B/7C 前仍未关闭
+## 6. 进入 Slice 7C 前仍未关闭
 
-1. Bridge 尚未改为 `4.0.0` / `versionCode=136`，Provider 内部版本契约尚未生成机器清单。
-2. Bridge `.github/workflows/release.yml` 仍是旧 `LyricProvider` 构建拓扑。
-3. Bridge `.github/lsposed` 与独立 `LSPRepo` 仍重复；正式 metadata 单一所有权按 7C/7F 收口。
-4. `LSPRepo/SCOPE` 仍是 3.8.1 的五项 scope。
-5. 当前提交只在本地；在 RC workflow、版本与文档完成前不推送、不打 tag。
+1. Bridge `.github/workflows/release.yml` 仍是旧 `LyricProvider` 构建拓扑。
+2. Bridge `.github/lsposed` 与独立 `LSPRepo` 仍重复；正式 metadata 单一所有权按 7C/7F 收口。
+3. `LSPRepo/SCOPE` 仍是 3.8.1 的五项 scope。
+4. 当前提交只在本地；在 RC workflow 与文档完成前不推送、不打 tag。
+
+## 7. Slice 7B 版本与机器契约
+
+- Bridge 已冻结 `4.0.0` / `versionCode=136`；契约提交 `00a8333`。
+- Provider 保持独立内部版本；套件 source tag 冻结为 `providers-v1.0.0`，契约提交
+  `cb57ce6`。
+- Bridge `release/bridge-release-contract.json` 统一拥有 tag、LSP tag、Bridge scope、
+  Provider source repo/tag、资产名和 13 APK / 16 资产计数。
+- Provider `release/v5-provider-matrix.json` 统一拥有 12 个 module、applicationId、
+  内部版本、asset、scope、process evidence 和已验证宿主版本。
+- 两仓库 PowerShell 校验脚本可独立运行，也可由 Bridge 跨仓库执行；实际校验通过。
+- 版本更新后 Bridge 标准测试仍为 477 tests 通过（6 skipped），`assembleDebug` 通过；
+  `aapt2` 确认 APK 为 `4.0.0` / code 136，SHA-256 为
+  `CF4B85ECFAF9EB21D664ABB22EC4BC99F765AC212CD28790094789F1AD483BBE`。
