@@ -1,0 +1,65 @@
+param(
+    [string] $RepoRoot = (Split-Path -Parent $PSScriptRoot),
+    [string] $ProviderRepoRoot = ''
+)
+
+$ErrorActionPreference = 'Stop'
+
+function Assert-Contract {
+    param(
+        [bool] $Condition,
+        [string] $Message
+    )
+    if (-not $Condition) {
+        throw "Release contract violation: $Message"
+    }
+}
+
+$contractPath = Join-Path $RepoRoot 'release\bridge-release-contract.json'
+$buildFilePath = Join-Path $RepoRoot 'app\build.gradle.kts'
+$scopePath = Join-Path $RepoRoot 'app\src\main\resources\META-INF\xposed\scope.list'
+
+$contract = Get-Content -LiteralPath $contractPath -Raw | ConvertFrom-Json
+$buildFile = Get-Content -LiteralPath $buildFilePath -Raw
+$scope = @(
+    Get-Content -LiteralPath $scopePath |
+        ForEach-Object { $_.Trim() } |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+)
+
+Assert-Contract ($contract.schema -eq 1) 'unsupported bridge contract schema'
+Assert-Contract ($contract.suiteVersion -match '^\d+\.\d+\.\d+$') 'suiteVersion must be SemVer'
+Assert-Contract ($contract.releaseTag -eq "v$($contract.suiteVersion)") 'releaseTag must match suiteVersion'
+Assert-Contract ($contract.lspTag -eq "$($contract.versionCode)-$($contract.suiteVersion)") 'lspTag must match versionCode and suiteVersion'
+Assert-Contract ($buildFile -match ('val defaultVersionName = "' + [regex]::Escape($contract.suiteVersion) + '"')) 'defaultVersionName differs from contract'
+Assert-Contract ($buildFile -match ('versionCode = ' + [regex]::Escape([string]$contract.versionCode) + '(\D|$)')) 'versionCode differs from contract'
+Assert-Contract ($buildFile -match ('applicationId = "' + [regex]::Escape($contract.bridgeApplicationId) + '"')) 'Bridge applicationId differs from contract'
+
+$expectedScope = @($contract.bridgeScopes)
+Assert-Contract ($scope.Count -eq $expectedScope.Count) 'Bridge scope count differs from contract'
+for ($index = 0; $index -lt $expectedScope.Count; $index++) {
+    Assert-Contract ($scope[$index] -eq $expectedScope[$index]) "Bridge scope differs at index $index"
+}
+
+Assert-Contract ($contract.providerApkCount -eq 12) '4.0 must contain exactly 12 Provider APKs'
+Assert-Contract ($contract.totalApkCount -eq (1 + $contract.providerApkCount)) 'totalApkCount must equal Bridge plus Providers'
+Assert-Contract ($contract.totalReleaseAssetCount -eq ($contract.totalApkCount + 3)) 'asset count must include APKs, bundle, checksums, and manifest'
+Assert-Contract ($contract.bridgeAsset -eq "ColorOS-Live-Lyrics-Bridge-v$($contract.suiteVersion).apk") 'Bridge asset name differs from suite version'
+Assert-Contract ($contract.providerBundleAsset -eq "ColorOS-Live-Lyrics-Providers-v$($contract.suiteVersion).zip") 'Provider bundle name differs from suite version'
+
+if (-not [string]::IsNullOrWhiteSpace($ProviderRepoRoot)) {
+    $providerScript = Join-Path $ProviderRepoRoot 'scripts\validate-v5-release-contract.ps1'
+    $providerContractPath = Join-Path $ProviderRepoRoot $contract.providerContractPath
+    Assert-Contract (Test-Path -LiteralPath $providerScript -PathType Leaf) 'Provider validation script is missing'
+    Assert-Contract (Test-Path -LiteralPath $providerContractPath -PathType Leaf) 'Provider contract is missing'
+
+    & $providerScript -RepoRoot $ProviderRepoRoot
+
+    $providerContract = Get-Content -LiteralPath $providerContractPath -Raw | ConvertFrom-Json
+    Assert-Contract ($providerContract.suiteVersion -eq $contract.suiteVersion) 'Bridge and Provider suite versions differ'
+    Assert-Contract ($providerContract.sourceTag -eq $contract.providersSourceTag) 'Provider source tag differs'
+    Assert-Contract (@($providerContract.providers).Count -eq $contract.providerApkCount) 'Provider count differs'
+    Assert-Contract ($providerContract.bundleAsset -eq $contract.providerBundleAsset) 'Provider bundle asset differs'
+}
+
+Write-Output "Bridge release contract is valid: $($contract.releaseTag), versionCode=$($contract.versionCode), providers=$($contract.providerApkCount)."

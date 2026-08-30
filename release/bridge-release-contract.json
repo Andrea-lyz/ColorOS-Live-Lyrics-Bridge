@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "suiteVersion": "4.0.0",
+  "releaseTag": "v4.0.0",
+  "versionCode": 136,
+  "lspTag": "136-4.0.0",
+  "providersSourceRepository": "Andrea-lyz/ColorOS-Live-Lyrics-Providers",
+  "providersSourceTag": "providers-v1.0.0",
+  "providerContractPath": "release/v5-provider-matrix.json",
+  "bridgeApplicationId": "io.github.andrealtb.lockscreenlyrics",
+  "bridgeScopes": [
+    "system",
+    "com.android.systemui"
+  ],
+  "bridgeAsset": "ColorOS-Live-Lyrics-Bridge-v4.0.0.apk",
+  "providerBundleAsset": "ColorOS-Live-Lyrics-Providers-v4.0.0.zip",
+  "checksumsAsset": "SHA256SUMS",
+  "assetManifest": "release-assets-v4.0.0.json",
+  "providerApkCount": 12,
+  "totalApkCount": 13,
+  "totalReleaseAssetCount": 16
+}
