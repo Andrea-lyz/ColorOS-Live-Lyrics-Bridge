@@ -183,7 +183,7 @@ jobs:
           Copy-Item -LiteralPath app/build/outputs/apk/release/app-release.apk -Destination (Join-Path out $contract.bridgeAsset)
 
       - name: Upload Bridge APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ needs.metadata.outputs.batch }}-bridge
           path: out/*.apk
@@ -244,7 +244,7 @@ jobs:
         run: ./scripts/collect-v5-release-apks.ps1 -OutputDir ./out
 
       - name: Upload Provider APKs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ needs.metadata.outputs.batch }}-providers
           path: |
@@ -278,7 +278,7 @@ jobs:
           token: ${{ secrets.PROVIDERS_REPO_TOKEN || github.token }}
 
       - name: Download signed APK artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: ${{ needs.metadata.outputs.batch }}-*
           path: incoming
@@ -286,14 +286,16 @@ jobs:
 
       - name: Locate Android build tools
         id: build_tools
-        shell: bash
+        shell: pwsh
         run: |
-          set -euo pipefail
-          build_tools_dir="$(find "$ANDROID_SDK_ROOT/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
-          test -x "$build_tools_dir/aapt2"
-          test -x "$build_tools_dir/apksigner"
-          test -x "$build_tools_dir/zipalign"
-          echo "dir=$build_tools_dir" >> "$GITHUB_OUTPUT"
+          $contract = Get-Content -LiteralPath release/bridge-release-contract.json -Raw | ConvertFrom-Json
+          $buildToolsDir = Join-Path $env:ANDROID_SDK_ROOT "build-tools/$($contract.androidBuildToolsVersion)"
+          foreach ($tool in @('aapt2', 'apksigner', 'zipalign')) {
+              if (-not (Test-Path -LiteralPath (Join-Path $buildToolsDir $tool) -PathType Leaf)) {
+                  throw "Pinned Android build tool is missing: $buildToolsDir/$tool"
+              }
+          }
+          "dir=$buildToolsDir" >> $env:GITHUB_OUTPUT
 
       - name: Verify and package release assets
         shell: pwsh
@@ -308,7 +310,7 @@ jobs:
             -ProviderCommit '${{ needs.metadata.outputs.providers_sha }}'
 
       - name: Upload complete RC batch
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ needs.metadata.outputs.batch }}-complete
           path: release-assets/*
@@ -327,7 +329,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Download verified release batch
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: ${{ needs.metadata.outputs.batch }}-complete
           path: release-assets

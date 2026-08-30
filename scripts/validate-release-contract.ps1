@@ -35,6 +35,7 @@ Assert-Contract ($buildFile -match ('val defaultVersionName = "' + [regex]::Esca
 Assert-Contract ($buildFile -match ('versionCode = ' + [regex]::Escape([string]$contract.versionCode) + '(\D|$)')) 'versionCode differs from contract'
 Assert-Contract ($buildFile -match ('applicationId = "' + [regex]::Escape($contract.bridgeApplicationId) + '"')) 'Bridge applicationId differs from contract'
 Assert-Contract ($contract.releaseCertificateSha256 -match '^[0-9a-f]{64}$') 'release certificate SHA-256 must be lowercase hex'
+Assert-Contract ($contract.androidBuildToolsVersion -eq '36.0.0') 'Android build-tools version must stay pinned to the locally verified release parser'
 
 $expectedScope = @($contract.bridgeScopes)
 Assert-Contract ($scope.Count -eq $expectedScope.Count) 'Bridge scope count differs from contract'
