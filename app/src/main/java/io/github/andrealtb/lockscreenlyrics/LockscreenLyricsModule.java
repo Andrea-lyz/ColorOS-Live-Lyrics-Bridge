@@ -9978,6 +9978,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         return false;
     }
 
+    @SuppressLint("WrongConstant")
     private static MediaMetadata buildMetadataWithLyricInfoPreservingArtwork(
             MediaMetadata base,
             String lyricInfo,

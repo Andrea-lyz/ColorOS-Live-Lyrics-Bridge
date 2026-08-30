@@ -573,7 +573,7 @@ abstract class SettingsBaseActivity extends AppCompatActivity {
         bar.addView(back, backParams);
 
         TextView titleView = text(title, 19, settingsTextColor());
-        titleView.setTypeface(Typeface.create(Typeface.DEFAULT, 500));
+        titleView.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         titleView.setSingleLine(true);
         bar.addView(titleView, new LinearLayout.LayoutParams(
                 0,

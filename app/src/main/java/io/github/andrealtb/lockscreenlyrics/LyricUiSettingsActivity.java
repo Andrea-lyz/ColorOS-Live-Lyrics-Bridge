@@ -43,6 +43,7 @@ import android.widget.ScrollView;
 import android.widget.Spinner;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.materialswitch.MaterialSwitch;
+import com.google.android.material.slider.LabelFormatter;
 import com.google.android.material.slider.Slider;
 import android.widget.TextView;
 
@@ -60,7 +61,6 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
     private static final long PREVIEW_COLLAPSE_ANIMATION_MS = 280L;
     private static final int PREVIEW_COLLAPSE_SWIPE_DP = 30;
     private static final int PREVIEW_RESTORE_HYSTERESIS_DP = 12;
-    private static final int MATERIAL_SLIDER_LABEL_BEHAVIOR_GONE = 2;
     private static final long SYSTEM_UI_RESTART_ACK_TIMEOUT_MS = 2_500L;
     private static final long MODULE_STATUS_QUERY_TIMEOUT_MS = 2_500L;
     private static final long SNACK_DURATION_SHORT_MS = 2_000L;
@@ -845,7 +845,7 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
                 getString(R.string.action_show_preview),
                 10.5f,
                 0xFF9A6A12);
-        button.setTypeface(Typeface.create(Typeface.DEFAULT, 500));
+        button.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         button.setGravity(Gravity.CENTER);
         button.setSingleLine(true);
         GradientDrawable content = new GradientDrawable();
@@ -2716,7 +2716,7 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
         slider.setStepSize(1f);
         slider.setValue(min);
         slider.setTickVisible(false);
-        slider.setLabelBehavior(MATERIAL_SLIDER_LABEL_BEHAVIOR_GONE);
+        slider.setLabelBehavior(LabelFormatter.LABEL_GONE);
         slider.setTrackHeight(dp(4));
         slider.setTrackActiveTintList(ColorStateList.valueOf(getColor(R.color.settings_primary)));
         slider.setTrackInactiveTintList(ColorStateList.valueOf(0x21344455));
@@ -2957,7 +2957,7 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
         LinearLayout column = new LinearLayout(this);
         column.setOrientation(LinearLayout.VERTICAL);
         TextView titleView = text(title, 12.5f, settingsTextColor());
-        titleView.setTypeface(Typeface.create(Typeface.DEFAULT, 500));
+        titleView.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         column.addView(titleView, matchWrap());
         if (subtitle != null && !subtitle.isEmpty()) {
             TextView subtitleView = text(subtitle, 9.5f, 0xFF8A919C);

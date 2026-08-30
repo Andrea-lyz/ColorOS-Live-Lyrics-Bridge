@@ -1,11 +1,13 @@
 package io.github.andrealtb.lockscreenlyrics.diagnostics;
 
+import android.annotation.SuppressLint;
 import android.graphics.Bitmap;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.Icon;
 import android.media.MediaMetadata;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.ImageView;
@@ -20,6 +22,7 @@ public final class ArtworkDiagnostics {
     private ArtworkDiagnostics() {
     }
 
+    @SuppressLint("WrongConstant")
     public static String describeMetadata(MediaMetadata metadata) {
         if (metadata == null) return "metadata=null";
         return "display=" + describeBitmap(safeBitmap(metadata, MediaMetadata.METADATA_KEY_DISPLAY_ICON))
@@ -84,6 +87,9 @@ public final class ArtworkDiagnostics {
 
     public static String describeIcon(Object value) {
         if (!(value instanceof Icon)) return value == null ? "null" : value.getClass().getName();
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+            return "icon-api<28:" + value.getClass().getName();
+        }
         Icon icon = (Icon) value;
         int type = icon.getType();
         StringBuilder builder = new StringBuilder("type=").append(type);

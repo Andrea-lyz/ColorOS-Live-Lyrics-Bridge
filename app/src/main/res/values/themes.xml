@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.LockscreenLyrics" parent="Theme.Material3.Light.NoActionBar">
+    <style name="ThemeLockscreenLyricsBase" parent="Theme.Material3.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:colorAccent">@color/settings_primary</item>
         <item name="android:statusBarColor">@color/settings_background</item>
@@ -8,12 +8,12 @@
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowActionModeOverlay">true</item>
         <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowLightNavigationBar">true</item>
         <item name="android:windowBackground">@color/settings_background</item>
         <item name="android:colorBackground">@color/settings_background</item>
-        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
         <item name="colorPrimary">@color/settings_primary</item>
         <item name="colorSecondary">@color/settings_secondary</item>
     </style>
+
+    <style name="Theme.LockscreenLyrics" parent="@style/ThemeLockscreenLyricsBase" />
 
 </resources>

@@ -24,13 +24,13 @@ import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
 import com.google.android.material.materialswitch.MaterialSwitch;
+import com.google.android.material.slider.LabelFormatter;
 import com.google.android.material.slider.Slider;
 
 /** Independent owner for lyric brightness levels and RecyclerView edge fading. */
 public final class LyricVisualLayersSettingsActivity extends SettingsBaseActivity {
     private static final String TAG = "LockscreenLyrics";
     private static final String STATE_DRAFT_CONFIG = "visual_layers_draft_config";
-    private static final int MATERIAL_SLIDER_LABEL_BEHAVIOR_GONE = 2;
     private static final long APPLY_ACK_TIMEOUT_MS = 2_500L;
 
     private SharedPreferences preferences;
@@ -286,7 +286,7 @@ public final class LyricVisualLayersSettingsActivity extends SettingsBaseActivit
         slider.setStepSize(step);
         slider.setValue(min);
         slider.setTickVisible(false);
-        slider.setLabelBehavior(MATERIAL_SLIDER_LABEL_BEHAVIOR_GONE);
+        slider.setLabelBehavior(LabelFormatter.LABEL_GONE);
         slider.setTrackHeight(dp(4));
         slider.setTrackActiveTintList(ColorStateList.valueOf(getColor(R.color.settings_primary)));
         slider.setTrackInactiveTintList(ColorStateList.valueOf(0x21344455));

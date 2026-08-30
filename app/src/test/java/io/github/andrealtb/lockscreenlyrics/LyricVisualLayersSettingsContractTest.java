@@ -122,6 +122,8 @@ public final class LyricVisualLayersSettingsContractTest {
         File file = direct.isFile()
                 ? direct
                 : new File(".." + File.separator + relativePath);
-        return new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+        return new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n');
     }
 }
