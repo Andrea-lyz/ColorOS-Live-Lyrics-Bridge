@@ -9,6 +9,7 @@ package io.github.andrealtb.lockscreenlyrics;
 final class PlayerAdapterRegistry {
     private static final String[] BUILT_IN_PLAYER_PACKAGES = {
             "com.salt.music",
+            "love.qz.music",
             "com.tencent.qqmusic",
             "com.netease.cloudmusic",
             "com.apple.android.music",
@@ -55,6 +56,7 @@ final class PlayerAdapterRegistry {
     private static final class AdaptersHolder {
         static final PlayerAdapter[] BUILT_IN_PLAYER_ADAPTERS = {
                 new SaltPlayerAdapter(),
+                new QzMusicAdapter(),
                 new QqMusicAdapter(),
                 new NeteaseMusicAdapter(),
                 new AppleMusicAdapter(),
