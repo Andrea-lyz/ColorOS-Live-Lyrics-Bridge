@@ -1,6 +1,6 @@
 # Bridge / Providers 4.0 Phase 7：RC 与正式发布计划
 
-> 状态：**Slice 7A–7F 与 RC5 真机验收已完成；发布前包名兼容策略使 Bridge APK 发生变化，RC6 待构建/验证；未创建 tag 或 Release**
+> 状态：**Slice 7A–7F 与 RC5 真机验收已完成；四播放器包名兼容补充已通过静态门禁，项目所有者明确豁免 RC6 并授权进入 Slice 7G 正式发布**
 >
 > 目标：Bridge `4.0.0` 与 12 个 v5 Provider 形成同一批次、可复现、可回滚说明完整的正式交付物。
 >
@@ -425,9 +425,10 @@ SystemUI 兼容价值，不合并 `ExternalLyricProviderRegistry`、source/sende
   按钮时发布 `ACTION_TOGGLE_TRANSLATION`；
 - 两个旧 PR 以“4.0 架构替代旧实现”说明关闭，不合并、不 retarget 到 4.0。
 
-该策略变更进入 Bridge APK，因此已通过真机的 RC5 不再是当前源码的最终候选。必须生成
-RC6，至少复核四个包名的 SystemUI 放行不影响现有 12 Provider，并在可用新版播放器上
-验证原生 `lyricInfo`；不得沿用 RC5 的最终候选结论直接发布。
+该策略变更进入 Bridge APK，按一般门禁原应生成 RC6；但变更只向包名数组追加四项，未改
+payload、model、renderer、MediaSession、Provider 或既有 12 宿主分支，且 481 tests、
+`lintDebug`、release contract 与 v4 禁用字符串扫描通过。项目所有者于 2026-08-30 明确
+判断再次生成 RC 属于过度验证，接受该有限差异并豁免 RC6，授权直接进入 Slice 7G。
 
 执行结果（2026-08-30）：
 
@@ -437,6 +438,7 @@ RC6，至少复核四个包名的 SystemUI 放行不影响现有 12 Provider，�
 - PR #37 已留言说明 PrismMusic 的原生 `lyricInfo`、真实 metadata 与 generation 要求后
   关闭，未合并：
   <https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/pull/37#issuecomment-5468002484>
+- RC6 豁免只适用于提交 `d85cbf6` 的四项包名扩展；后续任何业务源码变化仍必须重建候选。
 
 ## 10. Slice 7G：正式发布顺序与发布后核验
 
