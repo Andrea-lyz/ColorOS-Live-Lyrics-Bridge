@@ -22,6 +22,11 @@ _debug_frames/
 .filescope/
 .serena/
 **/bin/
+.phase*-apk-build/
+/artifacts/
+hs_err_pid*.log
+replay_pid*.log
+/phase*-build-dir.init.gradle
 
 # OS files
 .DS_Store
