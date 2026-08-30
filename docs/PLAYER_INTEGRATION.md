@@ -1,10 +1,241 @@
-# Player-provided lyricInfo integration
+# Player-owned `lyricInfo` integration
 
-Players that already own timed lyrics do not need an in-module `PlayerAdapter` or a dependency on the module APK. Publish an OPlus-compatible JSON string under the `lyricInfo` metadata key of the active media session. The module discovers the active provider in SystemUI.
+[简体中文](PLAYER_INTEGRATION.zh-CN.md)
 
-## Optional OPlus media-history integration
+This document is for player developers who can publish lyrics from their own playback process.
+The preferred 4.0 integration is direct:
 
-Players that need a persistent ColorOS media card and media-button delivery after the app has fully stopped can opt in from their own `AndroidManifest.xml`:
+```text
+player lyric model
+        ↓
+player-owned MediaSession / MediaMetadata["lyricInfo"]
+        ↓
+ColorOS SystemUI native lyric page
+        ↓ optional
+Bridge rendering, AOD, translation controls, and compatibility enhancements
+```
+
+The player does not compile against the Bridge APK, send a Bridge broadcast, or enter the Bridge
+LSPosed scope. `lyricInfo` is a JSON string stored in the player's existing platform
+`MediaMetadata`. ColorOS can consume it without Bridge; Bridge is an optional SystemUI-side
+enhancement.
+
+## 1. When to use this path
+
+Use direct integration when the player already owns a stable lyric model or can publish a complete
+timeline itself. A separate Provider is useful only when the player cannot be changed and private
+runtime APIs must be adapted externally.
+
+Before implementation, identify:
+
+- the one MediaSession that owns the notification/media-card playback state;
+- a stable track ID, or at least title + artist + duration;
+- the authoritative lyric-load completion event;
+- whether the source is line-timed, word-timed, translated, or pronunciation-only;
+- the host's real artwork and playback-position update paths.
+
+Do not create a second MediaSession only for lyrics. ColorOS may select the wrong session or show a
+paused duplicate card.
+
+## 2. Metadata key and minimum payload
+
+Write a JSON string to:
+
+```text
+MediaMetadata["lyricInfo"]
+```
+
+For the broadest native ColorOS compatibility, publish at least:
+
+| Field | Requirement | Meaning |
+|---|---|---|
+| `songName` | recommended | Current display title. |
+| `artist` | recommended | Current display artist. |
+| `songId` | recommended | Stable host track ID when available. |
+| `lyricType` | recommended | Use `0` for the standard timed-lyric payload. |
+| `lyric` | required for native display | Line-timed LRC used by the stock lyric list. |
+| `noLyric` | recommended | `false` when a usable timeline is present. |
+
+Bridge accepts a payload only when `lyric` or `rawLyric` contains a valid timed tag. A raw-only
+payload can enter the Bridge parser, but players should still publish line-timed `lyric`, because
+the stock SystemUI list is the primary consumer.
+
+Example:
+
+```json
+{
+  "songName": "Example Song",
+  "artist": "Example Artist",
+  "songId": "track-42",
+  "lyricType": 0,
+  "lyric": "[00:10.000]First line\n[00:14.500]Second line\n",
+  "rawLyric": "[00:10.000]<00:10.000>First <00:10.700>line<00:12.800>\n[00:14.500]<00:14.500>Second <00:15.200>line<00:17.000>\n",
+  "translationLyric": "[00:10.000]第一行\n[00:14.500]第二行\n",
+  "provider": "com.example.player",
+  "source": "com.example.player-v5",
+  "trackKey": "track-42|example song|example artist|180",
+  "sessionGeneration": 12,
+  "noLyric": false
+}
+```
+
+Unknown JSON fields are allowed. Bridge never requires a Provider application ID or a private
+envelope marker.
+
+## 3. Optional extension fields
+
+| Field | Format | Use |
+|---|---|---|
+| `rawLyric` | enhanced LRC | Word-level timing for karaoke rendering. |
+| `translationLyric` | line-timed LRC | Canonical translation lane. |
+| `provider` | string | Diagnostic owner; normally the host package. |
+| `source` | string | Diagnostic source/profile. |
+| `trackKey` | string | Stable identity key used to reject stale same-session payloads. |
+| `sessionGeneration` | positive integer | Monotonic generation incremented on a real track change. |
+| `album` | string | Optional identity/display context. |
+
+For compatibility with existing official payloads, Bridge also recognizes `translatedLyric`,
+`translateLyric`, `transLyric`, `lyricTranslation`, `translationLrc`, `transLrc`, and
+`translation`. New integrations should write only `translationLyric` unless the player's official
+writer already owns another alias.
+
+## 4. Timeline formats
+
+### 4.1 Line-timed lane
+
+Use absolute playback time in milliseconds:
+
+```text
+[00:10.000]First line
+[00:14.500]Second line
+```
+
+Tags may use `[]` or `<>`; `mm:ss.mmm` is preferred. Keep line starts non-decreasing and remove
+empty/ad/promotional rows before aligning translation.
+
+### 4.2 Word-timed lane
+
+`rawLyric` uses one line tag followed by absolute word tags and an optional terminal tag:
+
+```text
+[00:10.000]<00:10.000>First <00:10.700>line<00:12.800>
+```
+
+Rules:
+
+1. Word starts are absolute media positions, not offsets from the line start.
+2. Word times never move backward within a line.
+3. Preserve meaningful spaces in word text; do not invent spaces between CJK tokens.
+4. A terminal tag should mark the visual end of the last word when the source provides it.
+5. If the source is line-timed only, omit `rawLyric`; do not fabricate a karaoke sweep.
+
+### 4.3 Translation lane
+
+Translation lines use the main line's absolute start time:
+
+```text
+[00:10.000]第一行
+[00:14.500]第二行
+```
+
+Align each translation to one primary line and consume it once. Pronunciation, romaji,
+transliteration, and phonetic HTML are not translations and must not enter this lane. When no real
+translation exists, omit the field instead of duplicating the primary lyric.
+
+## 5. Track identity and generation
+
+The payload must belong to the metadata currently visible on the same MediaSession.
+
+Recommended identity order:
+
+1. stable media ID;
+2. title + artist + duration;
+3. a player-specific immutable key.
+
+Maintain a monotonically increasing generation:
+
+- increment only when the real track changes;
+- merge late ID/title/artist fields for the same track without incrementing;
+- capture the generation when lyric loading starts;
+- discard completion callbacks whose track or generation is no longer current;
+- clear only payloads known to be owned by your integration.
+
+Title-only Bluetooth/car-lyric projection is not a track change. Restore or preserve the stable
+song identity before SystemUI consumes projected metadata.
+
+## 6. Publication lifecycle
+
+A safe sequence is:
+
+```text
+authoritative track observed
+        ↓ generation++
+lyric load starts with track + generation token
+        ↓
+result returns and still matches live track/generation
+        ↓
+copy current host metadata, preserving identity/artwork
+        ↓
+putString("lyricInfo", json)
+        ↓
+setMetadata on the same player-owned MediaSession
+```
+
+Important boundaries:
+
+- Do not publish queue preload lyrics as the current song.
+- Do not attach a late result to whatever metadata happens to be live.
+- Do not use an extras-only update if the target ColorOS ignores it; publish a real metadata object.
+- Do not continuously rewrite metadata for lyric progress. SystemUI reads progress from
+  `PlaybackState`.
+- Replay the same payload only when the host replaces metadata and drops your field.
+
+## 7. Preserve host metadata and artwork
+
+Lyrics are an overlay on the player's metadata, not a replacement for it. Preserve:
+
+- media ID, title, artist, album, duration, track/disc numbers, ratings, and unknown host keys;
+- artwork bitmap and artwork URI fields;
+- the current MediaSession and PlaybackState;
+- player-defined custom actions.
+
+On affected ColorOS builds, `MediaMetadata.Builder(existing)` can collapse bitmap state. If this
+occurs, create an empty typed builder and copy keys by type before adding `lyricInfo`. Never fetch,
+invent, or restore artwork from a stale track merely to make lyric publication succeed.
+
+Before committing very large lyrics, measure the complete candidate metadata Parcel. The reference
+Provider implementation rejects lyric publication above 512 KiB while leaving original host
+metadata untouched.
+
+## 8. Playback clock
+
+Publish the player's real `PlaybackState`:
+
+- correct PLAYING/PAUSED/BUFFERING state;
+- current position;
+- playback speed;
+- monotonic `lastPositionUpdateTime`.
+
+Do not manufacture PLAYING or reset position to zero to wake SystemUI. Such writes can break the
+media-card play icon, seeking, and lock-screen lyric visibility.
+
+## 9. Optional translation action
+
+Players that want Bridge's public media-card translation toggle may expose a
+`PlaybackState.CustomAction` with this action ID:
+
+```text
+io.github.andrealtb.lockscreenlyrics.action.TOGGLE_TRANSLATION
+```
+
+SystemUI/Bridge binds the visible action. Preserve all host actions and all PlaybackState fields
+when adding it. The player callback must not reinterpret it as a player command. If your player's
+official action row has a different ownership model, omit this action and keep native controls.
+
+## 10. Optional OPlus media-history opt-in
+
+Some ColorOS versions filter player packages before their sessions reach the OPlus media pipeline.
+An external player can opt in through its manifest:
 
 ```xml
 <application>
@@ -14,94 +245,34 @@ Players that need a persistent ColorOS media card and media-button delivery afte
 </application>
 ```
 
-The system-server hook preserves the original OPlus result, then additionally accepts:
+This opt-in affects OPlus media-history/blacklist policy only. It does not grant lyric capability,
+create a Provider, or add the player to Bridge scope.
 
-- Every package represented by a built-in `PlayerAdapter`.
-- External players that declare the metadata above.
+## 11. Validation checklist
 
-External players do not need to enter this module's LSPosed scope or depend on its APK. The key is also exposed as `LyricInfoContract.MANIFEST_METADATA_OPLUS_MEDIA_HISTORY`.
+Validate on the exact APK that will be shipped:
 
-This declaration only allows the package into the OPlus media-history stack. The player must still create a valid `MediaSession`, provide a media-button receiver or `PendingIntent`, handle `android.intent.action.MEDIA_BUTTON` after process death, start its own playback service, and restore its queue. The module does not guess external service classes or playback actions. Players already accepted by the original ColorOS whitelist do not need this opt-in.
+- [ ] Provider/Bridge absent: stock SystemUI consumes `lyricInfo`.
+- [ ] Bridge installed: no duplicate lyric publication.
+- [ ] first play, pause/resume, seek, skip, rapid three-track skip, and same-track replay;
+- [ ] line-only, word-timed, translated, and no-lyric tracks;
+- [ ] lock screen, unlock/re-enter, screen off, and AOD;
+- [ ] artwork URI first frame and later bitmap frame;
+- [ ] metadata churn does not bump generation;
+- [ ] an old asynchronous result cannot overwrite the new track;
+- [ ] payload remains below the device's Binder/Parcel limit;
+- [ ] logs contain no complete lyrics, tokens, cookies, or private local paths.
 
-```json
-{
-  "songName": "Song title",
-  "artist": "Artist",
-  "songId": "stable-player-song-id",
-  "lyric": "[00:00.00]Line one\n[00:05.20]Line two",
-  "rawLyric": "[00:00.000]Line[00:00.320] [00:00.440]one[00:05.200]"
-}
-```
+When reporting a compatibility problem, include player version, device/ROM/SystemUI versions,
+MediaSession owner process, a sanitized `lyricInfo` field summary, PlaybackState summary, and the
+smallest reproducible track-change sequence.
 
-- `lyric` is required and must contain at least one timed LRC tag.
-- `songName`, `artist`, and a stable `songId` should be provided.
-- `rawLyric` is optional. It enables the module's word-level highlighting and layout renderer.
-- Before OPlus consumes `lyric`, the module normalizes same-timestamp bilingual groups to one primary line item. Keep complete translations and word timing in `rawLyric` or a timed translation field.
-- Zero-width spacer-only lines are ignored. Use real timed primary lines rather than invisible placeholders to control list position.
-- A player that publishes only `lyric` still gets native OPlus line-level lyrics, dynamic provider recognition, lyric-policy handling, and screen-timeout handling. Media-history integration is separate and requires original ColorOS support, a built-in adapter, or the manifest opt-in above.
-- The player does not need to be added to the module's LSPosed scope.
+## 12. Reference implementation
 
-## Data-source priority
+For an external module that adapts an unmodified player, see the bilingual Provider guide:
 
-For a player outside the built-in compatibility-adapter scope, a valid player-provided payload is consumed directly in SystemUI. For Salt Player or ConePlayer, where the module also runs inside the player process, the priority is:
+- [Provider adaptation guide (English)](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Providers/blob/4.0/docs/4.0/PROVIDER-ADAPTATION-GUIDE.md)
+- [Provider 适配技术指南（中文）](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Providers/blob/4.0/docs/4.0/PROVIDER-ADAPTATION-GUIDE.zh-CN.md)
 
-1. A player-provided enhanced payload containing timed `rawLyric` or timed translation data.
-2. A timed lyric captured by the module's compatibility adapter and verified for the current track.
-3. A simple player/OPlus `lyricInfo` payload containing only line-level lyrics.
-
-This means a future line-only native `lyricInfo` implementation remains a safe fallback, while the adapter can still provide word timing and translations. Once adapter data is available, the module builds a fresh payload instead of merging fields from the simple native payload.
-
-## Car Bluetooth and notification lyric adapters
-
-Some players implement car-Bluetooth or notification lyrics by reusing `MediaMetadata` fields. During playback they may put the current lyric line in `TITLE`, a translation in `ARTIST`, or temporary credits such as `Lyrics by...`, `Composed by...`, and copyright notices in their display metadata. Those updates are not real track transitions.
-
-External players should keep `TITLE`, `ARTIST`, `MEDIA_ID`, `DISPLAY_TITLE`, and `DISPLAY_SUBTITLE` stable for the current track. Use a car/notification-specific field or transport for live lyric text. Do not write live lyric lines, translations, or credits into track-identity fields, and do not publish a lyric-free metadata update solely for such a transient frame.
-
-If a built-in `PlayerAdapter` cannot avoid this metadata reuse, it must explicitly implement `supportsLyricRelayMetadata()`. Treat an update as relay metadata only when a fresh complete LRC is already bound to the current track and either its temporary title can be verified against that LRC or its identity can be restored from a stable payload. Never infer relay status solely from a lyric-like title, a hyphenated artist string, or timing proximity, because that can retain the previous lyric across a real track change.
-
-Integration testing must cover ordinary lyric lines, translations, title/artist opening lines, `Lyrics by...`/`Composed by...`/copyright lines, pause-resume, and rapid track changes. Verify both that the lock-screen lyric surface does not fall back to "No lyrics" and that the original car-Bluetooth lyric output remains continuous.
-
-For Media3, place the JSON in `MediaItem.mediaMetadata.extras`. Prefer publishing the first current item with its complete `lyricInfo` already attached. For framework media sessions, use `android.media.MediaMetadata.Builder.putString("lyricInfo", json)` and call `MediaSession.setMetadata`.
-
-Update the whole payload on each track transition, remove it when lyrics are disabled or unavailable, and keep `lyric` and `rawLyric` on the same time offset. `LyricInfoContract.java` is the canonical constants and validation reference; players do not need to link against it.
-
-## Optional translation action
-
-To expose the lock-screen translation toggle, publish this standard action as the first `PlaybackState` custom action:
-
-```kotlin
-private const val ACTION_TOGGLE_TRANSLATION =
-    "io.github.andrealtb.lockscreenlyrics.action.TOGGLE_TRANSLATION"
-
-val action = PlaybackState.CustomAction.Builder(
-    ACTION_TOGGLE_TRANSLATION,
-    "Lyric translation",
-    R.drawable.any_valid_media_icon // Android requires a non-zero resource ID
-).build()
-```
-
-The Android API requires a valid icon resource, but the player does not need to create a dedicated translation icon. The module first looks for `ic_translation` in the player package and otherwise uses its bundled Salt-style translation icon. Publish the action only while the current `lyricInfo` contains usable translations, and remove it on track changes or when translations are unavailable. The module enables the required OPlus custom-action slot, handles taps, and persists the toggle state. If the module is absent, Android may deliver the action to the player, which should safely ignore the no-op callback.
-
-## Recommended publication timing
-
-Publish on state changes instead of using a repeating timer:
-
-1. Publish once when the media session is created or the feature is enabled, if current lyrics are ready. The initial metadata, notification, and current `MediaItem` should all describe the same track and carry the same complete `lyricInfo`.
-2. Remove the previous payload as soon as a track transition begins.
-3. Publish the complete payload once when the new track's asynchronous lyric load finishes. If playback has already started, update the latest current-item metadata and the session/notification metadata as one logical operation.
-4. If the session or current `MediaItem` is rebuilt, read its metadata first and republish only when `lyricInfo` is missing or differs from the target JSON.
-5. Do not publish a lyric-free track metadata object and then patch only `extras` a few milliseconds later. OPlus may debounce that second update (`within debounce period, ignore`), leaving the first track at `hasLyric=false` until another track change. If lyrics are not ready at track creation, wait for the initial media update burst to settle before the one complete lyric update.
-6. For Media3/OPlus builds with propagation races, an optional check about `800 ms` after the first complete publication may republish at most once, and only when the value is still missing. Do not continue periodic retries.
-7. Cancel pending retries and remove `lyricInfo` when the feature is disabled, lyrics are unavailable, or the queue becomes empty.
-
-In normal operation this means **one publication per track**, or at most **two** on a system that demonstrably loses the first update. Playback position changes, pause/resume, and ordinary notification refreshes must not rewrite `lyricInfo`.
-
-### First-track checklist
-
-- Build `lyricInfo` from the same title, artist, and stable media ID used by the current media item.
-- Attach it before the first metadata/notification publication whenever lyrics are already available.
-- When lyrics arrive asynchronously, clone the latest metadata instead of an earlier snapshot, then replace the current item only once with the complete payload.
-- Do not rely on an immediate extras-only update to cross the OPlus media pipeline.
-- During integration testing, `hasLyric=false` after the player reports that it published `lyricInfo` usually means the update was debounced before SystemUI consumed it; it is not a lyric-format rejection by this module.
-
-See the [Chinese integration guide](PLAYER_INTEGRATION.zh-CN.md) for complete Media3 and framework examples.
+The public JSON contract remains player-owned and has no compile-time dependency on either
+repository.

@@ -1,6 +1,6 @@
 # Bridge / Providers 4.0 Phase 7：RC 与正式发布计划
 
-> 状态：**Slice 7A–7D 与私有 RC 构建门禁已完成；RC5 进入 Slice 7E 最终签名候选真机回归**
+> 状态：**Slice 7A–7F 已完成；RC5 已通过最终签名候选真机回归；本轮只提交并推送文档，不创建 tag 或 Release**
 >
 > 目标：Bridge `4.0.0` 与 12 个 v5 Provider 形成同一批次、可复现、可回滚说明完整的正式交付物。
 >
@@ -297,13 +297,16 @@ RC5 证据：
 2. 记录设备型号、系统版本、SystemUIPlugin 版本、LSPosed 版本、播放器版本、Bridge/Provider 内部版本和 RC batch ID。
 3. 测试中发现 blocker 后停止把当前 batch 当最终候选；修复后从新 commit 重建整套 RC。
 
-当前待测候选固定为 RC5：
+本次通过的最终候选固定为 RC5：
 
 ```text
 artifacts/4.0.0-rc.5-88d261a-b186e79-complete/
 ```
 
 不得混入 Phase 6 debug APK、RC1–RC4 或单独替换的 Provider APK。
+
+用户于 2026-08-30 确认该批次测试通过。Actions run 为 `33301880289`；后续若修改任何
+进入 APK 的源码，必须重新生成 RC，不得沿用本结论。
 
 ### 8.2 Bridge 公共场景
 
@@ -343,6 +346,12 @@ artifacts/4.0.0-rc.5-88d261a-b186e79-complete/
 4. Provider 未安装时，Bridge 设置页不再通过 Provider package 查询伪造“已安装/未安装”状态。
 5. 对不再支持的 QQ HD、MusicFree、Gramophone、Symfonium、Flamingo v4-only 明确显示为“不在 4.0 支持矩阵”，不能模糊写成可能支持。
 
+### 8.5 Slice 7E 结论
+
+- RC5 批次 `4.0.0-rc.5-88d261a-b186e79` 已由用户完成真机验收并确认通过。
+- Bridge 与 12 Provider 的正式签名候选不再存在已知 blocker/critical 设备问题。
+- 该结论只绑定上述 batch 与 Actions run `33301880289`，不外推到后续源码变更。
+
 ## 9. Slice 7F：迁移文档、Release Notes 与支持材料
 
 ### 9.1 必须更新的入口
@@ -379,6 +388,27 @@ artifacts/4.0.0-rc.5-88d261a-b186e79-complete/
 7. 资产清单与 Provider ZIP 不是 Recovery 包的说明；
 8. Bridge/Provider 源码 commit、Actions run、SHA256SUMS；
 9. 完整致谢、许可证和 donation 区块。
+
+### 9.4 Slice 7F 完成记录
+
+2026-08-30 已完成：
+
+1. 重写 Bridge 中英文 README 与中英文播放器主动接入协议；协议按当前
+   `MediaMetadata["lyricInfo"]`、时间轴、翻译 lane、generation、封面和公开翻译 action
+   契约编写。
+2. 新增中英文 3.8.x → 4.0 迁移指南，覆盖旧→新 Provider applicationId/资产映射、
+   Bridge/Provider scope、双 hook 风险、配置备份与降级、Provider-only 行为，以及词幕原
+   项目获取和反馈边界。
+3. 新增 Provider 中英文适配技术指南，并从 Provider 中英文 README 与 4.0 文档入口链接。
+4. 重写发布流程，改用新 Provider 仓库、不可变 source revision、精确 16 资产门禁与
+   LSP metadata 先行顺序；明确 RC/文档/推送不等于授权正式发布。
+5. 新增完整 `4.0.0` Release Notes 和版本归档页，并更新独立 `LSPRepo` 的中英文 README、
+   `SUMMARY` 与两项 `SCOPE`。
+6. 两仓库 release-contract 脚本加入文档存在性、入口链接和公开文档禁用词门禁；Bridge
+   增加 Phase 7 文档契约单测。
+
+本 slice 只提交并推送上述文件。未创建 Provider source tag、LSP metadata tag、Bridge
+`v4.0.0` tag 或 GitHub/LSP Release；这些动作仍属于 Slice 7G，必须取得用户明确授权。
 
 ## 10. Slice 7G：正式发布顺序与发布后核验
 

@@ -8,13 +8,11 @@ Bridge 4.0 no longer contains the direct-v4 transport, player-process adapters, 
 applicationId/source registries. It consumes only native `MediaMetadata["lyricInfo"]` in
 SystemUI. Phase 5 device regression and architecture gates closed on 2026-08-29.
 
-Deferred plan — **not implemented; do not start before Phase 6 closes**:
+The post-Phase-6 lyric brightness/fade controls, presets, preview, backup/restore, and alignment
+pivot repair are implemented and device-validated. Phase 6 method/performance governance is closed.
 
-- Fully expose lyric visual alpha layers, translation brightness, inactive-translation follow,
-  Recycler edge fade enable/length, and inactive-row fade in a dedicated settings sub-page.
-- Source of truth:
-  `docs/4.0/POST-PHASE-6-LYRIC-VISUAL-CONTROLS-PLAN.md`.
-
-The remaining 4.0 release workflow is tracked in the workspace-level `todo.md` and
-`docs/4.0/PHASE-7-RC-RELEASE-PLAN.md`. The Phase 7 document is an unimplemented
-review draft until its release decisions are approved.
+Phase 7 Slice 7A–7F is complete. RC5 (`33301880289`) passed user device validation, and the
+4.0 migration, integration, Provider adaptation, release-process, Release Notes, and LSP metadata
+documents are prepared. Slice 7G (tags, GitHub/LSP Releases, and public-asset revalidation) remains
+intentionally unexecuted until the user explicitly authorizes publication. Source of truth:
+`docs/4.0/PHASE-7-RC-RELEASE-PLAN.md`.

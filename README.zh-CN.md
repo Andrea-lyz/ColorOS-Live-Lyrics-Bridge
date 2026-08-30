@@ -13,7 +13,7 @@
 
 它不是一套盖在锁屏上的悬浮窗，而是把播放器的完整歌词交给系统原生界面显示。这样既能保留 ColorOS 的锁屏风格、切歌动画和息屏显示，也能补上逐字高亮、翻译和外观设置。
 
-> 当前版本：**v3.8.0**。升级时请把 Bridge 和正在使用的 LyricProvider 从同一 Release 一起更新，避免新旧版本配合异常。
+> 目标版本：**v4.0.0**。正式签名 RC5 已通过实机验证；剩余发布清单关闭前不会创建公开 Release。
 
 ## 主要功能
 
@@ -77,6 +77,13 @@ Halcyon 若发布标准 `lyricInfo`，仍可走原生链路；旧的应用内 v4
 4. 不要同时让旧词幕 Provider 与 4.0 Provider hook 同一播放器。
 
 Release 中的 Provider ZIP 只是 APK 下载合集，不是 Recovery 刷机包。
+
+从 3.8.x 升级时，请先阅读[迁移指南](docs/4.0/MIGRATION-3.8-TO-4.0.zh-CN.md)，其中列出
+新旧 applicationId、准确 Provider scope、不再支持的播放器、配置备份与降级边界。
+需要词幕 Provider 时，从
+[LyricProvider 原项目](https://github.com/tomakino/LyricProvider) 获取；词幕显示/产品问题
+向原项目反馈，不由 Bridge 或 4.0 Provider 仓库受理。
+
 ## 怎么设置外观
 
 在 LSPosed 的模块页面打开 **ColorOS Live Lyrics Bridge → 设置**。
@@ -127,6 +134,8 @@ Bridge 只读取本机播放器 MediaSession 中的原生歌词并增强 SystemU
 
 - [播放器接入协议（中文）](docs/PLAYER_INTEGRATION.zh-CN.md)
 - [Player integration protocol (English)](docs/PLAYER_INTEGRATION.md)
+- [Provider 适配技术指南](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Providers/blob/4.0/docs/4.0/PROVIDER-ADAPTATION-GUIDE.zh-CN.md)
+- [3.8.x → 4.0 迁移指南](docs/4.0/MIGRATION-3.8-TO-4.0.zh-CN.md)
 - [Bridge 与 LyricProvider 的职责说明](docs/LYRIC_PROVIDER_BRIDGE.zh-CN.md)
 
 ## 本地构建
@@ -134,7 +143,8 @@ Bridge 只读取本机播放器 MediaSession 中的原生歌词并增强 SystemU
 需要 JDK 21。项目输出仍使用 Java 17 字节码，以保持 Android 兼容性。
 
 ```powershell
-.\scripts\gradle-local.cmd testDebugUnitTest assembleDebug
+.\gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+.\scripts\validate-release-contract.ps1 -ProviderRepoRoot ..\ColorOS-Live-Lyrics-Providers
 ```
 
 Debug APK 位于 `app\build\outputs\apk\debug\app-debug.apk`。

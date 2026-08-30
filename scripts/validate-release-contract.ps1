@@ -52,6 +52,35 @@ Assert-Contract (($forbiddenApkAscii | Select-Object -Unique).Count -eq $forbidd
 Assert-Contract ($contract.bridgeAsset -eq "ColorOS-Live-Lyrics-Bridge-v$($contract.suiteVersion).apk") 'Bridge asset name differs from suite version'
 Assert-Contract ($contract.providerBundleAsset -eq "ColorOS-Live-Lyrics-Providers-v$($contract.suiteVersion).zip") 'Provider bundle name differs from suite version'
 
+$requiredDocumentation = @(
+    'README.md',
+    'README.zh-CN.md',
+    'docs\PLAYER_INTEGRATION.md',
+    'docs\PLAYER_INTEGRATION.zh-CN.md',
+    'docs\4.0\MIGRATION-3.8-TO-4.0.md',
+    'docs\4.0\MIGRATION-3.8-TO-4.0.zh-CN.md',
+    'docs\RELEASE_PROCESS.md',
+    ".github\release-notes\$($contract.suiteVersion).md",
+    "docs\releases\v$($contract.suiteVersion).md"
+)
+foreach ($relativePath in $requiredDocumentation) {
+    $documentationPath = Join-Path $RepoRoot $relativePath
+    Assert-Contract (Test-Path -LiteralPath $documentationPath -PathType Leaf) "required documentation is missing: $relativePath"
+    Assert-Contract (-not [string]::IsNullOrWhiteSpace((Get-Content -LiteralPath $documentationPath -Raw))) "required documentation is empty: $relativePath"
+}
+
+$publicReleaseDocuments = @(
+    'README.md',
+    'README.zh-CN.md',
+    ".github\release-notes\$($contract.suiteVersion).md",
+    'docs\4.0\MIGRATION-3.8-TO-4.0.md',
+    'docs\4.0\MIGRATION-3.8-TO-4.0.zh-CN.md'
+)
+foreach ($relativePath in $publicReleaseDocuments) {
+    $content = Get-Content -LiteralPath (Join-Path $RepoRoot $relativePath) -Raw
+    Assert-Contract ($content -notmatch '(?i)npatch|non-root') "public release document contains an internal abandoned-route term: $relativePath"
+}
+
 if (-not [string]::IsNullOrWhiteSpace($ProviderRepoRoot)) {
     $providerScript = Join-Path $ProviderRepoRoot 'scripts\validate-v5-release-contract.ps1'
     $providerContractPath = Join-Path $ProviderRepoRoot $contract.providerContractPath

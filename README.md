@@ -13,7 +13,7 @@ Bring lyrics from more music apps to the native ColorOS / OPlus lock-screen lyri
 
 This is not a floating overlay. It passes a player's full lyric timeline to the system UI, keeping the ColorOS look, transitions, and always-on display while adding word-by-word highlighting, translations, and appearance controls.
 
-> Current release: **v3.8.0**. Update the Bridge and the Providers you use from the same release. Mixing versions can cause track-change and lyric-timing issues.
+> Target release: **v4.0.0**. The signed RC5 runtime has passed device validation; the public Release is not created until the remaining release checklist is closed.
 
 ## What it does
 
@@ -77,6 +77,13 @@ Halcyon remains compatible when it publishes standard `lyricInfo`; its old in-ap
 4. Do not let an old Lyricon Provider and a 4.0 Provider hook the same player.
 
 The Provider ZIP in a release is only an APK download bundle, not a Recovery-flashable package.
+
+For a 3.8.x upgrade, old/new application IDs, exact Provider scopes, unsupported players, backup,
+and downgrade boundaries, read [Migrating from 3.8.x to 4.0](docs/4.0/MIGRATION-3.8-TO-4.0.md).
+Lyricon Providers are obtained from the
+[original LyricProvider project](https://github.com/tomakino/LyricProvider); report Lyricon
+display/product issues there rather than in the Bridge or 4.0 Provider repositories.
+
 ## Appearance and behavior
 
 Open **ColorOS Live Lyrics Bridge → Settings** from the module page in LSPosed.
@@ -127,6 +134,8 @@ If your player already has a full lyric timeline, the preferred integration is t
 
 - [Player integration protocol](docs/PLAYER_INTEGRATION.md)
 - [播放器接入协议（中文）](docs/PLAYER_INTEGRATION.zh-CN.md)
+- [Provider adaptation guide](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Providers/blob/4.0/docs/4.0/PROVIDER-ADAPTATION-GUIDE.md)
+- [4.0 migration guide](docs/4.0/MIGRATION-3.8-TO-4.0.md)
 - [Bridge and LyricProvider responsibilities (Chinese)](docs/LYRIC_PROVIDER_BRIDGE.zh-CN.md)
 
 ## Building locally
@@ -134,7 +143,8 @@ If your player already has a full lyric timeline, the preferred integration is t
 JDK 21 is required. The app still emits Java 17 bytecode for Android compatibility.
 
 ```powershell
-.\scripts\gradle-local.cmd testDebugUnitTest assembleDebug
+.\gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+.\scripts\validate-release-contract.ps1 -ProviderRepoRoot ..\ColorOS-Live-Lyrics-Providers
 ```
 
 The debug APK is written to `app\build\outputs\apk\debug\app-debug.apk`.

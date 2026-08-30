@@ -2,15 +2,15 @@
 
 > 快照日期：2026-08-30
 >
-> 状态：Slice 7A 本地源码基线已建立；尚未推送远端、创建 Provider source tag 或生成正式签名 RC。
+> 状态：Slice 7A–7F 已完成；RC5 正式签名候选已通过用户真机验收；尚未创建正式 tag 或 Release。
 
 ## 1. 源码基线
 
 | 仓库 | 分支 | 本地基线 | 状态 |
 |---|---|---|---|
-| `ColorOS-Live-Lyrics-Bridge` | `4.0` | `a342234`：runtime；`025bfc9`：Unicode worker；`00a8333`：契约；`13bb491`：lint；`6da07d8`：workflow；`142bb0c`：APK DEX gate | README 按 7F 继续；7A–7D 本地门禁已提交 |
-| `ColorOS-Live-Lyrics-Providers` | `4.0` | `d6f463b`：Unicode worker；`5618582`：LX；`cb57ce6`：矩阵；`99831e8`：collector；`9908293` / `c8f50c3`：签名与契约门禁 | 工作树干净，本地领先 `origin/4.0` 六个提交；等待与 Bridge 一起推送 |
-| `LSPRepo` | `main` | `d505f18` / `135-3.8.1` | 仍是 3.8.1 metadata；4.0 scope 和说明留到 7F/7G |
+| `ColorOS-Live-Lyrics-Bridge` | `4.0` | `88d261a`：RC5 runtime；`3eee743`：RC5 记录 | 7F 文档、文档契约与发布材料完成；正式 tag/Release 留到 7G |
+| `ColorOS-Live-Lyrics-Providers` | `4.0` | `b186e79`：RC5 Provider 基线 | 7F 中英文适配技术文档与 README 入口完成；source tag 留到 7G |
+| `LSPRepo` | `main` | `d505f18` / `135-3.8.1` | 7F 已准备 4.0 README/SUMMARY 与两项 scope；tag/Release 留到 7G |
 
 Bridge 的 `a342234` 是 Phase 3–6 与后续视觉控制已经互相依赖后的集成基线，包含
 198 个文件、16083 行新增和 19187 行删除。发布基础设施、版本号和用户文档不会混进
@@ -119,12 +119,11 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\validate-lsposed
 - 两仓库 `git diff --check` 无 whitespace error；PowerShell 显示的 LF→CRLF 提示是
   checkout 行尾告警，不是 diff 错误。
 
-## 6. RC5 之后仍未关闭
+## 6. Slice 7F 之后仍未关闭
 
-1. RC5 的正式签名 Bridge 与全部 Provider/宿主 profile 真机回归仍待用户完成。
-2. `LSPRepo/SCOPE` 仍是 3.8.1 的五项 scope，按 7F/7G 收口。
-3. 迁移说明、主动接入与 Provider 适配技术文档、完整 Release Notes 仍待 7F。
-4. Provider source tag、LSP metadata tag 和 Bridge 正式 tag 均未创建。
+1. Provider source tag、LSP metadata tag、Bridge 正式 tag 与 GitHub/LSP Release 均未创建。
+2. 正式公开资产尚未发布，因此公开下载后的 16 资产重验尚未执行。
+3. 上述操作全部属于 Slice 7G；本轮按用户要求只推送文件，不发 Release。
 
 ## 7. Slice 7D 静态回归摘要
 
@@ -135,7 +134,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\validate-lsposed
   packaged manifest 消失，新增组件仅为 4.0 设置子页和现有 AndroidX runtime 组件。
 - 最终 package 脚本对 13 APK 执行 DEX ASCII 禁用字符串扫描；当前 debug 矩阵扫描
   通过并在正式证书门禁按预期失败。
-- release signing 正向路径与上传后 16 资产重验已由 RC5 关闭，设备行为仍由 7E 验证。
+- release signing 正向路径与上传后 16 资产重验已由 RC5 关闭；用户已完成并通过 7E 真机验证。
 
 ## 8. 私有 RC5 签名候选
 
@@ -150,6 +149,18 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\validate-lsposed
   `43304e92f0610cc3b3c448b1de527a8323b0e89dec98f6587be5e68da2c52efb`。
 - Provider ZIP SHA-256：
   `a806ae62a7d1c6c22eada39299d6b78ecc3007b7f166b3bfcc746f5d1a6bdd78`。
+- 用户于 2026-08-30 确认该 RC5 batch 真机测试通过。
+
+## 8.1 Slice 7F 文档基线
+
+- Bridge：中英文 README、播放器主动接入协议、3.8.x → 4.0 迁移指南、发布流程、
+  `4.0.0` Release Notes 与归档页已完成。
+- Providers：中英文 README、4.0 文档入口与中英文 Provider 适配技术指南已完成。
+- LSPRepo：中英文 4.0 README、`SUMMARY` 与仅 `system` / `com.android.systemui` 的
+  `SCOPE` 已完成。
+- 文档存在性、入口链接与公开文档边界已进入两仓库 release-contract 门禁；Bridge
+  另有 Phase 7 文档契约单测。
+- 本基线不代表正式发布；未创建任何 tag 或 Release。
 
 ## 9. Slice 7B 版本与机器契约补充
 
