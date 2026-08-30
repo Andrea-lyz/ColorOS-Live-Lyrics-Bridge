@@ -1,6 +1,6 @@
 # 大厂音乐 App Hook 工程线路
 
-本文记录 `ColorOS-Live-Lyrics-Bridge` 后续适配 Apple Music、网易云音乐/荣耀版、QQ 音乐、QQ 音乐 HD、酷狗音乐/概念版、Poweramp、汽水音乐时的工程路线。
+本文记录 `ColorOS-Live-Lyrics-Bridge` 后续适配 Apple Music、网易云音乐/荣耀版、QQ 音乐、酷狗音乐/概念版、Poweramp、汽水音乐时的工程路线。QQ 音乐 HD 不在 4.0 适配范围。
 
 目标不是引入另一个歌词发布总线，而是在目标播放器进程内拿到整首时间轴歌词，复用本项目现有 `PlayerAdapter` 管线，最终注入 OPlus 可消费的 `MediaSession` `lyricInfo`。
 
@@ -27,7 +27,7 @@
 - 已新增第一批 `PlayerAdapter` 注册和 scope：QQ 音乐、网易云音乐、Apple Music、Poweramp。
 - 已新增共享 `MediaSession` 曲目观测 adapter 基类，检测到官方简版 `lyricInfo` 时继续安排增强歌词查询。
 - 已新增 QQ 音乐进程内歌词对象主链路：DexKit 定位 `MediaSessionUpdateController.h(builder, SongInfo, lyric)` -> 读取 QQ 已匹配/解密/解析好的 `com.lyricengine.base.k` 主逐字对象；同时 hook `QRCDesDecrypt.doDecryptionLyric(String)` 捕获 QQ App 自己解密出的主 QRC/翻译/罗马音候选，只合并可用内部翻译 -> 逐字 `rawLyric` + 逐行 `lyric` -> 通过外部 handoff 覆盖官方简版 `lyricInfo`；旧 QRC HTTP 请求仅保留为内部 hook 未安装时的兜底。
-- 网易云音乐、Apple Music、Poweramp 当前已接入安全骨架和日志，不会误清空官方歌词；YRC/EAPI、Apple native song parser、Poweramp 本地标签读取仍待后续迁移。
+- 网易云音乐官方现行与 Honor 3.5.20 已迁出 Bridge `NeteaseMusicAdapter`，共用 4.0 `:player-netease` 官方 `lyricInfo` 追加；网易云只 hook 主进程，Honor 以 `:play` 为静态主链并允许主进程回退。9.0.40 仍待构造切片。Apple Music 当前仍是内置安全骨架。
 
 ## 总体原则
 
@@ -150,7 +150,7 @@ Fallback to official lyricInfo because adapter lyric failed
 
 `LyricProvider` 不是整体依赖 DexKit 实现 hook。它主要在少数私有、混淆、版本漂移概率高的位置使用 DexKit，例如：
 
-- 网易云音乐：用 DexKit 查找内部 `SharedPreferences` 获取方法，用于监听翻译/音译偏好。
+- 网易云 / Honor：DexKit 按 `lyricInfo` + void + `LyricInfo`/`MusicInfo` 定位官方写入方法，按 `lyric`/`songName`/`artist` 定位官方编码器；不要共用混淆名（网易云样本为 `jp0.t`，Honor 样本为 `ce0.p`）。9.0.40 偏好监听仍走旧 `:163-music`。
 - 酷狗音乐/概念版：用 DexKit 查找 `LyricManager` 中包含 `"file is not krc or lyc or txt file"` 的歌词文件加载方法。
 
 本项目可以引入 DexKit，但定位为“私有 hook 点解析器”，不要把所有 adapter 都改成 DexKit 扫描。
@@ -167,9 +167,9 @@ Fallback to official lyricInfo because adapter lyric failed
 
 - 酷狗音乐/概念版：优先 DexKit。歌词文件加载方法没有稳定方法名，但字符串和参数特征明确。
 - 网易云音乐/荣耀版：DexKit 用于偏好/内部工具方法；歌曲 ID、播放状态仍走 `MediaSession`。
-- QQ 音乐：已使用 DexKit 按参数结构定位 `MediaSessionUpdateController.h(builder, SongInfo, lyric)`，避免只依赖固定方法名。
-- QQ 音乐 HD：可准备 DexKit fallback，用参数类型或特征定位 `RemoteControlManager` 的 songId 来源方法。
-- Apple Music：先按已知私有类名实现；如果版本漂移明显，再为 `PlayerLyricsViewModel` 相关方法补 DexKit。
+- QQ 音乐：4.0 `:player-qq` 用 DexKit 按 `lyricInfo` + `transLyric` 和三参数形态定位 seedling 写手，不要只依赖固定方法名 `h`。
+- QQ 音乐 HD：不在 4.0 适配范围，不要为此准备 DexKit fallback 或新建模块。
+- Apple Music：PlaybackItem 映射已用 DexKit（`METADATA_KEY_MEDIA_ID` + `METADATA_KEY_PLAYBACK_ENDPOINT_TYPE`）；`PlayerLyricsViewModel` 方法名仍直接解析，版本漂移后再补。
 - 汽水音乐、Poweramp：第一阶段不需要 DexKit，固定入口已经足够清晰。
 
 工程形态建议：
@@ -185,90 +185,83 @@ HookPointResolver
 
 ## Apple Music
 
-推荐来源：`LyricProvider/apple-music`
+4.0 来源：`ColorOS-Live-Lyrics-Providers/player-apple`
+（`io.github.andrealtb.coloroslyrics.provider.apple`）
 
-目标包名：`com.apple.android.music`
+目标包名：`com.apple.android.music`（仅主进程）
 
 主要 hook 点：
 
-- `android.support.v4.media.MediaMetadataCompat` 的公开静态转换方法：监听 Apple Music 元数据变化，拿 `MediaMetadata` 和 mediaId。
-- `com.apple.android.music.player.viewmodel.PlayerLyricsViewModel#buildTimeRangeToLyricsMap`：歌词构建完成后，从参数 `get()` 出 native song 对象。
-- `com.apple.android.music.player.viewmodel.PlayerLyricsViewModel#loadLyrics`：本地缓存 miss 时，可构造 Apple `Song` 并调用它，让官方逻辑下载歌词。
-- `com.apple.android.music.playback.player.ExoMediaPlayer` 构造器和 `getCurrentPosition`：可用于播放进度同步。
-- `com.apple.android.music.playback.controller.LocalMediaPlayerController#onPlaybackStateChanged`：同步播放/暂停状态。
+- 平台 `MediaSession#setMetadata`：权威切歌身份；同曲后到的 adamId 合并进当前代；pending `lyricInfo` 附着到同一次 host 写入。
+- DexKit `PlaybackItem` 映射（`METADATA_KEY_MEDIA_ID` + `METADATA_KEY_PLAYBACK_ENDPOINT_TYPE`）：缓存 adamId，不得因空 adamId 跟随队列下一首。
+- Provider 自有 `PlayerLyricsViewModel#loadLyrics(PlaybackItem)`：主线程调用；禁止 hitchhike 官方歌词页实例；禁止在该 VM 上预取下一首 TTML。
+- `PlayerLyricsViewModel#buildTimeRangeToLyricsMap(SongInfoPtr)`：解析 JNI 歌词。`setTranslation(系统语言)` 后遍历；罗马音不得进翻译 lane。
 
 数据路线：
 
-1. `MediaMetadata` 变化后记录 mediaId、标题、歌手、时长。
-2. 先查本地歌词缓存。
-3. 没有缓存时，通过 `PlayerLyricsViewModel#loadLyrics` 触发官方下载。
-4. `buildTimeRangeToLyricsMap` 被调用后解析 native song。
-5. 将 Apple 主歌词行、逐字、可用翻译转换为本项目 `lyricInfo`。
+1. session 标题/adamId 绑定 generation。title-only 已是权威身份。
+2. 按 adamId 或 title/artist 命中缓存 `PlaybackItem` 后再 `loadLyrics`。
+3. `buildTimeRangeToLyricsMap` 后 `AppleSongMapper` 过滤和声，合并无空格拉丁音节。
+4. `NativeLyricInfoPublisher` 写入 `source=com.apple.android.music-v5`。https 封面 URI 即可叠加，不等待 Glide bitmap。忽略 Cast session。
 
 迁移重点：
 
-- 保留 `AppleSongParser` / `AppleSongMapper` 的字段识别思路。
-- 不引入 Lyricon provider，只保留 native song -> 本项目歌词模型的转换。
-- Apple 的逐字和翻译信息质量高，适合作第一批高质量逐字适配。
-- 第一批裁剪背景人声、对唱/多角色格式、罗马音，只保留主时间轴歌词。
-- 多声部歌词如果能自然合并为同一时间轴，可按时间顺序拍平；如果需要 UI 标注角色或声部，先跳过该额外结构。
+- 不引入 Lyricon / v4 广播 / ExoPlayer 进度轮询。
+- 不改写宿主 `setPlaybackState`，不注入公开 `ACTION_TOGGLE_TRANSLATION`。
+- 拉丁音节必须在 enhanced LRC 之前合并（`LatinSyllableSpanMerger`），不要改 Bridge ASCII 插空格。
+- 真机收口见 `ColorOS-Live-Lyrics-Providers/docs/4.0/PHASE-4-APPLE-MIGRATION-REPORT.md`。
 
 风险：
 
 - Apple 私有类名和方法名可能随版本变化。
-- `loadLyrics` 诱导下载依赖 Apple 内部鉴权和缓存状态，失败时要降级为无歌词。
+- `loadLyrics` 依赖 Apple 内部鉴权和缓存；失败时降级为无歌词，不要发明歌词。
 
 ## 网易云音乐 / 荣耀版
 
-推荐来源：`LyricProvider/163-music`
+推荐来源：`ColorOS-Live-Lyrics-Providers/player-netease`（网易云 9.5.70 + Honor 3.5.20）
+网易云 9.0.40 仍用 `ColorOS-Live-Lyrics-Providers/163-music` 构造路线。
 
 目标包名：
 
-- `com.netease.cloudmusic`
-- `com.hihonor.cloudmusic`
+- `com.netease.cloudmusic`（只 hook 主进程）
+- `com.hihonor.cloudmusic`（允许主进程与 `com.hihonor.cloudmusic:play`，仅结构命中者发布）
 
 主要 hook 点：
 
-- 目标进程：主包名进程和 `:play` 进程。
-- `android.media.session.MediaSession#setMetadata(MediaMetadata)`：从 `METADATA_KEY_MEDIA_ID` 取歌曲 ID。
-- `android.media.session.MediaSession#setPlaybackState(PlaybackState)`：同步播放状态。
-- `com.tencent.tinker.loader.TinkerLoader#tryLoad`：Tinker 热更新后重新安装偏好/类加载相关 hook。
+- 网易云目标进程仅主包名进程；Honor 允许主进程与 `:play`，用运行时 Hook 命中确定实际持有者。
+- DexKit：网易云样本发现 `o0(LyricInfo, MusicInfo)` / `I(String,String,String)`；Honor 样本独立发现 `e0(LyricInfo, MusicInfo)` / `B(String,String,String)`。运行时只信结构结果。
+- 框架 `Handler#dispatchMessage` after：按各自 handler 类名、`what=16`、`LyricInfo` payload 过滤，再调用唯一零参数 `MusicInfo` 访问器；不 hook 宿主 `handleMessage`，不扫 Handler 字段。
+- `android.media.session.MediaSession#setMetadata(MediaMetadata)`：叠加修补后的 `lyricInfo`；空 Builder 拷贝。
+- 不要 hook `setPlaybackState`。
 
 数据路线：
 
-1. `setMetadata` 拿网易云歌曲 ID、标题、歌手、时长。
-2. 查本地歌词缓存文件。
-3. 缓存 miss 时调用网易云歌词下载逻辑，获取：
-   - `lrc`
-   - `lrcTranslateLyric`
-   - `yrc`
-   - `yrcTranslateLyric`
-   - `roma`，第一批只读取不输出
-4. 优先解析 `yrc` 生成逐字主歌词。
-5. 没有 `yrc` 时退回 `lrc`。
-6. 翻译按时间就近合并；罗马音后置，不进入第一批输出。
+1. `o0` 校验 `filterMusicId == lyricInfo.musicId`。
+2. 从 `LyricData` 取 `yrc` / `lrc` / `yrcTranslateLyric` / `lrcTranslateLyric`。罗马音字段只读取存在性，不得写入翻译 lane。
+3. 优先解析 `yrc` 生成逐字主歌词；没有 `yrc` 时退回 `lrc`。
+4. 翻译按 QQ 同款双锚点 1:1 合并，消费 `//`。
+5. `NeteaseLyricInfoPayloadEncoder` 以显式 `OFFICIAL_APPEND` 模式保留官方 `lyric` / `songName` / `artist`，追加 `rawLyric` / `translationLyric`（`source=netease-official-append`）。
 
-荣耀版判断：
+版本判断：
 
-- `LyricProvider` 的 scope 已同时包含网易云和荣耀版，说明可优先复用同一条下载/解析路线。
-- `SuperLyric/Hihonor` 主要是魅族状态栏/通知歌词 fallback，不建议作为整首歌词主线。
+- Honor 3.5.20 已静态确认官方 `lyricInfo`，进入同一原生追加模块，但使用独立进程/混淆 profile。
+- 9.0.40 没有官方 `lyricInfo`，必须走构造，禁止套用追加逻辑。
 
 迁移重点：
 
-- 直接移植 `YrcDownloader`、`YrcParser`、网易云加密请求和缓存结构。
-- `yrc` 适合作 `rawLyric`；`lrc` 适合作 `lyric` fallback。
-- 第一批不输出罗马音，避免锁屏歌词结构过重。
-- 即使 `MediaMetadata` 已经带官方 `lyricInfo`，仍应启动 YRC/LRC 增强路线；拿到逐字或更完整歌词后覆盖官方简版输出。
-- 偏好监听、Tinker 重新加载等私有点可以用 DexKit；主歌曲识别仍以 `MediaSession` metadata 为准。
+- 这是官方 `lyricInfo` 追加，不是另发一份 metadata，也不是 Bridge 内置 `NeteaseMusicAdapter`。
+- 第一批不输出罗马音。
+- 9.0.40 由同一 `player-netease` 的 `CONSTRUCTED` profile 直接构造原生
+  `lyricInfo`；Bridge 不保留旧模块准入或广播 fallback。
 
 风险：
 
-- 荣耀版包内类加载、登录态和接口参数可能和普通网易云不同，要实机确认 `MediaMetadata.MEDIA_ID` 是否仍是歌曲 ID。
+- 9.5.70 MediaSession 在主进程；Honor 3.5.20 静态 PlayService 在 `:play`，同时保留主进程运行时回退。两个 host 的混淆 profile 不得互换。
 - 网络下载失败时必须保留当前 metadata，但不注入旧歌词。
 
 ## QQ 音乐
 
-推荐来源：`LyricProvider/qq-music`
+推荐来源：`ColorOS-Live-Lyrics-Providers/player-qq`
 
 目标包名：
 
@@ -277,77 +270,39 @@ HookPointResolver
 
 主要 hook 点：
 
-- DexKit 定位 `com.tencent.qqmusicplayerprocess.servicenew.mediasession.s#h(...)`，验证参数结构为 `MediaMetadataCompat.Builder`、`com.tencent.qqmusicplayerprocess.songinfo.SongInfo`、`com.lyricengine.base.k`。
-- 播放服务进程 `android.media.session.MediaSession#setMetadata(MediaMetadata)`：只观测当前曲目信息和官方简版 `lyricInfo`，不改写 QQ 原始 metadata，避免影响封面收发。
-- `android.media.session.MediaSession#setPlaybackState(PlaybackState)`：同步播放状态。
+- 只 hook `:QQPlayerService`。不要 hook 主 UI 进程。不要改写 `setPlaybackState`。
+- `RemoteLyricController#onLoadSuc(LyricLoadBean)`：原文 `c()`，翻译 `h()`。罗马音 `e()` 不得进入翻译 lane。
+- DexKit 定位 seedling 写手：字符串 `lyricInfo` + `transLyric`，参数 `MediaMetadataCompat.Builder` / `SongInfo` / `com.lyricengine.base.k`。不要写死方法名 `h`。afterHook 把修补后的 JSON `putString` 回官方 Builder。
+- 平台 `android.media.session.MediaSession#setMetadata(MediaMetadata)`：空 Builder 拷贝后叠加 `lyricInfo`；HARDWARE / 超 240px bitmap Canvas 重绘。歌词晚到时每代最多 replay 一次。
 
 数据路线：
 
-1. QQ 自己完成在线/本地歌曲匹配、QRC 解密和 lyricengine 解析。
-2. `MediaSessionUpdateController.h(builder, SongInfo, lyric)` 被调用时，adapter 从 `SongInfo` 读取标题/歌手，从 `com.lyricengine.base.k` 读取当前主逐字歌词对象。
-3. lyric 对象字段路线：行列表 `e`；每行文本/起点/时长/逐字列表为 `a/b/c/g`；逐字对象起点/时长/字符范围/文本为 `a/b/c/d/e`。
-4. `QRCDesDecrypt.doDecryptionLyric(String)` 返回后记录 QQ 内部刚解密出的 plain lyric；近期候选按时间轴与主逐字对象匹配。
-5. 只合并“非同文本、非罗马音、匹配数量达标”的内部翻译候选；主 QRC 和罗马音候选只用于诊断，不作为翻译。
-6. 将合并后的 `TimedLyricDocument` 输出逐行 `lyric` 和逐字 enhanced LRC `rawLyric`。
-7. 通过当前外部歌词 handoff 广播给 SystemUI，SystemUI 侧使用这份增强歌词覆盖官方简版 `lyricInfo`；不向 QQ 的 builder 写入新的 `lyricInfo`。
-8. 如果内部 hook 未安装成功，才退回旧 `MediaSession` songId -> QRC HTTP 请求兜底。
-
-QQ Lyric Probe：
-
-- 日志前缀统一为 `QQ Lyric Probe`，仍走模块 `LockscreenLyrics` tag。
-- DexKit 阶段输出 strict/loose 候选数量、签名校验数量和样例方法，用于判断是否定位到 `h(builder, SongInfo, lyric)`。
-- hook 命中后输出 `SongInfo` 摘要、最近一次 `MediaSession` 曲目信息、`com.lyricengine.base.k` 字段概览、`e` 行列表摘要、第一行 `a/b/c/g` 和第一逐字对象字段。
-- `reason=empty` 说明 hook 命中但 `e` 没读到可用行；`reason=no-word-timing` 说明读到了逐行但逐字字段缺失或结构变化；`reason=resolved-no-translation` 说明主逐字可用但暂未匹配到内部解密翻译候选。
-- `QQ Lyric Probe decrypted lyric` 记录 `QRCDesDecrypt` 返回的 plain lyric 摘要、解析行数、逐字能力和与当前主歌词的可用翻译匹配数；`usableMatches` 达到阈值后才合并。
-- Probe 只记录诊断信息，不写 QQ 的 metadata builder，不改变封面、播放状态或歌词发布结果。
+1. QQ 自己完成匹配、QRC 解密和 lyricengine 解析，并已经写入官方行级 `lyricInfo`（`transLyric` 硬编码为空，缺少 `rawLyric`）。
+2. Provider 从 `SongInfo`（`H2`/`j3`/`V3`，旧名仅作回退）和 `com.lyricengine.base.k` 读逐字模型：行 `e`，每行 `a/b/c/g`，逐字 `a/b/c/d/e`。
+3. QRC 逐字时间按整行选择绝对或相对轴（`QqQrcWordTimePolicy`），不得逐词平移。
+4. `QqOfficialLyricInfoEncoder` 保留官方 `id` / `songId` / `lyricType` / `lyric`，追加 `rawLyric`、`translationLyric` / `transLyric`、`sessionGeneration`，`source=qqmusic-internal`。
+5. 不发送 v4 广播，不挂载词幕。翻译按钮走 Bridge 5 槽收藏覆盖。
 
 迁移重点：
 
-- 普通 QQ 的主路线不再依赖 `METADATA_KEY_MEDIA_ID` 外部请求；本地歌曲只要 QQ 已经自动匹配到歌词，就跟随 QQ 内部 lyric 对象。
-- 第一批只保留主歌词、逐字和 QQ 内部翻译合并；罗马音明确过滤，翻译偏好监听后置。
-- 即使原始 metadata 已经包含官方 `lyricInfo`，仍以内部 lyric 对象生成的增强 `rawLyric` 为准。
-- 内部 hook 安装成功后禁用旧 HTTP QRC 主动查询和网络翻译补充，避免本地歌曲被外部请求的编码/匹配结果反向覆盖。
+- 这是官方 `lyricInfo` 追加，不是另发一份 metadata，也不是 Bridge 内置 `QqMusicAdapter`。
+- 样本为 QQ 音乐 20.7.5.8 / versionCode 7308。主 UI 进程不要装 hook。
+- 真机收口 2026-08-27（PJZ110，`lyrics-log-20260827-083716.txt`）：逐字 + 翻译 + 5 槽收藏覆盖。Love Story 翻译走 Provider 双锚点；副歌 alias 与翻译 intro hold、句末逐字视觉封顶在 Bridge。
 
 风险：
 
-- QQ 音乐播放服务进程必须加入 scope，否则内部歌词对象和 metadata hook 都不会执行。
-- `SongInfo`/`com.lyricengine.base.k` 字段名来自当前 QQ lyricengine 结构，DexKit 只能保证 hook 点定位更稳；如果 QQ 重写 lyricengine 字段结构，需要同步更新反射字段候选。
-- 翻译/罗马音开关不是第一阶段必须项，可先不输出。
+- LSPosed scope 必须包含 `com.tencent.qqmusic`，且实际 hook 进程是 `:QQPlayerService`。
+- `SongInfo` / lyricengine 字段名随版本变化；DexKit 只保证 seedling 写手定位，字段仍要按当前样本反射。
 
 ## QQ 音乐 HD
 
-推荐来源：`LyricProvider/qq-music-hd`
-
-目标包名：`com.tencent.qqmusicpad`
-
-主要 hook 点：
-
-- `com.tencent.qqmusic.qplayer.core.player.controller.RemoteControlManager`：hook 参数为 `SongInfo` 和 `IMediaMetaDataInterface` 的方法，从 `SongInfo#getSongId()` 抽真实 songId。
-- `android.media.session.MediaSession#setMetadata(MediaMetadata)`：metadata 到达时用 pending songId 触发歌词下载。
-- `android.media.session.MediaSession#setPlaybackState(PlaybackState)`：同步播放状态。
-- `com.tencent.mmkv.MMKV#putInt("KEY_OPEN_TRANSLATION", value)`：监听翻译开关。
-
-数据路线：
-
-1. RemoteControlManager 先记录真实 songId。
-2. `setMetadata` 到达后绑定标题、歌手、时长。
-3. 查本地缓存。
-4. 缓存 miss 时复用 QRC 下载器。
-5. 转成 `lyricInfo`。
-
-迁移重点：
-
-- QQ HD 不能简单复用普通 QQ 的 `METADATA_KEY_MEDIA_ID` 路线。
-- 必须拆成单独 adapter，先拿 `pendingSongId`，再处理 metadata。
-
-风险：
-
-- RemoteControlManager 方法没有固定名称，需要按参数类型或字符串特征定位。
-- pending songId 和 metadata 之间要做时序保护，避免串歌。
+QQ 音乐 HD（`com.tencent.qqmusicpad`）不在 4.0 适配范围。4.0 仓库已删除
+`:qq-music-hd`，不要新建 `player-qqhd`，也不要把 HD 加入
+`PlayerSystemUiPolicy` 或翻译设置。
 
 ## 酷狗音乐 / 酷狗概念版
 
-推荐来源：`LyricProvider/kugou-music`
+推荐来源：`ColorOS-Live-Lyrics-Providers/player-kugou`
 
 目标包名：
 
@@ -403,7 +358,7 @@ Skip Kugou lyric because metadata is missing
 
 ## Poweramp
 
-推荐来源：`LyricProvider/poweramp-music`
+推荐来源：`ColorOS-Live-Lyrics-Providers/player-poweramp`
 
 目标包名：`com.maxmpz.audioplayer`
 
@@ -447,56 +402,66 @@ Skip Kugou lyric because metadata is missing
 
 ## 汽水音乐
 
-推荐来源：`LyricProvider/qishui-music`
+4.0 来源：`ColorOS-Live-Lyrics-Providers/player-qishui`
 
 目标包名：`com.luna.music`
 
 主要 hook 点：
 
 - `android.media.session.MediaSession#setMetadata(MediaMetadata)`：从 `METADATA_KEY_MEDIA_ID` 获取 mediaId。
-- `android.media.session.MediaSession#setPlaybackState(PlaybackState)`：同步播放状态，并在必要时重试加载缓存。
+- `com.luna.biz.playing.player.remote.control.CoreRemoteControl#update`：读取当前
+  `IPlayable` 已加载的完整 `TrackLyric`。
+- `android.media.session.MediaSession#setPlaybackState(PlaybackState)`：保留宿主状态并注入公开翻译 CustomAction；负缓存到期后可触发下一轮有界回退。
 
 数据路线：
 
-1. `setMetadata` 保存 mediaId、标题、歌手、时长。
-2. 根据 mediaId 计算网络歌词缓存文件名：
+1. `setMetadata` 绑定稳定 mediaId、标题、歌手、时长与 generation。
+2. `CoreRemoteControl#update` 返回后优先复用宿主 `TrackLyric` 的原文、逐字和
+   `lang_translations`；Provider 不自行发起歌词网络请求。
+3. 仅当内部模型暂未就绪时，根据 mediaId 计算网络歌词缓存文件名：
 
 ```text
 md5("/luna/track_v2/$id")
 ```
 
-3. 在 `cacheDir/NetCacheLoader/**` 下递归寻找同名缓存文件。
-4. 解析 `NetResponseCache`：
+4. 在 `cacheDir/NetCacheLoader/**` 下递归寻找同名缓存文件，并以
+   `recent_played_*.db` / `history_*.db` 为最后回退。
+5. 解析 `NetResponseCache`：
    - `lyric.type`
    - `lyric.content`
    - `lyric.lang_translations`
-5. 按类型解析：
+6. 按类型解析：
    - `krc`：汽水 KTV 格式 parser
    - `lrc`：普通 LRC parser
-6. 翻译按系统语言 key 选择，再按时间就近合并。
+7. 翻译按系统语言 key 选择，再按时间就近合并；罗马音/拼音/发音 lane 永不作为翻译。
+8. generation/token 校验通过后构造 `source=com.luna.music-v5` 的标准
+   `lyricInfo`，保留宿主 metadata 并写回主 `MediaSession`。
 
 迁移重点：
 
-- 这是整首歌词路线，优先级高于蓝牙歌词当前行 hook。
-- `KtvLyricParser` 的 `<offset,duration,...>` 逐字解析逻辑可直接迁移为 raw lyric 转换依据。
+- 这是整首内部歌词路线，不使用蓝牙歌词当前行作为歌曲身份或歌词来源。
+- `QishuiKtvLyricParser` 的 `<offset,duration,...>` 转为绝对毫秒逐字时间。
+- 真机等价验证已完成，旧 `lyricprovider/qishui-music` source 与词幕 module 已删除；
+  v5 运行链不发送 v4。
 
 风险：
 
-- 依赖 App 网络缓存存在；如果当前歌曲还没加载过歌词，缓存可能为空。
-- `NetCacheLoader` 目录层级和缓存文件名规则要实机确认。
+- 20.7.0 的运行时 getter 是 `RemoteControlContext#getA`；不同版本必须重新确认
+  `CoreRemoteControl` 和 `TrackLyric` 结构。
+- 内部 `TrackLyric` 就绪时机、NetCache/SQLite 回退时延与 LSPosed 默认配置仍需真机确认。
 
 ## 推荐实施顺序
 
 第一批：
 
-1. QQ 音乐：已改为进程内 lyric 对象路线，适合优先验证在线歌曲、本地自动匹配歌曲和官方 `lyricInfo` 覆盖逻辑。
-2. 网易云音乐：YRC/LRC/翻译完整，适合验证多字段转换；罗马音不进第一批输出。
+1. QQ 音乐：4.0 官方 `lyricInfo` 追加（`:player-qq`），只 hook `:QQPlayerService`。
+2. 网易云 9.5.70 / Honor 3.5.20：4.0 官方 `lyricInfo` 追加（`:player-netease`）；网易云只 hook 主进程，Honor 允许主进程/`:play` 并只由结构命中者发布。9.0.40 不进入追加路线。
 3. Apple Music：歌词质量高，但私有结构复杂；第一批只保留主歌词、逐字和可用翻译，裁剪背景人声、对唱格式、罗马音。
 4. Poweramp：只做本地内嵌歌词，在线搜索后置。
 
 后续批次：
 
-- QQ 音乐 HD：复用 QRC，但需要验证 pending songId 与 metadata 时序。
+- QQ 音乐 HD：不在 4.0 适配范围，不要进入后续批次。
 - 汽水音乐：缓存文件路线清晰，适合做本地缓存型 adapter。
 - 酷狗音乐/概念版：已接入 `LyricManager` 歌词文件加载和 MediaSession 同步；若不触发可建议用户尝试开启车载歌词模式排查。
 

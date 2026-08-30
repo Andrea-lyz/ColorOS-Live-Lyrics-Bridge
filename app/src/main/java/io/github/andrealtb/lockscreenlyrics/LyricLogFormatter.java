@@ -57,7 +57,7 @@ final class LyricLogFormatter {
         if (containsAny(value, "recyclerview", "recycler", "scroll", "prime")) return Area.RECYCLER;
         if (containsAny(value, "draw", "render", "frame", "glow", "scale", "layout height")) return Area.RENDER;
         if (containsAny(value, "translation", "翻译")) return Area.TRANSLATION;
-        if (containsAny(value, "provider", "external lyric", "bridge lyric")) return Area.PROVIDER;
+        if (containsAny(value, "provider")) return Area.PROVIDER;
         if (containsAny(value, "transaction", "generation", "track handoff")) return Area.TRANSACTION;
         if (containsAny(value, "screen timeout", "wake lock", "user activity", "screen-state")) return Area.SCREEN;
         if (containsAny(value, "parser", "parse", "lrc", "ttml", "yrc")) return Area.PARSER;

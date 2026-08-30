@@ -11,7 +11,7 @@ import java.util.List;
 
 public final class LyricOpeningCleanupTest {
     @Test
-    public void builtInsCleanCreditsButCanBeDisabled() {
+    public void builtInsAreDefaultOffAndCanBeEnabled() {
         String lrc = "[00:00.000]Example - Artist\n"
                 + "[00:00.500]© 2026 Example Publishing\n"
                 + "[00:01.000]Produced by: Someone\n"
@@ -21,22 +21,20 @@ public final class LyricOpeningCleanupTest {
                 lrc,
                 "track",
                 LyricContentCleanupConfig.defaults());
-        assertFalse(defaults.timedText.contains("Example - Artist"));
-        assertFalse(defaults.timedText.contains("© 2026"));
-        assertFalse(defaults.timedText.contains("Produced by"));
-        assertTrue(defaults.timedText.contains("First lyric"));
+        assertEquals(lrc, defaults.timedText);
 
-        LyricContentCleanupConfig disabled = LyricContentCleanupConfig.defaults()
-                .buildUpon()
-                .copyrightNoticesEnabled(false)
-                .productionCreditsEnabled(false)
-                .titleArtistLeadEnabled(false)
-                .build();
-        assertEquals(lrc, LyricOpeningCleanup.clean(lrc, "track", disabled).timedText);
+        LyricOpeningCleanup.Result enabled = LyricOpeningCleanup.clean(
+                lrc,
+                "track",
+                allBuiltInsEnabled());
+        assertFalse(enabled.timedText.contains("Example - Artist"));
+        assertFalse(enabled.timedText.contains("© 2026"));
+        assertFalse(enabled.timedText.contains("Produced by"));
+        assertTrue(enabled.timedText.contains("First lyric"));
     }
 
     @Test
-    public void parsingProtectedTranslationNoticeCannotBeUnhidden() {
+    public void translationNoticeRemainsVisibleWhenUserCleanupIsDisabled() {
         String lrc = "[00:01.000]以下歌词翻译由 Salt Player 提供\n"
                 + "[00:05.000]First lyric";
         LyricContentCleanupConfig config = LyricContentCleanupConfig.defaults()
@@ -51,9 +49,10 @@ public final class LyricOpeningCleanupTest {
 
         LyricOpeningCleanup.Result result = LyricOpeningCleanup.clean(lrc, "track", config);
 
-        assertFalse(result.timedText.contains("翻译由"));
+        assertEquals(lrc, result.timedText);
+        assertTrue(result.timedText.contains("翻译由"));
         assertTrue(result.timedText.contains("First lyric"));
-        assertEquals(LyricOpeningCleanup.Reason.FIXED_PARSING,
+        assertEquals(LyricOpeningCleanup.Reason.VISIBLE,
                 result.decisions.get(0).reason);
     }
 
@@ -129,7 +128,7 @@ public final class LyricOpeningCleanupTest {
     }
 
     @Test
-    public void extremeTaylorCreditBlockIsCoveredByDefaultBuiltIns() {
+    public void extremeTaylorCreditBlockIsCoveredWhenBuiltInsAreEnabled() {
         String lrc = "[00:00.000]the 1 (Explicit) - Taylor Swift\n"
                 + "[00:00.100]TME享有本翻译作品的著作权\n"
                 + "[00:00.480]Written by：Taylor Swift/Aaron Dessner\n"
@@ -150,7 +149,7 @@ public final class LyricOpeningCleanupTest {
         LyricOpeningCleanup.Result result = LyricOpeningCleanup.clean(
                 lrc,
                 "the-1",
-                LyricContentCleanupConfig.defaults());
+                allBuiltInsEnabled());
 
         assertEquals("[00:15.222]I'm doing good, I'm on some new shit", result.timedText);
         assertEquals(16, result.decisions.size());
@@ -177,7 +176,7 @@ public final class LyricOpeningCleanupTest {
         LyricOpeningCleanup.Result cleaned = LyricOpeningCleanup.clean(
                 lrc,
                 "gimme-dat-love",
-                LyricContentCleanupConfig.defaults());
+                allBuiltInsEnabled());
 
         assertEquals("[00:04.561]Keep me on my toes", cleaned.timedText);
         assertEquals(15, cleaned.decisions.size());
@@ -186,7 +185,7 @@ public final class LyricOpeningCleanupTest {
         }
         assertFalse(cleaned.decisions.get(14).hidden);
 
-        LyricContentCleanupConfig disabled = LyricContentCleanupConfig.defaults()
+        LyricContentCleanupConfig disabled = allBuiltInsEnabled()
                 .buildUpon()
                 .productionCreditsEnabled(false)
                 .build();
@@ -242,6 +241,88 @@ public final class LyricOpeningCleanupTest {
     }
 
     @Test
+    public void titleArtistContinuationDoesNotHideOpeningEnglishLyricSentence() {
+        String lrc = "[00:00.000]I Really Want to Stay at Your House - Samuel Kim&Lorien\n"
+                + "[00:01.799]I couldn't wait for you to come clear the cupboards\n"
+                + "[00:09.405]But now you're going to leave with nothing but a sign";
+
+        LyricOpeningCleanup.Result result = LyricOpeningCleanup.clean(
+                lrc,
+                "i-really-want-to-stay-at-your-house|samuel kim&lorien",
+                allBuiltInsEnabled());
+
+        assertFalse(result.timedText.contains("Samuel Kim"));
+        assertTrue(result.timedText.contains(
+                "I couldn't wait for you to come clear the cupboards"));
+        assertTrue(result.timedText.contains(
+                "But now you're going to leave with nothing but a sign"));
+        assertEquals(LyricOpeningCleanup.Reason.BUILTIN_TITLE_ARTIST,
+                result.decisions.get(0).reason);
+        assertEquals(LyricOpeningCleanup.Reason.VISIBLE, result.decisions.get(1).reason);
+        assertFalse(result.decisions.get(1).hidden);
+    }
+
+    @Test
+    public void wordTimedOpeningEnglishLyricIsNotTreatedAsTitleArtistCredit() {
+        String lrc = "[ti:I Really Want to Stay at Your House]\n"
+                + "[ar:Samuel Kim&Lorien]\n"
+                + "[00:01.799]<00:01.799>I <00:01.900>couldn't "
+                + "<00:02.200>wait <00:02.500>for <00:02.800>you "
+                + "<00:03.100>to <00:03.400>come <00:03.700>clear "
+                + "<00:04.000>the <00:04.300>cupboards<00:09.405>\n"
+                + "[00:09.405]<00:09.405>But <00:09.623>now "
+                + "<00:09.855>you're <00:10.116>going <00:10.312>to "
+                + "<00:10.538>leave <00:10.816>with <00:11.089>nothing "
+                + "<00:11.545>but <00:11.745>a <00:12.072>sign<00:12.673>";
+
+        LyricOpeningCleanup.Result result = LyricOpeningCleanup.clean(
+                lrc,
+                "i-really-want-to-stay-at-your-house|samuel kim&lorien",
+                allBuiltInsEnabled());
+
+        assertEquals("I couldn't wait for you to come clear the cupboards",
+                result.decisions.get(0).line.text);
+        assertEquals(LyricOpeningCleanup.Reason.VISIBLE, result.decisions.get(0).reason);
+        assertFalse(result.decisions.get(0).hidden);
+        assertTrue(result.timedText.contains("couldn't"));
+    }
+
+    @Test
+    public void shortFeaturedArtistRowAfterTitleArtistCreditRemainsHidden() {
+        String lrc = "[00:00.000]Sweeter Than Fiction (Taylor's Version) - Taylor Swift\n"
+                + "[00:00.800]Aaron Dessner\n"
+                + "[00:15.222]I'm doing good, I'm on some new shit";
+
+        LyricOpeningCleanup.Result result = LyricOpeningCleanup.clean(
+                lrc,
+                "sweeter-than-fiction",
+                allBuiltInsEnabled());
+
+        assertFalse(result.timedText.contains("Taylor Swift"));
+        assertFalse(result.timedText.contains("Aaron Dessner"));
+        assertTrue(result.timedText.contains("I'm doing good, I'm on some new shit"));
+        assertEquals(LyricOpeningCleanup.Reason.BUILTIN_TITLE_ARTIST,
+                result.decisions.get(1).reason);
+        assertTrue(result.decisions.get(1).hidden);
+    }
+
+    @Test
+    public void titleArtistContinuationDoesNotHideOpeningCjkLyricSentence() {
+        String lrc = "[00:00.000]I Really Want to Stay at Your House - Samuel Kim&Lorien\n"
+                + "[00:01.799]我已经等不及你来清理残局\n"
+                + "[00:09.405]但现在你准备离开 只留下一张字条";
+
+        LyricOpeningCleanup.Result result = LyricOpeningCleanup.clean(
+                lrc,
+                "i-really-want-to-stay-at-your-house|samuel kim&lorien",
+                allBuiltInsEnabled());
+
+        assertTrue(result.timedText.contains("我已经等不及你来清理残局"));
+        assertEquals(LyricOpeningCleanup.Reason.VISIBLE, result.decisions.get(1).reason);
+        assertFalse(result.decisions.get(1).hidden);
+    }
+
+    @Test
     public void yrcLineTagsAndWordTagsArePreservedWhenVisible() {
         String yrc = "[1000,2000](0,400,0)Hel(400,500,0)lo";
 
@@ -269,5 +350,14 @@ public final class LyricOpeningCleanupTest {
         assertEquals(80, LyricOpeningCleanup.parseLines(preview).size());
         assertTrue(preview.length() <= LyricOpeningCleanup.MAX_PREVIEW_CHARS);
         assertFalse(preview.contains("Line 80"));
+    }
+
+    private static LyricContentCleanupConfig allBuiltInsEnabled() {
+        return LyricContentCleanupConfig.defaults()
+                .buildUpon()
+                .copyrightNoticesEnabled(true)
+                .productionCreditsEnabled(true)
+                .titleArtistLeadEnabled(true)
+                .build();
     }
 }

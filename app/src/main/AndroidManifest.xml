@@ -5,20 +5,6 @@
 
     <uses-permission android:name="io.github.andrealtb.lockscreenlyrics.permission.CHANGE_LYRIC_UI_SETTINGS" />
 
-    <!-- Android 11+ filters package lookups unless the counterpart apps are declared here. -->
-    <queries>
-        <package android:name="io.github.proify.lyricon.qmprovider" />
-        <package android:name="io.github.proify.lyricon.cmprovider" />
-        <package android:name="io.github.proify.lyricon.amprovider" />
-        <package android:name="io.github.proify.lyricon.lxprovider" />
-        <package android:name="io.github.proify.lyricon.paprovider" />
-        <package android:name="io.github.proify.lyricon.spotifyprovider" />
-        <package android:name="io.github.proify.lyricon.qishuiprovider" />
-        <package android:name="io.github.proify.lyricon.kgprovider" />
-        <package android:name="io.github.proify.lyricon.kwprovider" />
-        <package android:name="io.github.proify.lyricon.metrolistprovider" />
-    </queries>
-
     <application
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -46,6 +32,20 @@
             </intent-filter>
         </activity>
         <activity
+            android:name=".BridgeConfigBackupSettingsActivity"
+            android:exported="false"
+            android:importantForAutofill="no"
+            android:label="@string/config_backup_title"
+            android:theme="@style/Theme.LockscreenLyrics"
+            android:parentActivityName=".LyricUiSettingsActivity" />
+        <activity
+            android:name=".LyricVisualLayersSettingsActivity"
+            android:exported="false"
+            android:importantForAutofill="no"
+            android:label="@string/visual_layers_settings_title"
+            android:theme="@style/Theme.LockscreenLyrics"
+            android:parentActivityName=".LyricUiSettingsActivity" />
+        <activity
             android:name=".PlayerTranslationSettingsActivity"
             android:exported="false"
             android:importantForAutofill="no"
@@ -60,5 +60,12 @@
             android:theme="@style/Theme.LockscreenLyrics"
             android:parentActivityName=".LyricUiSettingsActivity"
             android:windowSoftInputMode="adjustResize" />
+        <activity
+            android:name=".BridgeDebugSettingsActivity"
+            android:exported="false"
+            android:importantForAutofill="no"
+            android:label="@string/debug_settings_title"
+            android:theme="@style/Theme.LockscreenLyrics"
+            android:parentActivityName=".LyricUiSettingsActivity" />
     </application>
 </manifest>

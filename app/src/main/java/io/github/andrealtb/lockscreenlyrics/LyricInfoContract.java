@@ -2,8 +2,6 @@ package io.github.andrealtb.lockscreenlyrics;
 
 import org.json.JSONObject;
 
-import io.github.andrealtb.lockscreenlyrics.protocol.ExternalLyricProtocol;
-
 import java.util.regex.Pattern;
 
 /** Stable metadata contract for players that publish OPlus-compatible lyrics themselves. */
@@ -13,10 +11,6 @@ public final class LyricInfoContract {
             "io.github.andrealtb.lockscreenlyrics.OPLUS_MEDIA_HISTORY";
     public static final String ACTION_TOGGLE_TRANSLATION =
             "io.github.andrealtb.lockscreenlyrics.action.TOGGLE_TRANSLATION";
-    public static final String ACTION_DIRECT_EXTERNAL_LYRIC_CAPTURED =
-            ExternalLyricProtocol.ACTION_DIRECT_LYRIC_CAPTURED;
-    public static final int EXTERNAL_PROTOCOL_VERSION_CURRENT =
-            ExternalLyricProtocol.CURRENT_PROTOCOL_VERSION;
     public static final String JSON_SONG_NAME = "songName";
     public static final String JSON_ARTIST = "artist";
     public static final String JSON_ALBUM = "album";
@@ -28,66 +22,6 @@ public final class LyricInfoContract {
     public static final String JSON_SOURCE = "source";
     public static final String JSON_TRACK_KEY = "trackKey";
     public static final String JSON_SESSION_GENERATION = "sessionGeneration";
-    public static final String MODULE_PROVIDER = "lockscreen-lyrics-module";
-    public static final String EXTRA_EXTERNAL_PROTOCOL_VERSION =
-            ExternalLyricProtocol.EXTRA_PROTOCOL_VERSION;
-    public static final String EXTRA_EXTERNAL_SOURCE = ExternalLyricProtocol.EXTRA_SOURCE;
-    public static final String EXTRA_EXTERNAL_PLAYER_PACKAGE =
-            ExternalLyricProtocol.EXTRA_PLAYER_PACKAGE;
-    public static final String EXTRA_EXTERNAL_SENDER_PACKAGE =
-            ExternalLyricProtocol.EXTRA_SENDER_PACKAGE;
-    public static final String EXTRA_EXTERNAL_CAPABILITIES =
-            ExternalLyricProtocol.EXTRA_CAPABILITIES;
-    public static final String EXTRA_EXTERNAL_MATCH_POLICY =
-            ExternalLyricProtocol.EXTRA_MATCH_POLICY;
-    public static final String EXTRA_EXTERNAL_IDENTITY_CONFIDENCE =
-            ExternalLyricProtocol.EXTRA_IDENTITY_CONFIDENCE;
-    public static final String EXTRA_EXTERNAL_EVENT_TYPE = ExternalLyricProtocol.EXTRA_EVENT_TYPE;
-    public static final String EXTRA_EXTERNAL_TRACK_GENERATION =
-            ExternalLyricProtocol.EXTRA_TRACK_GENERATION;
-    public static final String EXTRA_EXTERNAL_REQUEST_ID = ExternalLyricProtocol.EXTRA_REQUEST_ID;
-    public static final String EXTRA_EXTERNAL_MEDIA_ID = ExternalLyricProtocol.EXTRA_MEDIA_ID;
-    public static final String EXTRA_EXTERNAL_MEDIA_URI = ExternalLyricProtocol.EXTRA_MEDIA_URI;
-    public static final String EXTRA_EXTERNAL_TRACK_KEY = ExternalLyricProtocol.EXTRA_TRACK_KEY;
-    public static final String EXTRA_EXTERNAL_SONG_NAME = ExternalLyricProtocol.EXTRA_SONG_NAME;
-    public static final String EXTRA_EXTERNAL_ARTIST = ExternalLyricProtocol.EXTRA_ARTIST;
-    public static final String EXTRA_EXTERNAL_DURATION = ExternalLyricProtocol.EXTRA_DURATION;
-    public static final String EXTRA_EXTERNAL_LYRIC = ExternalLyricProtocol.EXTRA_LYRIC;
-    public static final String EXTRA_EXTERNAL_RAW_LYRIC = ExternalLyricProtocol.EXTRA_RAW_LYRIC;
-    public static final String EXTRA_EXTERNAL_TRANSLATION_LYRIC =
-            ExternalLyricProtocol.EXTRA_TRANSLATION_LYRIC;
-    public static final String EXTRA_EXTERNAL_CAPTURED_AT = ExternalLyricProtocol.EXTRA_CAPTURED_AT;
-    public static final String EXTRA_EXTERNAL_PLAYBACK_STATE =
-            ExternalLyricProtocol.EXTRA_PLAYBACK_STATE;
-    public static final String EXTRA_EXTERNAL_PLAYBACK_POSITION =
-            ExternalLyricProtocol.EXTRA_PLAYBACK_POSITION;
-    public static final String EXTRA_EXTERNAL_PLAYBACK_SPEED =
-            ExternalLyricProtocol.EXTRA_PLAYBACK_SPEED;
-    public static final String EXTRA_EXTERNAL_PLAYBACK_LAST_POSITION_UPDATE_TIME =
-            ExternalLyricProtocol.EXTRA_PLAYBACK_LAST_POSITION_UPDATE_TIME;
-    public static final String EXTRA_EXTERNAL_SENDER_KIND =
-            ExternalLyricProtocol.EXTRA_SENDER_KIND;
-    public static final String EXTERNAL_SENDER_KIND_PROVIDER =
-            ExternalLyricProtocol.SENDER_KIND_PROVIDER;
-    public static final String EXTERNAL_SENDER_KIND_MODULE =
-            ExternalLyricProtocol.SENDER_KIND_MODULE;
-    public static final String EVENT_EXTERNAL_TRACK_CHANGED = ExternalLyricProtocol.EVENT_TRACK_CHANGED;
-    public static final String EVENT_EXTERNAL_LYRIC_READY = ExternalLyricProtocol.EVENT_LYRIC_READY;
-    public static final String CAPABILITY_EXTERNAL_PLAYBACK_STATE =
-            ExternalLyricProtocol.CAPABILITY_PLAYBACK_STATE;
-    public static final String CAPABILITY_EXTERNAL_TRACK_GENERATION =
-            ExternalLyricProtocol.CAPABILITY_TRACK_GENERATION;
-    public static final String CAPABILITY_EXTERNAL_CURRENT_TRACK_AUTHORITY =
-            ExternalLyricProtocol.CAPABILITY_CURRENT_TRACK_AUTHORITY;
-    public static final String CAPABILITY_EXTERNAL_TITLE_ONLY_FALLBACK =
-            ExternalLyricProtocol.CAPABILITY_TITLE_ONLY_FALLBACK;
-    public static final String CAPABILITY_EXTERNAL_TRANSLATION_TOGGLE =
-            ExternalLyricProtocol.CAPABILITY_TRANSLATION_TOGGLE;
-    public static final String MATCH_POLICY_EXTERNAL_TITLE_ONLY =
-            ExternalLyricProtocol.MATCH_POLICY_TITLE_ONLY;
-    public static final String IDENTITY_CONFIDENCE_EXTERNAL_CURRENT_TRACK =
-            ExternalLyricProtocol.IDENTITY_CONFIDENCE_CURRENT_TRACK;
-
     private static final String[] TRANSLATION_KEYS = {
             JSON_TRANSLATION_LYRIC,
             "translatedLyric",
@@ -241,10 +175,6 @@ public final class LyricInfoContract {
 
         public boolean hasModuleExtensionData() {
             return hasWordTiming() || containsTimedLrc(translationLyric);
-        }
-
-        public boolean isModuleEnvelope() {
-            return MODULE_PROVIDER.equals(provider);
         }
     }
 

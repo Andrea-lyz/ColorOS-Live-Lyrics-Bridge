@@ -175,4 +175,61 @@ public class TranslationToggleMediaActionBinderTest {
 
         assertEquals(0, host.toggleClicks);
     }
+
+    @Test
+    public void powerampHeartOverlayBindsVisibleFavoriteWithoutPromotingIntoRule0() {
+        FakeMediaButton button = new FakeMediaButton();
+        FakeMediaAction shuffle = new FakeMediaAction();
+        FakeMediaAction heart = new FakeMediaAction();
+        button.ex.rule0CustomActions.add(shuffle);
+        button.ex.heartAction = heart;
+        FakeHost host = new FakeHost();
+
+        binder(host).bindOplusHeartAlongsidePublicAction(
+                button.ex,
+                shuffle,
+                PlayerSystemUiPolicy.POWERAMP);
+
+        assertEquals(1, button.ex.rule0CustomActions.size());
+        assertSame(shuffle, button.ex.rule0CustomActions.get(0));
+        assertNull(shuffle.action);
+        assertNotNull(heart.action);
+        assertEquals("翻译：开启", heart.contentDescription.toString());
+        heart.action.run();
+        assertEquals(1, host.toggleClicks);
+    }
+
+    @Test
+    public void powerampHeartOverlaySkipsWhenHeartIsAbsent() {
+        FakeMediaButton button = new FakeMediaButton();
+        FakeMediaAction publicAction = new FakeMediaAction();
+        button.ex.rule0CustomActions.add(publicAction);
+        FakeHost host = new FakeHost();
+
+        binder(host).bindOplusHeartAlongsidePublicAction(
+                button.ex,
+                publicAction,
+                PlayerSystemUiPolicy.POWERAMP);
+
+        assertNull(publicAction.action);
+        assertEquals(0, host.toggleClicks);
+        assertEquals(1, button.ex.rule0CustomActions.size());
+    }
+
+    @Test
+    public void powerampHeartOverlaySkipsWhenHeartIsThePublicAction() {
+        FakeMediaButton button = new FakeMediaButton();
+        FakeMediaAction both = new FakeMediaAction();
+        button.ex.heartAction = both;
+        button.ex.rule0CustomActions.add(both);
+        FakeHost host = new FakeHost();
+
+        binder(host).bindOplusHeartAlongsidePublicAction(
+                button.ex,
+                both,
+                PlayerSystemUiPolicy.POWERAMP);
+
+        assertNull(both.action);
+        assertEquals(0, host.toggleClicks);
+    }
 }

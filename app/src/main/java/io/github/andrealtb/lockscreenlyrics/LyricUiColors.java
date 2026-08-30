@@ -2,27 +2,25 @@ package io.github.andrealtb.lockscreenlyrics;
 
 final class LyricUiColors {
     private static final String BASE_LYRIC_COLOR = "#FFFFFF";
-    private static final int OPAQUE_ALPHA = 0xFF;
     private static final int PLAYED_ALPHA = 0xF0;
     private static final int GLOW_SHADOW_ALPHA = 0xBA;
     private static final int GLOW_FILL_ALPHA = 0x32;
-    private static final int FOCUSED_OPACITY_BONUS = Math.round(255f * 0.15f);
 
     private LyricUiColors() {
     }
 
     static int inactive(LyricUiConfig config) {
-        return withAlpha(BASE_LYRIC_COLOR, percentAlpha(config.inactiveOpacityPercent));
+        return withAlpha(BASE_LYRIC_COLOR, LyricVisualAlphaPolicy.inactiveMainAlpha(config));
     }
 
     static int focusedInactive(LyricUiConfig config) {
-        int alpha = Math.min(OPAQUE_ALPHA,
-                percentAlpha(config.inactiveOpacityPercent) + FOCUSED_OPACITY_BONUS);
-        return withAlpha(BASE_LYRIC_COLOR, alpha);
+        return withAlpha(
+                BASE_LYRIC_COLOR,
+                LyricVisualAlphaPolicy.currentUnrevealedAlpha(config));
     }
 
     static int active(LyricUiConfig config) {
-        return withAlpha(config.primaryColor, OPAQUE_ALPHA);
+        return withAlpha(config.primaryColor, LyricVisualAlphaPolicy.activeAlpha(config));
     }
 
     static int played(LyricUiConfig config) {
@@ -41,12 +39,24 @@ final class LyricUiColors {
         };
     }
 
-    static int translationBase(
-            LyricUiConfig config, boolean activeInAod, float focusAmount) {
-        if (activeInAod) {
-            return active(config);
-        }
-        return blend(inactive(config), focusedInactive(config), focusAmount);
+    static int activeTranslation(LyricUiConfig config) {
+        return withAlpha(
+                BASE_LYRIC_COLOR,
+                LyricVisualAlphaPolicy.activeTranslationAlpha(config));
+    }
+
+    static int activeTranslationProgress(LyricUiConfig config) {
+        return withAlpha(
+                config.primaryColor,
+                LyricVisualAlphaPolicy.activeTranslationProgressAlpha(config));
+    }
+
+    static int translationBase(LyricUiConfig config, boolean activeLine) {
+        return activeLine
+                ? activeTranslation(config)
+                : withAlpha(
+                        BASE_LYRIC_COLOR,
+                        LyricVisualAlphaPolicy.inactiveTranslationAlpha(config));
     }
 
     static int glowShadow(LyricUiConfig config) {
@@ -63,16 +73,12 @@ final class LyricUiColors {
         return withAlpha(config.primaryColor, alpha);
     }
 
-    private static int percentAlpha(int percent) {
-        return Math.round(OPAQUE_ALPHA * percent / 100f);
-    }
-
     private static int withAlpha(String rgb, int alpha) {
         int value = Integer.parseInt(rgb.substring(1), 16);
         return (alpha << 24) | value;
     }
 
-    private static int blend(int fromColor, int toColor, float amount) {
+    static int blend(int fromColor, int toColor, float amount) {
         float progress = Math.max(0f, Math.min(1f, amount));
         int fromA = (fromColor >>> 24) & 0xFF;
         int fromR = (fromColor >>> 16) & 0xFF;

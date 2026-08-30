@@ -13,16 +13,37 @@ public class PlayerTranslationTogglePolicyTest {
     @Test
     public void registeredProvidersMayOverrideFavoriteActionWithTranslation() {
         assertTrue(PlayerTranslationTogglePolicy.canOverrideFavoriteActionWithTranslation(
-                ExternalLyricProviderRegistry.QQ_MUSIC_PLAYER_PACKAGE,
+                PlayerSystemUiPolicy.QQ_MUSIC,
                 Collections.emptySet()));
         assertTrue(PlayerTranslationTogglePolicy.canOverrideFavoriteActionWithTranslation(
-                ExternalLyricProviderRegistry.KUGOU_MUSIC_PLAYER_PACKAGE,
+                PlayerSystemUiPolicy.KUGOU,
                 Collections.emptySet()));
         assertTrue(PlayerTranslationTogglePolicy.canOverrideFavoriteActionWithTranslation(
-                ExternalLyricProviderRegistry.NETEASE_MUSIC_PLAYER_PACKAGE,
+                PlayerSystemUiPolicy.NETEASE_MUSIC,
                 Collections.emptySet()));
         assertTrue(PlayerTranslationTogglePolicy.canOverrideFavoriteActionWithTranslation(
-                ExternalLyricProviderRegistry.KUWO_MUSIC_PLAYER_PACKAGE,
+                PlayerSystemUiPolicy.KUWO,
+                Collections.emptySet()));
+        assertTrue(PlayerTranslationTogglePolicy.canOverrideFavoriteActionWithTranslation(
+                PlayerSystemUiPolicy.SALT,
+                Collections.emptySet()));
+        assertTrue(PlayerTranslationTogglePolicy.canOverrideFavoriteActionWithTranslation(
+                PlayerSystemUiPolicy.CONE,
+                Collections.emptySet()));
+        assertTrue(PlayerTranslationTogglePolicy.canOverrideFavoriteActionWithTranslation(
+                PlayerSystemUiPolicy.CONE_GP,
+                Collections.emptySet()));
+        assertTrue(PlayerTranslationTogglePolicy.canOverrideFavoriteActionWithTranslation(
+                PlayerSystemUiPolicy.LX_MUSIC,
+                Collections.emptySet()));
+        assertTrue(PlayerTranslationTogglePolicy.canOverrideFavoriteActionWithTranslation(
+                PlayerSystemUiPolicy.LX_WALNUT,
+                Collections.emptySet()));
+        assertTrue(PlayerTranslationTogglePolicy.canOverrideFavoriteActionWithTranslation(
+                PlayerSystemUiPolicy.POWERAMP,
+                Collections.emptySet()));
+        assertFalse(PlayerTranslationTogglePolicy.canOverrideFavoriteActionWithTranslation(
+                "com.lxnetease.music.mobile",
                 Collections.emptySet()));
     }
 
@@ -67,5 +88,57 @@ public class PlayerTranslationTogglePolicyTest {
                 true, true, 47, null));
         assertTrue(PlayerTranslationTogglePolicy.shouldReplaceFavoriteActionWithTranslation(
                 true, true, 0, "[00:01.00]翻译行"));
+    }
+
+    @Test
+    public void onlyPowerampBindsOplusHeartAlongsidePublicTranslationAction() {
+        assertTrue(PlayerTranslationTogglePolicy.shouldBindOplusHeartAlongsidePublicTranslationAction(
+                PlayerSystemUiPolicy.POWERAMP));
+        assertFalse(PlayerTranslationTogglePolicy.shouldBindOplusHeartAlongsidePublicTranslationAction(
+                PlayerSystemUiPolicy.SALT));
+        assertFalse(PlayerTranslationTogglePolicy.shouldBindOplusHeartAlongsidePublicTranslationAction(
+                PlayerSystemUiPolicy.CONE));
+        assertFalse(PlayerTranslationTogglePolicy.shouldBindOplusHeartAlongsidePublicTranslationAction(
+                PlayerSystemUiPolicy.CONE_GP));
+        assertFalse(PlayerTranslationTogglePolicy.shouldBindOplusHeartAlongsidePublicTranslationAction(
+                PlayerSystemUiPolicy.LX_MUSIC));
+        assertFalse(PlayerTranslationTogglePolicy.shouldBindOplusHeartAlongsidePublicTranslationAction(
+                PlayerSystemUiPolicy.LX_WALNUT));
+        assertFalse(PlayerTranslationTogglePolicy.shouldBindOplusHeartAlongsidePublicTranslationAction(
+                PlayerSystemUiPolicy.KUWO));
+        assertFalse(PlayerTranslationTogglePolicy.shouldBindOplusHeartAlongsidePublicTranslationAction(
+                null));
+        assertFalse(PlayerTranslationTogglePolicy.shouldBindOplusHeartAlongsidePublicTranslationAction(
+                ""));
+    }
+
+    @Test
+    public void trackedTranslationViewIsNotHiddenDuringLyricModelGap() {
+        assertFalse(PlayerTranslationTogglePolicy.shouldForceHideTrackedTranslationActionView(
+                true, -1));
+        assertFalse(PlayerTranslationTogglePolicy.shouldForceShowTrackedTranslationActionView(
+                true, -1));
+        assertFalse(PlayerTranslationTogglePolicy.shouldForceHideTrackedTranslationActionView(
+                false, 0));
+        assertTrue(PlayerTranslationTogglePolicy.shouldForceHideTrackedTranslationActionView(
+                true, 0));
+        assertTrue(PlayerTranslationTogglePolicy.shouldForceShowTrackedTranslationActionView(
+                true, 61));
+        assertFalse(PlayerTranslationTogglePolicy.shouldForceHideTrackedTranslationActionView(
+                true, 61));
+        assertFalse(PlayerTranslationTogglePolicy.shouldForceShowTrackedTranslationActionView(
+                false, 61));
+    }
+
+    @Test
+    public void userButtonPreferenceOverridesTrackedViewVisibilityImmediately() {
+        assertTrue(PlayerTranslationTogglePolicy.shouldForceHideTrackedTranslationActionView(
+                true, -1, false));
+        assertTrue(PlayerTranslationTogglePolicy.shouldForceHideTrackedTranslationActionView(
+                true, 12, false));
+        assertFalse(PlayerTranslationTogglePolicy.shouldForceShowTrackedTranslationActionView(
+                true, 12, false));
+        assertTrue(PlayerTranslationTogglePolicy.shouldForceShowTrackedTranslationActionView(
+                true, 12, true));
     }
 }

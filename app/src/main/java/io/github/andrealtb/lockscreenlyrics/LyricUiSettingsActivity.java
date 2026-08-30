@@ -66,6 +66,7 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
     private static final long SNACK_DURATION_SHORT_MS = 2_000L;
     private static final long SNACK_DURATION_LONG_MS = 3_500L;
     private static final int BOTTOM_ACTION_BAR_CLEARANCE_DP = 84;
+    private static final int REQUEST_CONFIG_BACKUP = 4001;
     private static final Pattern COLOR_PATTERN = Pattern.compile("#[0-9A-Fa-f]{6}");
 
     private SharedPreferences preferences;
@@ -117,14 +118,14 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
         bottomActionBar.setVisibility(View.VISIBLE);
     };
     private TextView customPresetLabel;
-    private Slider opacity;
+    private TextView presetDescription;
+    private TextView visualLayersSummary;
     private MaterialSwitch blurEnabled;
     private Slider blurRadius;
     private View blurRadiusRow;
     private MaterialSwitch scaleEnabled;
     private Slider inactiveScale;
     private View inactiveScaleRow;
-    private MaterialSwitch glowEnabled;
     private Slider glowIntensity;
     private Slider glowRadius;
     private final PaletteTarget primaryColor = new PaletteTarget("#FF9AA8");
@@ -135,8 +136,10 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
     private MaterialButton refreshRate;
     private int refreshRateSelection;
     private int[] refreshRateValues;
+    private boolean[] refreshRateAvailable;
     private MaterialSwitch lineTimedProgress;
     private MaterialSwitch translationProgress;
+    private TextView translationProgressDependencyHint;
     private MaterialSwitch screenTimeout;
     private EditText screenTimeoutSeconds;
     private View screenTimeoutSecondsRow;
@@ -175,6 +178,7 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
     private long pendingSettingsRevision = -1L;
     private long systemUiRestartRequestSequence;
     private long pendingSystemUiRestartRequestId = -1L;
+    private boolean resumedOnce;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -228,6 +232,24 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        if (!resumedOnce) {
+            resumedOnce = true;
+            return;
+        }
+        if (draft == null || savedConfig == null || !draftListenersReady) return;
+        LyricUiConfig persisted = LyricUiConfigRepository.load(preferences);
+        LyricUiConfig current = readDraft();
+        draft = LyricUiConfigOwnerPolicy.mergeExternalFields(current, persisted);
+        savedConfig = LyricUiConfigOwnerPolicy.mergeExternalFields(savedConfig, persisted);
+        updateVisualLayersSummary(draft);
+        bindPreview(draft);
+        updatePresetCards(LyricUiPreset.detect(draft));
+        updateDirtyState(draft);
+    }
+
+    @Override
     protected void onDestroy() {
         if (presetAnimator != null) {
             presetAnimator.cancel();
@@ -248,6 +270,15 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
         }
         releaseScrollCachedPreviewLayer();
         super.onDestroy();
+    }
+
+    @Override
+    @SuppressWarnings("deprecation")
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_CONFIG_BACKUP && resultCode == RESULT_OK) {
+            recreate();
+        }
     }
 
     private void configureSettingsWindowRefreshRate(Window window) {
@@ -335,6 +366,10 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
             presetGrid.addView(card, cardParams);
         }
         presetCard.addView(presetGrid, matchWrap());
+        presetDescription = text("", 10.5f, getColor(R.color.settings_text_muted));
+        presetDescription.setPadding(dp(14), 0, dp(14), dp(10));
+        presetDescription.setLineSpacing(0f, 1.15f);
+        presetCard.addView(presetDescription, matchWrap());
         customPresetLabel = text(
                 getString(R.string.preset_custom_label),
                 11,
@@ -381,8 +416,6 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
                 glowColor,
                 "#FF5D73"));
         addCardDivider(colorCard);
-        glowEnabled = toggle(getString(R.string.setting_glow), true);
-        glowEnabled.setVisibility(View.GONE);
         glowIntensity = materialSeek(0, 100);
         colorCard.addView(labeledMaterialSeek(
                 getString(R.string.setting_glow_intensity),
@@ -404,11 +437,14 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
                 " × 0.5px"));
         colorCard.addView(blurRadiusRow);
         addCardDivider(colorCard);
-        opacity = materialSeek(30, 100);
-        colorCard.addView(labeledMaterialSeek(
-                getString(R.string.setting_inactive_opacity),
-                opacity,
-                "%"));
+        colorCard.addView(linkRow(
+                R.drawable.ic_sec_color,
+                getString(R.string.link_visual_layers),
+                visualLayersSummaryText(draft),
+                () -> startActivity(new Intent(
+                        this,
+                        LyricVisualLayersSettingsActivity.class)),
+                true));
         addCardDivider(colorCard);
         scaleEnabled = toggle(getString(R.string.setting_scroll_scale), false);
         colorCard.addView(scaleEnabled);
@@ -505,6 +541,14 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
                 getString(R.string.settings_section_compat),
                 "COMPAT"));
         compatibility.addView(linkRow(
+                R.drawable.ic_sec_compat,
+                getString(R.string.link_config_backup),
+                getString(R.string.link_config_backup_sub),
+                () -> startActivityForResult(
+                        new Intent(this, BridgeConfigBackupSettingsActivity.class),
+                        REQUEST_CONFIG_BACKUP)));
+        addCardDivider(compatibility);
+        compatibility.addView(linkRow(
                 R.drawable.ic_translation,
                 getString(R.string.link_player_translation),
                 getString(R.string.link_player_translation_sub),
@@ -516,6 +560,12 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
                 getString(R.string.link_opening_cleanup_sub),
                 () -> startActivity(new Intent(this, LyricOpeningCleanupSettingsActivity.class))));
         addCardDivider(compatibility);
+        compatibility.addView(linkRow(
+                R.drawable.ic_sec_compat,
+                getString(R.string.link_debug_logging),
+                getString(R.string.link_debug_logging_sub),
+                () -> startActivity(new Intent(this, BridgeDebugSettingsActivity.class))));
+        addCardDivider(compatibility);
         lineTimedProgress = toggle(getString(R.string.setting_line_progress), false);
         translationProgress = toggle(getString(R.string.setting_translation_progress), false);
         screenTimeout = toggle(getString(R.string.setting_screen_timeout), true);
@@ -523,6 +573,12 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
         compatibility.addView(lineTimedProgress);
         addCardDivider(compatibility);
         compatibility.addView(translationProgress);
+        translationProgressDependencyHint = text(
+                getString(R.string.translation_progress_dependency_hint),
+                10.5f,
+                getColor(R.color.settings_text_muted));
+        translationProgressDependencyHint.setPadding(dp(17), 0, dp(17), dp(9));
+        compatibility.addView(translationProgressDependencyHint, matchWrap());
         addCardDivider(compatibility);
         compatibility.addView(screenTimeout);
         screenTimeoutSecondsRow = conditionalCardRow(numberInputRow(
@@ -1376,15 +1432,18 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
             updateConditionalRows();
             changed.onClick(view);
         });
-        glowEnabled.setOnClickListener(view -> {
-            markManualAppearanceChanged();
-            changed.onClick(view);
-        });
         for (MaterialSwitch toggle : new MaterialSwitch[]{
-                passiveVerticalPan, translationMarquee,
-                lineTimedProgress, translationProgress}) {
+                passiveVerticalPan, translationMarquee}) {
             toggle.setOnClickListener(changed);
         }
+        lineTimedProgress.setOnClickListener(view -> {
+            updateConditionalRows();
+            changed.onClick(view);
+        });
+        translationProgress.setOnClickListener(view -> {
+            updateConditionalRows();
+            changed.onClick(view);
+        });
         screenTimeout.setOnClickListener(view -> {
             updateConditionalRows();
             changed.onClick(view);
@@ -1394,9 +1453,6 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
                 Object tag = slider.getTag();
                 if (tag instanceof SeekValueLabel) ((SeekValueLabel) tag).update();
                 if (fromUser) {
-                    if (slider == glowIntensity) {
-                        glowEnabled.setChecked(value > 0f);
-                    }
                     markManualAppearanceChanged();
                     if (presetTransitionActive && presetAnimator != null) {
                         presetAnimator.cancel();
@@ -1549,6 +1605,9 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
     private void updatePresetCards(LyricUiPreset selected) {
         if (selected == displayedPreset) return;
         displayedPreset = selected;
+        if (presetDescription != null) {
+            presetDescription.setText(presetDescriptionRes(selected));
+        }
         for (SettingsPresetCard card : presetCards) {
             card.setPresetSelected(card.preset() == selected);
         }
@@ -1673,12 +1732,11 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
                         refreshRateSelection,
                         refreshRateValues.length - 1))];
         return draft.buildUpon()
-                .inactiveOpacityPercent(materialProgress(opacity))
                 .blurEnabled(blurEnabled.isChecked())
                 .blurRadiusTenthsPx(materialProgress(blurRadius) * 5)
                 .scaleEnabled(scaleEnabled.isChecked())
                 .inactiveScalePercent(materialProgress(inactiveScale))
-                .glowEnabled(glowEnabled.isChecked())
+                .glowEnabled(materialProgress(glowIntensity) > 0)
                 .glowIntensityPercent(materialProgress(glowIntensity))
                 .glowRadiusPercent(materialProgress(glowRadius))
                 .primaryColor(primaryColor.get())
@@ -1687,12 +1745,12 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
                 .passiveVerticalPanEnabled(passiveVerticalPan.isChecked())
                 .translationMarqueeEnabled(translationMarquee.isChecked())
                 .maxRefreshRateHz(refresh)
-                .defaultTranslationEnabled(LyricUiConfigRepository.load(
-                        preferences).defaultTranslationEnabled)
+                .defaultTranslationEnabled(draft.defaultTranslationEnabled)
                 .lineTimedProgressEnabled(lineTimedProgress.isChecked())
                 .translationProgressEnabled(translationProgress.isChecked())
                 .screenTimeoutEnabled(screenTimeout.isChecked())
-                .screenTimeoutSeconds(readInt(screenTimeoutSeconds))
+                .screenTimeoutSeconds(LyricUiSettings.parseScreenTimeoutSeconds(
+                        screenTimeoutSeconds.getText().toString()))
                 .mainFontTenthsSp(materialProgress(mainFontSize) * 10)
                 .translationFontRatioPercent(materialProgress(translationFontRatio))
                 .fontWeight(checkedIndex(fontWeight))
@@ -1709,15 +1767,11 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
     private void bind(LyricUiConfig config, boolean updatePresetSelection) {
         draft = config;
         binding = true;
-        setSliderValueSafely(opacity, config.inactiveOpacityPercent);
         blurEnabled.setChecked(config.blurEnabled);
         setSliderValueSafely(blurRadius, config.blurRadiusTenthsPx / 5f);
         scaleEnabled.setChecked(config.scaleEnabled);
         setSliderValueSafely(inactiveScale, config.inactiveScalePercent);
-        glowEnabled.setChecked(config.glowEnabled);
-        setSliderValueSafely(glowIntensity, config.glowEnabled
-                ? config.glowIntensityPercent
-                : 0);
+        setSliderValueSafely(glowIntensity, config.glowIntensityPercent);
         setSliderValueSafely(glowRadius, config.glowRadiusPercent);
         primaryColor.set(config.primaryColor);
         glowColor.set(config.glowColor);
@@ -1740,6 +1794,7 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
         setSliderValueSafely(translationFontRatio, config.translationFontRatioPercent);
         setSliderValueSafely(lineSpacing, config.lineSpacingTenthsDp / 5f);
         setSliderValueSafely(wrappedLineSpacing, config.wrappedLineSpacingTenthsDp / 5f);
+        updateVisualLayersSummary(config);
         updateSeekValueLabels();
         updateConditionalRows();
         if (updatePresetSelection) {
@@ -1763,6 +1818,14 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
         if (screenTimeoutSecondsRow != null) {
             screenTimeoutSecondsRow.setVisibility(
                     screenTimeout.isChecked() ? View.VISIBLE : View.GONE);
+        }
+        if (translationProgressDependencyHint != null) {
+            translationProgressDependencyHint.setVisibility(
+                    LyricUiSettings.shouldShowTranslationProgressDependencyHint(
+                            lineTimedProgress.isChecked(),
+                            translationProgress.isChecked())
+                            ? View.VISIBLE
+                            : View.GONE);
         }
     }
 
@@ -1793,7 +1856,7 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
     }
 
     private Slider[] materialValueSliders() {
-        return new Slider[]{opacity, blurRadius, inactiveScale, glowIntensity, glowRadius,
+        return new Slider[]{blurRadius, inactiveScale, glowIntensity, glowRadius,
                 mainFontSize, translationFontRatio, lineSpacing, wrappedLineSpacing};
     }
 
@@ -1809,13 +1872,13 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
         int color = Color.parseColor(LyricUiConfig.sanitizeColor(config.primaryColor, "#FFFFFF"));
         previewMain.setTextColor(color);
         previewMain.setAlpha(1f);
-        previewTranslation.setTextColor(LyricUiColors.translationBase(config, false, 1f));
+        previewTranslation.setTextColor(LyricUiColors.translationBase(config, true));
         previewTranslation.setAlpha(1f);
         previewSecondaryOne.setTextColor(color);
         previewSecondaryTwo.setTextColor(color);
         previewSecondaryOne.setAlpha(config.inactiveOpacityPercent / 100f);
         previewSecondaryTwo.setAlpha(config.inactiveOpacityPercent / 100f);
-        int inactiveTranslationColor = LyricUiColors.translationBase(config, false, 0f);
+        int inactiveTranslationColor = LyricUiColors.translationBase(config, false);
         previewSecondaryTranslationOne.setTextColor(inactiveTranslationColor);
         previewSecondaryTranslationTwo.setTextColor(inactiveTranslationColor);
         previewSecondaryTranslationOne.setAlpha(1f);
@@ -2327,9 +2390,8 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
         // authenticates this sender. Passing the same value as receiverPermission would
         // instead require SystemUI to hold our signature permission and drop the broadcast.
         sendBroadcast(intent);
-        draft = config;
         savedConfig = config;
-        updateDirtyState();
+        bind(config);
         logSettingsEvent(
                 "settings-send",
                 "Sent lyric UI settings"
@@ -2379,21 +2441,29 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
                 has120 |= Math.abs(rate - 120) <= 1;
             }
         }
-        List<Integer> rates = new ArrayList<>();
-        rates.add(0);
-        if (has60) rates.add(60);
-        if (has90) rates.add(90);
-        if (has120) rates.add(120);
-        refreshRateValues = new int[rates.size()];
-        for (int i = 0; i < rates.size(); i++) refreshRateValues[i] = rates.get(i);
+        LyricRefreshRateOptionsPolicy.Options options = LyricRefreshRateOptionsPolicy.build(
+                has60,
+                has90,
+                has120,
+                draft == null ? 0 : draft.maxRefreshRateHz);
+        refreshRateValues = options.values;
+        refreshRateAvailable = options.available;
     }
 
     private String[] refreshRateLabels() {
         String[] labels = new String[refreshRateValues.length];
         for (int i = 0; i < labels.length; i++) {
-            labels[i] = refreshRateValues[i] == 0
-                    ? getString(R.string.refresh_follow_screen)
-                    : getString(R.string.refresh_hz_format, refreshRateValues[i]);
+            if (refreshRateValues[i] == 0) {
+                labels[i] = getString(R.string.refresh_follow_screen);
+            } else if (refreshRateAvailable != null
+                    && i < refreshRateAvailable.length
+                    && !refreshRateAvailable[i]) {
+                labels[i] = getString(
+                        R.string.refresh_hz_unavailable_preserved,
+                        refreshRateValues[i]);
+            } else {
+                labels[i] = getString(R.string.refresh_hz_format, refreshRateValues[i]);
+            }
         }
         return labels;
     }
@@ -2738,6 +2808,9 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
         for (int index = 0; index < labels.length; index++) {
             final int selectedIndex = index;
             boolean selected = index == refreshRateSelection;
+            boolean available = refreshRateAvailable == null
+                    || index >= refreshRateAvailable.length
+                    || refreshRateAvailable[index];
             TextView item = text(
                     labels[index],
                     12,
@@ -2749,7 +2822,13 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
             itemBackground.setColor(selected ? 0x2EF2C14E : Color.TRANSPARENT);
             itemBackground.setCornerRadius(dp(10));
             item.setBackground(itemBackground);
+            item.setAlpha(available || selected ? 1f : 0.5f);
+            item.setEnabled(available || selected);
             item.setOnClickListener(view -> {
+                if (!available && selectedIndex != refreshRateSelection) {
+                    popup.dismiss();
+                    return;
+                }
                 if (selectedIndex != refreshRateSelection) {
                     refreshRateSelection = selectedIndex;
                     refreshRate.setText(refreshRateLabels()[selectedIndex]);
@@ -2839,12 +2918,16 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
         return row;
     }
 
-    private int readInt(EditText input) {
-        try { return Integer.parseInt(input.getText().toString().trim()); }
-        catch (RuntimeException ignored) { return 0; }
+    private View linkRow(int iconRes, String title, String subtitle, Runnable onClick) {
+        return linkRow(iconRes, title, subtitle, onClick, false);
     }
 
-    private View linkRow(int iconRes, String title, String subtitle, Runnable onClick) {
+    private View linkRow(
+            int iconRes,
+            String title,
+            String subtitle,
+            Runnable onClick,
+            boolean captureVisualLayersSummary) {
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(dp(17), dp(10), dp(13), dp(10));
@@ -2880,6 +2963,9 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
             TextView subtitleView = text(subtitle, 9.5f, 0xFF8A919C);
             subtitleView.setPadding(0, dp(2), 0, 0);
             column.addView(subtitleView, matchWrap());
+            if (captureVisualLayersSummary) {
+                visualLayersSummary = subtitleView;
+            }
         }
         row.addView(column, new LinearLayout.LayoutParams(
                 0,
@@ -2894,6 +2980,40 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
         row.addView(chevron, chevronParams);
         row.setOnClickListener(view -> onClick.run());
         return row;
+    }
+
+    private String visualLayersSummaryText(LyricUiConfig config) {
+        LyricUiConfig safeConfig = config == null ? LyricUiConfig.defaults() : config;
+        return getString(
+                R.string.link_visual_layers_summary,
+                safeConfig.activeOpacityPercent,
+                safeConfig.inactiveOpacityPercent,
+                safeConfig.verticalFadeEnabled
+                        ? getString(R.string.visual_state_on)
+                        : getString(R.string.visual_state_off));
+    }
+
+    private void updateVisualLayersSummary(LyricUiConfig config) {
+        if (visualLayersSummary != null) {
+            visualLayersSummary.setText(visualLayersSummaryText(config));
+        }
+    }
+
+    private int presetDescriptionRes(LyricUiPreset preset) {
+        if (preset == null) return R.string.preset_custom_summary;
+        switch (preset) {
+            case DEFAULT:
+                return R.string.preset_default_summary;
+            case SOFT:
+                return R.string.preset_soft_summary;
+            case VIVID:
+                return R.string.preset_vivid_summary;
+            case MINIMAL:
+                return R.string.preset_minimal_summary;
+            case CUSTOM:
+            default:
+                return R.string.preset_custom_summary;
+        }
     }
 
     private void installKeyboardAvoidance(

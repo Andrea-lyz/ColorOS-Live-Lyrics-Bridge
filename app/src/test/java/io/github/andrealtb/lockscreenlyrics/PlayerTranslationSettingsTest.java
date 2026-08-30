@@ -1,50 +1,50 @@
 package io.github.andrealtb.lockscreenlyrics;
 
-import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
+import java.lang.reflect.Field;
 import java.util.HashSet;
 
 public final class PlayerTranslationSettingsTest {
     @Test
-    public void builtInPlayersDoNotRequireProviderPackages() {
-        assertTrue(PlayerTranslationSettings.entries().get(0).isBuiltIn());
-        assertTrue(PlayerTranslationSettings.entries().get(1).isBuiltIn());
-        assertEquals("com.salt.music",
-                PlayerTranslationSettings.entries().get(0).playerPackages[0]);
-    }
+    public void entriesExposeOnlyPlayerPackages() {
+        for (Field field : PlayerTranslationSettings.Entry.class.getDeclaredFields()) {
+            assertFalse("Provider applicationId field must not return to Bridge",
+                    field.getName().toLowerCase().contains("provider"));
+        }
 
-    @Test
-    public void providerBackedPlayersExposeUniqueSupportedPackages() {
         String[] packages = PlayerTranslationSettings.flattenPackages();
         HashSet<String> unique = new HashSet<>();
         for (String packageName : packages) {
             assertTrue(unique.add(packageName));
             assertTrue(PlayerTranslationSettings.isSupportedPlayerPackage(packageName));
+            assertFalse(packageName.startsWith("io.github.andrealtb.coloroslyrics.provider."));
+            assertFalse(packageName.startsWith("io.github.proify.lyricon."));
         }
-        assertTrue(PlayerTranslationSettings.isSupportedPlayerPackage(
-                "cn.toside.music.mobile"));
-        assertTrue(PlayerTranslationSettings.isSupportedPlayerPackage(
-                "com.lxwalnut.music.mobile"));
-        assertTrue(PlayerTranslationSettings.isSupportedPlayerPackage("cn.kuwo.player"));
-        assertFalse(PlayerTranslationSettings.isSupportedPlayerPackage("com.example.unknown"));
     }
 
     @Test
-    public void providerBackedPlayersExposeTenUniqueProviderPackages() {
-        String[] packages = PlayerTranslationSettings.providerPackages();
-        HashSet<String> unique = new HashSet<>();
-        assertEquals(10, packages.length);
-        for (String packageName : packages) {
-            assertTrue(unique.add(packageName));
-        }
-        assertTrue(unique.contains("io.github.proify.lyricon.cmprovider"));
-        assertTrue(unique.contains("io.github.proify.lyricon.qishuiprovider"));
-        assertTrue(unique.contains("io.github.proify.lyricon.kwprovider"));
-        assertTrue(unique.contains("io.github.proify.lyricon.metrolistprovider"));
+    public void supportedMatrixMatchesFourDotZeroPlayers() {
+        assertTrue(PlayerTranslationSettings.isSupportedPlayerPackage("com.salt.music"));
+        assertTrue(PlayerTranslationSettings.isSupportedPlayerPackage("ink.trantor.coneplayer"));
+        assertTrue(PlayerTranslationSettings.isSupportedPlayerPackage(
+                "ink.trantor.coneplayer.gp"));
+        assertTrue(PlayerTranslationSettings.isSupportedPlayerPackage("com.tencent.qqmusic"));
+        assertFalse(PlayerTranslationSettings.isSupportedPlayerPackage("com.tencent.qqmusicpad"));
+        assertTrue(PlayerTranslationSettings.isSupportedPlayerPackage("com.netease.cloudmusic"));
+        assertTrue(PlayerTranslationSettings.isSupportedPlayerPackage("com.hihonor.cloudmusic"));
+        assertTrue(PlayerTranslationSettings.isSupportedPlayerPackage("cn.kuwo.player"));
+        assertTrue(PlayerTranslationSettings.isSupportedPlayerPackage("cn.toside.music.mobile"));
+        assertTrue(PlayerTranslationSettings.isSupportedPlayerPackage(
+                "com.lxwalnut.music.mobile"));
+        assertFalse(PlayerTranslationSettings.isSupportedPlayerPackage(
+                "com.lxnetease.music.mobile"));
+        assertFalse(PlayerTranslationSettings.isSupportedPlayerPackage(
+                "com.ikunshare.music.mobile"));
+        assertFalse(PlayerTranslationSettings.isSupportedPlayerPackage("com.example.unknown"));
     }
 
     @Test

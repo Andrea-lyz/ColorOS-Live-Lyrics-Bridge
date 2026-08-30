@@ -35,7 +35,5 @@ public final class WordLyricRenderConstants {
 
     public static final float OFFICIAL_LYRIC_ACTIVE_ROW_SCALE = 1.0f;
 
-    public static final float OFFICIAL_LYRIC_INACTIVE_ROW_FADE = 0.9f;
-
     public static final long OFFICIAL_LYRIC_ROW_SCALE_ANIMATION_MS = 340L;
 }

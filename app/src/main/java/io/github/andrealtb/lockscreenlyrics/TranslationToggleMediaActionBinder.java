@@ -2,11 +2,17 @@ package io.github.andrealtb.lockscreenlyrics;
 
 import android.content.Context;
 import android.content.res.Resources;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.Icon;
+import android.graphics.drawable.InsetDrawable;
 import android.media.session.PlaybackState;
 import android.os.SystemClock;
-import android.util.Log;
+
+import io.github.andrealtb.lockscreenlyrics.diagnostics.BridgeDebugArea;
+import io.github.andrealtb.lockscreenlyrics.diagnostics.StructuredBridgeLog;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -38,9 +44,7 @@ final class TranslationToggleMediaActionBinder {
     }
 
     private static final String TRANSLATION_ICON_RESOURCE_NAME = "ic_translation";
-    private static final String TRANSLATION_ACTION_DESCRIPTION_PREFIX = "翻译：";
     private static final String SALT_DESKTOP_LYRIC_ACTION = "com.salt.music.desktop_lyrics";
-    private static final boolean TRANSLATION_BUTTON_DIAGNOSTICS_ENABLED = BuildConfig.DEBUG;
 
     private final Host host;
     private String lastTranslationToggleConfigLogKey = "";
@@ -78,8 +82,12 @@ final class TranslationToggleMediaActionBinder {
             return;
         }
         List<?> actionList = (List<?>) actions;
+        Object heartAction = invokeNoArgByName(mediaButtonEx, "getHeartAction");
         debug("inspect Rule0 actions, package=" + nullToEmpty(packageName)
                 + ", count=" + actionList.size()
+                + ", heart=" + (heartAction == null
+                ? "null"
+                : heartAction.getClass().getName())
                 + ", actions=" + describeRule0ActionIds(actionList));
 
         Object overrideCandidate = null;
@@ -121,6 +129,14 @@ final class TranslationToggleMediaActionBinder {
                     packageName,
                     integrationAction ? "public" : "salt-legacy",
                     actionId);
+            if (integrationAction
+                    && PlayerTranslationTogglePolicy
+                            .shouldBindOplusHeartAlongsidePublicTranslationAction(packageName)) {
+                bindOplusHeartAlongsidePublicAction(
+                        mediaButtonEx,
+                        mediaAction,
+                        packageName);
+            }
             return;
         }
         if (overrideCandidate == null) {
@@ -180,6 +196,46 @@ final class TranslationToggleMediaActionBinder {
             return actions.get(0);
         }
         return null;
+    }
+
+    /**
+     * Copy translation presentation onto the OPlus heart without promoting it into Rule0.
+     * Poweramp's visible favorite slot after a pause rebuild is that heart, not Rule0[0].
+     */
+    void bindOplusHeartAlongsidePublicAction(
+            Object mediaButtonEx,
+            Object publicMediaAction,
+            String packageName) {
+        Object heartAction = invokeNoArgByName(mediaButtonEx, "getHeartAction");
+        if (heartAction == null) {
+            debug("public translation action present, OPlus heart absent, package="
+                    + nullToEmpty(packageName));
+            return;
+        }
+        if (heartAction == publicMediaAction) {
+            debug("OPlus heart is the public translation action, package="
+                    + nullToEmpty(packageName));
+            return;
+        }
+        debug("bind OPlus heart alongside public translation action, package="
+                + nullToEmpty(packageName)
+                + ", heart=" + heartAction.getClass().getName());
+        if (!replaceMediaActionIcon(heartAction, packageName)) {
+            rememberCurrentMediaActionIcon(heartAction);
+        }
+        present(heartAction, packageName);
+        tryInvokeOneArgByName(heartAction, "setAction", (Runnable) () -> {
+            boolean before = host.isLyricInfoTranslationEnabled(packageName);
+            debug("translation action clicked, package=" + nullToEmpty(packageName)
+                    + ", slot=oplus-heart"
+                    + ", enabledBefore=" + before);
+            host.onTranslationToggleClicked(packageName);
+            present(heartAction, packageName);
+            debug("translation action click applied, package=" + nullToEmpty(packageName)
+                    + ", slot=oplus-heart"
+                    + ", enabledAfter=" + host.isLyricInfoTranslationEnabled(packageName));
+        });
+        maybeLogConfiguredTranslationMediaAction(packageName, "public-heart", "");
     }
 
     private void configure(
@@ -280,9 +336,7 @@ final class TranslationToggleMediaActionBinder {
             writeFieldValue(mediaActionEx, "icon", translationIcon.icon);
             return true;
         } catch (Throwable t) {
-            Log.e("LockscreenLyrics", formatLog(
-                    "icon-failure",
-                    "Failed to load lyric translation icon: " + t));
+            StructuredBridgeLog.error("Failed to load lyric translation icon: " + t, t);
             return false;
         }
     }
@@ -299,10 +353,11 @@ final class TranslationToggleMediaActionBinder {
 
     private static TranslationIcon findTranslationIcon(
             Context context, String providerPackage) {
-        TranslationIcon providerIcon = findTranslationIconInPackage(context, providerPackage);
-        return providerIcon != null
-                ? providerIcon
-                : findTranslationIconInPackage(context, "io.github.andrealtb.lockscreenlyrics");
+        // Host-player packages can expose unrelated resources with the same generic name and
+        // different theme tints. Keep one canonical white action icon across every v5 player.
+        return findTranslationIconInPackage(
+                context,
+                TranslationActionPresentationPolicy.CANONICAL_ICON_PACKAGE);
     }
 
     private static TranslationIcon findTranslationIconInPackage(
@@ -323,8 +378,11 @@ final class TranslationToggleMediaActionBinder {
                 return null;
             }
             Drawable drawable = packageContext.getDrawable(resourceId);
+            if (drawable == null) return null;
+            drawable = drawable.mutate();
+            drawable.setTint(Color.WHITE);
             return new TranslationIcon(
-                    Icon.createWithResource(packageName, resourceId),
+                    iconFromDrawable(drawable, packageContext.getResources()),
                     drawable);
         } catch (Throwable ignored) {
             return null;
@@ -341,17 +399,45 @@ final class TranslationToggleMediaActionBinder {
         tryInvokeOneArgByName(
                 mediaAction,
                 "setContentDescription",
-                translationActionDescription(enabled));
+                TranslationActionPresentationPolicy.contentDescription(enabled));
         Object icon = invokeNoArgByName(mediaAction, "getIcon");
         if (icon instanceof Drawable) {
-            ((Drawable) icon).setAlpha(enabled ? 255 : 135);
+            ((Drawable) icon).setAlpha(
+                    TranslationActionPresentationPolicy.imageAlpha(enabled));
             ((Drawable) icon).invalidateSelf();
         }
     }
 
-    private static String translationActionDescription(boolean enabled) {
-        return TRANSLATION_ACTION_DESCRIPTION_PREFIX
-                + (enabled ? "开启" : "关闭");
+    private static Icon iconFromDrawable(Drawable drawable, Resources resources) {
+        int width = Math.max(1, drawable.getIntrinsicWidth());
+        int height = Math.max(1, drawable.getIntrinsicHeight());
+        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        if (resources != null) {
+            bitmap.setDensity(resources.getDisplayMetrics().densityDpi);
+        }
+        Canvas canvas = new Canvas(bitmap);
+        int oldLeft = drawable.getBounds().left;
+        int oldTop = drawable.getBounds().top;
+        int oldRight = drawable.getBounds().right;
+        int oldBottom = drawable.getBounds().bottom;
+        drawable.setBounds(0, 0, width, height);
+        drawable.draw(canvas);
+        drawable.setBounds(oldLeft, oldTop, oldRight, oldBottom);
+        return Icon.createWithBitmap(bitmap);
+    }
+
+    Drawable createTranslationActionPresentationDrawable(
+            String providerPackage,
+            boolean enabled) {
+        TranslationIcon translationIcon = findTranslationIcon(
+                host.currentApplicationContext(),
+                providerPackage);
+        if (translationIcon == null || translationIcon.drawable == null) return null;
+        Drawable drawable = translationIcon.drawable.mutate();
+        drawable.setAlpha(TranslationActionPresentationPolicy.imageAlpha(enabled));
+        return new InsetDrawable(
+                drawable,
+                TranslationActionPresentationPolicy.ACTION_ICON_INSET_FRACTION);
     }
 
     private void maybeLogConfiguredTranslationMediaAction(
@@ -486,18 +572,10 @@ final class TranslationToggleMediaActionBinder {
     }
 
     private void debug(String message) {
-        if (!TRANSLATION_BUTTON_DIAGNOSTICS_ENABLED) {
-            return;
-        }
-        Log.d("LockscreenLyrics", formatLog("button", message));
-    }
-
-    private String formatLog(String event, String message) {
-        return LyricLogFormatter.format(
-                host.logProcessName(),
-                LyricLogFormatter.Area.TRANSLATION,
-                event,
-                message);
+        StructuredBridgeLog.debug(
+                BridgeDebugArea.PLAYER_SPECIAL,
+                "BUTTON",
+                () -> message);
     }
 
     private static boolean isEmpty(String value) {

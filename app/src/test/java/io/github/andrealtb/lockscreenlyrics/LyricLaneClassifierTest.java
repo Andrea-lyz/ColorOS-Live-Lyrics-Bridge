@@ -8,7 +8,7 @@ import org.junit.Test;
 
 public final class LyricLaneClassifierTest {
     @Test
-    public void englishMainChineseTranslationAndProviderCreditUseSeparateLanes() {
+    public void providerCreditIsOrdinaryPayloadContentInsteadOfHiddenLane() {
         LyricLaneClassifier.Result lanes = LyricLaneClassifier.classify(
                 Arrays.asList(
                         "He did it",
@@ -19,7 +19,7 @@ public final class LyricLaneClassifierTest {
         assertEquals(0, lanes.primaryIndex());
         assertEquals(LyricLaneClassifier.Lane.MAIN, lanes.laneAt(0));
         assertEquals(LyricLaneClassifier.Lane.TRANSLATION, lanes.laneAt(1));
-        assertEquals(LyricLaneClassifier.Lane.CREDIT, lanes.laneAt(2));
+        assertEquals(LyricLaneClassifier.Lane.TRANSLATION, lanes.laneAt(2));
         assertEquals("他背叛了我", lanes.firstTranslation());
     }
 

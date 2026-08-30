@@ -90,26 +90,20 @@ public final class LyricOpeningCleanupSettingsActivity extends SettingsBaseActiv
 
         LinearLayout builtIns = card();
         builtIns.addView(section(getString(R.string.sub_clean_builtin)));
-        copyrightNotices = toggle(getString(R.string.sub_clean_copyright), true);
-        productionCredits = toggle(getString(R.string.sub_clean_production), true);
-        titleArtistLead = toggle(getString(R.string.sub_clean_titleartist), true);
+        copyrightNotices = toggle(getString(R.string.sub_clean_copyright), false);
+        productionCredits = toggle(getString(R.string.sub_clean_production), false);
+        titleArtistLead = toggle(getString(R.string.sub_clean_titleartist), false);
         builtIns.addView(copyrightNotices);
         addCardDivider(builtIns);
         builtIns.addView(productionCredits);
         addCardDivider(builtIns);
         builtIns.addView(titleArtistLead);
         addCardDivider(builtIns);
-        TextView protectedRule = text(
-                getString(R.string.sub_clean_protected),
-                13,
-                MUTED);
-        protectedRule.setPadding(dp(17), dp(8), dp(17), dp(4));
-        builtIns.addView(protectedRule, matchWrap());
         Button resetBuiltIns = button(getString(R.string.sub_clean_reset));
         resetBuiltIns.setOnClickListener(view -> {
-            copyrightNotices.setChecked(true);
-            productionCredits.setChecked(true);
-            titleArtistLead.setChecked(true);
+            copyrightNotices.setChecked(false);
+            productionCredits.setChecked(false);
+            titleArtistLead.setChecked(false);
             rebuildCurrentSong();
         });
         LinearLayout.LayoutParams resetParams = matchWrap();

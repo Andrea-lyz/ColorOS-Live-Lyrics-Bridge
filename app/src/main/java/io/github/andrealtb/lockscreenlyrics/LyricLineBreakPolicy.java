@@ -1,6 +1,6 @@
 package io.github.andrealtb.lockscreenlyrics;
 
-final class LyricLineBreakPolicy {
+public final class LyricLineBreakPolicy {
     private static final String PROHIBITED_LINE_START =
             "、。，．！？：；"
                     + "）」』】〕〉》〙〗"
@@ -12,14 +12,14 @@ final class LyricLineBreakPolicy {
             "（「『【〔〈《〘〖"
                     + "‘“";
 
-    interface WidthMeasurer {
+    public interface WidthMeasurer {
         float measure(String text, int start, int end);
     }
 
     private LyricLineBreakPolicy() {
     }
 
-    static boolean shouldBalanceUntranslatedText(
+    public static boolean shouldBalanceUntranslatedText(
             String text,
             int start,
             int end,
@@ -50,7 +50,7 @@ final class LyricLineBreakPolicy {
         return visibleCharacters >= 8;
     }
 
-    static int chooseWrapEnd(
+    public static int chooseWrapEnd(
             String text,
             int start,
             int end,

@@ -17,5 +17,4 @@ dependencyResolutionManagement {
 rootProject.name = "ColorOS-Live-Lyrics-Bridge"
 
 include(":app")
-include(":external-lyric-protocol")
 include(":libxposed-api-stubs")

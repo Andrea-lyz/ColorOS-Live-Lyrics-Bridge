@@ -33,21 +33,28 @@ Before publishing, confirm the intended diff and update all release-facing files
 - Add `docs/releases/v<version>.md`; this is the durable in-repo changelog archive and must not be skipped.
 - Update README or `.github/lsposed/` metadata when behavior, packaging, scope, or user-facing installation notes change.
 
-## LyricProvider Fork Integration
+## Provider 4.0 Integration
 
-The bridge repository owns SystemUI/system_server hooks, lyricInfo synthesis, rendering, and OPlus history/AOD whitelist bypasses. The `Andrea-lyz/LyricProvider` fork owns player-process hooks for provider-backed players and ships those hooks as separate Provider APKs.
+The Bridge owns only `system` / `com.android.systemui` hooks and generic rendering,
+AOD, translation, and OPlus compatibility enhancements. Independent Providers own every
+player-process hook and publish through the player's own
+`MediaSession` / `MediaMetadata["lyricInfo"]`.
 
-When adding or changing a LyricProvider-backed player:
+When adding or changing a Provider-backed player:
 
-- Keep the player package out of the bridge `scope.list` unless it intentionally becomes a built-in bridge adapter.
-- Add the target player package to `ExternalLyricSources.BRIDGE_PLAYER_PACKAGES` so history and AOD whitelist hooks treat it as module-managed.
-- Add an `ExternalLyricSources.Source` entry only when the provider sends external lyric broadcasts that need source-to-player promotion, retry, playback-state acceptance, or title-only fallback matching.
-- Use stable source strings in the form `lyricprovider/<player-slug>` and keep them synchronized between the fork and `ExternalLyricSources`.
-- Send `LyricInfoContract.ACTION_EXTERNAL_LYRIC_CAPTURED` explicitly to `com.android.systemui`; include timed `rawLyric`, a normalized `trackKey` or strong media id/uri, and `translationLyric` when available.
-- Enable `supportsPlaybackState`, `canPromoteAsAuthoritative`, and `allowsTitleOnlyFallbackMatch` sparingly; these change how aggressively SystemUI accepts provider data before or without official metadata.
-- Update `ExternalLyricSourcesTest` for every new package/source/capability mapping.
+- Keep every player package out of the Bridge `scope.list`.
+- Do not add Provider applicationIds, source ids, private broadcasts, sender kinds, or payload
+  registries to the Bridge.
+- Publish a ColorOS-compatible native `lyricInfo` payload from the player's own MediaSession.
+- Keep track identity, generation, replay, artwork, and player-specific reflection inside the
+  Provider.
+- Add a player package to `PlayerSystemUiPolicy` only for a device-proven SystemUI/OPlus
+  compatibility requirement or translation action policy.
+- Verify the Provider without Bridge first, then verify that Bridge adds enhancement without a
+  second lyric submission.
 
-Provider APKs remain auxiliary modules. They are not bundled into the bridge APK and should be signed with the same release keystore used by the bridge release.
+Provider APKs are independent Root / LSPosed modules. They are not bundled into the Bridge APK,
+do not use NPatch, and should be signed with the release keystore selected for the Provider suite.
 
 Validate locally before tagging:
 
@@ -62,7 +69,7 @@ Publish from a clean, committed `main`:
 - Commit the release changes with a short subject such as `Release v2.0.1`.
 - Push `main`, then create and push the source tag `v<version>`.
 - The `Release APK Bundle` workflow builds the bridge from this repository and builds provider APKs from `Andrea-lyz/LyricProvider`. On manual dispatch, set `lyric_provider_ref` when the provider release must use a branch, tag, or commit other than `master`.
-- The release workflow must upload the bridge APK, every release-ready LyricProvider APK, and `LyricProvider-All-v<version>.zip` to both the source GitHub release and the LSPosed mirror release. Current assets are `ColorOS-Live-Lyrics-Bridge-v<version>.apk`, `LyricProvider-Metrolist-v<version>.apk`, `LyricProvider-QQMusic-v<version>.apk`, `LyricProvider-163Music-v<version>.apk`, `LyricProvider-AppleMusic-v<version>.apk`, `LyricProvider-Poweramp-v<version>.apk`, `LyricProvider-Spotify-v<version>.apk`, `LyricProvider-QiShui-v<version>.apk`, `LyricProvider-KuGou-v<version>.apk`, `LyricProvider-KuWo-v<version>.apk`, `LyricProvider-LXMusic-v<version>.apk`, and `LyricProvider-All-v<version>.zip`.
+- The release workflow must upload the bridge APK, every release-ready LyricProvider APK, and `LyricProvider-All-v<version>.zip` to both the source GitHub release and the LSPosed mirror release. Current assets are `ColorOS-Live-Lyrics-Bridge-v<version>.apk`, `LyricProvider-Metrolist-v<version>.apk`, `LyricProvider-QQMusic-v<version>.apk`, `LyricProvider-163Music-v<version>.apk`, `LyricProvider-AppleMusic-v<version>.apk`, `LyricProvider-Poweramp-v<version>.apk`, `LyricProvider-Spotify-v<version>.apk`, `LyricProvider-QiShui-v<version>.apk`, `LyricProvider-KuGou-v<version>.apk`, `LyricProvider-KuWo-v<version>.apk`, and `LyricProvider-All-v<version>.zip`. LX Music ships as 4.0 `:player-lx` from ColorOS-Live-Lyrics-Providers, not the retired Lyricon `:lx-music` APK.
 - Provider APKs are auxiliary modules, not bundled into the bridge APK. Keep each player provider as a separate LyricProvider module and sign them with the same release keystore used by the bridge.
 - The LSPosed release tag is derived as `<versionCode>-<versionName>`, for example `101-2.0.1`.
 

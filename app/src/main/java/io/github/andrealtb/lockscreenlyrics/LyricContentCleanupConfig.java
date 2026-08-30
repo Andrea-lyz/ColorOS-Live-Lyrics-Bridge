@@ -125,9 +125,9 @@ final class LyricContentCleanupConfig {
             JSONObject object = new JSONObject(encoded);
             if (object.optInt("schema", -1) != SCHEMA_VERSION) return null;
             Builder builder = new Builder()
-                    .copyrightNoticesEnabled(object.optBoolean("copyright", true))
-                    .productionCreditsEnabled(object.optBoolean("production", true))
-                    .titleArtistLeadEnabled(object.optBoolean("titleArtist", true));
+                    .copyrightNoticesEnabled(object.optBoolean("copyright", false))
+                    .productionCreditsEnabled(object.optBoolean("production", false))
+                    .titleArtistLeadEnabled(object.optBoolean("titleArtist", false));
             JSONArray learned = object.optJSONArray("learned");
             if (learned != null) {
                 for (int index = 0; index < learned.length(); index++) {
@@ -224,9 +224,9 @@ final class LyricContentCleanupConfig {
     }
 
     static final class Builder {
-        private boolean copyrightNoticesEnabled = true;
-        private boolean productionCreditsEnabled = true;
-        private boolean titleArtistLeadEnabled = true;
+        private boolean copyrightNoticesEnabled;
+        private boolean productionCreditsEnabled;
+        private boolean titleArtistLeadEnabled;
         private final LinkedHashSet<LearnedRule> learnedRules = new LinkedHashSet<>();
         private final LinkedHashMap<String, String> firstFormalLineByTrack =
                 new LinkedHashMap<>();

@@ -40,7 +40,7 @@ final class OplusLyricNormalizer {
 
                 long timeMillis = parseLrcTimeMillis(firstTag.group(1));
                 String text = cleanPlainLyricText(line.substring(firstTag.end()));
-                if (text.isEmpty() || isParsingProtectedLine(text)) {
+                if (text.isEmpty()) {
                     continue;
                 }
 
@@ -75,10 +75,6 @@ final class OplusLyricNormalizer {
 
     static boolean isNonLyricInfoLine(String text, long timeMillis) {
         return LyricMetadataFilter.isNonLyricInfoLine(text, timeMillis);
-    }
-
-    private static boolean isParsingProtectedLine(String text) {
-        return LyricMetadataFilter.isParsingProtectedLine(text);
     }
 
     private static void appendGroupedLyricLine(StringBuilder out, TimedLyricGroup group) {

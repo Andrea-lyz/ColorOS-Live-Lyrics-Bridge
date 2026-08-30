@@ -24,12 +24,22 @@
 
 ## 3. Provider 接入要求
 
-- 能提供翻译的播放器：在 v4 直达广播中声明 translationToggle 能力，并持续发送合法的
+- 能提供翻译的 v4 Provider：在直达广播中声明 translationToggle 能力，并持续发送合法的
   translationLyric（带时间戳的 LRC）。
 - 拿不到翻译的播放器（Spotify、Metrolist）：不得声明 translationToggle。
-- 外部 Provider 不需要任何注入逻辑；按钮由 SystemUI 侧替换收藏槽位实现。
-- 内置适配器（Salt、Cone 等）：调用 installInjectedTranslationToggleActionHook 走公开按钮
-  （public）路径，收藏槽位不受影响。
+- 外部 v4 Provider 不需要播放器进程注入；按钮由 SystemUI 侧替换收藏槽位实现。
+- 原生 `lyricInfo` 播放器若收藏不在 CustomAction 首位（Salt、Cone，以及汽水 / Poweramp / LX）：
+  在播放器进程的 `MediaSession#setPlaybackState` 把
+  `io.github.andrealtb.lockscreenlyrics.action.TOGGLE_TRANSLATION` 插到自定义动作列表首位，
+  走公开按钮（public）路径。播放器必须忽略该动作回调。Salt / Cone 的收藏 / 桌面歌词槽位
+  不受影响。Poweramp 没有原生收藏 CustomAction：暂停后再切歌时 ColorOS 会按
+  `PAUSED → PLAYING` 重建五键行，可见收藏槽变成 OPlus heart，public action 仍留在 Rule0
+  却不再显示。Bridge 在 `protocol=public` 之后把 heart **原地**绑成翻译按钮
+  （`protocol=public-heart`），不得把 heart 提升进 Rule0，也不得对 Salt / Cone / LX
+  做同样的 heart 叠加。
+- 4.0 Salt / Cone Provider 使用 `provider-core` 的 `PlaybackStateTranslationToggle`。
+  不得把 Bridge `installInjectedTranslationToggleActionHook` 或 Salt/Cone `PlayerAdapter`
+  接回去，也不得把 `protocol=salt-legacy`（占用 `com.salt.music.desktop_lyrics`）当主路径。
 
 ## 4. 设置项
 
@@ -53,6 +63,14 @@ Apple Music 的收藏是评分式槽位（MediaMetadata USER_RATING/RATING），
 - 按钮诊断日志只在 debug 构建存在（TRANSLATION_BUTTON_DIAGNOSTICS_ENABLED = BuildConfig.DEBUG），
   必须安装 assembleDebug 产物并抓 LockscreenLyrics Tag。
 - 关键日志行：inspect Rule0 actions、override fallback located ...、configure translation
-  action、Configured lyricInfo translation toggle、no translation action candidate。
+  action、bind OPlus heart alongside public translation action、Configured lyricInfo
+  translation toggle（`protocol=public` / `public-heart`）、no translation action candidate。
+  Poweramp 暂停后再切歌应同时看到 `heart=` 非 null 与 `protocol=public-heart`。
 - 真机验证矩阵：开关开 → 收藏槽位变为翻译按钮（日志确认替换的是收藏而非扬声器切换）、点击切换
   翻译行、重启保持；开关关 → 收藏恢复、无翻译按钮；扬声器切换全程不受影响。
+- Poweramp 验收：首次播放有按钮；播放中连切按钮仍在；暂停一次再切歌，下一首必须直接出现按钮，
+  不必再暂停刷新。暂停时歌词/进度仍停住（无延迟 `setPlaybackState`）。
+- Salt / Cone 验收：debug Bridge 日志应为 `hasPublicAction=true` 且
+  `configure translation action … protocol=public`。不得把 `protocol=salt-legacy` 当作主路径，
+  也不得出现 `protocol=public-heart`。
+  Provider 侧应出现一次 `event=TRANSLATION_ACTION_INJECTED reason=public`。

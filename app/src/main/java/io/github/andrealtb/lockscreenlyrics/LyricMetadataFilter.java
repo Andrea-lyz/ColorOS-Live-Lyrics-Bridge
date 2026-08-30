@@ -20,22 +20,10 @@ final class LyricMetadataFilter {
         if (isCopyrightOrRightsLine(normalized)) {
             return true;
         }
-        if (isParsingProtectedLine(normalized)) {
-            return true;
-        }
         if (isDisplayProductionDetailLine(normalized, timeMillis)) {
             return true;
         }
         return LockscreenIntegrationPolicy.isLikelyTitleArtistCredit(normalized, timeMillis);
-    }
-
-    /**
-     * Lines whose presence would change lane classification rather than only presentation.
-     * These remain fixed and are deliberately not exposed as user-editable cleanup rules.
-     */
-    static boolean isParsingProtectedLine(String text) {
-        String normalized = normalizeLine(text);
-        return !normalized.isEmpty() && isLyricTranslationProviderCreditLine(normalized);
     }
 
     static boolean isCopyrightOrRightsLine(String text) {
@@ -138,34 +126,6 @@ final class LyricMetadataFilter {
             }
         }
         return result.toString();
-    }
-
-    private static boolean isLyricTranslationProviderCreditLine(String normalized) {
-        String compact = removeWhitespace(normalized);
-        if (compact.isEmpty() || !compact.contains("提供")) {
-            return false;
-        }
-        return compact.startsWith("以下歌词翻译由")
-                || compact.startsWith("以下歌詞翻譯由")
-                || compact.startsWith("本歌词翻译由")
-                || compact.startsWith("本歌詞翻譯由")
-                || compact.startsWith("歌词翻译由")
-                || compact.startsWith("歌詞翻譯由");
-    }
-
-    private static String removeWhitespace(String value) {
-        if (value == null || value.isEmpty()) {
-            return "";
-        }
-        StringBuilder compact = new StringBuilder(value.length());
-        for (int index = 0; index < value.length();) {
-            int codePoint = value.codePointAt(index);
-            if (!Character.isWhitespace(codePoint)) {
-                compact.appendCodePoint(codePoint);
-            }
-            index += Character.charCount(codePoint);
-        }
-        return compact.toString();
     }
 
     private static boolean containsAny(String value, String... needles) {

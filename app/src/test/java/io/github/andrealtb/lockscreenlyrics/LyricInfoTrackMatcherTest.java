@@ -21,65 +21,7 @@ public final class LyricInfoTrackMatcherTest {
     }
 
     @Test
-    public void currentRawTrackHintIsStrongSaltFallbackEvidence() throws Exception {
-        LyricInfoContract.Payload payload = payload(
-                "Next Song",
-                "Artist B",
-                "",
-                "[ti:Next Song]\n[ar:Artist B]\n[00:00]fresh line");
-
-        assertTrue(LyricInfoTrackMatcher.hasStrongTrackEvidence(
-                payload,
-                "Next Song",
-                "Artist B"));
-        assertFalse(LyricInfoTrackMatcher.shouldClearSaltPlayerFallbackLyricInfo(
-                payload,
-                "Next Song",
-                "Artist B",
-                true,
-                false,
-                false,
-                false));
-    }
-
-    @Test
-    public void saltFallbackWithoutStrongEvidenceIsUnsafeOnTrackChange() throws Exception {
-        LyricInfoContract.Payload payload = payload(
-                "Instrumental Gap",
-                "Artist B",
-                "com.salt.music",
-                "[00:00]old retained line");
-
-        assertTrue(LyricInfoTrackMatcher.shouldClearSaltPlayerFallbackLyricInfo(
-                payload,
-                "Instrumental Gap",
-                "Artist B",
-                true,
-                false,
-                false,
-                false));
-    }
-
-    @Test
-    public void capturedCurrentLyricPreventsClearingSaltFallback() throws Exception {
-        LyricInfoContract.Payload payload = payload(
-                "Instrumental Gap",
-                "Artist B",
-                "com.salt.music",
-                "[00:00]line");
-
-        assertFalse(LyricInfoTrackMatcher.shouldClearSaltPlayerFallbackLyricInfo(
-                payload,
-                "Instrumental Gap",
-                "Artist B",
-                true,
-                false,
-                false,
-                true));
-    }
-
-    @Test
-    public void moduleEnvelopeUsesOriginalTrackKeyAfterDisplayCleanup() {
+    public void nativePayloadUsesOriginalTrackKeyAfterDisplayCleanup() {
         String originalKey = TrackIdentity.buildKey("Song (Live)", "Artist feat. Guest");
         LyricInfoContract.Payload payload = new LyricInfoContract.Payload(
                 "Song",
@@ -89,7 +31,7 @@ public final class LyricInfoTrackMatcherTest {
                 "[00:00]line",
                 "[00:00]line",
                 "",
-                LyricInfoContract.MODULE_PROVIDER,
+                "native-test",
                 originalKey,
                 1L,
                 "test");
@@ -98,6 +40,31 @@ public final class LyricInfoTrackMatcherTest {
                 payload,
                 "Song (Live)",
                 "Artist feat. Guest"));
+    }
+
+    @Test
+    public void providerCoreStableTrackKeyMatchesItsSystemUiTitleAndArtist() {
+        LyricInfoContract.Payload payload = new LyricInfoContract.Payload(
+                "I Knew It, I Knew You (Piano Version)",
+                "Taylor Swift",
+                "",
+                "",
+                "[00:00]line",
+                "[00:00]line",
+                "",
+                "com.lxwalnut.music.mobile",
+                "noid|i knew it, i knew you (piano version)|taylor swift|190",
+                4L,
+                "com.lxwalnut.music.mobile-v5");
+
+        assertTrue(LyricInfoTrackMatcher.payloadMatchesTrack(
+                payload,
+                "I Knew It, I Knew You (Piano Version)",
+                "Taylor Swift"));
+        assertFalse(LyricInfoTrackMatcher.payloadMatchesTrack(
+                payload,
+                "I Knew It, I Knew You (Acoustic Version)",
+                "Taylor Swift"));
     }
 
     private static LyricInfoContract.Payload payload(

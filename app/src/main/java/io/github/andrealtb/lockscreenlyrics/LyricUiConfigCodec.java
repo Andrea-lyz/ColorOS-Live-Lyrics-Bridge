@@ -5,7 +5,22 @@ import java.util.Map;
 
 final class LyricUiConfigCodec {
     static final String SCHEMA = "lyric_ui_schema";
+    static final String ACTIVE_OPACITY = "active_opacity_percent";
+    static final String CURRENT_UNREVEALED_OPACITY =
+            "current_unrevealed_opacity_percent";
+    static final String ACTIVE_TRANSLATION_OPACITY =
+            "active_translation_opacity_percent";
+    static final String ACTIVE_TRANSLATION_PROGRESS_OPACITY =
+            "active_translation_progress_opacity_percent";
     static final String INACTIVE_OPACITY = "inactive_opacity_percent";
+    static final String INACTIVE_TRANSLATION_FOLLOWS_MAIN =
+            "inactive_translation_follows_main";
+    static final String INACTIVE_TRANSLATION_OPACITY =
+            "inactive_translation_opacity_percent";
+    static final String VERTICAL_FADE_ENABLED = "vertical_fade_enabled";
+    static final String VERTICAL_FADE_LENGTH = "vertical_fade_length_tenths_dp";
+    static final String INACTIVE_ROW_FADE_ENABLED = "inactive_row_fade_enabled";
+    static final String INACTIVE_ROW_FADE = "inactive_row_fade_percent";
     static final String BLUR_ENABLED = "lyric_ui_inactive_blur_enabled";
     static final String BLUR_RADIUS = "blur_radius_tenths_px";
     static final String SCALE_ENABLED = "lyric_ui_scroll_scale_enabled";
@@ -39,7 +54,21 @@ final class LyricUiConfigCodec {
     static Map<String, Object> encode(LyricUiConfig config) {
         LinkedHashMap<String, Object> values = new LinkedHashMap<>();
         values.put(SCHEMA, LyricUiConfig.SCHEMA_VERSION);
+        values.put(ACTIVE_OPACITY, config.activeOpacityPercent);
+        values.put(CURRENT_UNREVEALED_OPACITY, config.currentUnrevealedOpacityPercent);
+        values.put(ACTIVE_TRANSLATION_OPACITY, config.activeTranslationOpacityPercent);
+        values.put(
+                ACTIVE_TRANSLATION_PROGRESS_OPACITY,
+                config.activeTranslationProgressOpacityPercent);
         values.put(INACTIVE_OPACITY, config.inactiveOpacityPercent);
+        values.put(
+                INACTIVE_TRANSLATION_FOLLOWS_MAIN,
+                config.inactiveTranslationFollowsMain);
+        values.put(INACTIVE_TRANSLATION_OPACITY, config.inactiveTranslationOpacityPercent);
+        values.put(VERTICAL_FADE_ENABLED, config.verticalFadeEnabled);
+        values.put(VERTICAL_FADE_LENGTH, config.verticalFadeLengthTenthsDp);
+        values.put(INACTIVE_ROW_FADE_ENABLED, config.inactiveRowFadeEnabled);
+        values.put(INACTIVE_ROW_FADE, config.inactiveRowFadePercent);
         values.put(BLUR_ENABLED, config.blurEnabled);
         values.put(BLUR_RADIUS, config.blurRadiusTenthsPx);
         values.put(SCALE_ENABLED, config.scaleEnabled);
@@ -71,16 +100,30 @@ final class LyricUiConfigCodec {
             Map<String, ?> values, LyricUiConfig baseline, boolean allowLegacy) {
         LyricUiConfig base = baseline == null ? LyricUiConfig.defaults() : baseline;
         if (values == null || values.isEmpty()) return base;
+        int schema = values.containsKey(SCHEMA)
+                ? integer(values.get(SCHEMA), -1)
+                : 1;
         if (values.containsKey(SCHEMA)) {
-            int schema = integer(values.get(SCHEMA), -1);
-            if (schema != LyricUiConfig.SCHEMA_VERSION && !(allowLegacy && schema == 1)) {
+            if (schema != LyricUiConfig.SCHEMA_VERSION
+                    && !(allowLegacy && (schema == 1 || schema == 2))) {
                 return null;
             }
         } else if (!allowLegacy) {
             return null;
         }
+        boolean migrateVisualLayers = allowLegacy && (schema == 1 || schema == 2);
         LyricUiConfig.Builder builder = base.buildUpon();
+        if (values.containsKey(ACTIVE_OPACITY)) builder.activeOpacityPercent(integer(values.get(ACTIVE_OPACITY), base.activeOpacityPercent));
+        if (values.containsKey(CURRENT_UNREVEALED_OPACITY)) builder.currentUnrevealedOpacityPercent(integer(values.get(CURRENT_UNREVEALED_OPACITY), base.currentUnrevealedOpacityPercent));
+        if (values.containsKey(ACTIVE_TRANSLATION_OPACITY)) builder.activeTranslationOpacityPercent(integer(values.get(ACTIVE_TRANSLATION_OPACITY), base.activeTranslationOpacityPercent));
+        if (values.containsKey(ACTIVE_TRANSLATION_PROGRESS_OPACITY)) builder.activeTranslationProgressOpacityPercent(integer(values.get(ACTIVE_TRANSLATION_PROGRESS_OPACITY), base.activeTranslationProgressOpacityPercent));
         if (values.containsKey(INACTIVE_OPACITY)) builder.inactiveOpacityPercent(integer(values.get(INACTIVE_OPACITY), base.inactiveOpacityPercent));
+        if (values.containsKey(INACTIVE_TRANSLATION_FOLLOWS_MAIN)) builder.inactiveTranslationFollowsMain(bool(values.get(INACTIVE_TRANSLATION_FOLLOWS_MAIN), base.inactiveTranslationFollowsMain));
+        if (values.containsKey(INACTIVE_TRANSLATION_OPACITY)) builder.inactiveTranslationOpacityPercent(integer(values.get(INACTIVE_TRANSLATION_OPACITY), base.inactiveTranslationOpacityPercent));
+        if (values.containsKey(VERTICAL_FADE_ENABLED)) builder.verticalFadeEnabled(bool(values.get(VERTICAL_FADE_ENABLED), base.verticalFadeEnabled));
+        if (values.containsKey(VERTICAL_FADE_LENGTH)) builder.verticalFadeLengthTenthsDp(integer(values.get(VERTICAL_FADE_LENGTH), base.verticalFadeLengthTenthsDp));
+        if (values.containsKey(INACTIVE_ROW_FADE_ENABLED)) builder.inactiveRowFadeEnabled(bool(values.get(INACTIVE_ROW_FADE_ENABLED), base.inactiveRowFadeEnabled));
+        if (values.containsKey(INACTIVE_ROW_FADE)) builder.inactiveRowFadePercent(integer(values.get(INACTIVE_ROW_FADE), base.inactiveRowFadePercent));
         if (values.containsKey(BLUR_ENABLED)) builder.blurEnabled(bool(values.get(BLUR_ENABLED), base.blurEnabled));
         if (values.containsKey(BLUR_RADIUS)) builder.blurRadiusTenthsPx(integer(values.get(BLUR_RADIUS), base.blurRadiusTenthsPx));
         if (values.containsKey(SCALE_ENABLED)) builder.scaleEnabled(bool(values.get(SCALE_ENABLED), base.scaleEnabled));
@@ -106,6 +149,12 @@ final class LyricUiConfigCodec {
         if (values.containsKey(LINE_SPACING)) builder.lineSpacingTenthsDp(integer(values.get(LINE_SPACING), base.lineSpacingTenthsDp));
         if (values.containsKey(WRAPPED_LINE_SPACING)) builder.wrappedLineSpacingTenthsDp(integer(values.get(WRAPPED_LINE_SPACING), base.wrappedLineSpacingTenthsDp));
         LyricUiConfig decoded = builder.build();
+        if (migrateVisualLayers) {
+            decoded = decoded.buildUpon()
+                    .inactiveTranslationOpacityPercent(decoded.inactiveOpacityPercent)
+                    .inactiveRowFadeEnabled(decoded.scaleEnabled || decoded.blurEnabled)
+                    .build();
+        }
         if (allowLegacy && !values.containsKey(LINE_SPACING)) {
             decoded = decoded.buildUpon()
                     .lineSpacingTenthsDp(LyricUiLayoutPolicy.legacyLineSpacingTenthsDp(decoded))

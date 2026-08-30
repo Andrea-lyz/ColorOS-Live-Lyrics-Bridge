@@ -1,27 +1,9 @@
 package io.github.andrealtb.lockscreenlyrics;
 
-final class LockscreenIntegrationPolicy {
-    enum LyricInfoSource {
-        PLAYER_INTEGRATION,
-        MODULE_CAPTURE,
-        PLAYER_FALLBACK,
-        NONE
-    }
+import io.github.andrealtb.lockscreenlyrics.systemui.lyrics.LyricsRecyclerPolicy;
 
+public final class LockscreenIntegrationPolicy {
     private LockscreenIntegrationPolicy() {
-    }
-
-    static LyricInfoSource chooseLyricInfoSource(
-            boolean hasUsablePlayerLyricInfo,
-            boolean hasPlayerIntegrationData,
-            boolean hasCapturedLyricForCurrentTrack) {
-        if (hasPlayerIntegrationData) {
-            return LyricInfoSource.PLAYER_INTEGRATION;
-        }
-        if (hasCapturedLyricForCurrentTrack) {
-            return LyricInfoSource.MODULE_CAPTURE;
-        }
-        return hasUsablePlayerLyricInfo ? LyricInfoSource.PLAYER_FALLBACK : LyricInfoSource.NONE;
     }
 
     static boolean shouldEnableOplusHistoryIntegration(
@@ -100,15 +82,12 @@ final class LockscreenIntegrationPolicy {
                 && previousPosition - nextPosition >= 6_000L;
     }
 
-    static boolean shouldPreserveExternalRendererForSameTrackSeek(
-            boolean likelyTrackRestart,
-            boolean hasExternalModel,
-            boolean externalModelReady,
-            boolean mediaStillMatchesModel) {
-        return likelyTrackRestart
-                && hasExternalModel
-                && externalModelReady
-                && mediaStillMatchesModel;
+    static boolean isFreshPlaybackPositionAfterTrackReset(
+            long lastPositionUpdateTime,
+            long trackResetStartedAtElapsedRealtime) {
+        return lastPositionUpdateTime > 0L
+                && trackResetStartedAtElapsedRealtime > 0L
+                && lastPositionUpdateTime >= trackResetStartedAtElapsedRealtime;
     }
 
     static boolean shouldRetainLyricModeForTransientSurfaceMiss(
@@ -128,8 +107,12 @@ final class LockscreenIntegrationPolicy {
 
     static boolean shouldModulePositionLyricsRecycler(
             boolean aodLowFrameRateMode,
-            boolean screenInteractive) {
-        return aodLowFrameRateMode || !screenInteractive;
+            boolean screenInteractive,
+            boolean systemUiOwnsNativeLyrics) {
+        return LyricsRecyclerPolicy.shouldModulePosition(
+                aodLowFrameRateMode,
+                screenInteractive,
+                systemUiOwnsNativeLyrics);
     }
 
     static boolean isPlaybackPositionJump(
@@ -163,6 +146,58 @@ final class LockscreenIntegrationPolicy {
         return playbackIndex >= 0 ? playbackIndex : fallbackIndex;
     }
 
+    /**
+     * Word reveal follows sung timestamps, not the official first-row alias that
+     * ColorOS often pins at {@code 00:00.000}. The focused first row may stay
+     * centered before the first word; it must not run karaoke progress yet.
+     */
+    static boolean shouldTreatLineAsWordProgressActive(
+            boolean lineMatchesPlaybackActive,
+            boolean beforeFirstProgressStart) {
+        return lineMatchesPlaybackActive && !beforeFirstProgressStart;
+    }
+
+    /**
+     * After a real track change the vendor {@code LyricsRecyclerView.n} can still
+     * point at the previous song's slot. Trust playback until the first word, and
+     * during the track-reset guard reject an official index that is more than one
+     * row away from playback. Interactive lockscreen still owns scrolling.
+     */
+    static boolean shouldTrustOfficialRecyclerActiveLine(
+            boolean systemUiOwnsNativeLyrics,
+            int officialLineIndex,
+            int playbackLineIndex,
+            boolean beforeFirstProgressStart,
+            boolean trackResetGuardActive) {
+        if (officialLineIndex < 0) {
+            return false;
+        }
+        if (systemUiOwnsNativeLyrics) {
+            return true;
+        }
+        if (beforeFirstProgressStart
+                && playbackLineIndex >= 0
+                && officialLineIndex != playbackLineIndex) {
+            return false;
+        }
+        if (trackResetGuardActive
+                && playbackLineIndex >= 0
+                && Math.abs(officialLineIndex - playbackLineIndex) > 1) {
+            return false;
+        }
+        return true;
+    }
+
+    static boolean shouldResetNativePlaybackClock(
+            boolean nativePayload,
+            String boundTrackKey,
+            String nextTrackKey) {
+        return nativePayload
+                && nextTrackKey != null
+                && !nextTrackKey.isEmpty()
+                && !nextTrackKey.equals(boundTrackKey);
+    }
+
     static float officialInactiveRowScale(boolean scaleEnabled, int inactiveScalePercent) {
         if (!scaleEnabled) {
             return 1f;
@@ -185,115 +220,11 @@ final class LockscreenIntegrationPolicy {
                 && motionMode != LyricUiConfig.MOTION_OFF;
     }
 
-    static boolean shouldPreservePowerampPositionForSameTrackReattach(
-            boolean previousExternalTrackKnown,
-            boolean sameExternalTrack,
-            boolean payloadMatchesTrack,
-            boolean powerampModelMatchesTrack) {
-        return (!previousExternalTrackKnown || sameExternalTrack)
-                && payloadMatchesTrack
-                && powerampModelMatchesTrack;
-    }
-
-    static boolean shouldTrustPowerampNativePosition(
-            long nowElapsedRealtime,
-            long authorityUntilElapsedRealtime) {
-        return authorityUntilElapsedRealtime > 0L
-                && nowElapsedRealtime <= authorityUntilElapsedRealtime;
-    }
-
     static boolean isLyricsRecyclerComputingLayoutException(Throwable throwable) {
         String message = throwable == null ? null : throwable.getMessage();
         return message != null
                 && message.contains("LyricsRecyclerView")
                 && message.contains("computing a layout");
-    }
-
-    static boolean isExternalLyricPayloadSizeAcceptable(
-            int lyricInfoChars,
-            int lyricChars,
-            int rawLyricChars,
-            int translationChars,
-            int largestMetadataFieldChars,
-            int maxPayloadFieldChars,
-            int maxTotalPayloadChars,
-            int maxMetadataFieldChars) {
-        if (lyricInfoChars < 0
-                || lyricChars < 0
-                || rawLyricChars < 0
-                || translationChars < 0
-                || largestMetadataFieldChars < 0
-                || maxPayloadFieldChars < 0
-                || maxTotalPayloadChars < 0
-                || maxMetadataFieldChars < 0) {
-            return false;
-        }
-        int largestPayloadField = Math.max(
-                Math.max(lyricInfoChars, lyricChars),
-                Math.max(rawLyricChars, translationChars));
-        long totalPayloadChars = (long) lyricInfoChars
-                + lyricChars
-                + rawLyricChars
-                + translationChars;
-        return largestPayloadField <= maxPayloadFieldChars
-                && totalPayloadChars <= maxTotalPayloadChars
-                && largestMetadataFieldChars <= maxMetadataFieldChars;
-    }
-
-    static boolean shouldAllowGenerationScopedExternalLyricPromotion(
-            boolean sourceAllowsGenerationScopedPromotion,
-            long trackGeneration,
-            boolean currentGeneratedDocument,
-            boolean activePlayerContext) {
-        return sourceAllowsGenerationScopedPromotion
-                && trackGeneration > 0L
-                && currentGeneratedDocument
-                && activePlayerContext;
-    }
-
-    static boolean shouldReplaySystemUiLyricLoadAfterExternalPromotion(
-            boolean sourceRequiresRefresh,
-            boolean currentGeneratedDocument,
-            boolean contextMatchesPlayer,
-            boolean contextMatchesTrack,
-            boolean alreadyCommitted,
-            long contextAgeMillis,
-            long maxContextAgeMillis) {
-        return sourceRequiresRefresh
-                && currentGeneratedDocument
-                && contextMatchesPlayer
-                && contextMatchesTrack
-                && !alreadyCommitted
-                && contextAgeMillis >= 0L
-                && contextAgeMillis <= Math.max(0L, maxContextAgeMillis);
-    }
-
-    static boolean shouldUseRecentSystemUiTrackContext(
-            boolean sourceRequiresRefresh,
-            boolean contextMatchesPlayer,
-            boolean contextMatchesTrack,
-            long contextAgeMillis,
-            long maxContextAgeMillis) {
-        return sourceRequiresRefresh
-                && contextMatchesPlayer
-                && contextMatchesTrack
-                && contextAgeMillis >= 0L
-                && contextAgeMillis <= Math.max(0L, maxContextAgeMillis);
-    }
-
-    static boolean shouldIgnoreExternalPlaybackStateForRecentSystemUiTrack(
-            boolean sourceRequiresRefresh,
-            boolean contextMatchesPlayer,
-            boolean contextMatchesTrack,
-            boolean playbackMatchesCurrentLyricTrack,
-            long contextAgeMillis,
-            long maxContextAgeMillis) {
-        return sourceRequiresRefresh
-                && contextMatchesPlayer
-                && !contextMatchesTrack
-                && playbackMatchesCurrentLyricTrack
-                && contextAgeMillis >= 0L
-                && contextAgeMillis <= Math.max(0L, maxContextAgeMillis);
     }
 
     static int clampSlidingWindowStart(
@@ -447,19 +378,6 @@ final class LockscreenIntegrationPolicy {
             }
         }
         return totalSegments - 1;
-    }
-
-    static boolean shouldPreserveStableLyricInfoForRelay(
-            boolean hasStableModuleLyricInfo,
-            boolean hasFreshIncomingTrackLyric,
-            boolean sameDuration,
-            boolean incomingTitleMatchesCurrentLyric,
-            boolean incomingArtistReferencesStableTrack) {
-        return hasStableModuleLyricInfo
-                && !hasFreshIncomingTrackLyric
-                && sameDuration
-                && incomingTitleMatchesCurrentLyric
-                && incomingArtistReferencesStableTrack;
     }
 
     static boolean hasProgressiveInlineTiming(

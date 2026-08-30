@@ -275,8 +275,7 @@ final class LyricsCoreAdapter {
             if (firstTag.find() && firstTag.start() == 0) {
                 long timeMillis = parseTimeMillis(firstTag);
                 String text = stripLrcTimeTags(line, firstTag.end());
-                if (!text.isEmpty()
-                        && !LyricMetadataFilter.isParsingProtectedLine(text)) {
+                if (!text.isEmpty()) {
                     grouped.computeIfAbsent(timeMillis, ignored -> new ArrayList<>()).add(text);
                 }
             }
@@ -471,9 +470,6 @@ final class LyricsCoreAdapter {
         if (cleanCandidate.isEmpty()) {
             return false;
         }
-        if (LyricMetadataFilter.isParsingProtectedLine(cleanCandidate)) {
-            return false;
-        }
         String primary = primaryIndex >= 0 && primaryIndex < texts.size()
                 ? nullToEmpty(texts.get(primaryIndex)).trim()
                 : "";
@@ -564,13 +560,7 @@ final class LyricsCoreAdapter {
                 }
             }
             String cleanText = text.toString();
-            if (LyricMetadataFilter.isParsingProtectedLine(cleanText)) {
-                return null;
-            }
             String translation = cleanLyricText(karaokeLine.getTranslation());
-            if (LyricMetadataFilter.isParsingProtectedLine(translation)) {
-                translation = "";
-            }
             return new ParsedLine(
                     sourceLine.getStart(),
                     sourceLine.getEnd(),
@@ -582,13 +572,7 @@ final class LyricsCoreAdapter {
         if (sourceLine instanceof SyncedLine) {
             SyncedLine syncedLine = (SyncedLine) sourceLine;
             String text = cleanLyricText(syncedLine.getContent());
-            if (LyricMetadataFilter.isParsingProtectedLine(text)) {
-                return null;
-            }
             String translation = cleanLyricText(syncedLine.getTranslation());
-            if (LyricMetadataFilter.isParsingProtectedLine(translation)) {
-                translation = "";
-            }
             return new ParsedLine(
                     sourceLine.getStart(),
                     sourceLine.getEnd(),

@@ -22,8 +22,9 @@
     <string name="player_cone">ConePlayer</string>
     <string name="player_qq">QQ 音乐</string>
     <string name="player_netease">网易云音乐</string>
+    <string name="player_honor_cloudmusic">荣耀云音乐</string>
     <string name="player_apple">Apple Music</string>
-    <string name="player_lx">LX Music</string>
+    <string name="player_lx">LX Music / Walnut</string>
     <string name="player_poweramp">Poweramp</string>
     <string name="player_spotify">Spotify</string>
     <string name="player_qishui">汽水音乐</string>
@@ -37,9 +38,7 @@
     <string name="sub_trans_button">锁屏媒体卡翻译按钮</string>
     <string name="sub_trans_clear">清除该播放器的翻译记忆</string>
     <string name="sub_trans_clear_toast">将在保存时清除 %1$s 的记忆</string>
-    <string name="sub_trans_status_builtin">内置适配</string>
-    <string name="sub_trans_status_detected">已检测到 LyricProvider</string>
-    <string name="sub_trans_status_missing">未安装对应 LyricProvider</string>
+    <string name="sub_trans_status_configurable">播放器翻译设置可用</string>
     <string name="sub_trans_status_unsupported">不支持翻译</string>
     <string name="sub_trans_save">保存并应用</string>
     <string name="sub_trans_saved">已保存，等待 SystemUI 确认</string>
@@ -48,11 +47,10 @@
     <string name="sub_trans_rejected">SystemUI 拒绝了设置：%1$s</string>
     <!-- 子页面：歌词开头信息清理 -->
     <string name="sub_clean_notice">模块只清理歌词开头的制作、版权等说明，不修改时间轴、逐字效果或歌曲信息。识别不完整时，选择当前歌曲第一句正式歌词即可。</string>
-    <string name="sub_clean_builtin">内置清理规则</string>
+    <string name="sub_clean_builtin">内置清理规则（默认关闭）</string>
     <string name="sub_clean_copyright">版权与权利声明</string>
     <string name="sub_clean_production">制作人员与乐器信息</string>
     <string name="sub_clean_titleartist">开头的“歌名 - 歌手”</string>
-    <string name="sub_clean_protected">翻译来源占位等会影响主歌词/翻译识别的规则属于解析保护，始终启用。</string>
     <string name="sub_clean_reset">恢复内置规则默认值</string>
     <string name="sub_clean_current">检查并修正当前歌曲</string>
     <string name="sub_clean_song_loading">正在读取当前歌曲…</string>
@@ -93,6 +91,11 @@
     <string name="preset_minimal">极简</string>
     <string name="preset_custom">自定义</string>
     <string name="preset_custom_label">自定义 · 参数偏离所有预设</string>
+    <string name="preset_default_summary" formatted="false">官方基线：标准高亮层级、44% 非实时歌词、51.9dp 上下渐隐，不额外淡化非活动行。</string>
+    <string name="preset_soft_summary" formatted="false">柔和层级：36% 非实时歌词、轻量模糊与缩放，并保留旧版 90% 非活动行淡化效果。</string>
+    <string name="preset_vivid_summary" formatted="false">醒目层级：完整光晕、较强模糊与缩放，并保留旧版 90% 非活动行淡化效果。</string>
+    <string name="preset_minimal_summary" formatted="false">极简层级：关闭光晕、模糊和缩放，非实时歌词提高到 55%，不额外淡化。</string>
+    <string name="preset_custom_summary">自定义：至少一项颜色、排版、动效或歌词亮度/渐隐参数偏离四套预设。</string>
     <!-- 主页：绘制与动效 -->
     <string name="setting_inactive_opacity">非活动行不透明度</string>
     <string name="setting_blur">模糊非活动行</string>
@@ -118,13 +121,40 @@
     <!-- 主页：兼容与屏幕 -->
     <string name="link_player_translation">播放器翻译设置</string>
     <string name="link_player_translation_sub">按播放器记忆默认翻译开关</string>
+    <string name="link_config_backup">Bridge 配置备份与恢复</string>
+    <string name="link_config_backup_sub">备份主设置、播放器翻译、开头清理与调试配置</string>
     <string name="link_opening_cleanup">歌词开头信息清理</string>
     <string name="link_opening_cleanup_sub">已学习格式与首句规则</string>
+    <string name="link_debug_logging">调试日志</string>
+    <string name="link_debug_logging_sub">默认关闭；开启后写入 logcat 与 LSPosed 日志</string>
+    <string name="debug_settings_title">调试日志</string>
+    <string name="debug_settings_desc">默认关闭。开启后额外的 [CLL] DEBUG/INFO 会同时写入 Android logcat 和 LSPosed framework log。关闭时只保留启动摘要、关键状态切换、警告和错误。开关不改变歌词、hook 或渲染行为。</string>
+    <string name="debug_master">启用调试日志</string>
+    <string name="debug_areas_title">日志区域</string>
+    <string name="debug_area_bootstrap">bootstrap</string>
+    <string name="debug_area_media">media</string>
+    <string name="debug_area_lyric">lyric</string>
+    <string name="debug_area_renderer">renderer</string>
+    <string name="debug_area_aod">AOD</string>
+    <string name="debug_area_player_special">player-special</string>
+    <string name="debug_area_performance">performance</string>
+    <string name="debug_save">保存并应用</string>
+    <string name="debug_saved">已保存，等待 SystemUI 确认</string>
+    <string name="debug_saved_pending">已保存，但 SystemUI 未确认应用，请检查模块是否已启用</string>
+    <string name="debug_applied">调试设置已应用</string>
+    <string name="debug_rejected">SystemUI 拒绝了调试设置：%1$s</string>
+    <string name="debug_status_unknown">尚未读取到 SystemUI 的调试配置。若模块刚启用，请先重启系统界面。</string>
+    <string name="debug_status_applied">SystemUI 最近一次读取：revision %1$d · 总开关 %2$s · 区域 %3$s</string>
+    <string name="debug_status_on">开</string>
+    <string name="debug_status_off">关</string>
+    <string name="debug_restart_hint">lyric / renderer / AOD / media 区域在保存后立即生效。bootstrap 启动与 hook 安装日志需要重启系统界面后才会出现。</string>
     <string name="setting_line_progress">普通逐行歌词进度</string>
     <string name="setting_translation_progress">翻译进度</string>
+    <string name="translation_progress_dependency_hint">普通逐行歌词需同时开启上一项；逐字歌词可独立使用翻译进度。</string>
     <string name="setting_screen_timeout">歌词显示时保持屏幕点亮</string>
     <string name="setting_screen_timeout_seconds_label">自定义秒数</string>
     <string name="setting_screen_timeout_seconds_hint">留空则保持常亮</string>
+    <string name="refresh_hz_unavailable_preserved">%1$d Hz（当前屏幕不可用，保留）</string>
     <!-- 主页：高级排版 -->
     <string name="setting_font_size">主歌词字号</string>
     <string name="font_size_hint">有翻译：主歌词最高 28sp\n无翻译：自动增加 2sp，最高 30sp</string>
@@ -169,6 +199,70 @@
     <string name="back_discard_message">有未保存的更改，确定丢弃并退出吗？</string>
     <string name="back_discard_title">未保存更改</string>
     <string name="back_discard">丢弃</string>
+    <!-- Bridge 全局配置备份 -->
+    <string name="config_backup_title">Bridge 配置备份与恢复</string>
+    <string name="config_backup_description">这是 Bridge 全局配置维护页，不属于歌词亮度子页。备份覆盖模块 App 持有的全部配置域；恢复或重置后会重新同步到 SystemUI。</string>
+    <string name="config_backup_scope_title">备份范围</string>
+    <string name="config_backup_scope_body">• 主设置与 schema v3 歌词 UI
+• 全局/逐播放器翻译默认值与翻译按钮
+• 开头歌词清理、学习规则与逐曲修正
+• 调试总开关、区域开关与 revision
+• 设置页语言等 Bridge 偏好</string>
+    <string name="config_backup_actions_title">备份操作</string>
+    <string name="config_backup_copy">复制完整 Bridge 备份</string>
+    <string name="config_backup_restore">从剪贴板恢复</string>
+    <string name="config_backup_reset">重置全部 Bridge 配置</string>
+    <string name="config_backup_downgrade_warning">备份使用带类型和命名空间的 Bridge Backup v1 格式。旧 APK 不保证识别 schema v3；降级前先备份，必要时在旧版中重置。</string>
+    <string name="config_backup_clip_label">Bridge 完整配置备份</string>
+    <string name="config_backup_copied">Bridge 完整配置已复制</string>
+    <string name="config_backup_clipboard_unavailable">无法访问剪贴板</string>
+    <string name="config_backup_clipboard_empty">剪贴板中没有可恢复的文本</string>
+    <string name="config_backup_restore_confirm_title">恢复 Bridge 配置？</string>
+    <string name="config_backup_restore_confirm_message">当前主设置、播放器翻译、开头清理和调试配置将被备份内容覆盖，并立即同步到 SystemUI。</string>
+    <string name="config_backup_restore_confirm">恢复</string>
+    <string name="config_backup_restored">Bridge 配置已恢复并同步</string>
+    <string name="config_backup_restored_restart">Bridge 配置已恢复，但实时同步不完整；请重启 SystemUI</string>
+    <string name="config_backup_restore_failed">恢复失败：%1$s</string>
+    <string name="config_backup_reset_confirm_title">重置全部 Bridge 配置？</string>
+    <string name="config_backup_reset_confirm_message">这会清除主设置、播放器翻译、开头清理、调试和语言偏好。该操作无法撤销，建议先复制完整备份。</string>
+    <string name="config_backup_reset_confirm">全部重置</string>
+    <string name="config_backup_reset_done">Bridge 配置已全部重置并同步</string>
+    <string name="config_backup_reset_restart">Bridge 配置已重置，但实时同步不完整；请重启 SystemUI</string>
+    <string name="config_backup_reset_failed">重置失败：%1$s</string>
+    <!-- 歌词亮度与渐隐子页 -->
+    <string name="visual_layers_settings_title">歌词亮度与渐隐</string>
+    <string name="link_visual_layers">歌词亮度与渐隐</string>
+    <string name="link_visual_layers_summary">实时 %1$d%% · 非实时 %2$d%% · 边缘%3$s</string>
+    <string name="visual_state_on">开</string>
+    <string name="visual_state_off">关</string>
+    <string name="visual_layers_description">调整歌词各层级亮度与列表上下边缘渐隐。预览固定在顶部，并使用与 SystemUI 相同的透明度策略。</string>
+    <string name="visual_preview_title">实时预览</string>
+    <string name="visual_preview_content_description">歌词亮度、翻译层级、非活动行淡化与上下边缘渐隐预览</string>
+    <string name="visual_section_brightness">歌词亮度层级</string>
+    <string name="visual_section_edges">上下边缘渐隐</string>
+    <string name="visual_active_opacity">实时歌词高亮</string>
+    <string name="visual_current_unrevealed_opacity">当前行未高亮部分</string>
+    <string name="visual_active_translation_opacity">实时翻译</string>
+    <string name="visual_active_translation_progress_opacity">实时翻译进度</string>
+    <string name="visual_inactive_main_opacity">非实时歌词</string>
+    <string name="visual_inactive_translation_follows_main">非实时翻译跟随正文</string>
+    <string name="visual_inactive_translation_opacity">非实时翻译</string>
+    <string name="visual_vertical_fade_enabled">启用上下边缘渐隐</string>
+    <string name="visual_vertical_fade_length">渐隐长度</string>
+    <string name="visual_inactive_row_fade_enabled">非活动行额外淡化</string>
+    <string name="visual_inactive_row_fade_opacity">额外淡化后保留</string>
+    <string name="visual_edge_help">渐隐长度决定 RecyclerView 顶部和底部的渐变覆盖区域，不代表固定第 1/2 行透明度。关闭开关时会保留长度和淡化百分比。</string>
+    <string name="visual_value_percent">%1$d%%</string>
+    <string name="visual_value_effective">%1$d→%2$.1f%%</string>
+    <string name="visual_value_dp">%1$d dp</string>
+    <string name="visual_status_saved">已与保存配置同步</string>
+    <string name="visual_status_unsaved">未保存 · 预览仅显示当前草稿</string>
+    <string name="visual_preview_inactive_one_main">上一行歌词缓缓淡出</string>
+    <string name="visual_preview_inactive_one_translation">Previous lyric line</string>
+    <string name="visual_preview_active_main">正在播放的实时歌词</string>
+    <string name="visual_preview_active_translation">Active translation preview</string>
+    <string name="visual_preview_inactive_two_main">下一行歌词等待播放</string>
+    <string name="visual_preview_inactive_two_translation">Next lyric line</string>
     <!-- 主页：预览示例文本 -->
     <string-array name="preview_main_lines">
         <item>\'Cause there were pages turned</item>

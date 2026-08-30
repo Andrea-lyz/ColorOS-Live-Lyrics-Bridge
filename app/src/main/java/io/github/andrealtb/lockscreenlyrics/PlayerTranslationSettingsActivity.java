@@ -2,7 +2,6 @@ package io.github.andrealtb.lockscreenlyrics;
 
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -81,7 +80,6 @@ public final class PlayerTranslationSettingsActivity extends SettingsBaseActivit
         int entryIndex = 0;
         for (PlayerTranslationSettings.Entry entry : PlayerTranslationSettings.entries()) {
             String playerName = getString(entry.labelRes);
-            boolean available = entry.isBuiltIn() || isPackageInstalled(entry.providerPackage);
             LinearLayout card = paddedCard();
 
             LinearLayout header = new LinearLayout(this);
@@ -111,20 +109,10 @@ public final class PlayerTranslationSettingsActivity extends SettingsBaseActivit
             String statusText;
             if (!entry.supportsTranslation) {
                 statusText = getString(R.string.sub_trans_status_unsupported);
-                if (!entry.isBuiltIn() && !available) {
-                    statusText = statusText
-                            + " · "
-                            + getString(R.string.sub_trans_status_missing);
-                }
             } else {
-                statusText = entry.isBuiltIn()
-                        ? getString(R.string.sub_trans_status_builtin)
-                        : available
-                        ? getString(R.string.sub_trans_status_detected)
-                        : getString(R.string.sub_trans_status_missing);
+                statusText = getString(R.string.sub_trans_status_configurable);
             }
-            TextView status = text(statusText, 10.5f,
-                    available ? 0xFF5F6368 : 0xFF9AA0A6);
+            TextView status = text(statusText, 10.5f, 0xFF5F6368);
             status.setPadding(0, dp(2), 0, 0);
             labels.addView(status, matchWrap());
             header.addView(labels, new LinearLayout.LayoutParams(
@@ -160,19 +148,14 @@ public final class PlayerTranslationSettingsActivity extends SettingsBaseActivit
                             getString(R.string.sub_trans_clear_toast, playerName),
                             Toast.LENGTH_SHORT).show();
                 });
-                defaultMaterialSwitch.setEnabled(available);
-                buttonMaterialSwitch.setEnabled(available);
-                clear.setEnabled(available);
                 card.addView(defaultMaterialSwitch, matchWrap());
                 card.addView(buttonMaterialSwitch, matchWrap());
                 card.addView(clear, matchWrap());
             }
-            card.setAlpha(available ? 1f : 0.48f);
             entryViews.add(new EntryView(
                     entry,
                     defaultMaterialSwitch,
-                    buttonMaterialSwitch,
-                    available));
+                    buttonMaterialSwitch));
             content.addView(card, marginBottom(dp(12)));
             entryIndex++;
         }
@@ -226,7 +209,7 @@ public final class PlayerTranslationSettingsActivity extends SettingsBaseActivit
         ArrayList<Boolean> buttonValues = new ArrayList<>();
         SharedPreferences.Editor editor = preferences.edit();
         for (EntryView entryView : entryViews) {
-            if (!entryView.available || entryView.defaultMaterialSwitch == null) continue;
+            if (entryView.defaultMaterialSwitch == null) continue;
             boolean enabled = entryView.defaultMaterialSwitch.isChecked();
             boolean buttonEnabled = entryView.buttonMaterialSwitch.isChecked();
             for (String packageName : entryView.entry.playerPackages) {
@@ -352,31 +335,17 @@ public final class PlayerTranslationSettingsActivity extends SettingsBaseActivit
     }
 
     @SuppressWarnings("deprecation")
-    private boolean isPackageInstalled(String packageName) {
-        if (packageName == null || packageName.isEmpty()) return false;
-        try {
-            getPackageManager().getPackageInfo(packageName, PackageManager.GET_META_DATA);
-            return true;
-        } catch (PackageManager.NameNotFoundException ignored) {
-            return false;
-        }
-    }
-
     private static final class EntryView {
         final PlayerTranslationSettings.Entry entry;
         final MaterialSwitch defaultMaterialSwitch;
         final MaterialSwitch buttonMaterialSwitch;
-        final boolean available;
-
         EntryView(
                 PlayerTranslationSettings.Entry entry,
                 MaterialSwitch defaultMaterialSwitch,
-                MaterialSwitch buttonMaterialSwitch,
-                boolean available) {
+                MaterialSwitch buttonMaterialSwitch) {
             this.entry = entry;
             this.defaultMaterialSwitch = defaultMaterialSwitch;
             this.buttonMaterialSwitch = buttonMaterialSwitch;
-            this.available = available;
         }
     }
 }

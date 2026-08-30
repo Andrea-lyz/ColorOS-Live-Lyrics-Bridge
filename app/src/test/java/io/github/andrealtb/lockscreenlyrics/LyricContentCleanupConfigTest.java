@@ -11,13 +11,18 @@ import org.junit.Test;
 public final class LyricContentCleanupConfigTest {
     @Test
     public void defaultsAndRoundTripPreserveSafeRules() {
+        LyricContentCleanupConfig defaults = LyricContentCleanupConfig.defaults();
+        assertFalse(defaults.copyrightNoticesEnabled);
+        assertFalse(defaults.productionCreditsEnabled);
+        assertFalse(defaults.titleArtistLeadEnabled);
+
         LyricContentCleanupConfig.LearnedRule prefix =
                 new LyricContentCleanupConfig.LearnedRule(
                         LyricContentCleanupConfig.LearnedType.PREFIX,
                         "Produced by：");
         LyricContentCleanupConfig source = LyricContentCleanupConfig.defaults()
                 .buildUpon()
-                .copyrightNoticesEnabled(false)
+                .productionCreditsEnabled(true)
                 .addLearnedRule(prefix)
                 .firstFormalLine("track", LyricOpeningCleanup.fingerprint("First lyric"))
                 .build();
@@ -26,6 +31,7 @@ public final class LyricContentCleanupConfigTest {
 
         assertFalse(decoded.copyrightNoticesEnabled);
         assertTrue(decoded.productionCreditsEnabled);
+        assertFalse(decoded.titleArtistLeadEnabled);
         assertEquals("produced by:", decoded.learnedRules.get(0).value);
         assertEquals(
                 LyricOpeningCleanup.fingerprint("First lyric"),

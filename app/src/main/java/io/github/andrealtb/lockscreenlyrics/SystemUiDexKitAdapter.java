@@ -21,7 +21,7 @@ import java.util.Set;
 import java.util.function.Predicate;
 
 @SuppressLint("PrivateApi") // This resolver only targets LSPosed-hosted vendor SystemUI classes.
-final class SystemUiDexKitAdapter {
+public final class SystemUiDexKitAdapter {
     private static final Object DEXKIT_LOAD_LOCK = new Object();
 
     private static volatile boolean dexKitLoaded;
@@ -500,7 +500,7 @@ final class SystemUiDexKitAdapter {
         return Arrays.equals(method.getParameterTypes(), parameterTypes);
     }
 
-    static final class Targets {
+    public static final class Targets {
         final Method dealEndTag;
         final Method saveListToSp;
         /** Present on ColorOS 16.0.9.x style builds; {@code null} on 16.0.10.x style builds. */

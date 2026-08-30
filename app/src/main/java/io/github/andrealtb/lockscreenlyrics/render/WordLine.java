@@ -154,6 +154,18 @@ public final class WordLine {
         return index >= 0 ? words.get(index) : null;
     }
 
+    public long firstProgressStartMillis() {
+        if (timingMode == LyricTimingMode.WORD_TIMED
+                && words != null
+                && !words.isEmpty()) {
+            WordRange firstWord = words.get(0);
+            if (firstWord != null && firstWord.timeMillis >= 0L) {
+                return firstWord.timeMillis;
+            }
+        }
+        return timeMillis;
+    }
+
     public int findWordIndex(long position) {
         if (words == null || words.isEmpty()) {
             return -1;
@@ -167,7 +179,7 @@ public final class WordLine {
                 break;
             }
         }
-        return fallback >= 0 ? fallback : words.isEmpty() ? -1 : 0;
+        return fallback;
     }
 
     public long delayToNextWordMillis(long position) {
@@ -185,9 +197,9 @@ public final class WordLine {
         }
         long begin = words.get(index).timeMillis;
         if (index + 1 < words.size()) {
-            return Math.max(begin + 80L, words.get(index + 1).timeMillis);
+            return Math.max(begin + WordLyricRenderSupport.MIN_WORD_REVEAL_MS, words.get(index + 1).timeMillis);
         }
-        return Math.max(begin + 80L, endTimeMillis);
+        return WordLyricRenderSupport.lastWordRevealEndMillis(begin, endTimeMillis, words);
     }
 
     public float wordProgress(int index, long position) {

@@ -174,7 +174,7 @@ public final class OplusLyricNormalizerTest {
     }
 
     @Test
-    public void lyricTranslationProviderCreditIsRemoved() {
+    public void lyricTranslationProviderCreditPassesThroughOfficialList() {
         String lrc = "[00:00.000]I did something bad\n"
                 + "[00:00.000]我做了一件坏事\n"
                 + "[00:04.000]以下歌词翻译由 Salt Player 提供\n"
@@ -184,6 +184,7 @@ public final class OplusLyricNormalizerTest {
         String normalized = OplusLyricNormalizer.normalizeForOfficialList(lrc);
 
         assertEquals("[00:00.000]I did something bad\n"
+                + "[00:04.000]以下歌词翻译由 Salt Player 提供\n"
                 + "[00:08.000]Then why's it feel so good?\n"
                 + "[00:16.000]" + LyricTextSanitizer.ZERO_WIDTH_SPACE + "", normalized);
     }

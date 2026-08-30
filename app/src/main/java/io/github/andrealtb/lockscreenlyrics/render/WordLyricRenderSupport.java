@@ -26,11 +26,134 @@ public final class WordLyricRenderSupport {
         return value == null || value.isEmpty();
     }
 
+    /**
+     * Word-timed karaoke, including the translation overlay, must stay at 0 until
+     * the first word timestamp. QRC {@code t.b} / ColorOS {@code line.begin} can
+     * sit hundreds of milliseconds to two seconds earlier; using that as
+     * line-elapsed progress walks the translation during the intro and then
+     * snaps back when word mapping starts.
+     */
+    public static boolean shouldHoldWordTimedReveal(WordLine line, long position) {
+        if (line == null || line.timingMode != LyricTimingMode.WORD_TIMED) {
+            return false;
+        }
+        if (line.words == null || line.words.isEmpty()) {
+            return false;
+        }
+        return line.findWordIndex(position) < 0;
+    }
+
+    public static final long MIN_WORD_REVEAL_MS = 80L;
+    public static final long DEFAULT_LAST_WORD_REVEAL_MS = 280L;
+    public static final long MAX_LAST_WORD_REVEAL_MS = 400L;
+
     public static long inferWordLineEndMillis(long timeMillis, ArrayList<WordRange> words) {
         if (words == null || words.isEmpty()) {
             return timeMillis + 600L;
         }
         return Math.max(timeMillis + 600L, words.get(words.size() - 1).timeMillis + 520L);
+    }
+
+    /**
+     * Median adjacent-word gap in {@code words}, used so the last syllable
+     * reveals at the same pace as the rest of the line. QRC/KRC trailing time
+     * tags mark the next line, not last-word duration.
+     */
+    public static long typicalWordRevealDurationMillis(ArrayList<WordRange> words) {
+        if (words == null || words.size() < 2) {
+            return DEFAULT_LAST_WORD_REVEAL_MS;
+        }
+        long[] gaps = new long[words.size() - 1];
+        int count = 0;
+        for (int i = 1; i < words.size(); i++) {
+            long gap = words.get(i).timeMillis - words.get(i - 1).timeMillis;
+            if (gap > 0L) {
+                gaps[count++] = gap;
+            }
+        }
+        if (count <= 0) {
+            return DEFAULT_LAST_WORD_REVEAL_MS;
+        }
+        java.util.Arrays.sort(gaps, 0, count);
+        long median = (count & 1) == 1
+                ? gaps[count / 2]
+                : (gaps[count / 2 - 1] + gaps[count / 2]) / 2L;
+        return Math.max(
+                MIN_WORD_REVEAL_MS,
+                Math.min(MAX_LAST_WORD_REVEAL_MS, median));
+    }
+
+    /**
+     * Visual end of the last word. Line {@code endTimeMillis} is kept as the
+     * row lifetime; karaoke must not interpolate across the rest / next-line
+     * pre-roll or the last word crawls and the next row replaces it unfinished.
+     */
+    public static long lastWordRevealEndMillis(
+            long lastWordBegin,
+            long lineEndMillis,
+            ArrayList<WordRange> words) {
+        long duration = typicalWordRevealDurationMillis(words);
+        long visualEnd = lastWordBegin + duration;
+        if (lineEndMillis > lastWordBegin) {
+            visualEnd = Math.min(visualEnd, lineEndMillis);
+        }
+        return Math.max(lastWordBegin + MIN_WORD_REVEAL_MS, visualEnd);
+    }
+
+    public static long wordRevealEndMillis(WordLyricModel model, WordLine line, int index) {
+        if (line == null || line.words == null || index < 0 || index >= line.words.size()) {
+            return line == null ? 0L : line.timeMillis + 600L;
+        }
+        long end = line.wordEndMillis(index);
+        if (model == null || index != line.words.size() - 1) {
+            return end;
+        }
+        long begin = line.words.get(index).timeMillis;
+        int lineIndex = model.indexOfLine(line);
+        WordLine next = lineIndex >= 0 ? model.lineAt(lineIndex + 1) : null;
+        if (next != null && next.timeMillis > begin) {
+            end = Math.min(end, next.timeMillis);
+        }
+        return Math.max(begin + 1L, end);
+    }
+
+    public static float wordRevealProgress(
+            WordLyricModel model,
+            WordLine line,
+            int index,
+            long position) {
+        if (line == null || line.words == null || index < 0 || index >= line.words.size()) {
+            return 0f;
+        }
+        long begin = line.words.get(index).timeMillis;
+        long end = wordRevealEndMillis(model, line, index);
+        if (position <= begin) {
+            return 0f;
+        }
+        if (position >= end) {
+            return 1f;
+        }
+        return (float) (position - begin) / (float) Math.max(1L, end - begin);
+    }
+
+    /**
+     * A one-word interjection whose whole lifetime is shorter than a useful
+     * karaoke sweep should use timestamp-gated full-row highlighting instead.
+     * The real next-line handoff is preserved; only the visual mode changes.
+     */
+    public static boolean shouldUseTimestampHighlight(
+            WordLyricModel model,
+            WordLine line) {
+        if (model == null
+                || line == null
+                || line.timingMode != LyricTimingMode.WORD_TIMED
+                || line.words == null
+                || line.words.size() != 1) {
+            return false;
+        }
+        long begin = line.words.get(0).timeMillis;
+        long end = wordRevealEndMillis(model, line, 0);
+        return end > begin && end - begin < MIN_WORD_REVEAL_MS;
     }
 
     public static String nullToEmpty(String value) {

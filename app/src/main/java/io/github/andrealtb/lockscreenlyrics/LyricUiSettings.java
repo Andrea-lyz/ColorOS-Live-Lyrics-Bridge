@@ -14,6 +14,8 @@ final class LyricUiSettings {
             "io.github.andrealtb.lockscreenlyrics.action.PLAYER_TRANSLATION_SETTINGS_CHANGED";
     static final String ACTION_CONTENT_CLEANUP_CHANGED =
             "io.github.andrealtb.lockscreenlyrics.action.CONTENT_CLEANUP_CHANGED";
+    static final String ACTION_DEBUG_SETTINGS_CHANGED =
+            "io.github.andrealtb.lockscreenlyrics.action.DEBUG_SETTINGS_CHANGED";
     /** Requests a restart of the main SystemUI process through the protected settings receiver. */
     static final String ACTION_RESTART_SYSTEM_UI =
             "io.github.andrealtb.lockscreenlyrics.action.RESTART_SYSTEM_UI";
@@ -61,7 +63,10 @@ final class LyricUiSettings {
     static final int RESULT_SETTINGS_APPLIED = 1;
     static final int RESULT_SETTINGS_REJECTED = 2;
     static final String SOURCE_MAIN_SETTINGS = "main-settings";
+    static final String SOURCE_VISUAL_LAYERS = "visual-layers";
+    static final String SOURCE_CONFIG_BACKUP = "config-backup";
     static final String SOURCE_PLAYER_TRANSLATION = "player-translation";
+    static final String SOURCE_DEBUG_SETTINGS = "debug-settings";
     static final String TRANSLATION_PREFERENCE_KEY = "lyric_info_translation_enabled";
     private static final String TRANSLATION_DEFAULT_KEY = "lyric_info_translation_default";
     private static final String TRANSLATION_BUTTON_KEY = "lyric_info_translation_button";
@@ -89,6 +94,30 @@ final class LyricUiSettings {
             return DEFAULT_SCREEN_TIMEOUT_SECONDS;
         }
         return Math.min(MAX_SCREEN_TIMEOUT_SECONDS, Math.max(MIN_SCREEN_TIMEOUT_SECONDS, seconds));
+    }
+
+    static int parseScreenTimeoutSeconds(String value) {
+        String text = value == null ? "" : value.trim();
+        if (text.isEmpty()) return DEFAULT_SCREEN_TIMEOUT_SECONDS;
+        try {
+            long parsed = Long.parseLong(text);
+            if (parsed <= 0L) return DEFAULT_SCREEN_TIMEOUT_SECONDS;
+            return (int) Math.min(MAX_SCREEN_TIMEOUT_SECONDS, parsed);
+        } catch (NumberFormatException ignored) {
+            // A digit-only value larger than long still means "maximum", not "keep on".
+            for (int index = 0; index < text.length(); index++) {
+                if (!Character.isDigit(text.charAt(index))) {
+                    return DEFAULT_SCREEN_TIMEOUT_SECONDS;
+                }
+            }
+            return text.isEmpty() ? DEFAULT_SCREEN_TIMEOUT_SECONDS : MAX_SCREEN_TIMEOUT_SECONDS;
+        }
+    }
+
+    static boolean shouldShowTranslationProgressDependencyHint(
+            boolean lineTimedProgressEnabled,
+            boolean translationProgressEnabled) {
+        return translationProgressEnabled && !lineTimedProgressEnabled;
     }
 
     static boolean isTranslationOverrideKey(String key) {

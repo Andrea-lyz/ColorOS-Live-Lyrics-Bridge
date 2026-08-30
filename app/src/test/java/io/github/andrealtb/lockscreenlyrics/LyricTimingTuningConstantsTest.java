@@ -61,54 +61,7 @@ public final class LyricTimingTuningConstantsTest {
     }
 
     @Test
-    public void externalLyricSoftHandoffMasksMatchKnownGoodBaseline() {
-        assertEquals(2_000L,
-                LyricTimingTuningConstants.ExternalLyric.REBROADCAST_DELAY_MS);
-        assertEquals(2_200L,
-                LyricTimingTuningConstants.ExternalLyric.SOFT_HANDOFF_MASK_MS);
-        assertEquals(1_200L,
-                LyricTimingTuningConstants.ExternalLyric.MODEL_READY_MASK_MS);
-        assertEquals(680L,
-                LyricTimingTuningConstants.ExternalLyric.RECYCLER_MASK_MS);
-        assertEquals(220L,
-                LyricTimingTuningConstants.ExternalLyric.CUSTOM_FRAME_MIN_MASK_MS);
-        assertEquals(3_000L,
-                LyricTimingTuningConstants.ExternalLyric.MODE_RECOVERY_MS);
-        assertArrayEquals(
-                new long[]{16L, 80L, 180L, 360L, 720L, 1_200L, 1_800L, 2_120L},
-                LyricTimingTuningConstants.ExternalLyric.SOFT_HANDOFF_REFRESH_DELAYS_MS);
-        assertArrayEquals(
-                new long[]{48L, 160L, 360L, 760L, 1_240L, 1_840L, 2_480L},
-                LyricTimingTuningConstants.ExternalLyric.MODE_RECOVERY_REFRESH_DELAYS_MS);
-        assertEquals(900L,
-                LyricTimingTuningConstants.ExternalLyric.ROW_SCALE_SETTLE_MS);
-        assertEquals(260L,
-                LyricTimingTuningConstants.ExternalLyric.HANDOFF_RESTART_GRACE_MS);
-        assertEquals(1_000L,
-                LyricTimingTuningConstants.ExternalLyric.PLAYBACK_RESET_MIN_POSITION_MS);
-        assertEquals(120L,
-                LyricTimingTuningConstants.ExternalLyric.MODEL_WAIT_RETRY_MS);
-        assertEquals(2L,
-                LyricTimingTuningConstants.ExternalLyric.TRACK_GENERATION_RESET_MAX);
-        assertArrayEquals(
-                new long[]{120L, 360L, 900L},
-                LyricTimingTuningConstants.ExternalLyric.PROMOTION_RETRY_DELAYS_MS);
-        assertEquals(15_000L,
-                LyricTimingTuningConstants.ExternalLyric.SYSTEMUI_LOAD_CONTEXT_MAX_AGE_MS);
-        assertEquals(3_000L,
-                LyricTimingTuningConstants.ExternalLyric.SYSTEMUI_PLAYBACK_HANDOFF_CONTEXT_MAX_AGE_MS);
-    }
-
-    @Test
     public void lyricGeneralRendererSchedulingMatchesKnownGoodBaseline() {
-        assertEquals(5L * 60L * 1000L,
-                LyricTimingTuningConstants.LyricGeneral.CACHE_MAX_AGE_MS);
-        assertEquals(24,
-                LyricTimingTuningConstants.LyricGeneral.CACHE_MAX_ENTRIES);
-        assertEquals(8_000L,
-                LyricTimingTuningConstants.LyricGeneral.SALT_STALE_FALLBACK_CONFIRM_WINDOW_MS);
-        assertEquals(500L,
-                LyricTimingTuningConstants.LyricGeneral.PLAYER_METADATA_LYRIC_PUBLICATION_DELAY_MS);
         assertEquals(16L,
                 LyricTimingTuningConstants.LyricGeneral.ACTIVE_LYRIC_FRAME_DELAY_MS);
         assertEquals(96L,

@@ -57,17 +57,19 @@ public class LockscreenIntegrationPolicyTest {
     }
 
     @Test
-    public void sameTrackSeekToStartKeepsTheExternalRenderer() {
-        assertTrue(LockscreenIntegrationPolicy.shouldPreserveExternalRendererForSameTrackSeek(
-                true, true, true, true));
-        assertFalse(LockscreenIntegrationPolicy.shouldPreserveExternalRendererForSameTrackSeek(
-                false, true, true, true));
-        assertFalse(LockscreenIntegrationPolicy.shouldPreserveExternalRendererForSameTrackSeek(
-                true, false, true, true));
-        assertFalse(LockscreenIntegrationPolicy.shouldPreserveExternalRendererForSameTrackSeek(
-                true, true, false, true));
-        assertFalse(LockscreenIntegrationPolicy.shouldPreserveExternalRendererForSameTrackSeek(
-                true, true, true, false));
+    public void freshPositionUpdateAfterTrackResetIsAuthoritative() {
+        assertTrue(LockscreenIntegrationPolicy.isFreshPlaybackPositionAfterTrackReset(
+                80_000_700L,
+                80_000_000L));
+        assertTrue(LockscreenIntegrationPolicy.isFreshPlaybackPositionAfterTrackReset(
+                80_000_000L,
+                80_000_000L));
+        assertFalse(LockscreenIntegrationPolicy.isFreshPlaybackPositionAfterTrackReset(
+                79_999_999L,
+                80_000_000L));
+        assertFalse(LockscreenIntegrationPolicy.isFreshPlaybackPositionAfterTrackReset(
+                0L,
+                80_000_000L));
     }
 
     @Test
@@ -87,11 +89,13 @@ public class LockscreenIntegrationPolicyTest {
     @Test
     public void systemUiOwnsBrightScreenRecyclerPositioning() {
         assertFalse(LockscreenIntegrationPolicy.shouldModulePositionLyricsRecycler(
-                false, true));
+                false, true, false));
         assertTrue(LockscreenIntegrationPolicy.shouldModulePositionLyricsRecycler(
-                true, true));
+                true, true, false));
         assertTrue(LockscreenIntegrationPolicy.shouldModulePositionLyricsRecycler(
-                false, false));
+                false, false, false));
+        assertFalse(LockscreenIntegrationPolicy.shouldModulePositionLyricsRecycler(
+                true, false, true));
     }
 
     @Test
@@ -126,6 +130,54 @@ public class LockscreenIntegrationPolicyTest {
                 -1, 34, 35));
         assertEquals(35, LockscreenIntegrationPolicy.chooseOfficialLyricVisualIndex(
                 -1, -1, 35));
+    }
+
+    @Test
+    public void wordProgressStaysOffUntilFirstWordEvenIfLineIsFocused() {
+        assertFalse(LockscreenIntegrationPolicy.shouldTreatLineAsWordProgressActive(
+                true, true));
+        assertTrue(LockscreenIntegrationPolicy.shouldTreatLineAsWordProgressActive(
+                true, false));
+        assertFalse(LockscreenIntegrationPolicy.shouldTreatLineAsWordProgressActive(
+                false, false));
+    }
+
+    @Test
+    public void leftoverOfficialRecyclerIndexIsNotTrustedDuringIntroOrTrackReset() {
+        assertFalse(LockscreenIntegrationPolicy.shouldTrustOfficialRecyclerActiveLine(
+                false, 3, 0, true, false));
+        assertTrue(LockscreenIntegrationPolicy.shouldTrustOfficialRecyclerActiveLine(
+                false, 0, 0, true, false));
+        assertFalse(LockscreenIntegrationPolicy.shouldTrustOfficialRecyclerActiveLine(
+                false, 12, 0, false, true));
+        assertTrue(LockscreenIntegrationPolicy.shouldTrustOfficialRecyclerActiveLine(
+                false, 1, 0, false, true));
+        assertTrue(LockscreenIntegrationPolicy.shouldTrustOfficialRecyclerActiveLine(
+                false, 12, 0, false, false));
+        assertFalse(LockscreenIntegrationPolicy.shouldTrustOfficialRecyclerActiveLine(
+                false, -1, 0, false, false));
+    }
+
+    @Test
+    public void nativeV5UsesOfficialRecyclerLineEvenWhenBridgeClockIsStale() {
+        assertTrue(LockscreenIntegrationPolicy.shouldTrustOfficialRecyclerActiveLine(
+                true, 12, 0, true, true));
+        assertFalse(LockscreenIntegrationPolicy.shouldTrustOfficialRecyclerActiveLine(
+                true, -1, 0, true, true));
+    }
+
+    @Test
+    public void nativeClockRestartsAfterNoLyricTrackInvalidatesBinding() {
+        assertTrue(LockscreenIntegrationPolicy.shouldResetNativePlaybackClock(
+                true, "", "spotify:track:returning"));
+        assertTrue(LockscreenIntegrationPolicy.shouldResetNativePlaybackClock(
+                true, "spotify:track:previous", "spotify:track:returning"));
+        assertFalse(LockscreenIntegrationPolicy.shouldResetNativePlaybackClock(
+                true, "spotify:track:returning", "spotify:track:returning"));
+        assertFalse(LockscreenIntegrationPolicy.shouldResetNativePlaybackClock(
+                false, "", "spotify:track:returning"));
+        assertFalse(LockscreenIntegrationPolicy.shouldResetNativePlaybackClock(
+                true, "spotify:track:previous", ""));
     }
 
     @Test
@@ -165,30 +217,6 @@ public class LockscreenIntegrationPolicyTest {
     }
 
     @Test
-    public void samePowerampTrackReattachKeepsNativePlaybackPosition() {
-        assertTrue(LockscreenIntegrationPolicy.shouldPreservePowerampPositionForSameTrackReattach(
-                true, true, true, true));
-        assertTrue(LockscreenIntegrationPolicy.shouldPreservePowerampPositionForSameTrackReattach(
-                false, false, true, true));
-        assertFalse(LockscreenIntegrationPolicy.shouldPreservePowerampPositionForSameTrackReattach(
-                true, false, true, true));
-        assertFalse(LockscreenIntegrationPolicy.shouldPreservePowerampPositionForSameTrackReattach(
-                true, true, false, true));
-        assertFalse(LockscreenIntegrationPolicy.shouldPreservePowerampPositionForSameTrackReattach(
-                true, true, true, false));
-    }
-
-    @Test
-    public void powerampTrackEventTemporarilyMakesNativePositionAuthoritative() {
-        assertTrue(LockscreenIntegrationPolicy.shouldTrustPowerampNativePosition(
-                14_900_397L, 14_902_357L));
-        assertFalse(LockscreenIntegrationPolicy.shouldTrustPowerampNativePosition(
-                14_902_358L, 14_902_357L));
-        assertFalse(LockscreenIntegrationPolicy.shouldTrustPowerampNativePosition(
-                10L, 0L));
-    }
-
-    @Test
     public void onlyLyricRecyclerLayoutNotificationsAreGuarded() {
         assertTrue(LockscreenIntegrationPolicy.isLyricsRecyclerComputingLayoutException(
                 new IllegalStateException(
@@ -199,80 +227,6 @@ public class LockscreenIntegrationPolicyTest {
                         "Cannot call this method while RecyclerView is computing a layout")));
         assertFalse(LockscreenIntegrationPolicy.isLyricsRecyclerComputingLayoutException(
                 new IllegalStateException("LyricsRecyclerView was detached")));
-    }
-
-    @Test
-    public void providerBroadcastPayloadLimitsRejectSingleAndAggregateOversizeData() {
-        assertTrue(LockscreenIntegrationPolicy.isExternalLyricPayloadSizeAcceptable(
-                20_000, 10_000, 100_000, 20_000, 128,
-                1_500_000, 3_000_000, 16_384));
-        assertFalse(LockscreenIntegrationPolicy.isExternalLyricPayloadSizeAcceptable(
-                1_500_001, 0, 0, 0, 128,
-                1_500_000, 3_000_000, 16_384));
-        assertFalse(LockscreenIntegrationPolicy.isExternalLyricPayloadSizeAcceptable(
-                1_000_000, 1_000_000, 1_000_000, 1, 128,
-                1_500_000, 3_000_000, 16_384));
-        assertFalse(LockscreenIntegrationPolicy.isExternalLyricPayloadSizeAcceptable(
-                10, 10, 10, 10, 16_385,
-                1_500_000, 3_000_000, 16_384));
-    }
-
-    @Test
-    public void generationScopedPromotionRequiresCurrentTrackAndActivePlayer() {
-        assertTrue(LockscreenIntegrationPolicy.shouldAllowGenerationScopedExternalLyricPromotion(
-                true, 5554232L, true, true));
-        assertFalse(LockscreenIntegrationPolicy.shouldAllowGenerationScopedExternalLyricPromotion(
-                false, 5554232L, true, true));
-        assertFalse(LockscreenIntegrationPolicy.shouldAllowGenerationScopedExternalLyricPromotion(
-                true, 0L, true, true));
-        assertFalse(LockscreenIntegrationPolicy.shouldAllowGenerationScopedExternalLyricPromotion(
-                true, 5554232L, false, true));
-        assertFalse(LockscreenIntegrationPolicy.shouldAllowGenerationScopedExternalLyricPromotion(
-                true, 5554232L, true, false));
-    }
-
-    @Test
-    public void delayedExternalLyricCommitRequiresFreshMatchingCurrentContext() {
-        assertTrue(LockscreenIntegrationPolicy.shouldReplaySystemUiLyricLoadAfterExternalPromotion(
-                true, true, true, true, false, 320L, 15_000L));
-        assertFalse(LockscreenIntegrationPolicy.shouldReplaySystemUiLyricLoadAfterExternalPromotion(
-                false, true, true, true, false, 320L, 15_000L));
-        assertFalse(LockscreenIntegrationPolicy.shouldReplaySystemUiLyricLoadAfterExternalPromotion(
-                true, false, true, true, false, 320L, 15_000L));
-        assertFalse(LockscreenIntegrationPolicy.shouldReplaySystemUiLyricLoadAfterExternalPromotion(
-                true, true, false, true, false, 320L, 15_000L));
-        assertFalse(LockscreenIntegrationPolicy.shouldReplaySystemUiLyricLoadAfterExternalPromotion(
-                true, true, true, false, false, 320L, 15_000L));
-        assertFalse(LockscreenIntegrationPolicy.shouldReplaySystemUiLyricLoadAfterExternalPromotion(
-                true, true, true, true, true, 320L, 15_000L));
-        assertFalse(LockscreenIntegrationPolicy.shouldReplaySystemUiLyricLoadAfterExternalPromotion(
-                true, true, true, true, false, 15_001L, 15_000L));
-    }
-
-    @Test
-    public void applePromotionCanUseFreshMatchingSystemUiMetadataBeforeSeedlingCatchesUp() {
-        assertTrue(LockscreenIntegrationPolicy.shouldUseRecentSystemUiTrackContext(
-                true, true, true, 295L, 15_000L));
-        assertFalse(LockscreenIntegrationPolicy.shouldUseRecentSystemUiTrackContext(
-                true, true, false, 295L, 15_000L));
-        assertFalse(LockscreenIntegrationPolicy.shouldUseRecentSystemUiTrackContext(
-                true, true, true, 15_001L, 15_000L));
-    }
-
-    @Test
-    public void staleApplePlaybackStateYieldsToFreshSystemUiTrackMetadata() {
-        assertTrue(LockscreenIntegrationPolicy
-                .shouldIgnoreExternalPlaybackStateForRecentSystemUiTrack(
-                        true, true, false, true, 17L, 3_000L));
-        assertFalse(LockscreenIntegrationPolicy
-                .shouldIgnoreExternalPlaybackStateForRecentSystemUiTrack(
-                        true, true, true, true, 17L, 3_000L));
-        assertFalse(LockscreenIntegrationPolicy
-                .shouldIgnoreExternalPlaybackStateForRecentSystemUiTrack(
-                        false, true, false, true, 17L, 3_000L));
-        assertFalse(LockscreenIntegrationPolicy
-                .shouldIgnoreExternalPlaybackStateForRecentSystemUiTrack(
-                        true, true, false, false, 17L, 3_000L));
     }
 
     @Test
@@ -372,30 +326,6 @@ public class LockscreenIntegrationPolicyTest {
     }
 
     @Test
-    public void capturedLyricTakesPriorityOverPlayerLyricInfo() {
-        assertEquals(
-                LockscreenIntegrationPolicy.LyricInfoSource.MODULE_CAPTURE,
-                LockscreenIntegrationPolicy.chooseLyricInfoSource(true, false, true));
-    }
-
-    @Test
-    public void explicitPlayerIntegrationTakesPriorityOverModuleCapture() {
-        assertEquals(
-                LockscreenIntegrationPolicy.LyricInfoSource.PLAYER_INTEGRATION,
-                LockscreenIntegrationPolicy.chooseLyricInfoSource(true, true, true));
-    }
-
-    @Test
-    public void playerLyricInfoIsOnlyUsedAsFallback() {
-        assertEquals(
-                LockscreenIntegrationPolicy.LyricInfoSource.PLAYER_FALLBACK,
-                LockscreenIntegrationPolicy.chooseLyricInfoSource(true, false, false));
-        assertEquals(
-                LockscreenIntegrationPolicy.LyricInfoSource.NONE,
-                LockscreenIntegrationPolicy.chooseLyricInfoSource(false, false, false));
-    }
-
-    @Test
     public void oplusHistoryIntegrationKeepsOfficialAndExplicitPlayers() {
         assertTrue(LockscreenIntegrationPolicy.shouldEnableOplusHistoryIntegration(
                 true, false, false));
@@ -464,26 +394,6 @@ public class LockscreenIntegrationPolicyTest {
         assertEquals(false, LockscreenIntegrationPolicy.isProductionDetailLine(
                 "我が太陽系の鼓動に合わせて",
                 7_230L));
-    }
-
-    @Test
-    public void saltLyricRelayKeepsStableLyricInfo() {
-        assertTrue(LockscreenIntegrationPolicy.shouldPreserveStableLyricInfoForRelay(
-                true,
-                false,
-                true,
-                true,
-                true));
-    }
-
-    @Test
-    public void realTrackChangeIsNotTreatedAsSaltLyricRelay() {
-        assertEquals(false, LockscreenIntegrationPolicy.shouldPreserveStableLyricInfoForRelay(
-                true,
-                true,
-                true,
-                true,
-                true));
     }
 
     @Test
@@ -636,6 +546,16 @@ public class LockscreenIntegrationPolicyTest {
     }
 
     @Test
+    public void openingEnglishLyricSentenceIsNotATitleArtistCredit() {
+        assertEquals(false, LockscreenIntegrationPolicy.isLikelyTitleArtistCredit(
+                "I couldn't wait for you to come clear the cupboards",
+                1_799L));
+        assertEquals(false, LyricMetadataFilter.isDisplayProductionDetailLine(
+                "I couldn't wait for you to come clear the cupboards",
+                1_799L));
+    }
+
+    @Test
     public void delayedTranslationImmediatelyBeforeNextLineAttachesBackward() {
         assertTrue(LockscreenIntegrationPolicy.shouldAttachDelayedTranslation(
                 true,
@@ -765,25 +685,4 @@ public class LockscreenIntegrationPolicyTest {
         assertFalse(LockscreenIntegrationPolicy.isProductionDetailLine("   ", 0L));
     }
 
-    @Test
-    public void isExternalLyricPayloadSizeAcceptableRejectsNegativeInputs() {
-        assertFalse(LockscreenIntegrationPolicy.isExternalLyricPayloadSizeAcceptable(
-                -1, 0, 0, 0, 0,
-                1_500_000, 3_000_000, 16_384));
-        assertFalse(LockscreenIntegrationPolicy.isExternalLyricPayloadSizeAcceptable(
-                0, -1, 0, 0, 0,
-                1_500_000, 3_000_000, 16_384));
-        assertFalse(LockscreenIntegrationPolicy.isExternalLyricPayloadSizeAcceptable(
-                0, 0, 0, 0, -1,
-                1_500_000, 3_000_000, 16_384));
-        assertFalse(LockscreenIntegrationPolicy.isExternalLyricPayloadSizeAcceptable(
-                0, 0, 0, 0, 0,
-                -1, 3_000_000, 16_384));
-        assertFalse(LockscreenIntegrationPolicy.isExternalLyricPayloadSizeAcceptable(
-                0, 0, 0, 0, 0,
-                1_500_000, -1, 16_384));
-        assertFalse(LockscreenIntegrationPolicy.isExternalLyricPayloadSizeAcceptable(
-                0, 0, 0, 0, 0,
-                1_500_000, 3_000_000, -1));
-    }
 }

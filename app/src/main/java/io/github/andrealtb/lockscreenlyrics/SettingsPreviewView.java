@@ -169,8 +169,8 @@ final class SettingsPreviewView extends View {
                     ? LyricUiColors.active(config)
                     : LyricUiColors.inactive(config);
             int translationColor = active
-                    ? LyricUiColors.translationBase(config, false, 1f)
-                    : LyricUiColors.translationBase(config, false, 0f);
+                    ? LyricUiColors.translationBase(config, true)
+                    : LyricUiColors.translationBase(config, false);
             TextPaint mainPaint = textPaint(
                     mainSizePx,
                     typeface,

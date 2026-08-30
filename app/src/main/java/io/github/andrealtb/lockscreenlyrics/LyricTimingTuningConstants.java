@@ -3,7 +3,7 @@ package io.github.andrealtb.lockscreenlyrics;
 /**
  * Tuning constants extracted from {@link LockscreenLyricsModule}. Every value here has an
  * associated device-log origin; do not retune without comparing the change against the
- * AOD / external-lyric / official-row reference logs called out in
+ * AOD / lyric-transition / official-row reference logs called out in
  * <code>AGENTS.md</code>.
  *
  * <p>Naming follows the legacy prefix carried over from the host class so call sites can move
@@ -14,8 +14,6 @@ package io.github.andrealtb.lockscreenlyrics;
  *     <li>{@link Aod} — always-on display row refresh and animation pacing.</li>
  *     <li>{@link OfficialLyric} — official {@code LyricsRecyclerView} row scale, blur,
  *         draw-frame reuse, and SystemUI-driven handoff masks.</li>
- *     <li>{@link ExternalLyric} — external Provider ingest, soft handoff, model readiness,
- *         playback-reset guards, and Provider retry escalations.</li>
  *     <li>{@link LyricGeneral} — cross-cutting renderer scheduling, lyric cache, visibility
  *         recovery, and provisional-draw grace windows.</li>
  *     <li>{@link ScreenTimeout} — lock-screen / keyguard probe intervals and wake-lock
@@ -24,9 +22,7 @@ package io.github.andrealtb.lockscreenlyrics;
  * </ul>
  *
  * <p>All values are package-private because they are tuning parameters for the hook module,
- * not part of any external API contract. Mirror values that participate in the v4 broadcast
- * contract (size limits, protocol version) live in
- * {@link io.github.andrealtb.lockscreenlyrics.protocol.ExternalLyricProtocol} instead.</p>
+ * not part of any external API contract.</p>
  */
 final class LyricTimingTuningConstants {
 
@@ -123,97 +119,8 @@ final class LyricTimingTuningConstants {
         }
     }
 
-    /** External Provider ingest, soft handoff, model readiness, and retry escalations. */
-    static final class ExternalLyric {
-        /** Delay before rebroadcasting an external lyric update to SystemUI. */
-        static final long REBROADCAST_DELAY_MS = 2_000L;
-
-        /**
-         * Soft-handoff mask window: external lyric updates arriving within this window
-         * after a SystemUI transition are merged rather than rejected.
-         */
-        static final long SOFT_HANDOFF_MASK_MS = 2_200L;
-
-        /** Minimum mask to keep the external model considered "ready" during handoff. */
-        static final long MODEL_READY_MASK_MS = 1_200L;
-
-        /** Mask for {@code LyricsRecyclerView} state checks during external ingest. */
-        static final long RECYCLER_MASK_MS = 680L;
-
-        /**
-         * Minimum mask that lets a custom external draw frame survive the recycler
-         * recycle pass.
-         */
-        static final long CUSTOM_FRAME_MIN_MASK_MS = 220L;
-
-        /**
-         * Recovery delay after the external lyric mode is forced back to the module
-         * source. After this delay the module re-attempts the official row state.
-         */
-        static final long MODE_RECOVERY_MS = 3_000L;
-
-        /** Soft-handoff refresh escalation: probes spaced for retry convergence. */
-        static final long[] SOFT_HANDOFF_REFRESH_DELAYS_MS = {
-                16L, 80L, 180L, 360L, 720L, 1_200L, 1_800L, 2_120L
-        };
-
-        /** Mode-recovery escalation: faster than soft handoff to recover from a forced reset. */
-        static final long[] MODE_RECOVERY_REFRESH_DELAYS_MS = {
-                48L, 160L, 360L, 760L, 1_240L, 1_840L, 2_480L
-        };
-
-        /** Settle window after the external row scale animation begins. */
-        static final long ROW_SCALE_SETTLE_MS = 900L;
-
-        /** Grace window for a handoff restart to converge before declaring it stale. */
-        static final long HANDOFF_RESTART_GRACE_MS = 260L;
-
-        /**
-         * Minimum playback position offset to treat an external "reset" as a real
-         * position jump rather than a transient flapping event.
-         */
-        static final long PLAYBACK_RESET_MIN_POSITION_MS = 1_000L;
-
-        /** Retry interval while waiting for the external model to surface. */
-        static final long MODEL_WAIT_RETRY_MS = 120L;
-
-        /** Maximum number of consecutive track-generation resets before forced fallback. */
-        static final long TRACK_GENERATION_RESET_MAX = 2L;
-
-        /** Retry escalation when promoting an external lyric to official state. */
-        static final long[] PROMOTION_RETRY_DELAYS_MS = {
-                120L,
-                360L,
-                900L
-        };
-
-        /** Maximum age for SystemUI's external-lyric load context before being discarded. */
-        static final long SYSTEMUI_LOAD_CONTEXT_MAX_AGE_MS = 15_000L;
-
-        /** Maximum age for SystemUI's external-playback handoff context. */
-        static final long SYSTEMUI_PLAYBACK_HANDOFF_CONTEXT_MAX_AGE_MS = 3_000L;
-
-        private ExternalLyric() {
-        }
-    }
-
     /** Renderer scheduling, cache TTL, visibility recovery, and surface draw passes. */
     static final class LyricGeneral {
-        /** TTL for the in-memory lyric cache; older entries are evicted on the next read. */
-        static final long CACHE_MAX_AGE_MS = 5 * 60 * 1000L;
-
-        /** Maximum number of tracks kept in the lyric cache before LRU eviction. */
-        static final int CACHE_MAX_ENTRIES = 24;
-
-        /**
-         * Confirmation window in which a stale Salt fallback is still considered valid
-         * before the module is forced to refresh.
-         */
-        static final long SALT_STALE_FALLBACK_CONFIRM_WINDOW_MS = 8_000L;
-
-        /** Delay between detecting a player metadata change and publishing the lyric. */
-        static final long PLAYER_METADATA_LYRIC_PUBLICATION_DELAY_MS = 500L;
-
         /** Display-rate invalidation interval for word-timed progress. */
         static final long ACTIVE_LYRIC_FRAME_DELAY_MS = 16L;
 

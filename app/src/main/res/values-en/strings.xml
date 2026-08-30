@@ -22,8 +22,9 @@
     <string name="player_cone">ConePlayer</string>
     <string name="player_qq">QQ Music</string>
     <string name="player_netease">NetEase Music</string>
+    <string name="player_honor_cloudmusic">Honor Cloud Music</string>
     <string name="player_apple">Apple Music</string>
-    <string name="player_lx">LX Music</string>
+    <string name="player_lx">LX Music / Walnut</string>
     <string name="player_poweramp">Poweramp</string>
     <string name="player_spotify">Spotify</string>
     <string name="player_qishui">QiShui Music</string>
@@ -37,9 +38,7 @@
     <string name="sub_trans_button">Media-card translation button</string>
     <string name="sub_trans_clear">Clear this player\'s translation memory</string>
     <string name="sub_trans_clear_toast">Will clear %1$s memory on save</string>
-    <string name="sub_trans_status_builtin">Built-in adapter</string>
-    <string name="sub_trans_status_detected">LyricProvider detected</string>
-    <string name="sub_trans_status_missing">LyricProvider not installed</string>
+    <string name="sub_trans_status_configurable">Player translation settings available</string>
     <string name="sub_trans_status_unsupported">No translation support</string>
     <string name="sub_trans_save">Apply &amp; save</string>
     <string name="sub_trans_saved">Saved, waiting for SystemUI confirmation</string>
@@ -48,11 +47,10 @@
     <string name="sub_trans_rejected">SystemUI rejected the settings: %1$s</string>
     <!-- Sub page: opening lyric cleanup -->
     <string name="sub_clean_notice">Only opening production / copyright info is cleaned. Timestamps, word timing, and song metadata are never modified. If detection is incomplete, select the first formal lyric line below.</string>
-    <string name="sub_clean_builtin">Built-in rules</string>
+    <string name="sub_clean_builtin">Built-in rules (off by default)</string>
     <string name="sub_clean_copyright">Copyright &amp; rights notices</string>
     <string name="sub_clean_production">Production credits &amp; instruments</string>
     <string name="sub_clean_titleartist">Opening “Title - Artist”</string>
-    <string name="sub_clean_protected">Translation-source placeholders and other parse-protection rules are always enabled.</string>
     <string name="sub_clean_reset">Reset built-in defaults</string>
     <string name="sub_clean_current">Check &amp; fix current song</string>
     <string name="sub_clean_song_loading">Reading current song…</string>
@@ -93,6 +91,11 @@
     <string name="preset_minimal">Minimal</string>
     <string name="preset_custom">Custom</string>
     <string name="preset_custom_label">Custom · parameters deviate from all presets</string>
+    <string name="preset_default_summary" formatted="false">Official baseline: standard highlight hierarchy, 44% inactive lyrics, a 51.9dp edge fade, and no extra inactive-row fade.</string>
+    <string name="preset_soft_summary" formatted="false">Soft hierarchy: 36% inactive lyrics, gentle blur and scaling, plus the legacy 90% inactive-row fade.</string>
+    <string name="preset_vivid_summary" formatted="false">Vivid hierarchy: full glow, stronger blur and scaling, plus the legacy 90% inactive-row fade.</string>
+    <string name="preset_minimal_summary" formatted="false">Minimal hierarchy: glow, blur, and scaling off; inactive lyrics rise to 55% with no extra row fade.</string>
+    <string name="preset_custom_summary">Custom: at least one color, typography, motion, brightness, or fading value differs from every preset.</string>
     <!-- Main page: drawing & motion -->
     <string name="setting_inactive_opacity">Inactive opacity</string>
     <string name="setting_blur">Blur inactive lines</string>
@@ -118,13 +121,40 @@
     <!-- Main page: compatibility & screen -->
     <string name="link_player_translation">Player translation settings</string>
     <string name="link_player_translation_sub">Per-player default &amp; memory</string>
+    <string name="link_config_backup">Bridge configuration backup</string>
+    <string name="link_config_backup_sub">Back up main, player translation, cleanup, and debug settings</string>
     <string name="link_opening_cleanup">Opening lyric cleanup</string>
     <string name="link_opening_cleanup_sub">Learned formats &amp; first-line rules</string>
+    <string name="link_debug_logging">Debug logging</string>
+    <string name="link_debug_logging_sub">Off by default; writes logcat and LSPosed logs</string>
+    <string name="debug_settings_title">Debug logging</string>
+    <string name="debug_settings_desc">Off by default. When enabled, extra [CLL] DEBUG/INFO lines are written to both Android logcat and the LSPosed framework log. When disabled, only startup summaries, key state changes, warnings, and errors remain. This switch does not change lyric, hook, or render behavior.</string>
+    <string name="debug_master">Enable debug logging</string>
+    <string name="debug_areas_title">Log areas</string>
+    <string name="debug_area_bootstrap">bootstrap</string>
+    <string name="debug_area_media">media</string>
+    <string name="debug_area_lyric">lyric</string>
+    <string name="debug_area_renderer">renderer</string>
+    <string name="debug_area_aod">AOD</string>
+    <string name="debug_area_player_special">player-special</string>
+    <string name="debug_area_performance">performance</string>
+    <string name="debug_save">Apply &amp; save</string>
+    <string name="debug_saved">Saved, waiting for SystemUI confirmation</string>
+    <string name="debug_saved_pending">Saved, but SystemUI did not confirm; check that the module is enabled</string>
+    <string name="debug_applied">Debug settings applied</string>
+    <string name="debug_rejected">SystemUI rejected the debug settings: %1$s</string>
+    <string name="debug_status_unknown">SystemUI has not reported a debug config yet. If the module was just enabled, restart System UI first.</string>
+    <string name="debug_status_applied">Last SystemUI read: revision %1$d · master %2$s · areas %3$s</string>
+    <string name="debug_status_on">on</string>
+    <string name="debug_status_off">off</string>
+    <string name="debug_restart_hint">lyric / renderer / AOD / media take effect immediately after save. bootstrap startup and hook-install logs appear only after restarting System UI.</string>
     <string name="setting_line_progress">Line-timed lyric progress</string>
     <string name="setting_translation_progress">Translation progress</string>
+    <string name="translation_progress_dependency_hint">Line-timed lyrics also require the option above; word-timed lyrics can use translation progress independently.</string>
     <string name="setting_screen_timeout">Keep screen on while lyrics are shown</string>
     <string name="setting_screen_timeout_seconds_label">Timeout seconds</string>
     <string name="setting_screen_timeout_seconds_hint">Empty = keep on</string>
+    <string name="refresh_hz_unavailable_preserved">%1$d Hz (unavailable on this display; preserved)</string>
     <!-- Main page: typography -->
     <string name="setting_font_size">Main lyric font size</string>
     <string name="font_size_hint">With translation: up to 28sp\nWithout translation: +2sp, up to 30sp</string>
@@ -169,6 +199,70 @@
     <string name="back_discard_message">You have unsaved changes. Discard them and leave?</string>
     <string name="back_discard_title">Unsaved changes</string>
     <string name="back_discard">Discard</string>
+    <!-- Global Bridge configuration backup -->
+    <string name="config_backup_title">Bridge configuration backup &amp; restore</string>
+    <string name="config_backup_description">This is the global Bridge maintenance page, not part of lyric brightness. It covers every configuration domain owned by the module app and resynchronizes restored or reset values to SystemUI.</string>
+    <string name="config_backup_scope_title">Backup scope</string>
+    <string name="config_backup_scope_body">• Main settings and schema-v3 lyric UI
+• Global/per-player translation defaults and buttons
+• Opening cleanup, learned rules, and per-track corrections
+• Debug master/area switches and revision
+• Settings language and other Bridge preferences</string>
+    <string name="config_backup_actions_title">Backup actions</string>
+    <string name="config_backup_copy">Copy complete Bridge backup</string>
+    <string name="config_backup_restore">Restore from clipboard</string>
+    <string name="config_backup_reset">Reset all Bridge settings</string>
+    <string name="config_backup_downgrade_warning">Backups use the typed, namespaced Bridge Backup v1 format. Older APKs may not understand schema v3; back up before downgrading and reset in the older app if required.</string>
+    <string name="config_backup_clip_label">Complete Bridge configuration backup</string>
+    <string name="config_backup_copied">Complete Bridge configuration copied</string>
+    <string name="config_backup_clipboard_unavailable">Clipboard is unavailable</string>
+    <string name="config_backup_clipboard_empty">The clipboard does not contain restorable text</string>
+    <string name="config_backup_restore_confirm_title">Restore Bridge configuration?</string>
+    <string name="config_backup_restore_confirm_message">The current main, player translation, opening-cleanup, and debug settings will be replaced and immediately synchronized to SystemUI.</string>
+    <string name="config_backup_restore_confirm">Restore</string>
+    <string name="config_backup_restored">Bridge configuration restored and synchronized</string>
+    <string name="config_backup_restored_restart">Bridge configuration was restored, but live synchronization was incomplete; restart SystemUI</string>
+    <string name="config_backup_restore_failed">Restore failed: %1$s</string>
+    <string name="config_backup_reset_confirm_title">Reset every Bridge setting?</string>
+    <string name="config_backup_reset_confirm_message">This clears main, player translation, opening-cleanup, debug, and language preferences. It cannot be undone; copy a complete backup first.</string>
+    <string name="config_backup_reset_confirm">Reset everything</string>
+    <string name="config_backup_reset_done">Every Bridge setting was reset and synchronized</string>
+    <string name="config_backup_reset_restart">Bridge configuration was reset, but live synchronization was incomplete; restart SystemUI</string>
+    <string name="config_backup_reset_failed">Reset failed: %1$s</string>
+    <!-- Lyric brightness & fading sub-page -->
+    <string name="visual_layers_settings_title">Lyric brightness &amp; fading</string>
+    <string name="link_visual_layers">Lyric brightness &amp; fading</string>
+    <string name="link_visual_layers_summary">Active %1$d%% · inactive %2$d%% · edge %3$s</string>
+    <string name="visual_state_on">on</string>
+    <string name="visual_state_off">off</string>
+    <string name="visual_layers_description">Adjust the brightness hierarchy and the lyric list’s top/bottom fading. The sticky preview uses the same alpha policy as SystemUI.</string>
+    <string name="visual_preview_title">Live preview</string>
+    <string name="visual_preview_content_description">Preview of lyric brightness, translation layers, inactive-row fading, and top/bottom edge fading</string>
+    <string name="visual_section_brightness">Lyric brightness hierarchy</string>
+    <string name="visual_section_edges">Top &amp; bottom fading</string>
+    <string name="visual_active_opacity">Active lyric highlight</string>
+    <string name="visual_current_unrevealed_opacity">Current unrevealed text</string>
+    <string name="visual_active_translation_opacity">Active translation</string>
+    <string name="visual_active_translation_progress_opacity">Translation progress</string>
+    <string name="visual_inactive_main_opacity">Inactive lyric</string>
+    <string name="visual_inactive_translation_follows_main">Inactive translation follows lyric</string>
+    <string name="visual_inactive_translation_opacity">Inactive translation</string>
+    <string name="visual_vertical_fade_enabled">Enable top/bottom fading</string>
+    <string name="visual_vertical_fade_length">Fade length</string>
+    <string name="visual_inactive_row_fade_enabled">Extra inactive-row fade</string>
+    <string name="visual_inactive_row_fade_opacity">Opacity retained after fade</string>
+    <string name="visual_edge_help">Fade length controls the gradient-covered area at the top and bottom of the RecyclerView; it is not a fixed opacity for rows 1 and 2. Disabled controls retain their values.</string>
+    <string name="visual_value_percent">%1$d%%</string>
+    <string name="visual_value_effective">%1$d→%2$.1f%%</string>
+    <string name="visual_value_dp">%1$d dp</string>
+    <string name="visual_status_saved">Matches the saved configuration</string>
+    <string name="visual_status_unsaved">UNSAVED · previewing the current draft</string>
+    <string name="visual_preview_inactive_one_main">Previous lyric line fades away</string>
+    <string name="visual_preview_inactive_one_translation">上一行翻译</string>
+    <string name="visual_preview_active_main">Active lyric playing now</string>
+    <string name="visual_preview_active_translation">正在播放的翻译预览</string>
+    <string name="visual_preview_inactive_two_main">Next lyric line waits below</string>
+    <string name="visual_preview_inactive_two_translation">下一行翻译</string>
     <!-- Main page: preview sample text -->
     <string-array name="preview_main_lines">
         <item>\'Cause there were pages turned</item>

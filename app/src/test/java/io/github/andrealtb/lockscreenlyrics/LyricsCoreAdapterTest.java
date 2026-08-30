@@ -112,7 +112,7 @@ public final class LyricsCoreAdapterTest {
     }
 
     @Test
-    public void plainLrcFallbackSkipsLyricTranslationProviderCredit() {
+    public void sameTimestampProviderCreditDoesNotOverrideFirstTranslation() {
         String lrc = "[00:01.00]He did it\n"
                 + "[00:01.00]他背叛了我\n"
                 + "[00:01.00]以下歌词翻译由 Salt Player 提供\n"
@@ -124,6 +124,19 @@ public final class LyricsCoreAdapterTest {
         assertEquals("He did it", parsed.lines.get(0).text);
         assertEquals("他背叛了我", parsed.lines.get(0).translation);
         assertEquals("No, no body, no crime", parsed.lines.get(1).text);
+        assertEquals("", parsed.lines.get(1).translation);
+    }
+
+    @Test
+    public void standaloneProviderCreditPassesThroughPlainLrcFallback() {
+        String lrc = "[00:01.00]He did it\n"
+                + "[00:02.00]以下歌词翻译由 Salt Player 提供\n"
+                + "[00:04.00]No, no body, no crime";
+
+        LyricsCoreAdapter.ParsedLyrics parsed = LyricsCoreAdapter.parsePlainLrc(lrc);
+
+        assertEquals(3, parsed.lines.size());
+        assertEquals("以下歌词翻译由 Salt Player 提供", parsed.lines.get(1).text);
         assertEquals("", parsed.lines.get(1).translation);
     }
 

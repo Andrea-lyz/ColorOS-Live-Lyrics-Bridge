@@ -156,6 +156,19 @@ public final class WordLyricModel {
         return indexOfLine(firstDisplayLine());
     }
 
+    public long firstProgressStartMillis() {
+        WordLine firstLine = firstDisplayLine();
+        return firstLine == null ? -1L : firstLine.firstProgressStartMillis();
+    }
+
+    public boolean isBeforeFirstProgressStart(long position) {
+        if (position < 0L) {
+            return false;
+        }
+        long startMillis = firstProgressStartMillis();
+        return startMillis >= 0L && position < startMillis;
+    }
+
     public int displayIndexAt(long position) {
         WordLine active = findActiveLine(position);
         int index = indexOfLine(active);
@@ -204,21 +217,60 @@ public final class WordLyricModel {
         if (isEmpty(normalizedText)) {
             return null;
         }
-        WordLine best = null;
-        long bestDistance = Long.MAX_VALUE;
-        for (WordLine line : lines) {
-            if (WordLyricRenderSupport.matchesWordLineText(line, normalizedText)) {
-                if (position < 0) {
+        if (position < 0) {
+            for (WordLine line : lines) {
+                if (WordLyricRenderSupport.matchesWordLineText(line, normalizedText)) {
                     return line;
                 }
-                long distance = Math.abs(line.timeMillis - position);
-                if (best == null || distance < bestDistance) {
-                    best = line;
-                    bestDistance = distance;
-                }
             }
+            return null;
         }
-        return best;
+        return nearestLineByPredicate(normalizedText, position, false);
+    }
+
+    /**
+     * Maps an official ColorOS adapter row onto the word model. Chorus repeats
+     * must follow the official timestamp / occurrence, not a radius-2 index
+     * search: that search binds {@code It's a cruel summer} at 00:47.744 to the
+     * previous occurrence at 00:36.409 and karaoke then uses finished words.
+     */
+    public WordLine findOfficialAliasLine(
+            long timeMillis,
+            String normalizedDisplayText,
+            int occurrence,
+            int officialIndex) {
+        if (isEmpty(normalizedDisplayText)) {
+            return null;
+        }
+        WordLine exactTime = findLineAtTime(timeMillis);
+        if (WordLyricRenderSupport.matchesWordLineText(exactTime, normalizedDisplayText)) {
+            return exactTime;
+        }
+
+        WordLine timedText = findLineByText(normalizedDisplayText, timeMillis);
+        if (timedText != null) {
+            return timedText;
+        }
+
+        // The historical findLineByTextOccurrence step was provably dead:
+        // it only ran after findLineByText found no matching line at all,
+        // and it evaluates the same matchesWordLineText predicate, so it
+        // could never find one either. Phase 6 slice 5 removed the extra
+        // full-list scan per official alias group.
+        WordLine indexedText = findLineByTextNearIndex(
+                normalizedDisplayText,
+                officialIndex,
+                2,
+                false);
+        if (indexedText != null) {
+            return indexedText;
+        }
+
+        WordLine nearest = findNearestLineByTime(timeMillis, 650L);
+        if (WordLyricRenderSupport.matchesWordLineText(nearest, normalizedDisplayText)) {
+            return nearest;
+        }
+        return nearest;
     }
 
     public WordLine findLineByTextOccurrence(String normalizedText, int occurrence) {
@@ -291,21 +343,15 @@ public final class WordLyricModel {
         if (isEmpty(normalizedText)) {
             return null;
         }
-        WordLine best = null;
-        long bestDistance = Long.MAX_VALUE;
-        for (WordLine line : lines) {
-            if (line.normalizedTranslation().equals(normalizedText)) {
-                if (position < 0) {
+        if (position < 0) {
+            for (WordLine line : lines) {
+                if (line.normalizedTranslation().equals(normalizedText)) {
                     return line;
                 }
-                long distance = Math.abs(line.timeMillis - position);
-                if (best == null || distance < bestDistance) {
-                    best = line;
-                    bestDistance = distance;
-                }
             }
+            return null;
         }
-        return best;
+        return nearestLineByPredicate(normalizedText, position, true);
     }
 
     public WordLine findLineByTranslationNearIndex(String normalizedText, int index, int radius) {
@@ -331,6 +377,63 @@ public final class WordLyricModel {
         return best;
     }
 
+    /**
+     * Time-ordered outward walk equivalent to the historical full-list
+     * nearest scan: candidates are visited in ascending
+     * {@code |timeMillis - position|} order, earlier lines first on
+     * distance ties, so the first match is exactly the line the old linear
+     * scan kept. Phase 6 slice 5 replaced the per-query O(N) scans on the
+     * alias, seedling, and frame-resolver paths with this early-exit walk.
+     */
+    private WordLine nearestLineByPredicate(String normalizedText, long position, boolean byTranslation) {
+        if (lines.isEmpty()) {
+            return null;
+        }
+        int size = lines.size();
+        int insertion = firstLineIndexAfterOrAt(position);
+        int left = insertion - 1;
+        int right = insertion;
+        while (left >= 0 || right < size) {
+            long leftDistance = left >= 0 ? position - lines.get(left).timeMillis : Long.MAX_VALUE;
+            long rightDistance = right < size ? lines.get(right).timeMillis - position : Long.MAX_VALUE;
+            if (leftDistance <= rightDistance) {
+                long clusterTime = lines.get(left).timeMillis;
+                int clusterStart = left;
+                while (clusterStart > 0 && lines.get(clusterStart - 1).timeMillis == clusterTime) {
+                    clusterStart--;
+                }
+                for (int i = clusterStart; i <= left; i++) {
+                    if (matchesLinePredicate(lines.get(i), normalizedText, byTranslation)) {
+                        return lines.get(i);
+                    }
+                }
+                left = clusterStart - 1;
+            } else {
+                long clusterTime = lines.get(right).timeMillis;
+                int clusterEnd = right;
+                while (clusterEnd + 1 < size && lines.get(clusterEnd + 1).timeMillis == clusterTime) {
+                    clusterEnd++;
+                }
+                for (int i = right; i <= clusterEnd; i++) {
+                    if (matchesLinePredicate(lines.get(i), normalizedText, byTranslation)) {
+                        return lines.get(i);
+                    }
+                }
+                right = clusterEnd + 1;
+            }
+        }
+        return null;
+    }
+
+    private static boolean matchesLinePredicate(WordLine line, String normalizedText, boolean byTranslation) {
+        if (line == null) {
+            return false;
+        }
+        return byTranslation
+                ? line.normalizedTranslation().equals(normalizedText)
+                : WordLyricRenderSupport.matchesWordLineText(line, normalizedText);
+    }
+
     public int translationCount() {
         int count = 0;
         for (WordLine line : lines) {
@@ -339,6 +442,83 @@ public final class WordLyricModel {
             }
         }
         return count;
+    }
+
+    /**
+     * Copies a nearby translation across repeated renderable aliases during model assembly.
+     * This was historically done from the draw resolver and mutated the model on a frame path.
+     */
+    public int propagateNearbyTranslations(int radius) {
+        if (lines.isEmpty()) {
+            return 0;
+        }
+        int copied = 0;
+        int boundedRadius = Math.max(0, radius);
+        boolean[] sourceEligible = new boolean[lines.size()];
+        for (int index = 0; index < lines.size(); index++) {
+            WordLine line = lines.get(index);
+            sourceEligible[index] = line != null && !isEmpty(line.translation);
+        }
+        for (int index = 0; index < lines.size(); index++) {
+            WordLine target = lines.get(index);
+            if (target == null || !isEmpty(target.translation)) {
+                continue;
+            }
+            String displayText = target.normalizedDisplayText();
+            WordLine source = !isEmpty(displayText)
+                    ? findNearbyTranslationSource(
+                            displayText,
+                            index,
+                            boundedRadius,
+                            sourceEligible)
+                    : null;
+            if (source == null && !isEmpty(target.normalizedText)) {
+                source = findNearbyTranslationSource(
+                        target.normalizedText,
+                        index,
+                        boundedRadius,
+                        sourceEligible);
+            }
+            if (source == null || source == target || isEmpty(source.translation)) {
+                continue;
+            }
+            target.translation = source.translation;
+            copied++;
+        }
+        if (copied > 0) {
+            renderableTextIndexBuilt = false;
+        }
+        return copied;
+    }
+
+    private WordLine findNearbyTranslationSource(
+            String normalizedText,
+            int index,
+            int radius,
+            boolean[] sourceEligible) {
+        if (isEmpty(normalizedText) || index < 0 || sourceEligible == null) {
+            return null;
+        }
+        int anchor = Math.max(0, Math.min(index, lines.size() - 1));
+        int start = Math.max(0, anchor - radius);
+        int end = Math.min(lines.size() - 1, anchor + radius);
+        WordLine best = null;
+        int bestDistance = Integer.MAX_VALUE;
+        for (int candidateIndex = start; candidateIndex <= end; candidateIndex++) {
+            if (candidateIndex >= sourceEligible.length || !sourceEligible[candidateIndex]) {
+                continue;
+            }
+            WordLine candidate = lines.get(candidateIndex);
+            if (!WordLyricRenderSupport.matchesWordLineText(candidate, normalizedText)) {
+                continue;
+            }
+            int distance = Math.abs(candidateIndex - anchor);
+            if (best == null || distance < bestDistance) {
+                best = candidate;
+                bestDistance = distance;
+            }
+        }
+        return best;
     }
 
     public boolean hasDuplicateRenderableText(String normalizedText) {

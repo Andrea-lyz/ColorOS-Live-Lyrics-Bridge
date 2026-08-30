@@ -23,7 +23,6 @@ final class LyricOpeningCleanup {
 
     enum Reason {
         VISIBLE,
-        FIXED_PARSING,
         TRACK_OVERRIDE,
         BUILTIN_COPYRIGHT,
         BUILTIN_PRODUCTION,
@@ -148,10 +147,6 @@ final class LyricOpeningCleanup {
                 : config;
         for (int index = 0; index < lines.size(); index++) {
             Line line = lines.get(index);
-            if (LyricMetadataFilter.isParsingProtectedLine(line.text)) {
-                result.add(new Decision(line, Reason.FIXED_PARSING, true));
-                continue;
-            }
             if (manualCutoff >= 0) {
                 result.add(new Decision(
                         line,
@@ -264,7 +259,6 @@ final class LyricOpeningCleanup {
     static String reasonLabel(Reason reason) {
         if (reason == null) return "尚未识别";
         switch (reason) {
-            case FIXED_PARSING: return "解析保护规则";
             case TRACK_OVERRIDE: return "本歌曲手动修正";
             case BUILTIN_COPYRIGHT: return "内置：版权与权利声明";
             case BUILTIN_PRODUCTION: return "内置：制作人员与乐器信息";
@@ -342,7 +336,8 @@ final class LyricOpeningCleanup {
             return false;
         }
         String value = normalizeForComparison(current.text);
-        if (value.length() < 2 || value.length() > 80
+        if (value.length() < 2 || value.length() > 48
+                || looksLikeLyricContent(value)
                 || value.indexOf(':') >= 0
                 || value.indexOf(',') >= 0
                 || value.indexOf('，') >= 0
@@ -351,10 +346,51 @@ final class LyricOpeningCleanup {
                 || value.endsWith("?")) {
             return false;
         }
-        for (int index = 0; index < value.length(); index++) {
-            if (Character.isLetter(value.charAt(index))) return true;
+        for (int index = 0; index < value.length();) {
+            int codePoint = value.codePointAt(index);
+            if (Character.isLetter(codePoint)) return true;
+            index += Character.charCount(codePoint);
         }
         return false;
+    }
+
+    /**
+     * Title/artist credits sometimes split a featured artist onto the next timed row.
+     * Real opening lyrics are full clauses and must not inherit that hide rule just
+     * because they start within two seconds of a {@code Title - Artist} header.
+     */
+    private static boolean looksLikeLyricContent(String value) {
+        if (value == null || value.isEmpty()) return false;
+        int tokens = 0;
+        int cjkChars = 0;
+        boolean inToken = false;
+        for (int index = 0; index < value.length();) {
+            int codePoint = value.codePointAt(index);
+            if (Character.isWhitespace(codePoint)) {
+                inToken = false;
+            } else {
+                if (!inToken) {
+                    tokens++;
+                    inToken = true;
+                }
+                if (isCjkCodePoint(codePoint)) {
+                    cjkChars++;
+                }
+            }
+            index += Character.charCount(codePoint);
+        }
+        return tokens > 5 || cjkChars >= 8;
+    }
+
+    private static boolean isCjkCodePoint(int codePoint) {
+        Character.UnicodeBlock block = Character.UnicodeBlock.of(codePoint);
+        return block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS
+                || block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A
+                || block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_B
+                || block == Character.UnicodeBlock.CJK_COMPATIBILITY_IDEOGRAPHS
+                || block == Character.UnicodeBlock.HIRAGANA
+                || block == Character.UnicodeBlock.KATAKANA
+                || block == Character.UnicodeBlock.HANGUL_SYLLABLES;
     }
 
     private static Reason learnedReason(

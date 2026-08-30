@@ -152,6 +152,59 @@ public class WordLyricModelTest {
     }
 
     @Test
+    public void findOfficialAliasLine_prefersChorusTimestampOverNearbyIndex() {
+        // Cruel Summer: official adapter 18 is the second chorus at 00:47.744,
+        // but model index 18 is "It's cool..." and radius 2 from there hits
+        // the first chorus at model 17 (00:36.409). Exact begin can miss when
+        // the official list is 1ms off the word model.
+        WordLyricModel model = new WordLyricModel();
+        model.lines.add(line(33_514L, "And it's ooh whoa oh"));
+        WordLine firstChorus = wordLine(
+                36_409L,
+                "It's a cruel summer",
+                new long[] {36_867L, 37_049L, 37_217L, 38_105L});
+        model.lines.add(firstChorus);
+        model.lines.add(line(39_522L, "It's cool that's what I tell'em"));
+        model.lines.add(line(42_303L, "No rules in breakable heaven"));
+        model.lines.add(line(44_757L, "But ooh whoa oh"));
+        WordLine secondChorus = wordLine(
+                47_744L,
+                "It's a cruel summer",
+                new long[] {48_032L, 48_201L, 48_369L, 49_425L});
+        model.lines.add(secondChorus);
+
+        assertEquals(
+                firstChorus,
+                model.findLineByTextNearIndex("It's a cruel summer", 2, 2, false));
+
+        WordLine alias = model.findOfficialAliasLine(
+                47_745L,
+                "It's a cruel summer",
+                1,
+                2);
+        assertNotNull(alias);
+        assertEquals(47_744L, alias.timeMillis);
+        assertEquals(secondChorus, alias);
+    }
+
+    @Test
+    public void findOfficialAliasLine_keepsExactBeginMatch() {
+        WordLyricModel model = new WordLyricModel();
+        WordLine firstChorus = line(36_409L, "It's a cruel summer");
+        WordLine secondChorus = line(47_744L, "It's a cruel summer");
+        model.lines.add(firstChorus);
+        model.lines.add(line(39_522L, "It's cool that's what I tell'em"));
+        model.lines.add(secondChorus);
+
+        assertEquals(
+                firstChorus,
+                model.findOfficialAliasLine(36_409L, "It's a cruel summer", 0, 0));
+        assertEquals(
+                secondChorus,
+                model.findOfficialAliasLine(47_744L, "It's a cruel summer", 1, 2));
+    }
+
+    @Test
     public void findLineByTextNearIndex_requiresTranslationWhenAsked() {
         WordLyricModel model = new WordLyricModel();
         WordLine anchor = line(1000L, "anchor");
@@ -174,6 +227,74 @@ public class WordLyricModelTest {
         withTranslation.translation = "翻译";
         model.lines.add(withTranslation);
         assertEquals(1, model.translationCount());
+    }
+
+    @Test
+    public void propagateNearbyTranslationsRepairsRepeatedMainTextBeforeDraw() {
+        WordLyricModel model = new WordLyricModel();
+        WordLine untranslated = line(1_000L, "same chorus");
+        WordLine translated = line(5_000L, "same chorus");
+        translated.translation = "同一段副歌";
+        model.lines.add(untranslated);
+        model.lines.add(line(3_000L, "middle"));
+        model.lines.add(translated);
+
+        assertEquals(1, model.propagateNearbyTranslations(6));
+        assertEquals("同一段副歌", untranslated.translation);
+        assertEquals(0, model.propagateNearbyTranslations(6));
+    }
+
+    @Test
+    public void propagateNearbyTranslationsUsesOfficialDisplayAlias() {
+        WordLyricModel model = new WordLyricModel();
+        WordLine untranslated = line(1_000L, "source one");
+        untranslated.displayText = "shared display";
+        WordLine translated = line(2_000L, "source two");
+        translated.displayText = "shared display";
+        translated.translation = "共享翻译";
+        model.lines.add(untranslated);
+        model.lines.add(translated);
+
+        assertEquals(1, model.propagateNearbyTranslations(2));
+        assertEquals("共享翻译", untranslated.translation);
+    }
+
+    @Test
+    public void propagateNearbyTranslationsRespectsRadius() {
+        WordLyricModel model = new WordLyricModel();
+        WordLine untranslated = line(1_000L, "repeat");
+        model.lines.add(untranslated);
+        for (int index = 0; index < 7; index++) {
+            model.lines.add(line(2_000L + index, "middle-" + index));
+        }
+        WordLine translated = line(9_000L, "repeat");
+        translated.translation = "翻译";
+        model.lines.add(translated);
+
+        assertEquals(0, model.propagateNearbyTranslations(6));
+        assertEquals("", untranslated.translation);
+    }
+
+    @Test
+    public void propagateNearbyTranslationsDoesNotChainPastRadius() {
+        WordLyricModel model = new WordLyricModel();
+        WordLine source = line(1_000L, "repeat");
+        source.translation = "翻译";
+        model.lines.add(source);
+        for (int index = 1; index < 6; index++) {
+            model.lines.add(line(1_000L + index, "middle-a-" + index));
+        }
+        WordLine near = line(2_000L, "repeat");
+        model.lines.add(near);
+        for (int index = 7; index < 12; index++) {
+            model.lines.add(line(2_000L + index, "middle-b-" + index));
+        }
+        WordLine beyond = line(3_000L, "repeat");
+        model.lines.add(beyond);
+
+        assertEquals(1, model.propagateNearbyTranslations(6));
+        assertEquals("翻译", near.translation);
+        assertEquals("", beyond.translation);
     }
 
     @Test
@@ -223,6 +344,28 @@ public class WordLyricModelTest {
         model.lines.add(line(0L, ""));
         model.lines.add(line(1000L, "first text"));
         assertEquals("first text", model.firstDisplayLine().text);
+    }
+
+    @Test
+    public void isBeforeFirstProgressStart_usesFirstWordNotOfficialZeroAlias() {
+        WordLyricModel model = new WordLyricModel();
+        WordLine first = wordLine(9_405L, "But now you're going", new long[] {9_405L, 9_623L});
+        model.lines.add(first);
+        model.officialLines.add(first);
+        assertEquals(9_405L, model.firstProgressStartMillis());
+        assertTrue(model.isBeforeFirstProgressStart(136L));
+        assertTrue(model.isBeforeFirstProgressStart(4_282L));
+        assertFalse(model.isBeforeFirstProgressStart(9_405L));
+        assertFalse(model.isBeforeFirstProgressStart(10_284L));
+        assertFalse(model.isBeforeFirstProgressStart(-1L));
+    }
+
+    @Test
+    public void isBeforeFirstProgressStart_usesLineTimeWhenUntimed() {
+        WordLyricModel model = new WordLyricModel();
+        model.lines.add(line(1_000L, "untimed"));
+        assertTrue(model.isBeforeFirstProgressStart(0L));
+        assertFalse(model.isBeforeFirstProgressStart(1_000L));
     }
 
     @Test

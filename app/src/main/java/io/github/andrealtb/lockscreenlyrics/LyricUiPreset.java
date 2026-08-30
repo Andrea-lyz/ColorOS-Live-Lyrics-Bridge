@@ -17,6 +17,15 @@ enum LyricUiPreset {
         if (this == CUSTOM) return source;
         LyricUiConfig defaults = LyricUiConfig.defaults();
         LyricUiConfig.Builder builder = source.buildUpon()
+                .activeOpacityPercent(defaults.activeOpacityPercent)
+                .currentUnrevealedOpacityPercent(defaults.currentUnrevealedOpacityPercent)
+                .activeTranslationOpacityPercent(defaults.activeTranslationOpacityPercent)
+                .activeTranslationProgressOpacityPercent(
+                        defaults.activeTranslationProgressOpacityPercent)
+                .inactiveTranslationFollowsMain(true)
+                .verticalFadeEnabled(defaults.verticalFadeEnabled)
+                .verticalFadeLengthTenthsDp(defaults.verticalFadeLengthTenthsDp)
+                .inactiveRowFadePercent(defaults.inactiveRowFadePercent)
                 .mainFontTenthsSp(defaults.mainFontTenthsSp)
                 .translationFontRatioPercent(defaults.translationFontRatioPercent)
                 .fontWeight(defaults.fontWeight)
@@ -29,6 +38,8 @@ enum LyricUiPreset {
                 // only differ in effects (2026-08-05 device decision).
                 return builder.primaryColor("#FFFFFF").glowColor("#FFD68A")
                         .inactiveOpacityPercent(36)
+                        .inactiveTranslationOpacityPercent(36)
+                        .inactiveRowFadeEnabled(true)
                         .blurEnabled(true).blurRadiusTenthsPx(20)
                         .scaleEnabled(true).inactiveScalePercent(96)
                         .glowEnabled(true).glowIntensityPercent(60).glowRadiusPercent(14)
@@ -36,6 +47,8 @@ enum LyricUiPreset {
             case VIVID:
                 return builder.primaryColor("#FFFFFF").glowColor("#FFD68A")
                         .inactiveOpacityPercent(44)
+                        .inactiveTranslationOpacityPercent(44)
+                        .inactiveRowFadeEnabled(true)
                         .blurEnabled(true).blurRadiusTenthsPx(40)
                         .scaleEnabled(true).inactiveScalePercent(90)
                         .glowEnabled(true).glowIntensityPercent(100).glowRadiusPercent(22)
@@ -43,6 +56,8 @@ enum LyricUiPreset {
             case MINIMAL:
                 return builder.primaryColor("#FFFFFF").glowColor("#FFD68A")
                         .inactiveOpacityPercent(55)
+                        .inactiveTranslationOpacityPercent(55)
+                        .inactiveRowFadeEnabled(false)
                         .blurEnabled(false).blurRadiusTenthsPx(40)
                         .scaleEnabled(false).inactiveScalePercent(90)
                         .glowEnabled(false).glowIntensityPercent(0).glowRadiusPercent(18)
@@ -51,6 +66,8 @@ enum LyricUiPreset {
             default:
                 return builder.primaryColor("#FFFFFF").glowColor("#FFD68A")
                         .inactiveOpacityPercent(44)
+                        .inactiveTranslationOpacityPercent(44)
+                        .inactiveRowFadeEnabled(false)
                         .blurEnabled(false).blurRadiusTenthsPx(40)
                         .scaleEnabled(false).inactiveScalePercent(90)
                         .glowEnabled(true).glowIntensityPercent(100).glowRadiusPercent(18)
@@ -93,7 +110,22 @@ enum LyricUiPreset {
     }
 
     private static boolean sameAppearance(LyricUiConfig left, LyricUiConfig right) {
-        return left.inactiveOpacityPercent == right.inactiveOpacityPercent
+        return left.activeOpacityPercent == right.activeOpacityPercent
+                && left.currentUnrevealedOpacityPercent
+                == right.currentUnrevealedOpacityPercent
+                && left.activeTranslationOpacityPercent
+                == right.activeTranslationOpacityPercent
+                && left.activeTranslationProgressOpacityPercent
+                == right.activeTranslationProgressOpacityPercent
+                && left.inactiveOpacityPercent == right.inactiveOpacityPercent
+                && left.inactiveTranslationFollowsMain
+                == right.inactiveTranslationFollowsMain
+                && left.inactiveTranslationOpacityPercent
+                == right.inactiveTranslationOpacityPercent
+                && left.verticalFadeEnabled == right.verticalFadeEnabled
+                && left.verticalFadeLengthTenthsDp == right.verticalFadeLengthTenthsDp
+                && left.inactiveRowFadeEnabled == right.inactiveRowFadeEnabled
+                && left.inactiveRowFadePercent == right.inactiveRowFadePercent
                 && left.blurEnabled == right.blurEnabled
                 && left.blurRadiusTenthsPx == right.blurRadiusTenthsPx
                 && left.scaleEnabled == right.scaleEnabled

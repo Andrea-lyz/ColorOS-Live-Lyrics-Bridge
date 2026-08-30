@@ -31,8 +31,7 @@ final class LyricUiConfigRepository {
                 && (!preferences.contains(LyricUiConfigCodec.SCHEMA)
                 || preferences.getInt(LyricUiConfigCodec.SCHEMA, -1)
                 != LyricUiConfig.SCHEMA_VERSION
-                || !preferences.contains(LyricUiConfigCodec.LINE_SPACING)
-                || !preferences.contains(LyricUiConfigCodec.WRAPPED_LINE_SPACING))) {
+                || !containsAllSnapshotKeys(preferences, config))) {
             save(preferences, config);
             preferences.edit().remove(
                     LyricUiConfigCodec.LEGACY_METADATA_CLEANUP_RULES).apply();
@@ -91,5 +90,14 @@ final class LyricUiConfigRepository {
             if (extras.containsKey(key)) values.put(key, extras.get(key));
         }
         return LyricUiConfigCodec.decode(values, baseline, false);
+    }
+
+    private static boolean containsAllSnapshotKeys(
+            SharedPreferences preferences,
+            LyricUiConfig config) {
+        for (String key : LyricUiConfigCodec.encode(config).keySet()) {
+            if (!preferences.contains(key)) return false;
+        }
+        return true;
     }
 }

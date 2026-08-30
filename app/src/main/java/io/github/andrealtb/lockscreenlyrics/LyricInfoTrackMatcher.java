@@ -23,11 +23,11 @@ final class LyricInfoTrackMatcher {
             return false;
         }
         String actualKey = TrackIdentity.buildKey(title, artist);
-        if (payload.isModuleEnvelope() && !isEmpty(payload.trackKey)) {
-            return TrackIdentity.matchesHintKey(payload.trackKey, actualKey);
-        }
+        String payloadTrackHintKey = normalizePayloadTrackHintKey(payload.trackKey);
+        boolean trackKeyMatched = !isEmpty(payloadTrackHintKey)
+                && TrackIdentity.matchesHintKey(payloadTrackHintKey, actualKey);
         if (!isEmpty(payload.trackKey)
-                && !TrackIdentity.matchesHintKey(payload.trackKey, actualKey)) {
+                && !trackKeyMatched) {
             return false;
         }
 
@@ -37,7 +37,7 @@ final class LyricInfoTrackMatcher {
             return false;
         }
 
-        if (isEmpty(payload.songName)) {
+        if (trackKeyMatched || isEmpty(payload.songName)) {
             return true;
         }
         return TrackIdentity.matchesHintKey(
@@ -45,43 +45,33 @@ final class LyricInfoTrackMatcher {
                 actualKey);
     }
 
-    static boolean hasStrongTrackEvidence(
-            LyricInfoContract.Payload payload,
-            String title,
-            String artist) {
-        if (payload == null || isEmpty(title)) {
-            return false;
+    /**
+     * provider-core publishes TrackIdentity.buildStableKey as
+     * {@code id|title|artist|durationSeconds}. Bridge's display matcher uses
+     * {@code title|artist}; normalize the standard Provider form before applying the strict
+     * track gate instead of treating the leading id as a title.
+     */
+    static String normalizePayloadTrackHintKey(String trackKey) {
+        if (isEmpty(trackKey)) {
+            return "";
         }
-        String actualKey = TrackIdentity.buildKey(title, artist);
-        if (!isEmpty(payload.trackKey)
-                && TrackIdentity.matchesHintKey(payload.trackKey, actualKey)) {
-            return true;
+        String[] parts = trackKey.split("\\|", -1);
+        if (parts.length != 4 || !isNonNegativeLong(parts[3])) {
+            return trackKey;
         }
-        String lyricHintKey = inferTrackHintKey(firstNonEmpty(payload.rawLyric, payload.lyric));
-        return !isEmpty(lyricHintKey)
-                && TrackIdentity.matchesHintKey(lyricHintKey, actualKey);
+        return TrackIdentity.buildKey(parts[1], parts[2]);
     }
 
-    static boolean shouldClearSaltPlayerFallbackLyricInfo(
-            LyricInfoContract.Payload payload,
-            String title,
-            String artist,
-            boolean trackChanged,
-            boolean confirmingPreviouslyClearedTrack,
-            boolean sameAsStableLyricInfo,
-            boolean hasCapturedLyricForCurrentTrack) {
-        if (payload == null
-                || hasCapturedLyricForCurrentTrack
-                || (!trackChanged && !confirmingPreviouslyClearedTrack)) {
+    private static boolean isNonNegativeLong(String value) {
+        if (isEmpty(value)) {
             return false;
         }
-        if (sameAsStableLyricInfo) {
-            return true;
+        for (int i = 0; i < value.length(); i++) {
+            if (!Character.isDigit(value.charAt(i))) {
+                return false;
+            }
         }
-        if (payload.isModuleEnvelope()) {
-            return false;
-        }
-        return !hasStrongTrackEvidence(payload, title, artist);
+        return true;
     }
 
     static String inferTrackHintKey(String rawLyric) {

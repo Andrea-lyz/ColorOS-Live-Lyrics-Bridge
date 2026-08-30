@@ -5,7 +5,7 @@ import java.util.Objects;
 import java.util.regex.Pattern;
 
 final class LyricUiConfig {
-    static final int SCHEMA_VERSION = 2;
+    static final int SCHEMA_VERSION = 3;
     static final int MOTION_STANDARD = 0;
     static final int MOTION_REDUCED = 1;
     static final int MOTION_OFF = 2;
@@ -19,7 +19,17 @@ final class LyricUiConfig {
     private static final Pattern OPAQUE_RGB = Pattern.compile("#[0-9A-Fa-f]{6}");
 
     final int schemaVersion;
+    final int activeOpacityPercent;
+    final int currentUnrevealedOpacityPercent;
+    final int activeTranslationOpacityPercent;
+    final int activeTranslationProgressOpacityPercent;
     final int inactiveOpacityPercent;
+    final boolean inactiveTranslationFollowsMain;
+    final int inactiveTranslationOpacityPercent;
+    final boolean verticalFadeEnabled;
+    final int verticalFadeLengthTenthsDp;
+    final boolean inactiveRowFadeEnabled;
+    final int inactiveRowFadePercent;
     final boolean blurEnabled;
     final int blurRadiusTenthsPx;
     final boolean scaleEnabled;
@@ -47,13 +57,34 @@ final class LyricUiConfig {
 
     private LyricUiConfig(Builder builder) {
         schemaVersion = SCHEMA_VERSION;
+        activeOpacityPercent = clamp(builder.activeOpacityPercent, 50, 100);
+        currentUnrevealedOpacityPercent = Math.min(
+                clamp(builder.currentUnrevealedOpacityPercent, 20, 100),
+                activeOpacityPercent);
+        activeTranslationProgressOpacityPercent = Math.min(
+                clamp(builder.activeTranslationProgressOpacityPercent, 20, 100),
+                activeOpacityPercent);
+        activeTranslationOpacityPercent = Math.min(
+                clamp(builder.activeTranslationOpacityPercent, 20, 100),
+                activeTranslationProgressOpacityPercent);
         inactiveOpacityPercent = clamp(builder.inactiveOpacityPercent, 30, 100);
+        inactiveTranslationFollowsMain = builder.inactiveTranslationFollowsMain;
+        inactiveTranslationOpacityPercent = clamp(
+                builder.inactiveTranslationOpacityPercent,
+                20,
+                100);
+        verticalFadeEnabled = builder.verticalFadeEnabled;
+        verticalFadeLengthTenthsDp = clamp(builder.verticalFadeLengthTenthsDp, 0, 1200);
+        inactiveRowFadeEnabled = builder.inactiveRowFadeEnabled;
+        inactiveRowFadePercent = clamp(builder.inactiveRowFadePercent, 50, 100);
         blurEnabled = builder.blurEnabled;
         blurRadiusTenthsPx = roundStep(clamp(builder.blurRadiusTenthsPx, 0, 80), 5);
         scaleEnabled = builder.scaleEnabled;
         inactiveScalePercent = clamp(builder.inactiveScalePercent, 75, 100);
-        glowEnabled = builder.glowEnabled;
-        glowIntensityPercent = clamp(builder.glowIntensityPercent, 0, 100);
+        glowIntensityPercent = LyricUiGlowPolicy.canonicalIntensityPercent(
+                builder.glowEnabled,
+                builder.glowIntensityPercent);
+        glowEnabled = LyricUiGlowPolicy.enabledForIntensity(glowIntensityPercent);
         glowRadiusPercent = clamp(builder.glowRadiusPercent, 10, 24);
         primaryColor = sanitizeColor(builder.primaryColor, "#FFFFFF");
         glowColor = sanitizeColor(builder.glowColor, "#FFD68A");
@@ -88,7 +119,18 @@ final class LyricUiConfig {
     LyricUiConfig resetAppearance() {
         LyricUiConfig defaults = defaults();
         return buildUpon()
+                .activeOpacityPercent(defaults.activeOpacityPercent)
+                .currentUnrevealedOpacityPercent(defaults.currentUnrevealedOpacityPercent)
+                .activeTranslationOpacityPercent(defaults.activeTranslationOpacityPercent)
+                .activeTranslationProgressOpacityPercent(
+                        defaults.activeTranslationProgressOpacityPercent)
                 .inactiveOpacityPercent(defaults.inactiveOpacityPercent)
+                .inactiveTranslationFollowsMain(defaults.inactiveTranslationFollowsMain)
+                .inactiveTranslationOpacityPercent(defaults.inactiveTranslationOpacityPercent)
+                .verticalFadeEnabled(defaults.verticalFadeEnabled)
+                .verticalFadeLengthTenthsDp(defaults.verticalFadeLengthTenthsDp)
+                .inactiveRowFadeEnabled(defaults.inactiveRowFadeEnabled)
+                .inactiveRowFadePercent(defaults.inactiveRowFadePercent)
                 .blurEnabled(defaults.blurEnabled)
                 .blurRadiusTenthsPx(defaults.blurRadiusTenthsPx)
                 .scaleEnabled(defaults.scaleEnabled)
@@ -130,7 +172,18 @@ final class LyricUiConfig {
         if (this == object) return true;
         if (!(object instanceof LyricUiConfig)) return false;
         LyricUiConfig other = (LyricUiConfig) object;
-        return inactiveOpacityPercent == other.inactiveOpacityPercent
+        return activeOpacityPercent == other.activeOpacityPercent
+                && currentUnrevealedOpacityPercent == other.currentUnrevealedOpacityPercent
+                && activeTranslationOpacityPercent == other.activeTranslationOpacityPercent
+                && activeTranslationProgressOpacityPercent
+                == other.activeTranslationProgressOpacityPercent
+                && inactiveOpacityPercent == other.inactiveOpacityPercent
+                && inactiveTranslationFollowsMain == other.inactiveTranslationFollowsMain
+                && inactiveTranslationOpacityPercent == other.inactiveTranslationOpacityPercent
+                && verticalFadeEnabled == other.verticalFadeEnabled
+                && verticalFadeLengthTenthsDp == other.verticalFadeLengthTenthsDp
+                && inactiveRowFadeEnabled == other.inactiveRowFadeEnabled
+                && inactiveRowFadePercent == other.inactiveRowFadePercent
                 && blurEnabled == other.blurEnabled
                 && blurRadiusTenthsPx == other.blurRadiusTenthsPx
                 && scaleEnabled == other.scaleEnabled
@@ -160,7 +213,12 @@ final class LyricUiConfig {
     @Override
     public int hashCode() {
         return Objects.hash(
-                inactiveOpacityPercent, blurEnabled, blurRadiusTenthsPx,
+                activeOpacityPercent, currentUnrevealedOpacityPercent,
+                activeTranslationOpacityPercent, activeTranslationProgressOpacityPercent,
+                inactiveOpacityPercent, inactiveTranslationFollowsMain,
+                inactiveTranslationOpacityPercent, verticalFadeEnabled,
+                verticalFadeLengthTenthsDp, inactiveRowFadeEnabled, inactiveRowFadePercent,
+                blurEnabled, blurRadiusTenthsPx,
                 scaleEnabled, inactiveScalePercent, glowEnabled, glowIntensityPercent,
                 glowRadiusPercent, primaryColor, glowColor, motionMode,
                 passiveVerticalPanEnabled, translationMarqueeEnabled, maxRefreshRateHz,
@@ -171,7 +229,17 @@ final class LyricUiConfig {
     }
 
     static final class Builder {
+        private int activeOpacityPercent = 100;
+        private int currentUnrevealedOpacityPercent = 50;
+        private int activeTranslationOpacityPercent = 60;
+        private int activeTranslationProgressOpacityPercent = 80;
         private int inactiveOpacityPercent = 44;
+        private boolean inactiveTranslationFollowsMain = true;
+        private int inactiveTranslationOpacityPercent = 44;
+        private boolean verticalFadeEnabled = true;
+        private int verticalFadeLengthTenthsDp = 519;
+        private boolean inactiveRowFadeEnabled;
+        private int inactiveRowFadePercent = 90;
         private boolean blurEnabled;
         private int blurRadiusTenthsPx = 40;
         private boolean scaleEnabled;
@@ -201,7 +269,18 @@ final class LyricUiConfig {
         }
 
         Builder(LyricUiConfig source) {
+            activeOpacityPercent = source.activeOpacityPercent;
+            currentUnrevealedOpacityPercent = source.currentUnrevealedOpacityPercent;
+            activeTranslationOpacityPercent = source.activeTranslationOpacityPercent;
+            activeTranslationProgressOpacityPercent =
+                    source.activeTranslationProgressOpacityPercent;
             inactiveOpacityPercent = source.inactiveOpacityPercent;
+            inactiveTranslationFollowsMain = source.inactiveTranslationFollowsMain;
+            inactiveTranslationOpacityPercent = source.inactiveTranslationOpacityPercent;
+            verticalFadeEnabled = source.verticalFadeEnabled;
+            verticalFadeLengthTenthsDp = source.verticalFadeLengthTenthsDp;
+            inactiveRowFadeEnabled = source.inactiveRowFadeEnabled;
+            inactiveRowFadePercent = source.inactiveRowFadePercent;
             blurEnabled = source.blurEnabled;
             blurRadiusTenthsPx = source.blurRadiusTenthsPx;
             scaleEnabled = source.scaleEnabled;
@@ -228,7 +307,38 @@ final class LyricUiConfig {
             wrappedLineSpacingTenthsDp = source.wrappedLineSpacingTenthsDp;
         }
 
+        Builder activeOpacityPercent(int v) { activeOpacityPercent = v; return this; }
+        Builder currentUnrevealedOpacityPercent(int v) {
+            currentUnrevealedOpacityPercent = v;
+            return this;
+        }
+        Builder activeTranslationOpacityPercent(int v) {
+            activeTranslationOpacityPercent = v;
+            return this;
+        }
+        Builder activeTranslationProgressOpacityPercent(int v) {
+            activeTranslationProgressOpacityPercent = v;
+            return this;
+        }
         Builder inactiveOpacityPercent(int v) { inactiveOpacityPercent = v; return this; }
+        Builder inactiveTranslationFollowsMain(boolean v) {
+            inactiveTranslationFollowsMain = v;
+            return this;
+        }
+        Builder inactiveTranslationOpacityPercent(int v) {
+            inactiveTranslationOpacityPercent = v;
+            return this;
+        }
+        Builder verticalFadeEnabled(boolean v) { verticalFadeEnabled = v; return this; }
+        Builder verticalFadeLengthTenthsDp(int v) {
+            verticalFadeLengthTenthsDp = v;
+            return this;
+        }
+        Builder inactiveRowFadeEnabled(boolean v) {
+            inactiveRowFadeEnabled = v;
+            return this;
+        }
+        Builder inactiveRowFadePercent(int v) { inactiveRowFadePercent = v; return this; }
         Builder blurEnabled(boolean v) { blurEnabled = v; return this; }
         Builder blurRadiusTenthsPx(int v) { blurRadiusTenthsPx = v; return this; }
         Builder scaleEnabled(boolean v) { scaleEnabled = v; return this; }

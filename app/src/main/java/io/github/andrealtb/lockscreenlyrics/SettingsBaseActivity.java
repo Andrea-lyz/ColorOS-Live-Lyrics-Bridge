@@ -3,8 +3,10 @@ package io.github.andrealtb.lockscreenlyrics;
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.content.res.Configuration;
+import android.app.Dialog;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.os.Bundle;
@@ -361,6 +363,118 @@ abstract class SettingsBaseActivity extends AppCompatActivity {
         button.setStateListAnimator(null);
         button.setElevation(0f);
         button.setTranslationZ(0f);
+    }
+
+    /** Settings-themed unsaved-changes dialog shared by independent sub-pages. */
+    protected final void showSettingsDiscardDialog(Runnable onDiscard) {
+        showSettingsConfirmDialog(
+                R.string.back_discard_title,
+                R.string.back_discard_message,
+                R.string.back_discard,
+                true,
+                onDiscard);
+    }
+
+    /** Settings-themed confirmation dialog for restore/reset operations. */
+    protected final void showSettingsConfirmDialog(
+            int titleRes,
+            int messageRes,
+            int positiveRes,
+            boolean destructive,
+            Runnable onConfirm) {
+        Dialog dialog = new Dialog(this);
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(20), dp(18), dp(20), dp(16));
+        GradientDrawable panelBackground = new GradientDrawable();
+        panelBackground.setColor(Color.WHITE);
+        panelBackground.setCornerRadius(dp(20));
+        panelBackground.setStroke(dp(1), 0x1A1B222C);
+        panel.setBackground(panelBackground);
+
+        TextView title = text(
+                getString(titleRes),
+                17,
+                settingsTextColor());
+        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        title.setIncludeFontPadding(false);
+        panel.addView(title, matchWrap());
+
+        TextView message = text(
+                getString(messageRes),
+                13,
+                getColor(R.color.settings_text_secondary));
+        message.setLineSpacing(0f, 1.25f);
+        LinearLayout.LayoutParams messageParams = matchWrap();
+        messageParams.topMargin = dp(9);
+        messageParams.bottomMargin = dp(18);
+        panel.addView(message, messageParams);
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setGravity(Gravity.CENTER_VERTICAL);
+        Button cancel = settingsPillButton(
+                getString(R.string.dialog_cancel),
+                0x121B222C,
+                0xFF5C6774,
+                Typeface.NORMAL);
+        cancel.setOnClickListener(view -> dialog.dismiss());
+        LinearLayout.LayoutParams cancelParams = new LinearLayout.LayoutParams(0, dp(42), 1f);
+        cancelParams.rightMargin = dp(9);
+        actions.addView(cancel, cancelParams);
+
+        Button discard = settingsPillButton(
+                getString(positiveRes),
+                destructive ? 0x24C04A3A : 0x29F2C14E,
+                destructive ? getColor(R.color.settings_error) : 0xFF6F4A0D,
+                Typeface.BOLD);
+        discard.setOnClickListener(view -> {
+            dialog.dismiss();
+            onConfirm.run();
+        });
+        actions.addView(discard, new LinearLayout.LayoutParams(0, dp(42), 1f));
+        panel.addView(actions, matchWrap());
+
+        dialog.setContentView(panel);
+        dialog.setCanceledOnTouchOutside(true);
+        Window dialogWindow = dialog.getWindow();
+        if (dialogWindow != null) {
+            dialogWindow.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            dialogWindow.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            WindowManager.LayoutParams attributes = dialogWindow.getAttributes();
+            attributes.dimAmount = 0.28f;
+            dialogWindow.setAttributes(attributes);
+            dialogWindow.setGravity(Gravity.CENTER);
+        }
+        dialog.show();
+        if (dialogWindow != null) {
+            int width = Math.min(
+                    dp(320),
+                    getResources().getDisplayMetrics().widthPixels - dp(28));
+            dialogWindow.setLayout(width, WindowManager.LayoutParams.WRAP_CONTENT);
+        }
+    }
+
+    private Button settingsPillButton(
+            String label,
+            int background,
+            int textColor,
+            int style) {
+        MaterialButton button = new MaterialButton(this);
+        button.setText(label);
+        button.setAllCaps(false);
+        button.setTextColor(textColor);
+        button.setTextSize(12.5f);
+        button.setTypeface(Typeface.DEFAULT, style);
+        button.setGravity(Gravity.CENTER);
+        button.setInsetTop(0);
+        button.setInsetBottom(0);
+        button.setMinWidth(0);
+        GradientDrawable backgroundDrawable = new GradientDrawable();
+        backgroundDrawable.setColor(background);
+        backgroundDrawable.setCornerRadius(dp(23));
+        button.setBackground(backgroundDrawable);
+        removeButtonShadow(button);
+        return button;
     }
 
     /** Fixed save/action surface used by the two settings sub-pages. */

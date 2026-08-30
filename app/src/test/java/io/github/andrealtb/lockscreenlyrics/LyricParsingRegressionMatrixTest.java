@@ -49,7 +49,7 @@ public final class LyricParsingRegressionMatrixTest {
     }
 
     @Test
-    public void providerCreditAndMissingTranslationDoNotShiftLanes() {
+    public void standaloneProviderCreditPassesThroughAsOrdinaryLine() {
         String lrc = "[00:01.00]First line\n"
                 + "[00:01.00]第一行\n"
                 + "[00:02.00]以下歌词翻译由 Someone 提供\n"
@@ -59,8 +59,9 @@ public final class LyricParsingRegressionMatrixTest {
 
         LyricsCoreAdapter.ParsedLyrics parsed = LyricsCoreAdapter.parsePlainLrc(lrc);
 
-        assertEquals(3, parsed.lines.size());
+        assertEquals(4, parsed.lines.size());
         assertParsedLine(parsed, 1_000L, "First line", "第一行");
+        assertParsedLine(parsed, 2_000L, "以下歌词翻译由 Someone 提供", "");
         assertParsedLine(parsed, 3_000L, "Missing translation line", "");
         assertParsedLine(parsed, 5_000L, "Final line", "最后一行");
     }
