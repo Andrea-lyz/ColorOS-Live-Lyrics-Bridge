@@ -2,7 +2,7 @@
 
 > 快照日期：2026-08-30
 >
-> 状态：Slice 7A–7F 与 RC5 真机验收已完成；四个原生播放器纯包名 SystemUI 兼容策略已通过静态门禁；项目所有者明确豁免 RC6 并授权正式发布；尚未创建正式 tag 或 Release。
+> 状态：Phase 7 已完成；v4.0.0 已正式发布，Bridge/LSP 两端公开资产独立复核通过。
 
 ## 1. 源码基线
 
@@ -173,6 +173,22 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\validate-lsposed
   contract 通过。
 - 该提交改变 Bridge APK，但不改变 payload/render/runtime 分支；项目所有者在审阅测试、
   lint 与契约结果后明确豁免 RC6，授权直接进入正式发布。
+
+## 8.3 GA 发布基线
+
+- 最终 Bridge：`6ebced30a6af3fa5015af0c8ab212ea339fd9d91` / `v4.0.0`。
+- 最终 Providers：`950c3b170271e3a0f9bccdf3fa18735451740c80` /
+  `providers-v1.0.0`。
+- 最终 LSP metadata：`781bb63f3cb83a02d5dc33c0016acd4141ee8101` /
+  `136-4.0.0`。
+- Debug CI `33305571904` 与正式发布 run `33305725280` 均成功。
+- Bridge 与 LSP 两个 Release 各 16 项公开资产，逐文件字节数/SHA-256 一致；
+  `SHA256SUMS`、asset manifest、13 APK 与 12-APK Provider ZIP 独立复核通过。
+- GA Bridge APK SHA-256：
+  `3be16859c347740ca47c5bd99f0180d45fcb45615a2e90a5398417f2e98751f6`。
+- GA Provider ZIP SHA-256：
+  `3465696f5355a55379dad7ab70d637cd42659449f480f67d54ac697882b8e07d`。
+- Phase 7 无未关闭 blocker/critical，正式完成。
 
 ## 9. Slice 7B 版本与机器契约补充
 

@@ -1,6 +1,6 @@
 # Bridge / Providers 4.0 Phase 7：RC 与正式发布计划
 
-> 状态：**Slice 7A–7F 与 RC5 真机验收已完成；四播放器包名兼容补充已通过静态门禁，项目所有者明确豁免 RC6 并授权进入 Slice 7G 正式发布**
+> 状态：**Phase 7 已完成；v4.0.0 已通过正式流水线发布到 Bridge 与 LSP，两端公开资产独立复核通过**
 >
 > 目标：Bridge `4.0.0` 与 12 个 v5 Provider 形成同一批次、可复现、可回滚说明完整的正式交付物。
 >
@@ -469,6 +469,40 @@ payload、model、renderer、MediaSession、Provider 或既有 12 宿主分支�
 3. 用公开下载的 Bridge + 至少一个 Provider 做最后安装冒烟，确认公开资产不是错误上传版本。
 4. 记录最终 Bridge commit、Provider commit、LSP metadata commit、三个 tag、Actions run、资产清单与设备结论。
 5. 发布后发现问题不移动 `v4.0.0` tag、不静默替换 APK；普通修复走 `4.0.1`，严重签名/安全/bootloop 问题按撤回说明处理。
+
+### 10.5 v4.0.0 正式发布结果
+
+2026-08-30 正式发布完成：
+
+- 发布前 Debug CI：Actions run `33305571904`，最终提交
+  `6ebced30a6af3fa5015af0c8ab212ea339fd9d91`，成功。
+- 正式流水线：Actions run `33305725280`，metadata、签名 Bridge、12 Provider、资产打包、
+  Bridge/LSP 双发布与流水线内公开资产计数全部成功：
+  <https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/actions/runs/33305725280>
+- Bridge source/tag：`6ebced30a6af3fa5015af0c8ab212ea339fd9d91` / `v4.0.0`；
+  `main` 与 `4.0` 在打 tag 时均指向该提交。
+- Provider source/tag：`950c3b170271e3a0f9bccdf3fa18735451740c80` /
+  `providers-v1.0.0`。
+- LSP metadata source/tag：`781bb63f3cb83a02d5dc33c0016acd4141ee8101` /
+  `136-4.0.0`。
+- Bridge Release：
+  <https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/releases/tag/v4.0.0>
+- LSP mirror Release：
+  <https://github.com/Xposed-Modules-Repo/io.github.andrealtb.lockscreenlyrics/releases/tag/136-4.0.0>
+- 两端各 16 项资产，名称、字节数与 SHA-256 逐文件一致；公开 `SHA256SUMS` 全量复算通过。
+- 13 个公开 APK 通过本地 asset verifier 的包名、版本、正式证书、zipalign 和 DEX 禁用
+  字符串门禁；公开 Provider ZIP 恰好包含与独立资产相同的 12 个顶层 APK。
+- Bridge APK SHA-256：
+  `3be16859c347740ca47c5bd99f0180d45fcb45615a2e90a5398417f2e98751f6`。
+- Provider ZIP SHA-256：
+  `3465696f5355a55379dad7ab70d637cd42659449f480f67d54ac697882b8e07d`。
+- SHA256SUMS 文件 SHA-256：
+  `c1f23052acd69a945494fd034bce43505bfc8a276b993c7385c9970c5e921590`。
+- 独立复核目录：`artifacts/4.0.0-ga-public-verify/`（Git 忽略，不进入源码或 Release）。
+
+本轮未重复执行发布后设备安装；RC5 设备结论、项目所有者明确接受的四包名有限差异、
+正式源码静态门禁和公开资产完整性共同作为 4.0.0 GA 验收证据。Phase 7 无未关闭
+blocker/critical，正式完成。
 
 ## 11. RC 台账字段
 

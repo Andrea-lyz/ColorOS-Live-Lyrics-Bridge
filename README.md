@@ -13,7 +13,7 @@ Bring lyrics from more music apps to the native ColorOS / OPlus lock-screen lyri
 
 This is not a floating overlay. It passes a player's full lyric timeline to the system UI, keeping the ColorOS look, transitions, and always-on display while adding word-by-word highlighting, translations, and appearance controls.
 
-> Target release: **v4.0.0**. The signed RC5 runtime has passed device validation; the public Release is not created until the remaining release checklist is closed.
+> Current release: **[v4.0.0](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/releases/tag/v4.0.0)**.
 
 ## What it does
 
