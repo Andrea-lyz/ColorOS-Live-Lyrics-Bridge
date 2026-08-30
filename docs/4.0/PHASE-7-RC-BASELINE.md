@@ -2,7 +2,7 @@
 
 > 快照日期：2026-08-30
 >
-> 状态：Slice 7A–7F 已完成；RC5 正式签名候选已通过用户真机验收；尚未创建正式 tag 或 Release。
+> 状态：Slice 7A–7F 与 RC5 真机验收已完成；发布前新增四个原生播放器纯包名 SystemUI 兼容策略，当前源码必须重建 RC6；尚未创建正式 tag 或 Release。
 
 ## 1. 源码基线
 
@@ -121,9 +121,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\validate-lsposed
 
 ## 6. Slice 7F 之后仍未关闭
 
-1. Provider source tag、LSP metadata tag、Bridge 正式 tag 与 GitHub/LSP Release 均未创建。
-2. 正式公开资产尚未发布，因此公开下载后的 16 资产重验尚未执行。
-3. 上述操作全部属于 Slice 7G；本轮按用户要求只推送文件，不发 Release。
+1. 四个原生播放器包名策略进入 Bridge APK 后，必须重新生成 RC6；RC5 仅保留为变更前
+   的设备基线，不能再直接转正式发布。
+2. Provider source tag、LSP metadata tag、Bridge 正式 tag 与 GitHub/LSP Release 均未创建。
+3. 正式公开资产尚未发布，因此公开下载后的 16 资产重验尚未执行。
 
 ## 7. Slice 7D 静态回归摘要
 

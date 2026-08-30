@@ -248,6 +248,14 @@ An external player can opt in through its manifest:
 This opt-in affects OPlus media-history/blacklist policy only. It does not grant lyric capability,
 create a Provider, or add the player to Bridge scope.
 
+4.0 also predeclares package-only lyric-entrance, media-history, and AOD SystemUI compatibility for
+the known native integrations Halcyon (`com.ella.music`), Flamingo (`yos.music.player`), QZ Music
+(`love.qz.music`), and PrismMusic (`com.lg.sllocalmusic`). This list neither validates nor admits a
+lyric source: all four players must still publish `lyricInfo` through this protocol, and old v4
+broadcasts are ignored. Other players do not need an admission PR when standard payloads already
+work; request package compatibility only with device evidence that vendor SystemUI still blocks the
+lyric entrance or AOD.
+
 ## 11. Validation checklist
 
 Validate on the exact APK that will be shipped:

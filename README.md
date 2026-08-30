@@ -67,7 +67,11 @@ Providers and Bridge can be installed independently:
 
 Private player interfaces can change after app updates. This table describes the current 4.0 implementation and device-validation matrix, not permanent compatibility with every future player release.
 
-Halcyon remains compatible when it publishes standard `lyricInfo`; its old in-app v4 broadcast fallback has been removed. Flamingo's former v4-only integration is not supported by 4.0 until it publishes standard `lyricInfo` through its own MediaSession.
+Bridge provides package-only SystemUI lyric-entrance, media-history, and AOD compatibility for
+Halcyon (`com.ella.music`), Flamingo (`yos.music.player`), QZ Music (`love.qz.music`), and
+PrismMusic (`com.lg.sllocalmusic`). This is not lyric-source admission: each player must still
+publish standard `lyricInfo` from its own MediaSession. Old in-app v4 broadcasts are not accepted,
+and no additional Provider APK is required.
 
 ## Installation
 

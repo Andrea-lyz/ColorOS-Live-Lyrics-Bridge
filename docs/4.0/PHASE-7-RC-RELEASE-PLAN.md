@@ -1,6 +1,6 @@
 # Bridge / Providers 4.0 Phase 7：RC 与正式发布计划
 
-> 状态：**Slice 7A–7F 已完成；RC5 已通过最终签名候选真机回归；本轮只提交并推送文档，不创建 tag 或 Release**
+> 状态：**Slice 7A–7F 与 RC5 真机验收已完成；发布前包名兼容策略使 Bridge APK 发生变化，RC6 待构建/验证；未创建 tag 或 Release**
 >
 > 目标：Bridge `4.0.0` 与 12 个 v5 Provider 形成同一批次、可复现、可回滚说明完整的正式交付物。
 >
@@ -344,13 +344,15 @@ artifacts/4.0.0-rc.5-88d261a-b186e79-complete/
 2. 新 Provider applicationId 与旧 Provider 可并存安装，但文档要求旧模块卸载或取消对应宿主 scope；验证双 hook 风险提示准确。
 3. 首次安装/改变 scope 后的重启说明真实有效。
 4. Provider 未安装时，Bridge 设置页不再通过 Provider package 查询伪造“已安装/未安装”状态。
-5. 对不再支持的 QQ HD、MusicFree、Gramophone、Symfonium、Flamingo v4-only 明确显示为“不在 4.0 支持矩阵”，不能模糊写成可能支持。
+5. 对不再支持的 QQ HD、MusicFree、Gramophone、Symfonium 明确显示为“不在 4.0 Provider 支持矩阵”；Halcyon、Flamingo、QZ Music 与 PrismMusic 仅提供纯包名 SystemUI 兼容，必须由播放器主动发布标准 `lyricInfo`，不能写成旧 v4 source 仍受支持。
 
 ### 8.5 Slice 7E 结论
 
 - RC5 批次 `4.0.0-rc.5-88d261a-b186e79` 已由用户完成真机验收并确认通过。
 - Bridge 与 12 Provider 的正式签名候选不再存在已知 blocker/critical 设备问题。
 - 该结论只绑定上述 batch 与 Actions run `33301880289`，不外推到后续源码变更。
+- 9.5 的四播放器纯包名策略属于后续 Bridge 源码变更，因此 RC5 已降为历史设备基线；
+  当前最终候选必须由 RC6 重新建立。
 
 ## 9. Slice 7F：迁移文档、Release Notes 与支持材料
 
@@ -409,6 +411,23 @@ artifacts/4.0.0-rc.5-88d261a-b186e79-complete/
 
 本 slice 只提交并推送上述文件。未创建 Provider source tag、LSP metadata tag、Bridge
 `v4.0.0` tag 或 GitHub/LSP Release；这些动作仍属于 Slice 7G，必须取得用户明确授权。
+
+### 9.5 发布前旧 v4 PR 收口与 RC6 门禁
+
+发布前处理 PR #42（QZ Music）与 PR #37（PrismMusic）时，只保留有设备/宿主依据的纯包名
+SystemUI 兼容价值，不合并 `ExternalLyricProviderRegistry`、source/sender 放行、title-only
+外部提升或播放器专属收藏按钮覆盖：
+
+- `com.ella.music`、`yos.music.player`、`love.qz.music`、`com.lg.sllocalmusic` 加入
+  `PlayerSystemUiPolicy` 的歌词入口、媒体历史与 AOD 包名策略；
+- 四者不加入 12 Provider 资产矩阵，也不加入播放器专属翻译收藏覆盖；
+- 播放器作者按主动接入协议在自己的 MediaSession 发布完整标准 `lyricInfo`，需要公共翻译
+  按钮时发布 `ACTION_TOGGLE_TRANSLATION`；
+- 两个旧 PR 以“4.0 架构替代旧实现”说明关闭，不合并、不 retarget 到 4.0。
+
+该策略变更进入 Bridge APK，因此已通过真机的 RC5 不再是当前源码的最终候选。必须生成
+RC6，至少复核四个包名的 SystemUI 放行不影响现有 12 Provider，并在可用新版播放器上
+验证原生 `lyricInfo`；不得沿用 RC5 的最终候选结论直接发布。
 
 ## 10. Slice 7G：正式发布顺序与发布后核验
 

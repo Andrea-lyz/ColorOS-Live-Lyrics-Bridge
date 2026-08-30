@@ -89,9 +89,10 @@ com.android.systemui
 
 - 4.0 矩阵不包含 QQ 音乐 HD。
 - 4.0 套件不发布 MusicFree、Gramophone 和 Symfonium Provider。
-- Flamingo 原 v4-only 路线不再支持；播放器需从自己的 MediaSession 发布标准
-  `lyricInfo`。
-- Halcyon 发布标准 `lyricInfo` 时仍可使用；旧 v4 fallback 已移除。
+- Halcyon、Flamingo、QZ Music 与 PrismMusic 已进入纯播放器包名的 SystemUI 歌词入口、
+  媒体历史与 AOD 兼容表，但这不放行任何旧 v4 source。
+- 四个播放器都必须从自己的 MediaSession 发布标准 `lyricInfo`；旧 v4 fallback 已移除，
+  也不需要额外 Provider APK。
 
 本项目不再分发词幕 Provider 功能。需要词幕时请从
 [LyricProvider 原项目](https://github.com/tomakino/LyricProvider) 获取。词幕显示/产品链路

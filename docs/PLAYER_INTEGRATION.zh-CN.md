@@ -238,6 +238,12 @@ SystemUI/Bridge 负责绑定显示。添加时必须保留全部 PlaybackState �
 它只影响 OPlus media-history / blacklist policy，不会生成歌词、安装 Provider，也不会把
 播放器加入 Bridge 作用域。
 
+4.0 另外为已知原生接入 Halcyon（`com.ella.music`）、Flamingo（`yos.music.player`）、
+QZ Music（`love.qz.music`）和 PrismMusic（`com.lg.sllocalmusic`）预置纯包名的歌词入口、
+媒体历史与 AOD SystemUI 兼容。该表不校验或放行歌词来源；四个播放器仍必须遵循本协议
+发布 `lyricInfo`，旧 v4 广播无效。其他播放器正常发布标准 payload 时无需通过 PR 准入；
+只有真机证明厂商 SystemUI 仍拦截歌词入口或 AOD 时，才需要提交包名兼容证据。
+
 ## 11. 验收清单
 
 必须用实际准备发布的 APK 验证：

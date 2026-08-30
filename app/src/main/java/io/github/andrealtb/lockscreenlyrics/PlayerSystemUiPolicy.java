@@ -24,6 +24,10 @@ final class PlayerSystemUiPolicy {
     static final String SALT = "com.salt.music";
     static final String CONE = "ink.trantor.coneplayer";
     static final String CONE_GP = "ink.trantor.coneplayer.gp";
+    static final String HALCYON = "com.ella.music";
+    static final String FLAMINGO = "yos.music.player";
+    static final String QZ_MUSIC = "love.qz.music";
+    static final String PRISM_MUSIC = "com.lg.sllocalmusic";
 
     private static final String[] OPLUS_HISTORY_PACKAGES = {
             QQ_MUSIC,
@@ -41,7 +45,11 @@ final class PlayerSystemUiPolicy {
             KUWO,
             SALT,
             CONE,
-            CONE_GP
+            CONE_GP,
+            HALCYON,
+            FLAMINGO,
+            QZ_MUSIC,
+            PRISM_MUSIC
     };
 
     private PlayerSystemUiPolicy() {

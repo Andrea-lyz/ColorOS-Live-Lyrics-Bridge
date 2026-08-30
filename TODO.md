@@ -11,8 +11,9 @@ SystemUI. Phase 5 device regression and architecture gates closed on 2026-08-29.
 The post-Phase-6 lyric brightness/fade controls, presets, preview, backup/restore, and alignment
 pivot repair are implemented and device-validated. Phase 6 method/performance governance is closed.
 
-Phase 7 Slice 7A–7F is complete. RC5 (`33301880289`) passed user device validation, and the
-4.0 migration, integration, Provider adaptation, release-process, Release Notes, and LSP metadata
-documents are prepared. Slice 7G (tags, GitHub/LSP Releases, and public-asset revalidation) remains
-intentionally unexecuted until the user explicitly authorizes publication. Source of truth:
+Phase 7 Slice 7A–7F is complete. RC5 (`33301880289`) passed user device validation, but the
+pre-release package-only SystemUI compatibility addition for Halcyon, Flamingo, QZ Music, and
+PrismMusic changes the Bridge APK and therefore requires RC6. Slice 7G (tags, GitHub/LSP Releases,
+and public-asset revalidation) remains intentionally unexecuted until the user explicitly authorizes
+publication. Source of truth:
 `docs/4.0/PHASE-7-RC-RELEASE-PLAN.md`.

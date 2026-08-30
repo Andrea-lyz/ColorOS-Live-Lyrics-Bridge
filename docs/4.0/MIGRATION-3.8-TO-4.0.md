@@ -91,9 +91,10 @@ and compatibility policies; it does not request a second lyric copy from the Pro
 
 - QQ Music HD is not part of the 4.0 matrix.
 - MusicFree, Gramophone, and Symfonium Providers are not shipped in the 4.0 suite.
-- Flamingo's former v4-only route is not supported until the player publishes standard
-  `lyricInfo` from its own MediaSession.
-- Halcyon remains compatible when it publishes standard `lyricInfo`; its old v4 fallback is gone.
+- Halcyon, Flamingo, QZ Music, and PrismMusic are present in the package-only SystemUI lyric-
+  entrance, media-history, and AOD compatibility policy. This does not admit any old v4 source.
+- All four players must publish standard `lyricInfo` from their own MediaSession; the old v4
+  fallback is gone, and no additional Provider APK is required.
 
 This project no longer distributes Lyricon/词幕 Provider functionality. Obtain it from the
 [LyricProvider original project](https://github.com/tomakino/LyricProvider). Problems with the

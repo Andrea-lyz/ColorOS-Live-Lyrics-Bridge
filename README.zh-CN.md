@@ -67,7 +67,10 @@ Provider 与 Bridge 可以独立安装：
 
 播放器更新后，私有歌词接口仍可能变化。上表表示当前 4.0 代码与真机验收矩阵，不代表未来所有播放器版本永久兼容。
 
-Halcyon 若发布标准 `lyricInfo`，仍可走原生链路；旧的应用内 v4 广播 fallback 已删除。Flamingo 旧 v4-only 接入不再受 4.0 支持，需先改为向自身 MediaSession 发布标准 `lyricInfo`。
+Bridge 已为 Halcyon（`com.ella.music`）、Flamingo（`yos.music.player`）、QZ Music
+（`love.qz.music`）和 PrismMusic（`com.lg.sllocalmusic`）提供纯包名的 SystemUI 歌词入口、
+媒体历史与 AOD 兼容。这不是歌词来源白名单：播放器仍必须从自己的 MediaSession 发布
+标准 `lyricInfo`，旧的应用内 v4 广播不会被接收，也不需要额外 Provider APK。
 
 ## 安装
 
