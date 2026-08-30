@@ -248,6 +248,33 @@ playbackStateBuilder.addCustomAction(translationAction)
 mediaSession.setPlaybackState(playbackStateBuilder.build())
 ```
 
+`PlaybackState` is immutable; adding the Action only on first play is insufficient. Every later
+`setPlaybackState()` caused by pause/resume, seek, favorite changes, control-row refresh, or other
+state synchronization must copy the host state and re-add the public Action. Otherwise the new
+PlaybackState silently replaces the object that contained the translation button. Remove it only
+when the current track truly has no translation.
+
+After every publication, query the same MediaSession that owns the lock-screen card instead of
+checking only the local Builder:
+
+```kotlin
+val actionPublished = mediaSession.controller.playbackState
+    ?.customActions
+    ?.any {
+        it.action ==
+            "io.github.andrealtb.lockscreenlyrics.action.TOGGLE_TRANSLATION"
+    } == true
+
+check(actionPublished) {
+    "Translation CustomAction is missing from the active MediaSession"
+}
+```
+
+Development builds must report `actionPublished=true`. Bridge Debug should likewise report
+`hasPublicAction=true` and include the complete action ID in `actions=[...]`. A false result means
+construction failed, the Action was published to the wrong MediaSession, or a later PlaybackState
+rebuild removed it; Bridge cannot recover an Action that is absent from the active session.
+
 An icon ID of `0` cannot produce a valid Action. A non-zero ID that does not resolve can still fail
 while SystemUI materializes the action, before Bridge can intervene. No dedicated translation
 artwork is required: use the app icon, an existing CustomAction icon, or another valid system
@@ -296,6 +323,8 @@ Validate on the exact APK that will be shipped:
 - [ ] Bridge installed: no duplicate lyric publication.
 - [ ] first play, pause/resume, seek, skip, rapid three-track skip, and same-track replay;
 - [ ] line-only, word-timed, translated, and no-lyric tracks;
+- [ ] after initial insertion and every later `setPlaybackState()`, the current controller's
+      customActions still contain the complete `TOGGLE_TRANSLATION` action ID;
 - [ ] lock screen, unlock/re-enter, screen off, and AOD;
 - [ ] artwork URI first frame and later bitmap frame;
 - [ ] metadata churn does not bump generation;

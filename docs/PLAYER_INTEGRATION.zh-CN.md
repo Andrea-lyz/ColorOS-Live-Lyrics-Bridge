@@ -238,6 +238,29 @@ playbackStateBuilder.addCustomAction(translationAction)
 mediaSession.setPlaybackState(playbackStateBuilder.build())
 ```
 
+`PlaybackState` 是不可变对象，不能只在首次播放时添加一次。播放器后续因暂停/继续、seek、
+收藏变化、控制栏刷新或任意状态同步再次调用 `setPlaybackState()` 时，都必须复制原状态并
+重新保留该公共 Action；否则新对象会把翻译按钮覆盖掉。若当前歌曲没有翻译，才主动移除。
+
+每次发布后应从锁屏实际使用的同一个 MediaSession 反查，而不是只检查本地 Builder：
+
+```kotlin
+val actionPublished = mediaSession.controller.playbackState
+    ?.customActions
+    ?.any {
+        it.action ==
+            "io.github.andrealtb.lockscreenlyrics.action.TOGGLE_TRANSLATION"
+    } == true
+
+check(actionPublished) {
+    "Translation CustomAction is missing from the active MediaSession"
+}
+```
+
+开发阶段必须得到 `actionPublished=true`。对应 Bridge Debug 日志应显示
+`hasPublicAction=true`，且 `actions=[...]` 中包含完整 Action ID；若为 `false`，说明 Action
+构造失败、发布到了错误 MediaSession，或被后续 PlaybackState 重建覆盖，Bridge 无法补救。
+
 图标 ID 为 `0` 时 Action 无法正常构造；非零但资源不存在时，SystemUI 也可能在 Bridge
 接管前解析失败。无需专门设计翻译图标，可复用应用图标、现有 CustomAction 图标或有效
 系统图标作为占位。SystemUI 成功创建 Action 后，Bridge 才会把占位图标替换成自带的
@@ -281,6 +304,8 @@ QZ Music（`love.qz.music`）和 PrismMusic（`com.lg.sllocalmusic`）预置纯�
 - [ ] 安装 Bridge 后没有第二份重复歌词提交；
 - [ ] 首次播放、暂停/恢复、seek、切歌、连续三首快速切换和同曲重播；
 - [ ] 逐行、逐字、翻译和无歌词歌曲；
+- [ ] 首次添加及每次后续 `setPlaybackState()` 后，当前 controller 的 customActions 仍含
+      完整 `TOGGLE_TRANSLATION` Action ID；
 - [ ] 锁屏、解锁再进入、熄屏与 AOD；
 - [ ] 首帧封面 URI 与后续 bitmap；
 - [ ] metadata churn 不递增 generation；
