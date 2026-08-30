@@ -13,7 +13,8 @@ pivot repair are implemented and device-validated. Phase 6 method/performance go
 
 Phase 7 Slice 7A–7F is complete. RC5 (`33301880289`) passed user device validation, but the
 pre-release package-only SystemUI compatibility addition for Halcyon, Flamingo, QZ Music, and
-PrismMusic changes the Bridge APK and therefore requires RC6. Slice 7G (tags, GitHub/LSP Releases,
+PrismMusic changes the Bridge APK and therefore requires RC6. The two old v4 PRs were closed without
+merge after their authors received the 4.0 native-integration requirements. Slice 7G (tags, GitHub/LSP Releases,
 and public-asset revalidation) remains intentionally unexecuted until the user explicitly authorizes
 publication. Source of truth:
 `docs/4.0/PHASE-7-RC-RELEASE-PLAN.md`.

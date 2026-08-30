@@ -163,6 +163,17 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\validate-lsposed
   另有 Phase 7 文档契约单测。
 - 本基线不代表正式发布；未创建任何 tag 或 Release。
 
+## 8.2 发布前原生播放器兼容补充
+
+- Bridge 提交 `d85cbf6` 将 Halcyon、Flamingo、QZ Music、PrismMusic 的四个宿主包加入
+  `PlayerSystemUiPolicy`，只提供歌词入口、媒体历史与 AOD 的 SystemUI 包名兼容。
+- 新增契约测试确认四者不进入播放器专属收藏按钮翻译覆盖；主源码仍无
+  `ExternalLyricProviderRegistry`、QZ/Prism v4 source 或 sender 放行。
+- PR #42 与 #37 均在留下 4.0 主动接入迁移要求后关闭，`mergedAt=null`。
+- 完整测试为 72 suites / 481 tests，0 failure/error，6 skipped；`lintDebug` 与 release
+  contract 通过。
+- 由于该提交改变 Bridge APK，下一正式候选从 RC6 开始。
+
 ## 9. Slice 7B 版本与机器契约补充
 
 - Bridge 已冻结 `4.0.0` / `versionCode=136`；契约提交 `00a8333`。

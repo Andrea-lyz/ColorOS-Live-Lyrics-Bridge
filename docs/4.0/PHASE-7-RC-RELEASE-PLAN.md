@@ -429,6 +429,15 @@ SystemUI 兼容价值，不合并 `ExternalLyricProviderRegistry`、source/sende
 RC6，至少复核四个包名的 SystemUI 放行不影响现有 12 Provider，并在可用新版播放器上
 验证原生 `lyricInfo`；不得沿用 RC5 的最终候选结论直接发布。
 
+执行结果（2026-08-30）：
+
+- Bridge `4.0` 提交 `d85cbf6` 已加入四个包名及契约测试并推送；未恢复任何 v4 source。
+- PR #42 已留言说明 QZ Music 的原生 `lyricInfo` 迁移要求后关闭，未合并：
+  <https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/pull/42#issuecomment-5468002576>
+- PR #37 已留言说明 PrismMusic 的原生 `lyricInfo`、真实 metadata 与 generation 要求后
+  关闭，未合并：
+  <https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/pull/37#issuecomment-5468002484>
+
 ## 10. Slice 7G：正式发布顺序与发布后核验
 
 ### 10.1 发布前锁定
