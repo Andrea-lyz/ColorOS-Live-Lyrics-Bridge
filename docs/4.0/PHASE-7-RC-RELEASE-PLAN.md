@@ -1,6 +1,6 @@
 # Bridge / Providers 4.0 Phase 7：RC 与正式发布计划
 
-> 状态：**Slice 7A–7D 本地门禁已完成；下一步推送 4.0 分支并运行私有 RC1 dry-run**
+> 状态：**Slice 7A–7D 与私有 RC 构建门禁已完成；RC5 进入 Slice 7E 最终签名候选真机回归**
 >
 > 目标：Bridge `4.0.0` 与 12 个 v5 Provider 形成同一批次、可复现、可回滚说明完整的正式交付物。
 >
@@ -205,8 +205,43 @@ metadata / contract
 - `lintDebug` 首次暴露 14 个 error；未创建 lint baseline，已用 `13bb491` 修复 API
   门禁、vendor key 注解、正确字体/Slider/LineBreaker 常量与分 API theme；
   `lintDebug`、`lintRelease` 随后均通过。
-- 正式签名正向构建、artifact 下载重验与 GitHub secrets 权限只能在源码推送后的
-  首次 RC workflow 关闭，当前不冒充本地已验证。
+- 正式签名正向构建、artifact 下载重验与 GitHub secrets 权限已由 RC5 关闭，详见
+  6.6；公开 publish job 仍保持未执行。
+
+### 6.6 远端 RC 收口
+
+RC workflow 按 fail-closed 方式真实迭代，没有跳过失败步骤：
+
+1. RC1 `33299914214`：metadata/contract 通过；Bridge 暴露 README 尚未提交及 pivot
+   测试依赖工作区外反编译文件；Provider 暴露 KavaRef `AnnotatedType` R8 规则只散落
+   在部分 module。修复为仓库内 evidence fixture 与 core consumer rules。
+2. RC2 `33300988850`：Bridge、Provider 签名构建均通过；package job 使用 runner 最新
+   build-tools 37 时无法按已验证格式解析证书。改为契约固定 build-tools 36.0.0，artifact
+   actions 同步更新 Node 24 runtime。
+3. RC3 `33301536967`：Bridge 通过；Provider 的 Apple fake 同时生成 property setter 与
+   `setTranslation` 方法，反射顺序在干净 CI 不稳定。改名 fake state，focused test 通过。
+4. RC4 `33301817663`：人工输入了错误的 Provider full SHA，metadata checkout 即 fail；
+   没有构建或产出候选，不计有效 RC。
+5. RC5 `33301880289`：全部通过。
+
+RC5 证据：
+
+- Bridge commit：`88d261aea07ac59685563c592776daac7cbf7de1`；
+- Provider commit：`b186e792d0fc2d5243c555b3c8118f9dcb156f34`；
+- batch：`4.0.0-rc.5-88d261a-b186e79`；
+- Bridge 签名构建：2m49s，通过标准测试、release lint、release assemble；
+- Provider 签名构建：9m26s，通过 `testV5Matrix`、12 module release/R8、collector；
+- package：21s，通过 13 APK 的 DEX 禁用字符串、包名/版本、正式证书、zipalign，
+  生成 Provider ZIP、asset manifest 和 `SHA256SUMS`，最终恰好 16 项资产；
+- RC mode 未执行 publish job，没有创建任何公开 tag 或 Release；
+- complete artifact 已下载到
+  `artifacts/4.0.0-rc.5-88d261a-b186e79-complete/`；
+- 下载后独立复算 15 个 checksum target 全部一致，并用本地 build-tools 36 正向重跑
+  13 APK / 16 资产验证器，结果通过；
+- Bridge APK SHA-256：
+  `43304e92f0610cc3b3c448b1de527a8323b0e89dec98f6587be5e68da2c52efb`；
+- Provider ZIP SHA-256：
+  `a806ae62a7d1c6c22eada39299d6b78ecc3007b7f166b3bfcc746f5d1a6bdd78`。
 
 ## 7. Slice 7D：测试体系与 RC 静态门禁
 
@@ -261,6 +296,14 @@ metadata / contract
 1. 从 Actions 下载同一 RC batch 的 13 个已签名 APK 和 Provider ZIP，先核对 `SHA256SUMS`。
 2. 记录设备型号、系统版本、SystemUIPlugin 版本、LSPosed 版本、播放器版本、Bridge/Provider 内部版本和 RC batch ID。
 3. 测试中发现 blocker 后停止把当前 batch 当最终候选；修复后从新 commit 重建整套 RC。
+
+当前待测候选固定为 RC5：
+
+```text
+artifacts/4.0.0-rc.5-88d261a-b186e79-complete/
+```
+
+不得混入 Phase 6 debug APK、RC1–RC4 或单独替换的 Provider APK。
 
 ### 8.2 Bridge 公共场景
 

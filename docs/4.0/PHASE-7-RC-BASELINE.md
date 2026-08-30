@@ -119,14 +119,14 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\validate-lsposed
 - 两仓库 `git diff --check` 无 whitespace error；PowerShell 显示的 LF→CRLF 提示是
   checkout 行尾告警，不是 diff 错误。
 
-## 6. 远端 RC1 前仍未关闭
+## 6. RC5 之后仍未关闭
 
-1. 远端 RC 尚未运行；正式签名正向构建、跨仓库 checkout、secrets 和 16 资产上传仍待验证。
+1. RC5 的正式签名 Bridge 与全部 Provider/宿主 profile 真机回归仍待用户完成。
 2. `LSPRepo/SCOPE` 仍是 3.8.1 的五项 scope，按 7F/7G 收口。
-3. README、迁移说明、主动接入与 Provider 适配技术文档仍待 7F。
-4. 当前提交只在本地；完成推送前不打 Bridge 或 LSP 正式 tag。
+3. 迁移说明、主动接入与 Provider 适配技术文档、完整 Release Notes 仍待 7F。
+4. Provider source tag、LSP metadata tag 和 Bridge 正式 tag 均未创建。
 
-## 8. Slice 7D 静态回归摘要
+## 7. Slice 7D 静态回归摘要
 
 - Bridge 477 tests、`lintDebug`、`lintRelease`、clean `assembleDebug` 通过。
 - 干净 4.0 debug APK 为 8521058 bytes / 8 DEX / 4 native ABI，SHA-256
@@ -135,9 +135,23 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\validate-lsposed
   packaged manifest 消失，新增组件仅为 4.0 设置子页和现有 AndroidX runtime 组件。
 - 最终 package 脚本对 13 APK 执行 DEX ASCII 禁用字符串扫描；当前 debug 矩阵扫描
   通过并在正式证书门禁按预期失败。
-- 远端 RC1 才能关闭 release signing 正向路径与上传后 16 资产重验；本地不伪造结论。
+- release signing 正向路径与上传后 16 资产重验已由 RC5 关闭，设备行为仍由 7E 验证。
 
-## 7. Slice 7B 版本与机器契约
+## 8. 私有 RC5 签名候选
+
+- Actions run：`33301880289`。
+- Bridge：`88d261aea07ac59685563c592776daac7cbf7de1`。
+- Providers：`b186e792d0fc2d5243c555b3c8118f9dcb156f34`。
+- batch：`4.0.0-rc.5-88d261a-b186e79`。
+- Bridge、12 Provider、package 三段均通过；publish job 因 RC mode 跳过。
+- 完整 artifact 16 项；下载后 `SHA256SUMS` 与本地正向 asset verifier 再次通过。
+- 本地目录：`artifacts/4.0.0-rc.5-88d261a-b186e79-complete/`。
+- Bridge APK SHA-256：
+  `43304e92f0610cc3b3c448b1de527a8323b0e89dec98f6587be5e68da2c52efb`。
+- Provider ZIP SHA-256：
+  `a806ae62a7d1c6c22eada39299d6b78ecc3007b7f166b3bfcc746f5d1a6bdd78`。
+
+## 9. Slice 7B 版本与机器契约补充
 
 - Bridge 已冻结 `4.0.0` / `versionCode=136`；契约提交 `00a8333`。
 - Provider 保持独立内部版本；套件 source tag 冻结为 `providers-v1.0.0`，契约提交
