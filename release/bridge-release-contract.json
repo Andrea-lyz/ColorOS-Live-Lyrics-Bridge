@@ -19,5 +19,29 @@
   "assetManifest": "release-assets-v4.0.0.json",
   "providerApkCount": 12,
   "totalApkCount": 13,
-  "totalReleaseAssetCount": 16
+  "totalReleaseAssetCount": 16,
+  "forbiddenApkAscii": [
+    "io.github.andrealtb.lockscreenlyrics.action.EXTERNAL_LYRIC_DIRECT_V4",
+    "ExternalLyricIngress",
+    "ExternalLyricProtocol",
+    "lyricprovider/",
+    "NPATCH_EMBEDDED",
+    "npatch_marker",
+    "LyriconFactory",
+    "LyriconProvider",
+    "io.github.proify.lyricon.cmprovider",
+    "io.github.proify.lyricon.amprovider",
+    "io.github.proify.lyricon.qmprovider",
+    "io.github.proify.lyricon.qmhdprovider",
+    "io.github.proify.lyricon.kgprovider",
+    "io.github.proify.lyricon.kwprovider",
+    "io.github.proify.lyricon.spotifyprovider",
+    "io.github.proify.lyricon.lxprovider",
+    "io.github.proify.lyricon.paprovider",
+    "io.github.proify.lyricon.saltprovider",
+    "io.github.proify.lyricon.qishuiprovider",
+    "io.github.proify.lyricon.metrolistprovider",
+    "BridgeArchitectureGuardTest",
+    "Andrea-TB\\Desktop"
+  ]
 }

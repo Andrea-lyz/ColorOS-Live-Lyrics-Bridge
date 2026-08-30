@@ -45,6 +45,35 @@ function Get-Sha256Lower {
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 
+function Assert-ApkRuntimeStrings {
+    param(
+        [string] $Path,
+        [string] $AssetName,
+        [string[]] $ForbiddenValues
+    )
+    $archive = [System.IO.Compression.ZipFile]::OpenRead($Path)
+    try {
+        $dexEntries = @($archive.Entries | Where-Object { $_.FullName -match '^classes\d*\.dex$' })
+        Assert-ReleaseAsset ($dexEntries.Count -gt 0) "$AssetName contains no classes*.dex"
+        foreach ($entry in $dexEntries) {
+            $stream = $entry.Open()
+            $memory = [System.IO.MemoryStream]::new()
+            try {
+                $stream.CopyTo($memory)
+                $dexText = [System.Text.Encoding]::ASCII.GetString($memory.ToArray())
+                foreach ($forbiddenValue in $ForbiddenValues) {
+                    Assert-ReleaseAsset (-not $dexText.Contains($forbiddenValue)) "$AssetName contains forbidden runtime string: $forbiddenValue"
+                }
+            } finally {
+                $memory.Dispose()
+                $stream.Dispose()
+            }
+        }
+    } finally {
+        $archive.Dispose()
+    }
+}
+
 function Write-Utf8NoBom {
     param(
         [string] $Path,
@@ -74,6 +103,7 @@ $bridgeContractPath = Join-Path $RepoRoot 'release\bridge-release-contract.json'
 $providerContractPath = Join-Path $resolvedProviderRoot 'release\v5-provider-matrix.json'
 $bridgeContract = Get-Content -LiteralPath $bridgeContractPath -Raw | ConvertFrom-Json
 $providerContract = Get-Content -LiteralPath $providerContractPath -Raw | ConvertFrom-Json
+Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 & (Join-Path $RepoRoot 'scripts\validate-release-contract.ps1') -ProviderRepoRoot $resolvedProviderRoot
 
@@ -112,6 +142,7 @@ function Verify-And-StageApk {
 
     $sourcePath = Join-Path $resolvedInputDir $AssetName
     Assert-ReleaseAsset (Test-Path -LiteralPath $sourcePath -PathType Leaf) "missing APK: $AssetName"
+    Assert-ApkRuntimeStrings $sourcePath $AssetName @($bridgeContract.forbiddenApkAscii)
 
     $badging = (Invoke-Checked $aapt2 @('dump', 'badging', $sourcePath)) -join "`n"
     $packageMatch = [regex]::Match(
@@ -177,7 +208,6 @@ Assert-ReleaseAsset ($providerOutputPaths.Count -eq $bridgeContract.providerApkC
 $bundlePath = Join-Path $resolvedOutputDir ([string]$bridgeContract.providerBundleAsset)
 Compress-Archive -LiteralPath $providerOutputPaths -DestinationPath $bundlePath -CompressionLevel Optimal
 
-Add-Type -AssemblyName System.IO.Compression.FileSystem
 $bundle = [System.IO.Compression.ZipFile]::OpenRead($bundlePath)
 try {
     $entries = @($bundle.Entries | Where-Object { -not [string]::IsNullOrWhiteSpace($_.Name) })

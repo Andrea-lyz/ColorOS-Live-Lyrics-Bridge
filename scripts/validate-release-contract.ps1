@@ -45,6 +45,9 @@ for ($index = 0; $index -lt $expectedScope.Count; $index++) {
 Assert-Contract ($contract.providerApkCount -eq 12) '4.0 must contain exactly 12 Provider APKs'
 Assert-Contract ($contract.totalApkCount -eq (1 + $contract.providerApkCount)) 'totalApkCount must equal Bridge plus Providers'
 Assert-Contract ($contract.totalReleaseAssetCount -eq ($contract.totalApkCount + 3)) 'asset count must include APKs, bundle, checksums, and manifest'
+$forbiddenApkAscii = @($contract.forbiddenApkAscii)
+Assert-Contract ($forbiddenApkAscii.Count -ge 20) 'forbidden APK string set is incomplete'
+Assert-Contract (($forbiddenApkAscii | Select-Object -Unique).Count -eq $forbiddenApkAscii.Count) 'forbidden APK strings contain duplicates'
 Assert-Contract ($contract.bridgeAsset -eq "ColorOS-Live-Lyrics-Bridge-v$($contract.suiteVersion).apk") 'Bridge asset name differs from suite version'
 Assert-Contract ($contract.providerBundleAsset -eq "ColorOS-Live-Lyrics-Providers-v$($contract.suiteVersion).zip") 'Provider bundle name differs from suite version'
 
