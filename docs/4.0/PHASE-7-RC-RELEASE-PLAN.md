@@ -1,6 +1,6 @@
 # Bridge / Providers 4.0 Phase 7：RC 与正式发布计划
 
-> 状态：**Slice 7A / 7B / 7C 本地实现已完成；进入 Slice 7D 静态回归，远端 RC dry-run 待源码推送后执行**
+> 状态：**Slice 7A–7D 本地门禁已完成；下一步推送 4.0 分支并运行私有 RC1 dry-run**
 >
 > 目标：Bridge `4.0.0` 与 12 个 v5 Provider 形成同一批次、可复现、可回滚说明完整的正式交付物。
 >
@@ -234,11 +234,31 @@ metadata / contract
 3. 同时安装时只存在一条 metadata 发布链，不重复歌词、不抢封面、不改坏播放状态。
 4. 4.0 Bridge 与旧 v4 Provider 不兼容必须在安装说明和 Release Notes 顶部突出，而不是埋在 FAQ。
 
+### 7.4 Slice 7D 本地验证状态
+
+- Bridge：标准 `testDebugUnitTest` 477 tests，0 failure/error，6 skipped；从零
+  `clean → testDebugUnitTest → lintDebug → assembleDebug` 通过；`lintRelease` 通过。
+- 首轮 lint 的 14 个 error 未用 baseline 隐藏，均由 `13bb491` 关闭；剩余 43 warning
+  已分类审阅：13 项未使用资源、4 项设置预览 draw allocation、依赖版本提示、
+  OEM resource reflection、可访问性/RTL/图标提示等，不构成当前 runtime/签名/manifest
+  blocker，保留给后续常规维护而不在 RC 冻结期扩张重构。
+- 干净构建的 4.0 debug APK：8521058 bytes，8 个 DEX、4 个 DexKit native ABI，
+  SHA-256 `E89A8678C99DB6DC4643EE52D365F256FA450A921463E1241267C0CBEDD89D61`。
+- 与公开 3.8.1 release APK 对照：applicationId、minSdk 26、targetSdk 35、两项权限、
+  4 个 native ABI 均未改变；版本由 135/3.8.1 升至 136/4.0.0。体积从 7258768
+  增至 8521058 bytes，来自 4.0 设置/诊断/renderer/runtime 新实现；未新增 native 库。
+- 4.0 packaged manifest 只有 1 个自有配置 provider、6 个自有设置 activity；另有
+  AndroidX Startup provider / ProfileInstallReceiver。不存在 Bridge v4 receiver/service。
+- `142bb0c` 将 23 个旧 v4 action/class/source、旧 Provider applicationId、NPatch、
+  Lyricon mount、测试类和本机路径片段加入最终 APK DEX 禁用字符串门禁。
+- 13 个当前 debug APK 已实际经过该 DEX 扫描，全部通过；随后按预期在正式证书检查
+  拒绝，证明静态扫描位于签名门禁之前。正式签名 APK 的正向结果留给远端 RC1。
+
 ## 8. Slice 7E：最终 RC 真机回归
 
 ### 8.1 使用最终候选包
 
-1. 从 Actions 下载同一 RC batch 的 13 个已签名 APK和 Provider ZIP，先核对 `SHA256SUMS`。
+1. 从 Actions 下载同一 RC batch 的 13 个已签名 APK 和 Provider ZIP，先核对 `SHA256SUMS`。
 2. 记录设备型号、系统版本、SystemUIPlugin 版本、LSPosed 版本、播放器版本、Bridge/Provider 内部版本和 RC batch ID。
 3. 测试中发现 blocker 后停止把当前 batch 当最终候选；修复后从新 commit 重建整套 RC。
 

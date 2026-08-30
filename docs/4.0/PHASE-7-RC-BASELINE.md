@@ -8,8 +8,8 @@
 
 | 仓库 | 分支 | 本地基线 | 状态 |
 |---|---|---|---|
-| `ColorOS-Live-Lyrics-Bridge` | `4.0` | `a342234`：完整 runtime；`025bfc9`：Unicode worker；`00a8333`：发布契约；`13bb491`：RC lint blocker；`6da07d8`：RC/GA workflow | README 按 7F 继续；核心实现和 7A–7C 已提交 |
-| `ColorOS-Live-Lyrics-Providers` | `4.0` | `d6f463b`：Unicode worker；`5618582`：LX；`cb57ce6`：矩阵；`99831e8`：collector；`9908293` / `c8f50c3`：签名与契约门禁 | 工作树干净，本地领先 `origin/4.0` 六个提交；尚未推送 |
+| `ColorOS-Live-Lyrics-Bridge` | `4.0` | `a342234`：runtime；`025bfc9`：Unicode worker；`00a8333`：契约；`13bb491`：lint；`6da07d8`：workflow；`142bb0c`：APK DEX gate | README 按 7F 继续；7A–7D 本地门禁已提交 |
+| `ColorOS-Live-Lyrics-Providers` | `4.0` | `d6f463b`：Unicode worker；`5618582`：LX；`cb57ce6`：矩阵；`99831e8`：collector；`9908293` / `c8f50c3`：签名与契约门禁 | 工作树干净，本地领先 `origin/4.0` 六个提交；等待与 Bridge 一起推送 |
 | `LSPRepo` | `main` | `d505f18` / `135-3.8.1` | 仍是 3.8.1 metadata；4.0 scope 和说明留到 7F/7G |
 
 Bridge 的 `a342234` 是 Phase 3–6 与后续视觉控制已经互相依赖后的集成基线，包含
@@ -119,12 +119,23 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\validate-lsposed
 - 两仓库 `git diff --check` 无 whitespace error；PowerShell 显示的 LF→CRLF 提示是
   checkout 行尾告警，不是 diff 错误。
 
-## 6. 进入 Slice 7D 前仍未关闭
+## 6. 远端 RC1 前仍未关闭
 
 1. 远端 RC 尚未运行；正式签名正向构建、跨仓库 checkout、secrets 和 16 资产上传仍待验证。
 2. `LSPRepo/SCOPE` 仍是 3.8.1 的五项 scope，按 7F/7G 收口。
 3. README、迁移说明、主动接入与 Provider 适配技术文档仍待 7F。
 4. 当前提交只在本地；完成推送前不打 Bridge 或 LSP 正式 tag。
+
+## 8. Slice 7D 静态回归摘要
+
+- Bridge 477 tests、`lintDebug`、`lintRelease`、clean `assembleDebug` 通过。
+- 干净 4.0 debug APK 为 8521058 bytes / 8 DEX / 4 native ABI，SHA-256
+  `E89A8678C99DB6DC4643EE52D365F256FA450A921463E1241267C0CBEDD89D61`。
+- 对照 v3.8.1，applicationId、SDK、权限和 native ABI 不变；v4 exported receiver 已从
+  packaged manifest 消失，新增组件仅为 4.0 设置子页和现有 AndroidX runtime 组件。
+- 最终 package 脚本对 13 APK 执行 DEX ASCII 禁用字符串扫描；当前 debug 矩阵扫描
+  通过并在正式证书门禁按预期失败。
+- 远端 RC1 才能关闭 release signing 正向路径与上传后 16 资产重验；本地不伪造结论。
 
 ## 7. Slice 7B 版本与机器契约
 
