@@ -218,6 +218,35 @@ typed Builder 按类型复制字段，再写 `lyricInfo`。不要为了发歌词
 io.github.andrealtb.lockscreenlyrics.action.TOGGLE_TRANSLATION
 ```
 
+仅声明上述字符串、放进 extras 或定义成常量不会产生按钮。播放器必须把它构造成真正的
+`PlaybackState.CustomAction`，加入当前 `PlaybackState`，再通过原 MediaSession 发布一个
+新的 PlaybackState 对象。
+
+`CustomAction.Builder` 强制要求真实有效且非零的图标资源 ID：
+
+```kotlin
+val placeholderIcon = applicationContext.applicationInfo.icon.takeIf { it != 0 }
+    ?: android.R.drawable.ic_menu_manage
+
+val translationAction = PlaybackState.CustomAction.Builder(
+    "io.github.andrealtb.lockscreenlyrics.action.TOGGLE_TRANSLATION",
+    "翻译",
+    placeholderIcon
+).build()
+
+playbackStateBuilder.addCustomAction(translationAction)
+mediaSession.setPlaybackState(playbackStateBuilder.build())
+```
+
+图标 ID 为 `0` 时 Action 无法正常构造；非零但资源不存在时，SystemUI 也可能在 Bridge
+接管前解析失败。无需专门设计翻译图标，可复用应用图标、现有 CustomAction 图标或有效
+系统图标作为占位。SystemUI 成功创建 Action 后，Bridge 才会把占位图标替换成自带的
+`ic_translation`，并负责尺寸、白色 tint 与开关透明度。
+
+公共 Action 通过 action ID 动态识别，不要求播放器进入 Bridge 的包名兼容表。没有翻译
+的歌曲应移除该 Action；有翻译时应持续发布完整 `translationLyric`，按钮关闭只影响
+Bridge 显示，不应让播放器删除翻译数据。
+
 SystemUI/Bridge 负责绑定显示。添加时必须保留全部 PlaybackState 字段和宿主 action；
 播放器 callback 不应把它解释为播放器业务命令。若播放器官方 action row 所有权不同，
 应省略该 action，保留原生控件。

@@ -228,6 +228,38 @@ Players that want Bridge's public media-card translation toggle may expose a
 io.github.andrealtb.lockscreenlyrics.action.TOGGLE_TRANSLATION
 ```
 
+Declaring the string, placing it in extras, or defining a constant does not create a button. The
+player must build a real `PlaybackState.CustomAction`, add it to the current `PlaybackState`, and
+publish a new PlaybackState object through the existing MediaSession.
+
+`CustomAction.Builder` requires a real, non-zero icon resource ID:
+
+```kotlin
+val placeholderIcon = applicationContext.applicationInfo.icon.takeIf { it != 0 }
+    ?: android.R.drawable.ic_menu_manage
+
+val translationAction = PlaybackState.CustomAction.Builder(
+    "io.github.andrealtb.lockscreenlyrics.action.TOGGLE_TRANSLATION",
+    "Translate",
+    placeholderIcon
+).build()
+
+playbackStateBuilder.addCustomAction(translationAction)
+mediaSession.setPlaybackState(playbackStateBuilder.build())
+```
+
+An icon ID of `0` cannot produce a valid Action. A non-zero ID that does not resolve can still fail
+while SystemUI materializes the action, before Bridge can intervene. No dedicated translation
+artwork is required: use the app icon, an existing CustomAction icon, or another valid system
+resource as a placeholder. Only after SystemUI creates the Action does Bridge replace that
+placeholder with its bundled `ic_translation` and apply sizing, white tint, and enabled/disabled
+alpha.
+
+The public action is discovered dynamically by action ID and does not require the player to enter
+Bridge's package compatibility list. Remove it for tracks without translations. For translated
+tracks, keep publishing the complete `translationLyric`; disabling the button affects Bridge
+presentation and must not make the player remove translation data.
+
 SystemUI/Bridge binds the visible action. Preserve all host actions and all PlaybackState fields
 when adding it. The player callback must not reinterpret it as a player command. If your player's
 official action row has a different ownership model, omit this action and keep native controls.
