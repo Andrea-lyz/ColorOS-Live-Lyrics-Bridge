@@ -2,6 +2,8 @@ package io.github.andrealtb.lockscreenlyrics;
 
 import io.github.andrealtb.lockscreenlyrics.systemui.lyrics.LyricsRecyclerPolicy;
 
+import java.util.List;
+
 public final class LockscreenIntegrationPolicy {
     private LockscreenIntegrationPolicy() {
     }
@@ -28,6 +30,24 @@ public final class LockscreenIntegrationPolicy {
         return renderedText != null
                 && !renderedText.isEmpty()
                 && renderedText.equals(activeText);
+    }
+
+    /** Returns the sole target-package controller index, or -1 when absent/ambiguous. */
+    static int uniquePackageMatchIndex(List<String> packageNames, String targetPackage) {
+        if (packageNames == null || targetPackage == null || targetPackage.isEmpty()) {
+            return -1;
+        }
+        int matchIndex = -1;
+        for (int index = 0; index < packageNames.size(); index++) {
+            if (!targetPackage.equals(packageNames.get(index))) {
+                continue;
+            }
+            if (matchIndex >= 0) {
+                return -1;
+            }
+            matchIndex = index;
+        }
+        return matchIndex;
     }
 
     static int parseTaggedNonNegativeInt(String message, String marker) {

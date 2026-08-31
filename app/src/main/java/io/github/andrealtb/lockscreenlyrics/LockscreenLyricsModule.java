@@ -31,6 +31,7 @@ import android.net.Uri;
 import android.app.Notification;
 import android.service.notification.StatusBarNotification;
 import android.media.session.MediaController;
+import android.media.session.MediaSessionManager;
 import android.media.session.PlaybackState;
 import android.os.Build;
 import android.os.Binder;
@@ -758,6 +759,8 @@ public final class LockscreenLyricsModule extends XposedModule {
     private WeakReference<MediaController> systemUiPlaybackController =
             new WeakReference<>(null);
     private volatile String systemUiPlaybackControllerPackage = "";
+    private volatile long lastPlaybackControllerDiscoveryElapsedMs = -1L;
+    private volatile String lastPlaybackControllerDiscoveryPackage = "";
     private WeakReference<Object> oplusMediaDataManager = new WeakReference<>(null);
     private volatile Method oplusPlaybackStateRefreshMethod;
     private final MediaController.Callback systemUiPlaybackControllerCallback =
@@ -3387,6 +3390,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         String packageName = findPlayerPackageInArgs(chain.getArgs());
         if (!TextUtils.isEmpty(packageName)) {
             bindCurrentLyricProviderPackage(packageName, "lyricInfo metadata");
+            scheduleSystemUiPlaybackControllerDiscovery(packageName);
         } else if (isLyricPayloadTrackChanged(previousPayload, payload)) {
             currentLyricProviderPackage = "";
         }
@@ -3797,6 +3801,68 @@ public final class LockscreenLyricsModule extends XposedModule {
             return;
         }
         rememberSystemUiPlaybackState(playbackState);
+    }
+
+    private void scheduleSystemUiPlaybackControllerDiscovery(String packageName) {
+        if (TextUtils.isEmpty(packageName)) {
+            return;
+        }
+        synchronized (systemUiPlaybackControllerLock) {
+            MediaController existing = systemUiPlaybackController.get();
+            if (existing != null && packageName.equals(systemUiPlaybackControllerPackage)) {
+                rememberSystemUiPlaybackState(existing.getPlaybackState());
+                return;
+            }
+        }
+        long now = SystemClock.elapsedRealtime();
+        if (packageName.equals(lastPlaybackControllerDiscoveryPackage)
+                && lastPlaybackControllerDiscoveryElapsedMs >= 0L
+                && now - lastPlaybackControllerDiscoveryElapsedMs < 750L) {
+            return;
+        }
+        lastPlaybackControllerDiscoveryPackage = packageName;
+        lastPlaybackControllerDiscoveryElapsedMs = now;
+        mainHandler.post(() -> discoverSystemUiPlaybackController(packageName));
+    }
+
+    @SuppressLint("MissingPermission")
+    private void discoverSystemUiPlaybackController(String packageName) {
+        try {
+            synchronized (systemUiPlaybackControllerLock) {
+                MediaController existing = systemUiPlaybackController.get();
+                if (existing != null && packageName.equals(systemUiPlaybackControllerPackage)) {
+                    rememberSystemUiPlaybackState(existing.getPlaybackState());
+                    return;
+                }
+            }
+            Context context = currentApplicationContext();
+            if (context == null) {
+                return;
+            }
+            MediaSessionManager manager = (MediaSessionManager) context.getSystemService(
+                    Context.MEDIA_SESSION_SERVICE);
+            if (manager == null) {
+                return;
+            }
+            List<MediaController> controllers = manager.getActiveSessions(null);
+            ArrayList<String> packages = new ArrayList<>(controllers.size());
+            for (MediaController controller : controllers) {
+                packages.add(controller == null ? "" : controller.getPackageName());
+            }
+            int selectedIndex = LockscreenIntegrationPolicy.uniquePackageMatchIndex(
+                    packages,
+                    packageName);
+            if (selectedIndex < 0 || selectedIndex >= controllers.size()) {
+                info(BridgeDebugArea.MEDIA, BridgeEvents.DETAIL,
+                        "Skipped playback controller discovery for package="
+                                + packageName
+                                + ", candidates=" + packages.size());
+                return;
+            }
+            rememberMediaControllerPlaybackState(packageName, controllers.get(selectedIndex));
+        } catch (Throwable t) {
+            error("Failed to discover active MediaController for " + packageName, t);
+        }
     }
 
     private void ensureSystemUiPlaybackControllerCallback(

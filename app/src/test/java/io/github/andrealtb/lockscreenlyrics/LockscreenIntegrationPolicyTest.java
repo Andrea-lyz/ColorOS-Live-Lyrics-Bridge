@@ -4,6 +4,8 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import java.util.Arrays;
+
 import org.junit.Test;
 
 public class LockscreenIntegrationPolicyTest {
@@ -12,6 +14,19 @@ public class LockscreenIntegrationPolicyTest {
         String dorothea = "Hey Dorothea do you ever stop and think about me";
 
         assertTrue(LockscreenIntegrationPolicy.activeTextMatches(dorothea, dorothea));
+    }
+
+    @Test
+    public void playbackControllerDiscoveryRequiresExactlyOneTargetPackage() {
+        assertEquals(1, LockscreenIntegrationPolicy.uniquePackageMatchIndex(
+                Arrays.asList("com.apple.android.music", "com.spotify.music"),
+                "com.spotify.music"));
+        assertEquals(-1, LockscreenIntegrationPolicy.uniquePackageMatchIndex(
+                Arrays.asList("com.spotify.music", "com.spotify.music"),
+                "com.spotify.music"));
+        assertEquals(-1, LockscreenIntegrationPolicy.uniquePackageMatchIndex(
+                Arrays.asList("com.apple.android.music"),
+                "com.spotify.music"));
     }
 
     @Test
