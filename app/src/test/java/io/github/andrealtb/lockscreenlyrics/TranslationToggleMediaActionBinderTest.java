@@ -1,12 +1,15 @@
 package io.github.andrealtb.lockscreenlyrics;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertTrue;
 
 import android.content.Context;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.Icon;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -231,5 +234,19 @@ public class TranslationToggleMediaActionBinderTest {
 
         assertNull(both.action);
         assertEquals(0, host.toggleClicks);
+    }
+
+    @Test
+    public void onlyResourceBackedIconsAreSafeForOplusSemanticButtons() {
+        assertTrue(TranslationToggleMediaActionBinder.isSystemUiSafeSemanticIconType(
+                Icon.TYPE_RESOURCE));
+        assertFalse(TranslationToggleMediaActionBinder.isSystemUiSafeSemanticIconType(
+                Icon.TYPE_BITMAP));
+        assertFalse(TranslationToggleMediaActionBinder.isSystemUiSafeSemanticIconType(
+                Icon.TYPE_ADAPTIVE_BITMAP));
+        assertFalse(TranslationToggleMediaActionBinder.isSystemUiSafeSemanticIconType(
+                Icon.TYPE_DATA));
+        assertFalse(TranslationToggleMediaActionBinder.isSystemUiSafeSemanticIconType(
+                Icon.TYPE_URI));
     }
 }

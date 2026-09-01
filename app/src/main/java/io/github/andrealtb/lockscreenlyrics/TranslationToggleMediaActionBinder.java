@@ -2,8 +2,6 @@ package io.github.andrealtb.lockscreenlyrics;
 
 import android.content.Context;
 import android.content.res.Resources;
-import android.graphics.Bitmap;
-import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.Icon;
@@ -316,7 +314,10 @@ final class TranslationToggleMediaActionBinder {
             debug("replace media action icon, package=" + nullToEmpty(packageName)
                     + ", foundIcon=" + (translationIcon != null)
                     + ", action=" + mediaAction.getClass().getName());
-            if (translationIcon == null) {
+            if (translationIcon == null
+                    || !isSystemUiSafeSemanticIcon(translationIcon.icon)) {
+                debug("replace media action icon skipped: resource-backed semantic icon missing"
+                        + ", package=" + nullToEmpty(packageName));
                 return false;
             }
             Drawable drawable = translationIcon.drawable;
@@ -381,8 +382,12 @@ final class TranslationToggleMediaActionBinder {
             if (drawable == null) return null;
             drawable = drawable.mutate();
             drawable.setTint(Color.WHITE);
+            Icon semanticIcon = Icon.createWithResource(packageContext, resourceId);
+            if (!isSystemUiSafeSemanticIcon(semanticIcon)) {
+                return null;
+            }
             return new TranslationIcon(
-                    iconFromDrawable(drawable, packageContext.getResources()),
+                    semanticIcon,
                     drawable);
         } catch (Throwable ignored) {
             return null;
@@ -408,22 +413,15 @@ final class TranslationToggleMediaActionBinder {
         }
     }
 
-    private static Icon iconFromDrawable(Drawable drawable, Resources resources) {
-        int width = Math.max(1, drawable.getIntrinsicWidth());
-        int height = Math.max(1, drawable.getIntrinsicHeight());
-        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
-        if (resources != null) {
-            bitmap.setDensity(resources.getDisplayMetrics().densityDpi);
-        }
-        Canvas canvas = new Canvas(bitmap);
-        int oldLeft = drawable.getBounds().left;
-        int oldTop = drawable.getBounds().top;
-        int oldRight = drawable.getBounds().right;
-        int oldBottom = drawable.getBounds().bottom;
-        drawable.setBounds(0, 0, width, height);
-        drawable.draw(canvas);
-        drawable.setBounds(oldLeft, oldTop, oldRight, oldBottom);
-        return Icon.createWithBitmap(bitmap);
+    private static boolean isSystemUiSafeSemanticIcon(Icon icon) {
+        return icon != null && isSystemUiSafeSemanticIconType(icon.getType());
+    }
+
+    static boolean isSystemUiSafeSemanticIconType(int iconType) {
+        // OPlusMediaViewPagerAdapter#setSemanticButton unconditionally calls getResPackage()
+        // for every non-null OplusMediaActionEx icon. Framework Icon throws for BITMAP, DATA,
+        // URI and adaptive-bitmap types, so this high-impact SystemUI path must be resource-only.
+        return iconType == Icon.TYPE_RESOURCE;
     }
 
     Drawable createTranslationActionPresentationDrawable(
