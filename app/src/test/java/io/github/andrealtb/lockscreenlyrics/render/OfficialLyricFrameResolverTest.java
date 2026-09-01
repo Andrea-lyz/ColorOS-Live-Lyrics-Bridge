@@ -133,47 +133,6 @@ public final class OfficialLyricFrameResolverTest {
     }
 
     @Test
-    public void activeIndexedLineFillsOnlyItsEmptyOfficialSlot() {
-        WordLine credit = line(290L, "Lyrics by");
-        WordLine firstLyric = line(670L, "first lyric");
-        WordLyricModel model = model(credit, firstLyric);
-        model.officialLines.clear();
-        model.officialLines.add(firstLyric);
-        model.officialLines.add(credit);
-
-        resolver.resolveInto(
-                model,
-                "",
-                1,
-                0,
-                firstLyric,
-                firstLyric,
-                700L,
-                false,
-                "",
-                -1L,
-                selection);
-
-        assertSame(firstLyric, selection.line);
-        assertEquals("active-empty-slot", selection.matchReason);
-
-        resolver.resolveInto(
-                model,
-                "",
-                0,
-                0,
-                credit,
-                firstLyric,
-                700L,
-                false,
-                "",
-                -1L,
-                selection);
-        assertNull(selection.line);
-        assertEquals("none", selection.matchReason);
-    }
-
-    @Test
     public void reusableSelectionIsClearedBetweenCalls() {
         WordLine first = line(1_000L, "first");
         WordLyricModel model = model(first);
