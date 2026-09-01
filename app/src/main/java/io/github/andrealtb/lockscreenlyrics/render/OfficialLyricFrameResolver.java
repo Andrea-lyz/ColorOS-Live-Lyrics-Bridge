@@ -24,7 +24,17 @@ public final class OfficialLyricFrameResolver {
             return;
         }
         result.reset(indexedLine, duplicateText);
-        if (model == null || isEmpty(normalizedText)) {
+        if (model == null) {
+            return;
+        }
+
+        if (isEmpty(normalizedText)) {
+            if (adapterPosition >= 0
+                    && indexedLine != null
+                    && indexedLine == activeLine) {
+                result.complete(indexedLine, null, model.indexOfLine(indexedLine),
+                        "active-empty-slot");
+            }
             return;
         }
 

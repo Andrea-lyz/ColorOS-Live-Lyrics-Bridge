@@ -7291,14 +7291,12 @@ public final class LockscreenLyricsModule extends XposedModule {
         ensureScreenTimeoutReceiver(textView.getContext());
 
         CharSequence currentText = textView.getText();
-        if (currentText == null || currentText.length() == 0 || currentText.length() > 240) {
+        if (currentText != null && currentText.length() > 240) {
             return null;
         }
 
-        String normalizedText = normalizedTextOf(textView);
-        if (TextUtils.isEmpty(normalizedText)) {
-            return null;
-        }
+        String normalizedText = currentText == null ? "" : normalizedTextOf(textView);
+        boolean blankOfficialText = TextUtils.isEmpty(normalizedText);
 
         long position = estimatePlaybackPositionMillis();
         int officialIndex = readLyricsRecyclerCurrentIndex(recycler);
@@ -7312,10 +7310,25 @@ public final class LockscreenLyricsModule extends XposedModule {
                 && adapterPosition >= model.officialLines.size())) {
             adapterPosition = -1;
         }
-        WordLine indexedLine = model.lineAtAdapterIndexMatchingText(
+        // SystemUI can bind the first real lyric as an empty row after it strips an opening
+        // title/credit alias. Only the positionally indexed playback-active line may fill that
+        // row; inactive credits, transition blanks, and the trailing placeholder stay fail-open.
+        WordLine indexedLine = blankOfficialText
+                ? model.lineAt(adapterPosition)
+                : model.lineAtAdapterIndexMatchingText(adapterPosition, normalizedText);
+        boolean activeBlankSlot = blankOfficialText
+                && adapterPosition >= 0
+                && indexedLine != null
+                && indexedLine == activeLine;
+        if (blankOfficialText && !activeBlankSlot) {
+            return null;
+        }
+        if (!activeBlankSlot
+                && shouldSkipStrictOfficialAdapterSlot(
+                model,
                 adapterPosition,
-                normalizedText);
-        if (shouldSkipStrictOfficialAdapterSlot(model, adapterPosition, indexedLine, normalizedText)) {
+                indexedLine,
+                normalizedText)) {
             return null;
         }
         boolean duplicateText = model.hasDuplicateRenderableText(normalizedText);
