@@ -263,7 +263,18 @@ final class NativeLyricModelAssembler {
                 ? sharedSplitLines
                 : splitRawLyricLines(officialLyric);
         for (TimedLyricGroup group : parseTimedTextGroups(splitLines)) {
-            if (group == null || group.texts.isEmpty()) {
+            if (group == null) {
+                continue;
+            }
+            if (group.texts.isEmpty()) {
+                if (group.blankPlaceholder) {
+                    int officialIndex = model.officialLines.size();
+                    model.officialLines.add(null);
+                    if (traceSink != null && traceSink.traceEnabled()) {
+                        traceSink.trace("official-placeholder#" + officialIndex
+                                + " time=" + formatLrcTime(group.timeMillis));
+                    }
+                }
                 continue;
             }
             LyricLaneClassifier.Result lanes =
@@ -294,7 +305,10 @@ final class NativeLyricModelAssembler {
             boolean usableTranslationAlias = wordLine != null
                     && !displayMatchesMainText
                     && isEmpty(wordLine.translation)
-                    && isUsableOfficialTranslationAlias(wordLine, displayText);
+                    && isUsableOfficialTranslationAlias(
+                    wordLine,
+                    displayText,
+                    group.timeMillis);
             traceOfficialAliasMapping(
                     model,
                     model.officialLines.size() - 1,
@@ -363,12 +377,14 @@ final class NativeLyricModelAssembler {
 
     private static boolean isUsableOfficialTranslationAlias(
             WordLine wordLine,
-            String displayText) {
+            String displayText,
+            long displayTimeMillis) {
         if (wordLine == null || isEmpty(displayText)) {
             return false;
         }
         String normalizedDisplayText = WordLyricRenderSupport.normalizeLine(displayText);
         if (isEmpty(normalizedDisplayText)
+                || LyricMetadataFilter.isNonLyricInfoLine(displayText, displayTimeMillis)
                 || normalizedDisplayText.equals(wordLine.normalizedText)
                 || LockscreenIntegrationPolicy.sameLyricVariant(
                 wordLine.text,
@@ -418,24 +434,46 @@ final class NativeLyricModelAssembler {
             }
 
             long timeMillis = parseLrcTimeMillis(firstTag.group(1));
-            String text = line.substring(firstTag.end());
-            text = WordLyricRenderSupport.ANY_LRC_TIME_TAG.matcher(text).replaceAll("");
-            text = cleanPlainLyricText(text);
-            if (!isEmpty(text)) {
+            String rawText = line.substring(firstTag.end());
+            rawText = WordLyricRenderSupport.ANY_LRC_TIME_TAG.matcher(rawText).replaceAll("");
+            boolean blankPlaceholder = isIgnorableOnlyPlaceholder(rawText);
+            String text = cleanPlainLyricText(rawText);
+            if (!isEmpty(text) || blankPlaceholder) {
                 TimedLyricGroup group = groups.get(timeMillis);
                 if (group == null) {
                     group = new TimedLyricGroup(timeMillis);
                     groups.put(timeMillis, group);
                 }
-                group.texts.add(text);
+                if (!isEmpty(text)) {
+                    group.texts.add(text);
+                } else {
+                    group.blankPlaceholder = true;
+                }
             }
         }
         return new ArrayList<>(groups.values());
     }
 
+    private static boolean isIgnorableOnlyPlaceholder(String value) {
+        if (isEmpty(value)) {
+            return false;
+        }
+        boolean foundIgnorable = false;
+        for (int index = 0; index < value.length(); index++) {
+            char character = value.charAt(index);
+            if (LyricTextSanitizer.isIgnorableCharacter(character)) {
+                foundIgnorable = true;
+            } else if (!Character.isWhitespace(character)) {
+                return false;
+            }
+        }
+        return foundIgnorable;
+    }
+
     private static final class TimedLyricGroup {
         final long timeMillis;
         final ArrayList<String> texts = new ArrayList<>();
+        boolean blankPlaceholder;
 
         TimedLyricGroup(long timeMillis) {
             this.timeMillis = timeMillis;
@@ -1048,7 +1086,8 @@ final class NativeLyricModelAssembler {
         if (lineStart == null
                 || firstWord == null
                 || lineStart.start != 0
-                || lineStart.timeMillis != firstWord.timeMillis
+                || firstWord.start >= rawLine.length()
+                || rawLine.charAt(firstWord.start) != '<'
                 || lineStart.end > firstWord.start) {
             return false;
         }
