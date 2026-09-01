@@ -357,7 +357,7 @@ jobs:
             echo "Bridge Release already exists; refusing to overwrite public assets: $RELEASE_TAG" >&2
             exit 1
           fi
-          gh release create "$RELEASE_TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --title "$RELEASE_TAG" --notes-file "$notes_file"
+          gh release create "$RELEASE_TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$RELEASE_TAG" --notes-file "$notes_file"
 
       - name: Publish LSP mirror Release
         shell: bash
@@ -381,7 +381,7 @@ jobs:
             echo "LSP Release already exists; refusing to overwrite public assets: $LSP_TAG" >&2
             exit 1
           fi
-          gh release create "$LSP_TAG" "${assets[@]}" --repo "$LSP_REPOSITORY" --title "$RELEASE_TAG" --notes-file "$body_file"
+          gh release create "$LSP_TAG" "${assets[@]}" --repo "$LSP_REPOSITORY" --verify-tag --title "$RELEASE_TAG" --notes-file "$body_file"
 
       - name: Verify published release assets
         shell: bash
