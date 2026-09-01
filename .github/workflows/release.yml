@@ -1,4 +1,4 @@
-name: Build 4.0 RC and Release
+name: Build 4.1 RC and Release
 
 on:
   push:
@@ -22,14 +22,14 @@ on:
       providers_ref:
         description: "Immutable Provider tag or full 40-character commit SHA."
         required: true
-        default: "providers-v1.0.0"
+        default: "providers-v1.1.0"
         type: string
 
 permissions:
   contents: write
 
 concurrency:
-  group: cll-4-release-${{ github.ref }}-${{ inputs.mode || 'tag' }}
+  group: cll-4-1-release-${{ github.ref }}-${{ inputs.mode || 'tag' }}
   cancel-in-progress: false
 
 env:
@@ -60,7 +60,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: ${{ env.PROVIDERS_REPOSITORY }}
-          ref: ${{ inputs.providers_ref || 'providers-v1.0.0' }}
+          ref: ${{ inputs.providers_ref || 'providers-v1.1.0' }}
           path: provider-source
           fetch-depth: 0
           token: ${{ secrets.PROVIDERS_REPO_TOKEN || github.token }}

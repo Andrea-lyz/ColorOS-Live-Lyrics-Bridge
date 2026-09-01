@@ -13,7 +13,7 @@
 
 它不是一套盖在锁屏上的悬浮窗，而是把播放器的完整歌词交给系统原生界面显示。这样既能保留 ColorOS 的锁屏风格、切歌动画和息屏显示，也能补上逐字高亮、翻译和外观设置。
 
-> 当前正式版本：**[v4.0.0](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/releases/tag/v4.0.0)**。
+> 当前正式版本：**[v4.1.0](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/releases/tag/v4.1.0)**。
 
 ## 主要功能
 
@@ -40,17 +40,17 @@
 
 如果系统原本没有锁屏歌词页面，本模块不会另外创建一个悬浮歌词窗口。
 
-## 4.0 架构与播放器适配
+## 4.x 架构与播放器适配
 
-Bridge 4.0 只运行在 `system` / `com.android.systemui`，不再进入播放器进程，也不再接收 Provider 私有广播。独立 Provider 在目标播放器进程内把歌词写入播放器自己的 `MediaSession` / `MediaMetadata["lyricInfo"]`；Bridge 只消费这份 ColorOS 原生数据并提供样式、逐字渲染、翻译按钮、AOD 和兼容增强。
+Bridge 4.x 只运行在 `system` / `com.android.systemui`，不再进入播放器进程，也不再接收 Provider 私有广播。独立 Provider 在目标播放器进程内把歌词写入播放器自己的 `MediaSession` / `MediaMetadata["lyricInfo"]`；Bridge 只消费这份 ColorOS 原生数据并提供样式、逐字渲染、翻译按钮、AOD 和兼容增强。
 
 Provider 与 Bridge 可以独立安装：
 
 - 只安装 Provider：ColorOS SystemUI 可直接消费播放器的原生 `lyricInfo`。
 - 额外安装 Bridge：在原生链路之上增加通用增强；不会再次提交一份歌词。
-- 4.0 Provider 是独立的 Root / LSPosed 模块。
+- 4.1 Provider 是使用 libxposed API 102 与静态作用域的独立 Root / LSPosed 模块。
 
-| 播放器 | 4.0 Provider 模块 | 歌词能力 |
+| 播放器 | 4.1 Provider 模块 | 歌词能力 |
 | --- | --- | --- |
 | Salt Player | `player-salt` | 逐字、翻译、公开翻译 CustomAction |
 | ConePlayer / 光锥音乐（正式版、Google Play 版） | `player-cone` | 完整时间轴、翻译、公开翻译 CustomAction |
@@ -65,7 +65,7 @@ Provider 与 Bridge 可以独立安装：
 | Spotify | `player-spotify` | Color Lyrics 逐行或逐字；不支持翻译 |
 | 汽水音乐 | `player-qishui` | 宿主 TrackLyric / 缓存回退，逐字与翻译 |
 
-播放器更新后，私有歌词接口仍可能变化。上表表示当前 4.0 代码与真机验收矩阵，不代表未来所有播放器版本永久兼容。
+播放器更新后，私有歌词接口仍可能变化。上表表示当前 4.1 代码与真机验收矩阵，不代表未来所有播放器版本永久兼容。
 
 Bridge 已为 Halcyon（`com.ella.music`）、Flamingo（`yos.music.player`）、QZ Music
 （`love.qz.music`）和 PrismMusic（`com.lg.sllocalmusic`）提供纯包名的 SystemUI 歌词入口、
@@ -74,10 +74,10 @@ Bridge 已为 Halcyon（`com.ella.music`）、Flamingo（`yos.music.player`）�
 
 ## 安装
 
-1. 安装自己需要的 4.0 Provider APK，在 LSPosed 中启用它并只勾选对应音乐 App。
+1. 安装自己需要的 4.1 Provider APK，在 LSPosed 中启用它并只勾选对应音乐 App。
 2. 如需 Bridge 增强，再安装 `ColorOS-Live-Lyrics-Bridge-<版本>.apk`，作用域保持 `system` 与 `com.android.systemui`。
 3. 重启目标播放器与 SystemUI；首次安装或改变作用域后建议重启手机。
-4. 不要同时让旧词幕 Provider 与 4.0 Provider hook 同一播放器。
+4. 不要同时让旧词幕 Provider 与 4.1 Provider hook 同一播放器。
 
 Release 中的 Provider ZIP 只是 APK 下载合集，不是 Recovery 刷机包。
 
@@ -85,7 +85,7 @@ Release 中的 Provider ZIP 只是 APK 下载合集，不是 Recovery 刷机包�
 新旧 applicationId、准确 Provider scope、不再支持的播放器、配置备份与降级边界。
 需要词幕 Provider 时，从
 [LyricProvider 原项目](https://github.com/tomakino/LyricProvider) 获取；词幕显示/产品问题
-向原项目反馈，不由 Bridge 或 4.0 Provider 仓库受理。
+向原项目反馈，不由 Bridge 或 4.1 Provider 仓库受理。
 
 ## 怎么设置外观
 
@@ -137,7 +137,7 @@ Bridge 只读取本机播放器 MediaSession 中的原生歌词并增强 SystemU
 
 - [播放器接入协议（中文）](docs/PLAYER_INTEGRATION.zh-CN.md)
 - [Player integration protocol (English)](docs/PLAYER_INTEGRATION.md)
-- [Provider 适配技术指南](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Providers/blob/4.0/docs/4.0/PROVIDER-ADAPTATION-GUIDE.zh-CN.md)
+- [Provider 适配技术指南](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Providers/blob/4.1/docs/4.0/PROVIDER-ADAPTATION-GUIDE.zh-CN.md)
 - [3.8.x → 4.0 迁移指南](docs/4.0/MIGRATION-3.8-TO-4.0.zh-CN.md)
 - [Bridge 与 LyricProvider 的职责说明](docs/LYRIC_PROVIDER_BRIDGE.zh-CN.md)
 

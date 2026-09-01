@@ -13,7 +13,7 @@ Bring lyrics from more music apps to the native ColorOS / OPlus lock-screen lyri
 
 This is not a floating overlay. It passes a player's full lyric timeline to the system UI, keeping the ColorOS look, transitions, and always-on display while adding word-by-word highlighting, translations, and appearance controls.
 
-> Current release: **[v4.0.0](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/releases/tag/v4.0.0)**.
+> Current release: **[v4.1.0](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/releases/tag/v4.1.0)**.
 
 ## What it does
 
@@ -40,17 +40,17 @@ The APK has a minimum Android API level of 26, but that does not mean every Andr
 
 If the ROM has no native lock-screen lyric page, this module will not create a separate floating lyric window.
 
-## 4.0 architecture and player compatibility
+## 4.x architecture and player compatibility
 
-Bridge 4.0 runs only in `system` and `com.android.systemui`. It no longer enters player processes or receives private Provider broadcasts. Each independent Provider writes lyrics into the player's own `MediaSession` / `MediaMetadata["lyricInfo"]`; Bridge consumes that native ColorOS data and adds styling, word rendering, translation controls, AOD support, and compatibility enhancements.
+Bridge 4.x runs only in `system` and `com.android.systemui`. It no longer enters player processes or receives private Provider broadcasts. Each independent Provider writes lyrics into the player's own `MediaSession` / `MediaMetadata["lyricInfo"]`; Bridge consumes that native ColorOS data and adds styling, word rendering, translation controls, AOD support, and compatibility enhancements.
 
 Providers and Bridge can be installed independently:
 
 - Provider only: ColorOS SystemUI can consume the player's native `lyricInfo` directly.
 - Provider plus Bridge: Bridge adds generic enhancements without submitting a second lyric payload.
-- 4.0 Providers are independent Root / LSPosed modules.
+- 4.1 Providers are independent Root / LSPosed modules using libxposed API 102 and static scope.
 
-| Player | 4.0 Provider module | Lyric capability |
+| Player | 4.1 Provider module | Lyric capability |
 | --- | --- | --- |
 | Salt Player | `player-salt` | Word timing, translations, public translation CustomAction |
 | ConePlayer (standard and Google Play) | `player-cone` | Full timeline, translations, public translation CustomAction |
@@ -65,7 +65,7 @@ Providers and Bridge can be installed independently:
 | Spotify | `player-spotify` | Line- or word-timed Color Lyrics; no translations |
 | QiShui Music | `player-qishui` | Host TrackLyric / cache fallback with word timing and translations |
 
-Private player interfaces can change after app updates. This table describes the current 4.0 implementation and device-validation matrix, not permanent compatibility with every future player release.
+Private player interfaces can change after app updates. This table describes the current 4.1 implementation and device-validation matrix, not permanent compatibility with every future player release.
 
 Bridge provides package-only SystemUI lyric-entrance, media-history, and AOD compatibility for
 Halcyon (`com.ella.music`), Flamingo (`yos.music.player`), QZ Music (`love.qz.music`), and
@@ -75,10 +75,10 @@ and no additional Provider APK is required.
 
 ## Installation
 
-1. Install the required 4.0 Provider APK, enable it in LSPosed, and select only its matching music app.
+1. Install the required 4.1 Provider APK, enable it in LSPosed, and select only its matching music app.
 2. If you want Bridge enhancements, install `ColorOS-Live-Lyrics-Bridge-<version>.apk` and keep its scope limited to `system` and `com.android.systemui`.
 3. Restart the player and SystemUI. Reboot after the first installation or any scope change.
-4. Do not let an old Lyricon Provider and a 4.0 Provider hook the same player.
+4. Do not let an old Lyricon Provider and a 4.1 Provider hook the same player.
 
 The Provider ZIP in a release is only an APK download bundle, not a Recovery-flashable package.
 
@@ -86,7 +86,7 @@ For a 3.8.x upgrade, old/new application IDs, exact Provider scopes, unsupported
 and downgrade boundaries, read [Migrating from 3.8.x to 4.0](docs/4.0/MIGRATION-3.8-TO-4.0.md).
 Lyricon Providers are obtained from the
 [original LyricProvider project](https://github.com/tomakino/LyricProvider); report Lyricon
-display/product issues there rather than in the Bridge or 4.0 Provider repositories.
+display/product issues there rather than in the Bridge or 4.1 Provider repositories.
 
 ## Appearance and behavior
 
@@ -138,7 +138,7 @@ If your player already has a full lyric timeline, the preferred integration is t
 
 - [Player integration protocol](docs/PLAYER_INTEGRATION.md)
 - [播放器接入协议（中文）](docs/PLAYER_INTEGRATION.zh-CN.md)
-- [Provider adaptation guide](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Providers/blob/4.0/docs/4.0/PROVIDER-ADAPTATION-GUIDE.md)
+- [Provider adaptation guide](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Providers/blob/4.1/docs/4.0/PROVIDER-ADAPTATION-GUIDE.md)
 - [4.0 migration guide](docs/4.0/MIGRATION-3.8-TO-4.0.md)
 - [Bridge and LyricProvider responsibilities (Chinese)](docs/LYRIC_PROVIDER_BRIDGE.zh-CN.md)
 
