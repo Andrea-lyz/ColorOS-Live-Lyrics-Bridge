@@ -3,7 +3,7 @@ package io.github.andrealtb.lockscreenlyrics.diagnostics;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
-final class SensitiveFieldRedactor {
+public final class SensitiveFieldRedactor {
     private static final Pattern BEARER = Pattern.compile(
             "(?i)(bearer\\s+)[a-z0-9_\\-.]{16,}");
     private static final Pattern TOKEN = Pattern.compile(
@@ -39,7 +39,7 @@ final class SensitiveFieldRedactor {
         return result;
     }
 
-    static String trackHash(String value) {
+    public static String trackHash(String value) {
         if (value == null || value.isEmpty()) {
             return "";
         }
@@ -53,6 +53,21 @@ final class SensitiveFieldRedactor {
             return "sha256:" + hex;
         } catch (Exception ignored) {
             return "sha256:unavailable";
+        }
+    }
+
+    /** Returns a query-free URI diagnostic containing only origin and a path hash. */
+    public static String uriSummary(String value) {
+        if (value == null || value.isEmpty()) {
+            return "";
+        }
+        try {
+            java.net.URI uri = new java.net.URI(value);
+            String scheme = uri.getScheme() == null ? "" : uri.getScheme();
+            String host = uri.getHost() == null ? "" : uri.getHost();
+            return scheme + "://" + host + "/" + trackHash(uri.getPath());
+        } catch (Exception ignored) {
+            return "uri:" + trackHash(value);
         }
     }
 }

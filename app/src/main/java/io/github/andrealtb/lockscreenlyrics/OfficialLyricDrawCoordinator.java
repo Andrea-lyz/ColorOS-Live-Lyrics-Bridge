@@ -10,6 +10,8 @@ import io.github.andrealtb.lockscreenlyrics.render.WordLine;
 import io.github.andrealtb.lockscreenlyrics.render.WordLyricModel;
 import io.github.andrealtb.lockscreenlyrics.render.WordLyricRenderSupport;
 
+import java.util.WeakHashMap;
+
 /**
  * Orchestrates one official lyric {@code TextView#onDraw} interception:
  * hook eligibility, surface reactivation, track-handoff / fade suppression,
@@ -91,6 +93,7 @@ final class OfficialLyricDrawCoordinator {
     }
 
     private final Host host;
+    private final WeakHashMap<TextView, WordLyricModel> failedBindings = new WeakHashMap<>();
 
     OfficialLyricDrawCoordinator(Host host) {
         this.host = host;
@@ -146,6 +149,15 @@ final class OfficialLyricDrawCoordinator {
         boolean recyclerFadeInProgress =
                 drawElapsedRealtime < host.lyricRecyclerFadeInUntilElapsedMs();
         WordLyricModel model = host.currentWordLyricModel();
+        synchronized (failedBindings) {
+            WordLyricModel failedModel = failedBindings.get(textView);
+            if (failedModel == model && model != null) {
+                return proceed.proceed();
+            }
+            if (failedModel != null && failedModel != model) {
+                failedBindings.remove(textView);
+            }
+        }
         if (model == null && !suppressingTrackHandoff && !recyclerFadeInProgress) {
             if (lyricsRecycler == null) {
                 lyricsRecycler = host.findContainingLyricsRecyclerView(textView);
@@ -269,9 +281,12 @@ final class OfficialLyricDrawCoordinator {
                     model,
                     t.getClass().getSimpleName());
             host.onCustomDrawError(textView, model, t);
-            // Keep render ownership deterministic for the lifetime of this bound lyric item.
-            host.scheduleBoundLyricFrameRetry(textView, model);
-            return null;
+            // The renderer owns no host exception. Disable this binding/model after one failure
+            // and immediately let the original TextView draw into the restored Canvas state.
+            synchronized (failedBindings) {
+                failedBindings.put(textView, model);
+            }
+            return proceed.proceed();
         }
     }
 

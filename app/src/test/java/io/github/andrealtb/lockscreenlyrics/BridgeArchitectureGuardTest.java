@@ -133,6 +133,29 @@ public final class BridgeArchitectureGuardTest {
         assertEquals(Arrays.asList("system", "com.android.systemui"), scope);
     }
 
+    @Test
+    public void systemUiRuntimeContainsNoNetworkClientOrLeakyClassCache() throws Exception {
+        String module = readProjectFile(
+                "app/src/main/java/io/github/andrealtb/lockscreenlyrics/LockscreenLyricsModule.java");
+        String coordinator = readProjectFile(
+                "app/src/main/java/io/github/andrealtb/lockscreenlyrics/"
+                        + "OfficialLyricDrawCoordinator.java");
+        String accessor = readProjectFile(
+                "app/src/main/java/io/github/andrealtb/lockscreenlyrics/systemui/lyrics/"
+                        + "LyricsRecyclerFieldAccessor.java");
+        assertFalse(module.contains("java.net.URL"));
+        assertFalse(module.contains("HttpURLConnection"));
+        assertFalse(module.contains("openConnection("));
+        assertFalse(module.contains("WeakReference<MediaController>"));
+        assertFalse(module.contains("WeakHashMap<Class<?>, Method"));
+        assertFalse(accessor.contains("WeakHashMap<Class<?>, Field"));
+        assertTrue(accessor.contains("WeakReference<Field>"));
+        assertFalse(module.contains("canvas.restore();"));
+        assertFalse(module.contains("target.canvas.restore();"));
+        assertTrue(coordinator.contains("failedBindings.put(textView, model)"));
+        assertTrue(coordinator.contains("return proceed.proceed();"));
+    }
+
     private static void assertEqualsPackage(String expected, Class<?> type) {
         assertEquals(expected, type.getPackage().getName());
     }

@@ -16,17 +16,6 @@ public final class KuWoCoverPolicyTest {
     }
 
     @Test
-    public void httpImgKuWoHostIsEligibleForHttpsUpgrade() {
-        assertTrue(KuWoCoverPolicy.isKuWoHttpCoverHost("http", "img1.kuwo.cn"));
-        assertTrue(KuWoCoverPolicy.isKuWoHttpCoverHost("http", "img2.kuwo.cn"));
-        assertFalse(KuWoCoverPolicy.isKuWoHttpCoverHost("https", "img1.kuwo.cn"));
-        assertFalse(KuWoCoverPolicy.isKuWoHttpCoverHost("http", "cdn.kuwo.cn"));
-        assertFalse(KuWoCoverPolicy.isKuWoHttpCoverHost("http", "img1.example.com"));
-        assertFalse(KuWoCoverPolicy.isKuWoHttpCoverHost("http", ""));
-        assertFalse(KuWoCoverPolicy.isKuWoHttpCoverHost("http", null));
-    }
-
-    @Test
     public void plausibleCoverSizeRequiresMinEdge() {
         assertTrue(KuWoCoverPolicy.isPlausibleCoverSize(96, 96));
         assertTrue(KuWoCoverPolicy.isPlausibleCoverSize(300, 96));

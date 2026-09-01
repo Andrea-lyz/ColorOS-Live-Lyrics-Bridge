@@ -3,8 +3,7 @@ package io.github.andrealtb.lockscreenlyrics.players.kuwo;
 import android.graphics.Bitmap;
 
 /**
- * KuWo cover URI, size, and snapshot-key rules. Network fetch and Icon extraction stay
- * in the SystemUI composition root.
+ * KuWo cover size and same-track snapshot rules. Bridge never downloads player artwork.
  */
 public final class KuWoCoverPolicy {
     public static final int SNAPSHOT_LIMIT = 16;
@@ -19,14 +18,6 @@ public final class KuWoCoverPolicy {
             return "id:" + mediaId;
         }
         return titleArtistKey == null ? "" : titleArtistKey;
-    }
-
-    public static boolean isKuWoHttpCoverHost(String scheme, String host) {
-        return "http".equals(scheme)
-                && host != null
-                && !host.isEmpty()
-                && host.startsWith("img")
-                && host.endsWith(".kuwo.cn");
     }
 
     public static boolean isPlausibleCoverSize(int width, int height) {

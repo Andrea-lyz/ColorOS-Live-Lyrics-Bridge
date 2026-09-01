@@ -13,7 +13,6 @@ public final class KuWoSystemUiRuntime {
     private final KuWoSameTrackLyricRetention retention = new KuWoSameTrackLyricRetention();
     private volatile boolean artworkRestoreLogged;
     private volatile long sameIdentityArtworkRestoreLoggedAt;
-    private volatile boolean artworkFetchFailureLogged;
     private volatile boolean carLyricIdentityNormalizedLogged;
     private volatile long seedlingArtworkRepairLoggedAt;
     private long mediaModelRetainLoggedAt;
@@ -55,14 +54,6 @@ public final class KuWoSystemUiRuntime {
             return false;
         }
         artworkRestoreLogged = true;
-        return true;
-    }
-
-    public boolean takeArtworkFetchFailureLogOnce() {
-        if (artworkFetchFailureLogged) {
-            return false;
-        }
-        artworkFetchFailureLogged = true;
         return true;
     }
 

@@ -50,6 +50,39 @@ public final class LockscreenIntegrationPolicy {
         return matchIndex;
     }
 
+    static boolean isSupportedSystemUiProcess(String processName) {
+        return "com.android.systemui".equals(processName);
+    }
+
+    static boolean isCurrentPlaybackControllerEvent(
+            long eventEpoch,
+            long currentEpoch,
+            String eventPackage,
+            String currentPackage,
+            boolean tokenMatches) {
+        return eventEpoch == currentEpoch
+                && tokenMatches
+                && eventPackage != null
+                && eventPackage.equals(currentPackage);
+    }
+
+    static boolean canRetainIdentityBoundPayload(
+            String boundTrackKey,
+            String incomingTrackKey,
+            String lastObservedTrackKey) {
+        if (boundTrackKey == null || boundTrackKey.isEmpty()) {
+            return false;
+        }
+        if (incomingTrackKey != null
+                && !incomingTrackKey.isEmpty()
+                && !boundTrackKey.equals(incomingTrackKey)) {
+            return false;
+        }
+        return lastObservedTrackKey == null
+                || lastObservedTrackKey.isEmpty()
+                || boundTrackKey.equals(lastObservedTrackKey);
+    }
+
     static int parseTaggedNonNegativeInt(String message, String marker) {
         if (message == null || marker == null || marker.isEmpty()) {
             return -1;
@@ -86,7 +119,9 @@ public final class LockscreenIntegrationPolicy {
             return -1L;
         }
         if (!inMotion
-                || speed <= 0f
+                || speed == 0f
+                || Float.isNaN(speed)
+                || Float.isInfinite(speed)
                 || lastPositionUpdateTime <= 0L
                 || nowElapsedRealtime <= lastPositionUpdateTime) {
             return storedPosition;

@@ -1,7 +1,12 @@
 package io.github.andrealtb.lockscreenlyrics;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Locale;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import io.github.andrealtb.lockscreenlyrics.render.InlineTimedLyricLine;
 import io.github.andrealtb.lockscreenlyrics.render.WordLine;
@@ -16,6 +21,15 @@ import io.github.andrealtb.lockscreenlyrics.render.WordRange;
  * Android-free so the pipeline stays unit-testable.
  */
 final class LyricModelTraceSupport {
+    private static final Pattern TRACE_FIELD = Pattern.compile(
+            "([A-Za-z][A-Za-z0-9_-]*)=([A-Za-z0-9_.:+-]+)");
+    private static final Set<String> SAFE_TRACE_FIELDS = new HashSet<>(Arrays.asList(
+            "source", "rawChars", "rawHash", "delayedInlineTranslations", "count", "reason",
+            "inlineTimedLineCount", "parsedLines", "groups", "time", "primaryIndex",
+            "occurrence", "mappedIndex", "matchMain", "useAsTranslation", "size", "stage",
+            "parser", "lines", "officialLines", "translations", "orphanTranslations",
+            "tagIndex", "words", "sourceSegments", "order", "end", "inline", "mode",
+            "added", "copied"));
     private LyricModelTraceSupport() {
     }
 
@@ -33,6 +47,31 @@ final class LyricModelTraceSupport {
             return safe;
         }
         return safe.substring(0, Math.max(0, maxLength - 3)) + "...";
+    }
+
+    /** Keeps parse topology and counters while removing lyric text from the emitted trace. */
+    static String sanitizeTraceMessage(String message) {
+        String safe = nullToEmpty(message);
+        if (safe.isEmpty()) {
+            return "trace chars=0 hash=";
+        }
+        int firstSpace = safe.indexOf(' ');
+        String event = firstSpace < 0 ? safe : safe.substring(0, firstSpace);
+        StringBuilder result = new StringBuilder(event);
+        Matcher matcher = TRACE_FIELD.matcher(safe);
+        while (matcher.find()) {
+            if (SAFE_TRACE_FIELDS.contains(matcher.group(1))) {
+                result.append(' ').append(matcher.group(1)).append('=').append(matcher.group(2));
+            }
+        }
+        result.append(" chars=").append(safe.length())
+                .append(" hash=").append(Integer.toHexString(safe.hashCode()));
+        return result.toString();
+    }
+
+    static String describeSensitiveText(String value) {
+        String safe = nullToEmpty(value);
+        return "chars=" + safe.length() + ",hash=" + Integer.toHexString(safe.hashCode());
     }
 
     static String formatLrcTime(long timeMillis) {

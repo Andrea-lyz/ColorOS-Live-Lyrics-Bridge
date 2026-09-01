@@ -67,6 +67,22 @@ public final class LyricInfoTrackMatcherTest {
                 "Taylor Swift"));
     }
 
+    @Test
+    public void matchingStableKeyWinsOverDashedFirstLyric() {
+        LyricInfoContract.Payload payload = new LyricInfoContract.Payload(
+                "Song", "Artist", "", "", "[00:01]A - B", "[00:01]A - B", "",
+                "provider", "id|song|artist|180", 7L, "provider-v5");
+
+        assertTrue(LyricInfoTrackMatcher.payloadMatchesTrack(payload, "Song", "Artist"));
+    }
+
+    @Test
+    public void identitylessPayloadDoesNotMatchArbitraryTrack() {
+        LyricInfoContract.Payload payload = payload("", "", "", "[00:01]old line");
+
+        assertFalse(LyricInfoTrackMatcher.payloadMatchesTrack(payload, "New Song", "Artist"));
+    }
+
     private static LyricInfoContract.Payload payload(
             String title,
             String artist,

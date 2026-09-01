@@ -298,10 +298,6 @@ final class NativeLyricModelAssembler {
                     officialIndex);
             boolean displayMatchesMainText =
                     WordLyricRenderSupport.matchesWordLineText(wordLine, normalizedDisplayText);
-            model.officialLines.add(
-                    WordLyricRenderConstants.OFFICIAL_SLOT_ALIAS_REUSE_ENABLED && displayMatchesMainText
-                            ? wordLine
-                            : null);
             boolean usableTranslationAlias = wordLine != null
                     && !displayMatchesMainText
                     && isEmpty(wordLine.translation)
@@ -309,6 +305,19 @@ final class NativeLyricModelAssembler {
                     wordLine,
                     displayText,
                     group.timeMillis);
+            boolean openingTitleSlotReuse = shouldReuseOpeningTitleSlot(
+                    model,
+                    officialIndex,
+                    group.timeMillis,
+                    displayText,
+                    wordLine,
+                    displayMatchesMainText,
+                    usableTranslationAlias);
+            boolean alreadyMapped = containsOfficialLineIdentity(model, wordLine);
+            boolean reuseSlot = WordLyricRenderConstants.OFFICIAL_SLOT_ALIAS_REUSE_ENABLED
+                    && (openingTitleSlotReuse
+                    || (displayMatchesMainText && !alreadyMapped));
+            model.officialLines.add(reuseSlot ? wordLine : null);
             traceOfficialAliasMapping(
                     model,
                     model.officialLines.size() - 1,
@@ -346,6 +355,39 @@ final class NativeLyricModelAssembler {
             }
         }
         return new AliasResult(applied, firstAlias);
+    }
+
+    private static boolean shouldReuseOpeningTitleSlot(
+            WordLyricModel model,
+            int officialIndex,
+            long officialTimeMillis,
+            String displayText,
+            WordLine wordLine,
+            boolean displayMatchesMainText,
+            boolean usableTranslationAlias) {
+        return model != null
+                && officialIndex == 0
+                && wordLine != null
+                && model.indexOfLine(wordLine) > officialIndex
+                && !displayMatchesMainText
+                && !usableTranslationAlias
+                && LockscreenIntegrationPolicy.isLikelyTitleArtistCredit(
+                displayText,
+                officialTimeMillis);
+    }
+
+    private static boolean containsOfficialLineIdentity(
+            WordLyricModel model,
+            WordLine target) {
+        if (model == null || target == null) {
+            return false;
+        }
+        for (WordLine line : model.officialLines) {
+            if (line == target) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void traceOfficialAliasMapping(
@@ -455,19 +497,7 @@ final class NativeLyricModelAssembler {
     }
 
     private static boolean isIgnorableOnlyPlaceholder(String value) {
-        if (isEmpty(value)) {
-            return false;
-        }
-        boolean foundIgnorable = false;
-        for (int index = 0; index < value.length(); index++) {
-            char character = value.charAt(index);
-            if (LyricTextSanitizer.isIgnorableCharacter(character)) {
-                foundIgnorable = true;
-            } else if (!Character.isWhitespace(character)) {
-                return false;
-            }
-        }
-        return foundIgnorable;
+        return LyricTextSanitizer.isPlaceholderOnly(value);
     }
 
     private static final class TimedLyricGroup {

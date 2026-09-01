@@ -9,6 +9,50 @@ import java.util.Arrays;
 import org.junit.Test;
 
 public class LockscreenIntegrationPolicyTest {
+
+    @Test
+    public void onlyMainSystemUiProcessIsSupported() {
+        assertTrue(LockscreenIntegrationPolicy.isSupportedSystemUiProcess("com.android.systemui"));
+        assertFalse(LockscreenIntegrationPolicy.isSupportedSystemUiProcess("com.android.systemui:screenshot"));
+        assertFalse(LockscreenIntegrationPolicy.isSupportedSystemUiProcess("com.android.systemui:tuner"));
+        assertFalse(LockscreenIntegrationPolicy.isSupportedSystemUiProcess("com.android.systemui:fgservices"));
+    }
+
+    @Test
+    public void rewindUsesSignedPlaybackSpeedAndClampsAtZero() {
+        assertEquals(7_000L, LockscreenIntegrationPolicy.extrapolatePlaybackPosition(
+                true, 10_000L, 1_000L, -1f, 4_000L));
+        assertEquals(0L, LockscreenIntegrationPolicy.extrapolatePlaybackPosition(
+                true, 2_000L, 1_000L, -2f, 4_000L));
+        assertEquals(10_000L, LockscreenIntegrationPolicy.extrapolatePlaybackPosition(
+                true, 10_000L, 1_000L, 0f, 4_000L));
+    }
+
+    @Test
+    public void stalePlaybackControllerEventsCannotAffectNewBinding() {
+        assertTrue(LockscreenIntegrationPolicy.isCurrentPlaybackControllerEvent(
+                7L, 7L, "player.a", "player.a", true));
+        assertFalse(LockscreenIntegrationPolicy.isCurrentPlaybackControllerEvent(
+                6L, 7L, "player.a", "player.a", true));
+        assertFalse(LockscreenIntegrationPolicy.isCurrentPlaybackControllerEvent(
+                7L, 7L, "player.a", "player.b", true));
+        assertFalse(LockscreenIntegrationPolicy.isCurrentPlaybackControllerEvent(
+                7L, 7L, "player.a", "player.a", false));
+    }
+
+    @Test
+    public void identitylessPayloadCanOnlyRetainItsObservedTrack() {
+        String songA = TrackIdentity.buildKey("Song A", "Artist");
+        String songB = TrackIdentity.buildKey("Song B", "Artist");
+        assertTrue(LockscreenIntegrationPolicy.canRetainIdentityBoundPayload(
+                songA, songA, songA));
+        assertTrue(LockscreenIntegrationPolicy.canRetainIdentityBoundPayload(
+                songA, "", songA));
+        assertFalse(LockscreenIntegrationPolicy.canRetainIdentityBoundPayload(
+                songA, songB, songB));
+        assertFalse(LockscreenIntegrationPolicy.canRetainIdentityBoundPayload(
+                "", songA, songA));
+    }
     @Test
     public void repeatedLyricTextStillMatchesTheCurrentlyActiveLine() {
         String dorothea = "Hey Dorothea do you ever stop and think about me";

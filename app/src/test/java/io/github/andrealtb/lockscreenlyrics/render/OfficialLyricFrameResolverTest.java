@@ -107,6 +107,32 @@ public final class OfficialLyricFrameResolverTest {
     }
 
     @Test
+    public void explicitOpeningAliasMappingDrawsRealLineInsteadOfBlankCreditSlot() {
+        WordLine credit = line(290L, "Lyrics by");
+        WordLine firstLyric = line(670L, "first lyric");
+        WordLyricModel model = model(credit, firstLyric);
+        model.officialLines.clear();
+        model.officialLines.add(firstLyric);
+        model.officialLines.add(null);
+
+        resolver.resolveInto(
+                model,
+                "song title - artist",
+                0,
+                0,
+                firstLyric,
+                firstLyric,
+                700L,
+                false,
+                "",
+                -1L,
+                selection);
+
+        assertSame(firstLyric, selection.line);
+        assertEquals("mapped-official-alias", selection.matchReason);
+    }
+
+    @Test
     public void reusableSelectionIsClearedBetweenCalls() {
         WordLine first = line(1_000L, "first");
         WordLyricModel model = model(first);

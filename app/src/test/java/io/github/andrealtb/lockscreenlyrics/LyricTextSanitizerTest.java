@@ -20,4 +20,13 @@ public final class LyricTextSanitizerTest {
 
         assertTrue(lyric == LyricTextSanitizer.removeIgnorableCharacters(lyric));
     }
+
+    @Test
+    public void unicodeBlankSlotsArePlaceholdersWithoutVisibleLyrics() {
+        assertTrue(LyricTextSanitizer.isPlaceholderOnly("\u200B"));
+        assertTrue(LyricTextSanitizer.isPlaceholderOnly("\u00A0"));
+        assertTrue(LyricTextSanitizer.isPlaceholderOnly(" \u2060\uFEFF\u3000"));
+        assertTrue(LyricTextSanitizer.isPlaceholderOnly("   "));
+        assertTrue(!LyricTextSanitizer.isPlaceholderOnly(" lyric "));
+    }
 }

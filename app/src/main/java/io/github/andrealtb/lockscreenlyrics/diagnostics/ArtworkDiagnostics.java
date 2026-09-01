@@ -28,19 +28,20 @@ public final class ArtworkDiagnostics {
         return "display=" + describeBitmap(safeBitmap(metadata, MediaMetadata.METADATA_KEY_DISPLAY_ICON))
                 + " | art=" + describeBitmap(safeBitmap(metadata, MediaMetadata.METADATA_KEY_ART))
                 + " | album=" + describeBitmap(safeBitmap(metadata, MediaMetadata.METADATA_KEY_ALBUM_ART))
-                + " | displayUri=" + safeString(metadata, MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI)
-                + " | artUri=" + safeString(metadata, MediaMetadata.METADATA_KEY_ART_URI)
-                + " | albumUri=" + safeString(metadata, MediaMetadata.METADATA_KEY_ALBUM_ART_URI)
+                + " | displayUri=" + safeUri(metadata, MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI)
+                + " | artUri=" + safeUri(metadata, MediaMetadata.METADATA_KEY_ART_URI)
+                + " | albumUri=" + safeUri(metadata, MediaMetadata.METADATA_KEY_ALBUM_ART_URI)
                 + " | lyricInfo=" + length(metadata.getString("lyricInfo"));
     }
 
     public static String describeSeedling(Object data) {
         if (data == null) return "seedling=null";
+        String track = invoke(data, "getSong") + '|' + invoke(data, "getArtist");
         return "package=" + invoke(data, "getPackageName")
-                + " | song=" + invoke(data, "getSong")
-                + " | artist=" + invoke(data, "getArtist")
+                + " | track=" + SensitiveFieldRedactor.trackHash(track)
                 + " | artworkIcon=" + describeIcon(invokeObject(data, "getArtworkIcon"))
-                + " | artworkUri=" + invoke(data, "getArtworkUri")
+                + " | artworkUri=" + SensitiveFieldRedactor.uriSummary(
+                invoke(data, "getArtworkUri"))
                 + " | artworkColor=" + invoke(data, "getArtworkColor")
                 + " | artworkBgColor=" + invoke(data, "getArtworkBgColor");
     }
@@ -50,7 +51,7 @@ public final class ArtworkDiagnostics {
         Object first = invokeObject(result, "component1");
         Object second = invokeObject(result, "component2");
         Object third = invokeObject(result, "component3");
-        return "uri=" + stringValue(first)
+        return "uri=" + SensitiveFieldRedactor.uriSummary(stringValue(first))
                 + " | bitmap=" + (second instanceof Bitmap
                 ? describeBitmap((Bitmap) second) : stringValue(second))
                 + " | changed=" + stringValue(third)
@@ -59,11 +60,14 @@ public final class ArtworkDiagnostics {
 
     public static String describeSeedlingBundle(Bundle bundle) {
         if (bundle == null) return "bundle=null";
+        String track = bundle.getCharSequence("songName", "") + "|"
+                + bundle.getCharSequence("artist", "");
         return "package=" + bundle.getString("packageName", "")
-                + " | song=" + bundle.getCharSequence("songName", "")
-                + " | artist=" + bundle.getCharSequence("artist", "")
-                + " | artworkUri=" + bundle.getParcelable("artworkUri")
-                + " | artworkBgColor=" + bundle.getString("artworkBackgroundUri", "")
+                + " | track=" + SensitiveFieldRedactor.trackHash(track)
+                + " | artworkUri=" + SensitiveFieldRedactor.uriSummary(
+                stringValue(bundle.getParcelable("artworkUri")))
+                + " | artworkBgColor=" + SensitiveFieldRedactor.uriSummary(
+                bundle.getString("artworkBackgroundUri", ""))
                 + " | artworkChanged=" + bundle.getBoolean("artworkUriContentChanged", false);
     }
 
@@ -99,7 +103,8 @@ public final class ArtworkDiagnostics {
                 builder.append(':').append(bitmap instanceof Bitmap
                         ? describeBitmap((Bitmap) bitmap) : stringValue(bitmap));
             } else if (type == Icon.TYPE_URI || type == Icon.TYPE_URI_ADAPTIVE_BITMAP) {
-                builder.append(":uri=").append(icon.getUri());
+                builder.append(":uri=").append(
+                        SensitiveFieldRedactor.uriSummary(stringValue(icon.getUri())));
             } else if (type == Icon.TYPE_RESOURCE) {
                 builder.append(":res=").append(icon.getResPackage()).append('/').append(icon.getResId());
             }
@@ -177,10 +182,9 @@ public final class ArtworkDiagnostics {
         }
     }
 
-    private static String safeString(MediaMetadata metadata, String key) {
+    private static String safeUri(MediaMetadata metadata, String key) {
         String value = metadata.getString(key);
-        if (value == null) return "";
-        return value.length() <= 240 ? value : value.substring(0, 240);
+        return SensitiveFieldRedactor.uriSummary(value);
     }
 
     private static String invoke(Object owner, String method) {

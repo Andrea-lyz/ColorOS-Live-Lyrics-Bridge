@@ -146,6 +146,18 @@ public final class StructuredBridgeLogTest {
         assertEquals(2, throttler.takeSuppressed("k"));
     }
 
+    @Test
+    public void uriAndTrackDiagnosticsNeverExposeIdentityOrQuery() {
+        String uri = "https://media.example/private/art.jpg?token=secret1234567890123456";
+        String summary = SensitiveFieldRedactor.uriSummary(uri);
+        String track = SensitiveFieldRedactor.trackHash("private-media-id|song|artist");
+
+        assertTrue(summary.startsWith("https://media.example/sha256:"));
+        assertFalse(summary.contains("private/art.jpg"));
+        assertFalse(summary.contains("token="));
+        assertFalse(track.contains("private-media-id"));
+    }
+
     private static final class RecordingSink implements BridgeLogSink {
         final List<String> messages = new ArrayList<>();
 

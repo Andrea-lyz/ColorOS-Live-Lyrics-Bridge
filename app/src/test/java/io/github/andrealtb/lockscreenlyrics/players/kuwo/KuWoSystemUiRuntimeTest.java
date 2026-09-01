@@ -22,7 +22,5 @@ public final class KuWoSystemUiRuntimeTest {
         assertFalse(runtime.takeCarLyricNormalizedLogOnce());
         assertTrue(runtime.takeArtworkRestoreLogOnce());
         assertFalse(runtime.takeArtworkRestoreLogOnce());
-        assertTrue(runtime.takeArtworkFetchFailureLogOnce());
-        assertFalse(runtime.takeArtworkFetchFailureLogOnce());
     }
 }

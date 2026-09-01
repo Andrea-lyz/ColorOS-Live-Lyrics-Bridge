@@ -41,15 +41,25 @@ final class TranslationToggleMediaActionBinder {
         void onTranslationToggleClicked(String packageName);
     }
 
+    interface TranslationIconLoader {
+        TranslationIcon load(Context context, String packageName);
+    }
+
     private static final String TRANSLATION_ICON_RESOURCE_NAME = "ic_translation";
     private static final String SALT_DESKTOP_LYRIC_ACTION = "com.salt.music.desktop_lyrics";
 
     private final Host host;
+    private final TranslationIconLoader iconLoader;
     private String lastTranslationToggleConfigLogKey = "";
     private long lastTranslationToggleConfigLogAt;
 
     TranslationToggleMediaActionBinder(Host host) {
+        this(host, TranslationToggleMediaActionBinder::findTranslationIconInPackage);
+    }
+
+    TranslationToggleMediaActionBinder(Host host, TranslationIconLoader iconLoader) {
         this.host = host;
+        this.iconLoader = iconLoader;
     }
 
     void applyTranslationToggle(
@@ -254,10 +264,14 @@ final class TranslationToggleMediaActionBinder {
                 ? "null"
                 : mediaAction.getClass().getName()));
         if (publicProtocol || overrideProtocol) {
-            promoteTranslationToggleAction(mediaButtonEx, actions, mediaAction);
-            if (!replaceMediaActionIcon(mediaAction, packageName) && publicProtocol) {
-                rememberCurrentMediaActionIcon(mediaAction);
+            if (!replaceMediaActionIcon(mediaAction, packageName)) {
+                if (publicProtocol) {
+                    rememberCurrentMediaActionIcon(mediaAction);
+                }
+                debug("translation action kept unchanged: semantic resource icon was not applied");
+                return;
             }
+            promoteTranslationToggleAction(mediaButtonEx, actions, mediaAction);
         } else {
             replaceMediaActionIcon(mediaAction, packageName);
         }
@@ -306,7 +320,7 @@ final class TranslationToggleMediaActionBinder {
 
     private boolean replaceMediaActionIcon(Object mediaAction, String packageName) {
         Context context = host.currentApplicationContext();
-        if (context == null || mediaAction == null || isEmpty(packageName)) {
+        if (mediaAction == null || isEmpty(packageName)) {
             return false;
         }
         try {
@@ -315,7 +329,7 @@ final class TranslationToggleMediaActionBinder {
                     + ", foundIcon=" + (translationIcon != null)
                     + ", action=" + mediaAction.getClass().getName());
             if (translationIcon == null
-                    || !isSystemUiSafeSemanticIcon(translationIcon.icon)) {
+                    || translationIcon.icon == null) {
                 debug("replace media action icon skipped: resource-backed semantic icon missing"
                         + ", package=" + nullToEmpty(packageName));
                 return false;
@@ -334,29 +348,31 @@ final class TranslationToggleMediaActionBinder {
                         : appliedIcon.getClass().getName()));
             }
             Object mediaActionEx = invokeNoArgByName(mediaAction, "getMediaActionEx");
-            writeFieldValue(mediaActionEx, "icon", translationIcon.icon);
-            return true;
+            if (!writeFieldValue(mediaActionEx, "icon", translationIcon.icon)) {
+                return false;
+            }
+            return readFieldValue(mediaActionEx, "icon") == translationIcon.icon;
         } catch (Throwable t) {
             StructuredBridgeLog.error("Failed to load lyric translation icon: " + t, t);
             return false;
         }
     }
 
-    private static final class TranslationIcon {
-        final Icon icon;
+    static final class TranslationIcon {
+        final Object icon;
         final Drawable drawable;
 
-        TranslationIcon(Icon icon, Drawable drawable) {
+        TranslationIcon(Object icon, Drawable drawable) {
             this.icon = icon;
             this.drawable = drawable;
         }
     }
 
-    private static TranslationIcon findTranslationIcon(
+    private TranslationIcon findTranslationIcon(
             Context context, String providerPackage) {
         // Host-player packages can expose unrelated resources with the same generic name and
         // different theme tints. Keep one canonical white action icon across every v5 player.
-        return findTranslationIconInPackage(
+        return iconLoader.load(
                 context,
                 TranslationActionPresentationPolicy.CANONICAL_ICON_PACKAGE);
     }
@@ -383,9 +399,6 @@ final class TranslationToggleMediaActionBinder {
             drawable = drawable.mutate();
             drawable.setTint(Color.WHITE);
             Icon semanticIcon = Icon.createWithResource(packageContext, resourceId);
-            if (!isSystemUiSafeSemanticIcon(semanticIcon)) {
-                return null;
-            }
             return new TranslationIcon(
                     semanticIcon,
                     drawable);
@@ -411,10 +424,6 @@ final class TranslationToggleMediaActionBinder {
                     TranslationActionPresentationPolicy.imageAlpha(enabled));
             ((Drawable) icon).invalidateSelf();
         }
-    }
-
-    private static boolean isSystemUiSafeSemanticIcon(Icon icon) {
-        return icon != null && isSystemUiSafeSemanticIconType(icon.getType());
     }
 
     static boolean isSystemUiSafeSemanticIconType(int iconType) {
@@ -550,9 +559,9 @@ final class TranslationToggleMediaActionBinder {
         }
     }
 
-    private static void writeFieldValue(Object target, String fieldName, Object value) {
+    private static boolean writeFieldValue(Object target, String fieldName, Object value) {
         if (target == null || isEmpty(fieldName)) {
-            return;
+            return false;
         }
         Class<?> current = target.getClass();
         while (current != null) {
@@ -560,13 +569,33 @@ final class TranslationToggleMediaActionBinder {
                 Field field = current.getDeclaredField(fieldName);
                 field.setAccessible(true);
                 field.set(target, value);
-                return;
+                return true;
             } catch (NoSuchFieldException ignored) {
                 current = current.getSuperclass();
             } catch (Throwable ignored) {
-                return;
+                return false;
             }
         }
+        return false;
+    }
+
+    private static Object readFieldValue(Object target, String fieldName) {
+        if (target == null || isEmpty(fieldName)) {
+            return null;
+        }
+        Class<?> current = target.getClass();
+        while (current != null) {
+            try {
+                Field field = current.getDeclaredField(fieldName);
+                field.setAccessible(true);
+                return field.get(target);
+            } catch (NoSuchFieldException ignored) {
+                current = current.getSuperclass();
+            } catch (Throwable ignored) {
+                return null;
+            }
+        }
+        return null;
     }
 
     private void debug(String message) {

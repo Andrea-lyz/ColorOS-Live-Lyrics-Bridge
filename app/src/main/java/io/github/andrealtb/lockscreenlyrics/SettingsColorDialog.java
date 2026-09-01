@@ -11,12 +11,14 @@ import android.graphics.Shader;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
+import android.os.Bundle;
 import android.text.Editable;
 import android.text.InputFilter;
 import android.text.InputType;
 import android.text.TextWatcher;
 import android.text.method.DigitsKeyListener;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -24,6 +26,7 @@ import android.view.ViewTreeObserver;
 import android.view.Window;
 import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
+import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.PopupWindow;
@@ -472,6 +475,8 @@ final class SettingsColorDialog {
             GradientDrawable background = rounded(Color.TRANSPARENT, dp(context, 9), 0, 0);
             setBackground(background);
             setClipToOutline(true);
+            setClickable(true);
+            setFocusable(true);
         }
 
         void setHue(float hue) {
@@ -541,15 +546,96 @@ final class SettingsColorDialog {
 
         @Override
         public boolean onTouchEvent(MotionEvent event) {
-            if (event.getActionMasked() != MotionEvent.ACTION_DOWN
-                    && event.getActionMasked() != MotionEvent.ACTION_MOVE) {
-                return super.onTouchEvent(event);
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                case MotionEvent.ACTION_MOVE:
+                    updateFromCoordinates(event.getX(), event.getY());
+                    return true;
+                case MotionEvent.ACTION_UP:
+                    updateFromCoordinates(event.getX(), event.getY());
+                    performClick();
+                    return true;
+                case MotionEvent.ACTION_CANCEL:
+                    return true;
+                default:
+                    return super.onTouchEvent(event);
             }
-            saturation = Math.max(0f, Math.min(1f, event.getX() / Math.max(1f, getWidth())));
-            value = 1f - Math.max(0f, Math.min(1f, event.getY() / Math.max(1f, getHeight())));
+        }
+
+        private void updateFromCoordinates(float x, float y) {
+            saturation = Math.max(0f, Math.min(1f, x / Math.max(1f, getWidth())));
+            value = 1f - Math.max(0f, Math.min(1f, y / Math.max(1f, getHeight())));
+            notifyColorChanged();
+        }
+
+        private void notifyColorChanged() {
             invalidate();
             if (listener != null) listener.onColorChanged(saturation, value);
+            sendAccessibilityEvent(android.view.accessibility.AccessibilityEvent.TYPE_VIEW_SELECTED);
+        }
+
+        @Override
+        public boolean performClick() {
+            super.performClick();
             return true;
+        }
+
+        @Override
+        public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
+            super.onInitializeAccessibilityNodeInfo(info);
+            info.setClassName(View.class.getName());
+            info.setClickable(true);
+            info.setContentDescription(String.format(
+                    Locale.ROOT,
+                    "饱和度 %d%%，亮度 %d%%",
+                    Math.round(saturation * 100f),
+                    Math.round(value * 100f)));
+            info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_LEFT);
+            info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_RIGHT);
+            info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_UP);
+            info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_DOWN);
+        }
+
+        @Override
+        public boolean performAccessibilityAction(int action, Bundle arguments) {
+            float step = 0.05f;
+            if (action == AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_LEFT.getId()) {
+                saturation = Math.max(0f, saturation - step);
+            } else if (action
+                    == AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_RIGHT.getId()) {
+                saturation = Math.min(1f, saturation + step);
+            } else if (action
+                    == AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_UP.getId()) {
+                value = Math.min(1f, value + step);
+            } else if (action
+                    == AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_DOWN.getId()) {
+                value = Math.max(0f, value - step);
+            } else {
+                return super.performAccessibilityAction(action, arguments);
+            }
+            notifyColorChanged();
+            return true;
+        }
+
+        @Override
+        public boolean onKeyDown(int keyCode, KeyEvent event) {
+            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+                return performAccessibilityAction(
+                        AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_LEFT.getId(), null);
+            }
+            if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                return performAccessibilityAction(
+                        AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_RIGHT.getId(), null);
+            }
+            if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                return performAccessibilityAction(
+                        AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_UP.getId(), null);
+            }
+            if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                return performAccessibilityAction(
+                        AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_DOWN.getId(), null);
+            }
+            return super.onKeyDown(keyCode, event);
         }
     }
 
@@ -575,6 +661,8 @@ final class SettingsColorDialog {
             cursorRing.setStyle(Paint.Style.STROKE);
             cursorRing.setStrokeWidth(dp(context, 1.5f));
             cursorRing.setColor(0xFF1B222C);
+            setClickable(true);
+            setFocusable(true);
         }
 
         void setHue(float hue) {
@@ -615,14 +703,84 @@ final class SettingsColorDialog {
 
         @Override
         public boolean onTouchEvent(MotionEvent event) {
-            if (event.getActionMasked() != MotionEvent.ACTION_DOWN
-                    && event.getActionMasked() != MotionEvent.ACTION_MOVE) {
-                return super.onTouchEvent(event);
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                case MotionEvent.ACTION_MOVE:
+                    updateFromX(event.getX());
+                    return true;
+                case MotionEvent.ACTION_UP:
+                    updateFromX(event.getX());
+                    performClick();
+                    return true;
+                case MotionEvent.ACTION_CANCEL:
+                    return true;
+                default:
+                    return super.onTouchEvent(event);
             }
-            hue = Math.max(0f, Math.min(1f, event.getX() / Math.max(1f, getWidth()))) * 360f;
+        }
+
+        private void updateFromX(float x) {
+            setHueAndNotify(Math.max(0f, Math.min(1f, x / Math.max(1f, getWidth()))) * 360f);
+        }
+
+        private void setHueAndNotify(float nextHue) {
+            hue = Math.max(0f, Math.min(360f, nextHue));
             invalidate();
             if (listener != null) listener.onHueChanged(hue);
+            sendAccessibilityEvent(android.view.accessibility.AccessibilityEvent.TYPE_VIEW_SELECTED);
+        }
+
+        @Override
+        public boolean performClick() {
+            super.performClick();
             return true;
+        }
+
+        @Override
+        public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
+            super.onInitializeAccessibilityNodeInfo(info);
+            info.setClassName(android.widget.SeekBar.class.getName());
+            info.setClickable(true);
+            info.setRangeInfo(AccessibilityNodeInfo.RangeInfo.obtain(
+                    AccessibilityNodeInfo.RangeInfo.RANGE_TYPE_FLOAT, 0f, 360f, hue));
+            info.setContentDescription("色相 " + Math.round(hue) + "°");
+            info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_PROGRESS);
+            info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_BACKWARD);
+            info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_FORWARD);
+        }
+
+        @Override
+        public boolean performAccessibilityAction(int action, Bundle arguments) {
+            if (action == AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_PROGRESS.getId()
+                    && arguments != null) {
+                setHueAndNotify(arguments.getFloat(
+                        AccessibilityNodeInfo.ACTION_ARGUMENT_PROGRESS_VALUE, hue));
+                return true;
+            }
+            if (action == AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD) {
+                setHueAndNotify(hue - 5f);
+                return true;
+            }
+            if (action == AccessibilityNodeInfo.ACTION_SCROLL_FORWARD) {
+                setHueAndNotify(hue + 5f);
+                return true;
+            }
+            return super.performAccessibilityAction(action, arguments);
+        }
+
+        @Override
+        public boolean onKeyDown(int keyCode, KeyEvent event) {
+            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT
+                    || keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                setHueAndNotify(hue - 5f);
+                return true;
+            }
+            if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
+                    || keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                setHueAndNotify(hue + 5f);
+                return true;
+            }
+            return super.onKeyDown(keyCode, event);
         }
     }
 }

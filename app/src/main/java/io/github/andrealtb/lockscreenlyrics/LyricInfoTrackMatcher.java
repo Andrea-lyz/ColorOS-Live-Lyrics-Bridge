@@ -31,14 +31,26 @@ final class LyricInfoTrackMatcher {
             return false;
         }
 
+        // A Provider stable key is authoritative. Ordinary lyric text must never veto an
+        // already matched identity merely because an early line happens to contain "A - B".
+        if (trackKeyMatched) {
+            return true;
+        }
+
         String lyricHintKey = inferTrackHintKey(firstNonEmpty(payload.rawLyric, payload.lyric));
         if (!isEmpty(lyricHintKey)
                 && !TrackIdentity.matchesHintKey(lyricHintKey, actualKey)) {
             return false;
         }
 
-        if (trackKeyMatched || isEmpty(payload.songName)) {
+        if (!isEmpty(lyricHintKey)) {
             return true;
+        }
+
+        if (isEmpty(payload.songName)) {
+            // Identity-less timed text is bound to the observed SystemUI metadata when accepted.
+            // It cannot independently authorize retaining a model for an arbitrary later track.
+            return false;
         }
         return TrackIdentity.matchesHintKey(
                 TrackIdentity.buildKey(payload.songName, payload.artist),

@@ -232,6 +232,30 @@ public final class NativeLyricModelAssemblerTest {
     }
 
     @Test
+    public void kugouOpeningTitleSlotReusesDelayedRealFirstLineWithoutTranslation() {
+        String raw = "[00:00.290]<00:00.290>Lyrics by<00:00.377>\n"
+                + "[00:00.300]<00:00.300>Composed by<00:00.399>\n"
+                + "[00:00.670]<00:00.670>当<00:00.903>你<00:01.150>走"
+                + "<00:01.723>上<00:02.074>回<00:02.425>家"
+                + "<00:02.776>的<00:03.127>路<00:03.479>";
+        String display = "[00:00.700]回家的路 The Long Way Home - HOYO-MiX\n"
+                + "[00:00.290]Lyrics by\n"
+                + "[00:00.300]Composed by\n"
+                + "[00:00.670]当你走上回家的路\n"
+                + "[00:08.670]" + LyricTextSanitizer.ZERO_WIDTH_SPACE;
+
+        NativeLyricModelAssembler.AssemblyResult result = assembler().assemble(
+                raw, true, display, true, "");
+        WordLine firstLyric = result.model.lines.get(2);
+
+        assertEquals("当你走上回家的路", firstLyric.text);
+        assertEquals("", firstLyric.translation);
+        assertEquals(firstLyric, result.model.officialLines.get(0));
+        assertNull(result.model.officialLines.get(3));
+        assertEquals(0, result.model.adapterIndexOfLine(firstLyric));
+    }
+
+    @Test
     public void ordinaryOfficialTranslationAliasStillAttaches() {
         String raw = "[00:01.000]<00:01.000>Hello<00:01.800>";
         String display = "[00:01.030]你好";
@@ -263,6 +287,21 @@ public final class NativeLyricModelAssemblerTest {
                 "");
 
         assertEquals(1, result.model.lines.size());
+        assertEquals(2, result.model.officialLines.size());
+        assertEquals(result.model.lines.get(0), result.model.officialLines.get(0));
+        assertNull(result.model.officialLines.get(1));
+    }
+
+    @Test
+    public void nbspTailPlaceholderKeepsSlotWithoutCreatingTranslation() {
+        String raw = "[00:01.000]<00:01.000>Hello<00:01.800>";
+        String display = "[00:01.000]Hello\n[00:02.000]\u00A0";
+
+        NativeLyricModelAssembler.AssemblyResult result = assembler().assemble(
+                raw, true, display, true, "");
+
+        assertEquals(1, result.model.lines.size());
+        assertEquals(0, result.model.translationCount());
         assertEquals(2, result.model.officialLines.size());
         assertEquals(result.model.lines.get(0), result.model.officialLines.get(0));
         assertNull(result.model.officialLines.get(1));

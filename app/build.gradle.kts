@@ -6,7 +6,7 @@ val releaseStoreFilePath = providers.environmentVariable("SIGNING_STORE_FILE").o
 val releaseStorePassword = providers.environmentVariable("KEY_STORE_PASSWORD").orNull
 val releaseKeyAlias = providers.environmentVariable("KEY_ALIAS").orNull
 val releaseKeyPassword = providers.environmentVariable("KEY_PASSWORD").orNull
-val defaultVersionName = "4.0.0"
+val defaultVersionName = "4.1.0"
 val releaseVersionName = providers.gradleProperty("releaseTag")
     .orElse(providers.environmentVariable("RELEASE_TAG"))
     .map { tag ->
@@ -38,7 +38,7 @@ android {
         applicationId = "io.github.andrealtb.lockscreenlyrics"
         minSdk = 26
         targetSdk = 35
-        versionCode = 136
+        versionCode = 137
         versionName = releaseVersionName.get()
     }
 
@@ -96,6 +96,7 @@ dependencies {
     implementation("org.luckypray:dexkit:2.2.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20260522")
+    testImplementation(project(":libxposed-api-stubs"))
 }
 
 // Android otherwise falls back to the debug signing config for an unconfigured release build.

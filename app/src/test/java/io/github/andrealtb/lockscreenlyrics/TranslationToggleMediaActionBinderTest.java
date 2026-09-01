@@ -32,6 +32,7 @@ public class TranslationToggleMediaActionBinderTest {
     public static final class FakeMediaAction {
         Runnable action;
         CharSequence contentDescription;
+        final FakeMediaActionEx ex = new FakeMediaActionEx();
 
         public Runnable getAction() {
             return action;
@@ -48,6 +49,14 @@ public class TranslationToggleMediaActionBinderTest {
         public Object getIcon() {
             return null;
         }
+
+        public FakeMediaActionEx getMediaActionEx() {
+            return ex;
+        }
+    }
+
+    public static final class FakeMediaActionEx {
+        Object icon;
     }
 
     public static final class FakeMediaButtonEx {
@@ -106,7 +115,11 @@ public class TranslationToggleMediaActionBinderTest {
     }
 
     private static TranslationToggleMediaActionBinder binder(FakeHost host) {
-        return new TranslationToggleMediaActionBinder(host);
+        return new TranslationToggleMediaActionBinder(
+                host,
+                (context, packageName) ->
+                        new TranslationToggleMediaActionBinder.TranslationIcon(
+                                new Object(), null));
     }
 
     @Test
@@ -248,5 +261,26 @@ public class TranslationToggleMediaActionBinderTest {
                 Icon.TYPE_DATA));
         assertFalse(TranslationToggleMediaActionBinder.isSystemUiSafeSemanticIconType(
                 Icon.TYPE_URI));
+    }
+
+    @Test
+    public void failedSemanticIconWriteDoesNotPromoteOrReplaceAction() {
+        FakeMediaButton button = new FakeMediaButton();
+        FakeMediaAction first = new FakeMediaAction();
+        Object missingSemanticField = new Object() {
+            public Runnable getAction() { return null; }
+            public Object getIcon() { return null; }
+            public Object getMediaActionEx() { return new Object(); }
+        };
+        button.ex.heartAction = missingSemanticField;
+        button.ex.rule0CustomActions.add(first);
+        button.ex.rule0CustomActions.add(missingSemanticField);
+        FakeHost host = new FakeHost();
+
+        binder(host).applyTranslationToggle(
+                "com.example.player", button, true, true, "com.example.player", 5, 120);
+
+        assertSame(first, button.ex.rule0CustomActions.get(0));
+        assertEquals(2, button.ex.rule0CustomActions.size());
     }
 }
