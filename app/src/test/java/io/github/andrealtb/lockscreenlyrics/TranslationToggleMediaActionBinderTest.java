@@ -42,6 +42,8 @@ public class TranslationToggleMediaActionBinderTest {
             this.action = action;
         }
 
+        public CharSequence getContentDescription() { return contentDescription; }
+
         public void setContentDescription(CharSequence value) {
             this.contentDescription = value;
         }
@@ -283,4 +285,123 @@ public class TranslationToggleMediaActionBinderTest {
         assertSame(first, button.ex.rule0CustomActions.get(0));
         assertEquals(2, button.ex.rule0CustomActions.size());
     }
+    private static final class NativeAction implements Runnable {
+        final String id;
+        int clicks;
+        NativeAction(String id) { this.id = id; }
+        @Override public void run() { clicks++; }
+    }
+
+    private static TranslationToggleMediaActionBinder nativeBinder(FakeHost host) {
+        return new TranslationToggleMediaActionBinder(host,
+                (context, pkg) -> new TranslationToggleMediaActionBinder.TranslationIcon(new Object(), null),
+                action -> {
+                    Runnable runnable = ((FakeMediaAction) action).action;
+                    return runnable instanceof NativeAction ? ((NativeAction) runnable).id : "";
+                });
+    }
+
+    private static FakeMediaAction nativeAction(String id) {
+        FakeMediaAction action = new FakeMediaAction();
+        action.action = new NativeAction(id);
+        action.contentDescription = id;
+        action.ex.icon = new Object();
+        return action;
+    }
+
+    @Test
+    public void publicActionCanBeDisabledAndReenabledOnSameModel() {
+        FakeHost host = new FakeHost();
+        TranslationToggleMediaActionBinder binder = nativeBinder(host);
+        FakeMediaButton button = new FakeMediaButton();
+        FakeMediaAction desktop = nativeAction("desktop");
+        FakeMediaAction translation = nativeAction(LyricInfoContract.ACTION_TOGGLE_TRANSLATION);
+        FakeMediaAction favorite = nativeAction("favorite");
+        button.ex.rule0CustomActions.addAll(List.of(desktop, translation, favorite));
+        for (int i = 0; i < 3; i++) {
+            binder.applyTranslationToggle("example", button, false, true, "example", 5, 20);
+            assertSame(translation, button.ex.rule0CustomActions.get(0));
+            translation.action.run();
+            binder.applyTranslationToggle("example", button, false, false, "example", 5, 20);
+            assertEquals(List.of(desktop, favorite), button.ex.rule0CustomActions);
+        }
+        assertEquals(3, host.toggleClicks);
+    }
+
+    @Test
+    public void disablingOverrideRestoresOriginalClickIconDescriptionAndOrder() {
+        FakeHost host = new FakeHost();
+        TranslationToggleMediaActionBinder binder = nativeBinder(host);
+        FakeMediaButton button = new FakeMediaButton();
+        FakeMediaAction desktop = nativeAction("com.md3music.toggle_desktop_lyric");
+        FakeMediaAction favorite = nativeAction("com.md3music.toggle_favorite");
+        NativeAction original = (NativeAction) desktop.action;
+        Object icon = desktop.ex.icon;
+        button.ex.rule0CustomActions.addAll(List.of(desktop, favorite));
+        String pkg = PlayerSystemUiPolicy.MD3_MUSIC;
+        binder.applyTranslationToggle(pkg, button, true, true, pkg, 5, 20);
+        desktop.action.run();
+        assertEquals(1, host.toggleClicks);
+        binder.applyTranslationToggle(pkg, button, true, false, pkg, 5, 20);
+        assertSame(original, desktop.action);
+        assertSame(icon, desktop.ex.icon);
+        assertEquals(original.id, desktop.contentDescription);
+        assertEquals(List.of(desktop, favorite), button.ex.rule0CustomActions);
+        desktop.action.run();
+        assertEquals(1, original.clicks);
+        binder.applyTranslationToggle(pkg, button, true, true, pkg, 5, 20);
+        binder.applyTranslationToggle(pkg, button, false, true, pkg, 0, 0);
+        assertSame(original, desktop.action);
+    }
+
+    @Test
+    public void disabledButtonNeverTakesOverAnUntouchedFavorite() {
+        FakeMediaButton button = new FakeMediaButton();
+        FakeMediaAction favorite = nativeAction("favorite");
+        Runnable original = favorite.action;
+        button.ex.rule0CustomActions.add(favorite);
+        nativeBinder(new FakeHost()).applyTranslationToggle("example", button, true, false, "example", 5, 20);
+        assertSame(original, favorite.action);
+    }
+
+    @Test
+    public void md3NeverFallsBackToFavoriteWhenDesktopActionIsMissing() {
+        FakeMediaButton button = new FakeMediaButton();
+        FakeMediaAction favorite = nativeAction("com.md3music.toggle_favorite");
+        Runnable original = favorite.action;
+        button.ex.rule0CustomActions.add(favorite);
+        button.ex.heartAction = favorite;
+        String pkg = PlayerSystemUiPolicy.MD3_MUSIC;
+        nativeBinder(new FakeHost()).applyTranslationToggle(pkg, button, true, true, pkg, 5, 20);
+        assertSame(original, favorite.action);
+    }
+
+    @Test
+    public void knownEmptyModelRemovesPublicActionButUnknownModelKeepsIt() {
+        FakeMediaButton button = new FakeMediaButton();
+        FakeMediaAction desktop = nativeAction("desktop");
+        FakeMediaAction translation = nativeAction(LyricInfoContract.ACTION_TOGGLE_TRANSLATION);
+        button.ex.rule0CustomActions.addAll(List.of(desktop, translation));
+        TranslationToggleMediaActionBinder binder = nativeBinder(new FakeHost());
+        binder.applyTranslationToggle("example", button, false, true, "example", 0, 0);
+        assertEquals(List.of(desktop), button.ex.rule0CustomActions);
+        binder.applyTranslationToggle("example", button, false, true, "example", -1, -1);
+        assertSame(translation, button.ex.rule0CustomActions.get(0));
+    }
+
+    @Test
+    public void md3PublicTranslationReplacesDesktopSlotAndKeepsFavoriteSecond() {
+        FakeMediaButton button = new FakeMediaButton();
+        FakeMediaAction desktop = nativeAction("com.md3music.toggle_desktop_lyric");
+        FakeMediaAction translation = nativeAction(LyricInfoContract.ACTION_TOGGLE_TRANSLATION);
+        FakeMediaAction favorite = nativeAction("com.md3music.toggle_favorite");
+        button.ex.rule0CustomActions.addAll(List.of(desktop, translation, favorite));
+        TranslationToggleMediaActionBinder binder = nativeBinder(new FakeHost());
+        String pkg = PlayerSystemUiPolicy.MD3_MUSIC;
+        binder.applyTranslationToggle(pkg, button, true, true, pkg, 5, 20);
+        assertEquals(List.of(translation, favorite), button.ex.rule0CustomActions);
+        binder.applyTranslationToggle(pkg, button, false, true, pkg, 0, 0);
+        assertEquals(List.of(desktop, favorite), button.ex.rule0CustomActions);
+    }
+
 }

@@ -354,6 +354,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     private volatile Object oplusMediaActionPrioritySelector;
     private volatile Method oplusUpdatePkgActionsRuleMethod;
     private volatile Object[] lastOplusPkgActionsRuleArgs;
+    private String lastTranslationModelRebindKey = "";
     private final Set<String> translationToggleRule0Packages =
             ConcurrentHashMap.newKeySet();
     private final Set<String> pendingTranslationToggleRule0Packages =
@@ -1304,12 +1305,8 @@ public final class LockscreenLyricsModule extends XposedModule {
 
         ArrayList<String> knownTranslationPackages =
                 new ArrayList<>(translationToggleRule0Packages);
-        LinkedHashMap<Object, Object> actionPriority = copyActionPriorityWithRule0Packages(
-                (Map<?, ?>) args.get(0),
-                knownTranslationPackages);
-
-        Object[] patchedArgs = args.toArray(new Object[0]);
-        patchedArgs[0] = actionPriority;
+        Object[] patchedArgs = TranslationActionRulePolicy.patch(
+                args.toArray(new Object[0]), knownTranslationPackages);
         lastOplusPkgActionsRuleArgs = patchedArgs.clone();
         Object result = chain.proceed(patchedArgs);
         markTranslationToggleRule0PackagesRefreshed(knownTranslationPackages);
@@ -1470,11 +1467,8 @@ public final class LockscreenLyricsModule extends XposedModule {
                     return;
                 }
                 knownTranslationPackages.addAll(translationToggleRule0Packages);
-                LinkedHashMap<Object, Object> actionPriority =
-                        copyActionPriorityWithRule0Packages(
-                                (Map<?, ?>) refreshArgs[0],
-                                knownTranslationPackages);
-                refreshArgs[0] = actionPriority;
+                refreshArgs = TranslationActionRulePolicy.patch(
+                        refreshArgs, knownTranslationPackages);
                 updateMethod.invoke(selector, refreshArgs);
                 lastOplusPkgActionsRuleArgs = refreshArgs.clone();
             }
@@ -1485,19 +1479,6 @@ public final class LockscreenLyricsModule extends XposedModule {
             error("Failed to enable OPlus Rule0 through updatePkgActionsRule for "
                     + pendingPackages, t);
         }
-    }
-
-    private static LinkedHashMap<Object, Object> copyActionPriorityWithRule0Packages(
-            Map<?, ?> source,
-            Iterable<String> translationPackages) {
-        LinkedHashMap<Object, Object> actionPriority = new LinkedHashMap<>();
-        actionPriority.putAll(source);
-        for (String packageName : translationPackages) {
-            if (!TextUtils.isEmpty(packageName)) {
-                actionPriority.put(packageName, "0");
-            }
-        }
-        return actionPriority;
     }
 
     private void markTranslationToggleRule0PackagesRefreshed(List<String> packageNames) {
@@ -2149,6 +2130,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 mainHandler.post(() -> refreshLyricViewsAfterTranslationToggle(generation));
             }
         }
+        requestOplusTranslationActionRebind(currentTranslationPreferencePackage());
         infoAlways(BridgeDebugArea.BOOTSTRAP, BridgeEvents.SETTINGS_APPLIED, "Updated player translation settings, players=" + affectedPackages.size()
                 + ", cleared=" + (clearPackages == null ? 0 : clearPackages.length)
                 + " | source=" + source
@@ -2180,7 +2162,8 @@ public final class LockscreenLyricsModule extends XposedModule {
                                     : currentWordLyricModel.translationCount(),
                             currentLyricProviderPayload == null
                                     ? null
-                                    : currentLyricProviderPayload.translationLyric),
+                                    : currentLyricProviderPayload.translationLyric)
+                            && userWantsTranslationButton(packageName),
                     userWantsTranslationButton(packageName),
                     currentLyricProviderPackage,
                     currentWordLyricModel == null
@@ -10485,8 +10468,18 @@ public final class LockscreenLyricsModule extends XposedModule {
                         + ", translations=" + model.translationCount());
         maybeLogWordLyricModelSlotIntegrity(model, "systemui-cache");
         mainHandler.post(() -> preparePublishedLyricModelGeometry(
-                model,
-                geometryCommitGeneration));
+                model, geometryCommitGeneration));
+        String translationPackage = currentLyricProviderPackage;
+        mainHandler.post(() -> {
+            if (currentWordLyricModel != model
+                    || !translationPackage.equals(currentLyricProviderPackage)) return;
+            String rebindKey = translationPackage + "|" + payloadKey
+                    + "|" + (model.translationCount() > 0);
+            if (!rebindKey.equals(lastTranslationModelRebindKey)
+                    && requestOplusTranslationActionRebind(translationPackage)) {
+                lastTranslationModelRebindKey = rebindKey;
+            }
+        });
         updateScreenTimeoutWakeLock(currentApplicationContext());
     }
     private void beginOfficialLyricTrackHandoff(String reason) {

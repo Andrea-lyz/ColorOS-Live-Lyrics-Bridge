@@ -14,6 +14,7 @@ import io.github.andrealtb.lockscreenlyrics.diagnostics.StructuredBridgeLog;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -48,6 +49,12 @@ final class TranslationToggleMediaActionBinder {
     private static final String TRANSLATION_ICON_RESOURCE_NAME = "ic_translation";
     private static final String SALT_DESKTOP_LYRIC_ACTION = "com.salt.music.desktop_lyrics";
 
+    interface ActionIdReader {
+        String read(Object mediaAction);
+    }
+
+    private final List<OriginalButton> originalButtons = new ArrayList<>();
+    private final ActionIdReader actionIdReader;
     private final Host host;
     private final TranslationIconLoader iconLoader;
     private String lastTranslationToggleConfigLogKey = "";
@@ -58,11 +65,21 @@ final class TranslationToggleMediaActionBinder {
     }
 
     TranslationToggleMediaActionBinder(Host host, TranslationIconLoader iconLoader) {
-        this.host = host;
-        this.iconLoader = iconLoader;
+        this(host, iconLoader, action -> {
+            PlaybackState.CustomAction custom = findPlaybackStateCustomAction(
+                    invokeNoArgByName(action, "getAction"));
+            return custom == null ? "" : custom.getAction();
+        });
     }
 
-    void applyTranslationToggle(
+    TranslationToggleMediaActionBinder(
+            Host host, TranslationIconLoader iconLoader, ActionIdReader actionIdReader) {
+        this.host = host;
+        this.iconLoader = iconLoader;
+        this.actionIdReader = actionIdReader;
+    }
+
+    synchronized void applyTranslationToggle(
             String packageName,
             Object mediaButton,
             boolean allowOverride,
@@ -89,7 +106,13 @@ final class TranslationToggleMediaActionBinder {
                     : actions.getClass().getName()));
             return;
         }
-        List<?> actionList = (List<?>) actions;
+        OriginalButton original = originalButton(mediaButtonEx, (List<?>) actions);
+        original.restore(mediaButtonEx);
+        List<?> actionList = new ArrayList<>(original.actions);
+        boolean knownWithoutTranslation = packageName.equals(currentProviderPackage)
+                && modelTranslationCount == 0;
+        boolean showButton = userWantsButton && !knownWithoutTranslation;
+        allowOverride = allowOverride && showButton;
         Object heartAction = invokeNoArgByName(mediaButtonEx, "getHeartAction");
         debug("inspect Rule0 actions, package=" + nullToEmpty(packageName)
                 + ", count=" + actionList.size()
@@ -101,23 +124,20 @@ final class TranslationToggleMediaActionBinder {
         Object overrideCandidate = null;
         String overrideActionId = "";
         for (Object mediaAction : actionList) {
-            Object runnable = invokeNoArgByName(mediaAction, "getAction");
-            PlaybackState.CustomAction customAction = findPlaybackStateCustomAction(runnable);
-            if (customAction == null) {
-                continue;
-            }
-            String actionId = customAction.getAction();
+            String actionId = actionIdReader.read(mediaAction);
+            if (isEmpty(actionId)) continue;
             boolean integrationAction =
                     LyricInfoContract.ACTION_TOGGLE_TRANSLATION.equals(actionId);
             boolean legacySaltAction = SALT_DESKTOP_LYRIC_ACTION.equals(actionId);
             if (!integrationAction && !legacySaltAction) {
-                if (overrideCandidate == null && allowOverride) {
+                if (overrideCandidate == null && allowOverride
+                        && PlayerTranslationTogglePolicy.isOverrideActionCandidate(packageName, actionId)) {
                     overrideCandidate = mediaAction;
                     overrideActionId = actionId;
                 }
                 continue;
             }
-            if (!userWantsButton) {
+            if (!showButton) {
                 if (integrationAction) {
                     removeRule0Action(mediaButtonEx, actionList, mediaAction);
                     debug("Removed lyricInfo translation toggle action, package="
@@ -147,7 +167,7 @@ final class TranslationToggleMediaActionBinder {
             }
             return;
         }
-        if (overrideCandidate == null) {
+        if (overrideCandidate == null && !PlayerSystemUiPolicy.MD3_MUSIC.equals(packageName)) {
             overrideCandidate = findOverrideFallback(mediaButtonEx, actionList);
             overrideActionId = "";
         }
@@ -165,6 +185,66 @@ final class TranslationToggleMediaActionBinder {
                 + ", currentProvider=" + nullToEmpty(currentProviderPackage)
                 + ", modelTranslations=" + modelTranslationCount
                 + ", payloadTranslationChars=" + payloadTranslationChars);
+    }
+
+    // OPlus models have mutable structural hashCode/equals; key snapshots by weak identity.
+    private OriginalButton originalButton(Object button, List<?> actions) {
+        for (int i = originalButtons.size() - 1; i >= 0; i--) {
+            OriginalButton original = originalButtons.get(i);
+            Object owner = original.owner.get();
+            if (owner == button) return original;
+            if (owner == null) originalButtons.remove(i);
+        }
+        OriginalButton original = new OriginalButton(button, actions);
+        originalButtons.add(original);
+        return original;
+    }
+
+    private static final class OriginalButton {
+        final WeakReference<Object> owner;
+        final List<Object> actions;
+        final List<OriginalAction> originals = new ArrayList<>();
+
+        OriginalButton(Object button, List<?> actions) {
+            owner = new WeakReference<>(button);
+            this.actions = new ArrayList<>(actions);
+            for (Object action : actions) originals.add(new OriginalAction(action));
+            Object heart = invokeNoArgByName(button, "getHeartAction");
+            if (heart != null && actions.stream().noneMatch(action -> action == heart)) {
+                originals.add(new OriginalAction(heart));
+            }
+        }
+
+        void restore(Object button) {
+            for (OriginalAction original : originals) original.restore();
+            tryInvokeOneArgByName(button, "setRule0CustomActions", new ArrayList<>(actions));
+        }
+    }
+
+    private static final class OriginalAction {
+        final Object target;
+        final Object runnable;
+        final Object description;
+        final Object drawable;
+        final Object semanticIcon;
+        final int alpha;
+
+        OriginalAction(Object target) {
+            this.target = target;
+            runnable = invokeNoArgByName(target, "getAction");
+            description = invokeNoArgByName(target, "getContentDescription");
+            drawable = invokeNoArgByName(target, "getIcon");
+            semanticIcon = readFieldValue(invokeNoArgByName(target, "getMediaActionEx"), "icon");
+            alpha = drawable instanceof Drawable ? ((Drawable) drawable).getAlpha() : 255;
+        }
+
+        void restore() {
+            tryInvokeOneArgByName(target, "setAction", runnable);
+            tryInvokeOneArgByName(target, "setContentDescription", description);
+            tryInvokeOneArgByName(target, "setIcon", drawable);
+            if (drawable instanceof Drawable) ((Drawable) drawable).setAlpha(alpha);
+            writeFieldValue(invokeNoArgByName(target, "getMediaActionEx"), "icon", semanticIcon);
+        }
     }
 
     private void removeRule0Action(Object mediaButtonEx, List<?> actions, Object target) {
@@ -264,14 +344,16 @@ final class TranslationToggleMediaActionBinder {
                 ? "null"
                 : mediaAction.getClass().getName()));
         if (publicProtocol || overrideProtocol) {
+            OriginalAction before = new OriginalAction(mediaAction);
             if (!replaceMediaActionIcon(mediaAction, packageName)) {
+                before.restore();
                 if (publicProtocol) {
                     rememberCurrentMediaActionIcon(mediaAction);
                 }
                 debug("translation action kept unchanged: semantic resource icon was not applied");
                 return;
             }
-            promoteTranslationToggleAction(mediaButtonEx, actions, mediaAction);
+            promoteTranslationToggleAction(mediaButtonEx, actions, mediaAction, packageName);
         } else {
             replaceMediaActionIcon(mediaAction, packageName);
         }
@@ -290,14 +372,17 @@ final class TranslationToggleMediaActionBinder {
     }
 
     private void promoteTranslationToggleAction(
-            Object mediaButtonEx, List<?> actions, Object translationAction) {
-        if (actions.isEmpty() || actions.get(0) == translationAction) {
+            Object mediaButtonEx, List<?> actions, Object translationAction, String packageName) {
+        if (actions.isEmpty()) {
             return;
         }
         ArrayList<Object> ordered = new ArrayList<>(actions.size());
         ordered.add(translationAction);
         for (Object action : actions) {
             if (action != translationAction) {
+                // MD3's public translation replaces its desktop-lyric slot; keep favorite in QS slot 2.
+                if (PlayerSystemUiPolicy.MD3_MUSIC.equals(packageName)
+                        && "com.md3music.toggle_desktop_lyric".equals(actionIdReader.read(action))) continue;
                 ordered.add(action);
             }
         }

@@ -12,6 +12,11 @@ final class PlayerTranslationTogglePolicy {
     private PlayerTranslationTogglePolicy() {
     }
 
+    static boolean isOverrideActionCandidate(String packageName, String actionId) {
+        return !PlayerSystemUiPolicy.MD3_MUSIC.equals(packageName)
+                || "com.md3music.toggle_desktop_lyric".equals(actionId);
+    }
+
     static boolean canOverrideFavoriteActionWithTranslation(
             String packageName,
             Set<String> providerDeclaredTranslationTogglePackages) {

@@ -28,6 +28,7 @@ final class PlayerSystemUiPolicy {
     static final String FLAMINGO = "yos.music.player";
     static final String QZ_MUSIC = "love.qz.music";
     static final String PRISM_MUSIC = "com.lg.sllocalmusic";
+    static final String MD3_MUSIC = "com.md3music.md3music";
 
     private static final String[] OPLUS_HISTORY_PACKAGES = {
             QQ_MUSIC,
@@ -49,7 +50,8 @@ final class PlayerSystemUiPolicy {
             HALCYON,
             FLAMINGO,
             QZ_MUSIC,
-            PRISM_MUSIC
+            PRISM_MUSIC,
+            MD3_MUSIC
     };
 
     private PlayerSystemUiPolicy() {
@@ -73,7 +75,8 @@ final class PlayerSystemUiPolicy {
                 || CONE_GP.equals(packageName)
                 || LX_MUSIC.equals(packageName)
                 || LX_WALNUT.equals(packageName)
-                || POWERAMP.equals(packageName);
+                || POWERAMP.equals(packageName)
+                || MD3_MUSIC.equals(packageName);
     }
 
     static boolean isPoweramp(String packageName) {

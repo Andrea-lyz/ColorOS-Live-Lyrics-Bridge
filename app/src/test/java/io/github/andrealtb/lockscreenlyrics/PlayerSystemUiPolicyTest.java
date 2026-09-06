@@ -16,7 +16,8 @@ public final class PlayerSystemUiPolicyTest {
         Set<String> packages = new HashSet<>(
                 Arrays.asList(PlayerSystemUiPolicy.oplusHistoryPackages()));
 
-        assertEquals(20, packages.size());
+        assertEquals(21, packages.size());
+        assertTrue(packages.contains(PlayerSystemUiPolicy.MD3_MUSIC));
         for (String packageName : new String[]{
                 PlayerSystemUiPolicy.HALCYON,
                 PlayerSystemUiPolicy.FLAMINGO,
