@@ -22,7 +22,7 @@ on:
       providers_ref:
         description: "Immutable Provider tag or full 40-character commit SHA."
         required: true
-        default: "providers-v1.1.0"
+        default: "providers-v1.1.1"
         type: string
 
 permissions:
@@ -60,7 +60,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: ${{ env.PROVIDERS_REPOSITORY }}
-          ref: ${{ inputs.providers_ref || 'providers-v1.1.0' }}
+          ref: ${{ inputs.providers_ref || 'providers-v1.1.1' }}
           path: provider-source
           fetch-depth: 0
           token: ${{ secrets.PROVIDERS_REPO_TOKEN || github.token }}
