@@ -185,4 +185,8 @@ Copyright 2026 Andrea-lyz。本项目采用 [Apache License 2.0](LICENSE) 开源
 
 项目使用 [Accompanist Lyrics Core](https://github.com/6xingyv/accompanist-lyrics-core) 解析时间轴歌词；可选 Provider 基于 [tomakino/LyricProvider](https://github.com/tomakino/LyricProvider) 生态扩展。感谢相关项目的作者与贡献者。
 
+同时感谢 [Lyrico](https://github.com/Replica0110/Lyrico) 与
+[Lyrico-Plugins](https://github.com/Replica0110/Lyrico-Plugins) 在本地音乐元数据、歌词管理和
+插件化歌词源方面提供的开源工作与启发。
+
 Android、ColorOS、OPlus、LSPosed 以及各音乐 App 名称的商标权归各自权利人所有。本项目与这些产品的官方团队没有隶属或背书关系。

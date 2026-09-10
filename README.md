@@ -190,4 +190,8 @@ Copyright 2026 Andrea-lyz. Licensed under the [Apache License 2.0](LICENSE).
 
 The project uses [Accompanist Lyrics Core](https://github.com/6xingyv/accompanist-lyrics-core) to parse lyric timelines. Optional Providers build on the [tomakino/LyricProvider](https://github.com/tomakino/LyricProvider) ecosystem. Thanks to the authors and contributors of both projects.
 
+Thanks as well to [Lyrico](https://github.com/Replica0110/Lyrico) and
+[Lyrico-Plugins](https://github.com/Replica0110/Lyrico-Plugins) for their open-source work on
+local music metadata, lyric management, and plugin-based lyric sources.
+
 Android, ColorOS, OPlus, LSPosed, and all music-app names are trademarks of their respective owners. This project is not affiliated with or endorsed by those vendors.
