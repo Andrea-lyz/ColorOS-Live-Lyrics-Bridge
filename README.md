@@ -13,7 +13,7 @@ Bring lyrics from more music apps to the native ColorOS / OPlus lock-screen lyri
 
 This is not a floating overlay. It passes a player's full lyric timeline to the system UI, keeping the ColorOS look, transitions, and always-on display while adding word-by-word highlighting, translations, and appearance controls.
 
-> Current release: **[v4.1.1](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/releases/tag/v4.1.1)**.
+> Current release: **v4.2.0**.
 
 ## What it does
 
@@ -50,7 +50,7 @@ Providers and Bridge can be installed independently:
 - Provider plus Bridge: Bridge adds generic enhancements without submitting a second lyric payload.
 - 4.1 Providers are independent Root / LSPosed modules using libxposed API 102 and static scope.
 
-| Player | 4.1 Provider module | Lyric capability |
+| Player | 4.2 Provider module | Lyric capability |
 | --- | --- | --- |
 | Salt Player | `player-salt` | Word timing, translations, public translation CustomAction |
 | ConePlayer (standard and Google Play) | `player-cone` | Full timeline, translations, public translation CustomAction |
@@ -64,8 +64,12 @@ Providers and Bridge can be installed independently:
 | Apple Music | `player-apple` | JNI TTML word timing and translations |
 | Spotify | `player-spotify` | Line- or word-timed Color Lyrics; no translations |
 | QiShui Music | `player-qishui` | Host TrackLyric / cache fallback with word timing and translations |
+| Universal Player | `universal-provider` | Select target MediaSession players in its app; system-server lyric enrichment |
 
-Private player interfaces can change after app updates. This table describes the current 4.1 implementation and device-validation matrix, not permanent compatibility with every future player release.
+The Universal Player Provider runs only in `system_server`; select its target players in its own app.
+Disable Bluetooth/car-lyrics or similar player functions while using it, because those title-overwrite
+paths are currently incompatible. This table describes the current 4.2 implementation and
+device-validation matrix, not permanent compatibility with every future player release.
 
 Bridge provides package-only SystemUI lyric-entrance, media-history, and AOD compatibility for
 Halcyon (`com.ella.music`), Flamingo (`yos.music.player`), QZ Music (`love.qz.music`), and
@@ -75,7 +79,7 @@ and no additional Provider APK is required.
 
 ## Installation
 
-1. Install the required 4.1 Provider APK, enable it in LSPosed, and select only its matching music app.
+1. Install the required 4.2 Provider APK. For Universal Player, choose target players in its app; for a dedicated Provider, select only its matching music app in LSPosed.
 2. If you want Bridge enhancements, install `ColorOS-Live-Lyrics-Bridge-<version>.apk` and keep its scope limited to `system` and `com.android.systemui`.
 3. Restart the player and SystemUI. Reboot after the first installation or any scope change.
 4. Do not let an old Lyricon Provider and a 4.1 Provider hook the same player.

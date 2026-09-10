@@ -54,22 +54,21 @@ public final class Phase7DocumentationContractTest {
     @Test
     public void releaseDocumentsUseTheNewRepositoryAndCanonicalAssets() throws Exception {
         String process = readProjectFile("docs/RELEASE_PROCESS.md");
-        String notes = readProjectFile(".github/release-notes/4.1.0.md");
-        String archive = readProjectFile("docs/releases/v4.1.0.md");
+        String notes = readProjectFile(".github/release-notes/4.2.0.md");
+        String archive = readProjectFile("docs/releases/v4.2.0.md");
 
         assertTrue(process.contains("Andrea-lyz/ColorOS-Live-Lyrics-Providers"));
         assertTrue(process.contains("mode=rc"));
-        assertTrue(process.contains("16"));
+        assertTrue(process.contains("17"));
         assertFalse(process.contains("Andrea-lyz/LyricProvider"));
-        assertTrue(notes.contains("## 中文"));
-        assertTrue(notes.contains("## English"));
+        assertTrue(notes.contains("## 通用播放器 Provider"));
+        assertTrue(notes.contains("## Universal Player Provider"));
         assertTrue(notes.contains("libxposed API 102"));
-        assertTrue(notes.contains("ColorOS-Live-Lyrics-Provider-Salt-v4.1.0.apk"));
-        assertTrue(notes.contains("ColorOS-Live-Lyrics-Provider-QiShui-v4.1.0.apk"));
-        assertTrue(notes.contains("release-assets-v4.1.0.json"));
+        assertTrue(notes.contains("Universal Player Provider 1.0.0 (1)"));
+        assertTrue(notes.contains("release-assets-v4.2.0.json"));
         assertTrue(notes.contains("SHA256SUMS"));
         assertFalse(notes.matches("(?is).*(npatch|non-root).*"));
-        assertTrue(archive.contains("137-4.1.0"));
+        assertTrue(archive.contains("139-4.2.0"));
     }
 
     private static String readProjectFile(String relativePath) throws Exception {

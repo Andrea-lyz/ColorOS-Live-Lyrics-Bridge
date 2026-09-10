@@ -58,6 +58,17 @@ final class PlayerTranslationSettings {
         return false;
     }
 
+    static boolean isTranslationSettingsTarget(String packageName) {
+        if (packageName == null || packageName.isEmpty()) {
+            return false;
+        }
+        if (isSupportedPlayerPackage(packageName)
+                || UniversalPlayerBridgeContract.isExtraHistoryPackage(packageName)) {
+            return true;
+        }
+        return !UniversalPlayerBridgeContract.isBlockedFromUniversalAdmission(packageName);
+    }
+
     static String[] flattenPackages() {
         ArrayList<String> packages = new ArrayList<>();
         for (Entry entry : ENTRIES) {

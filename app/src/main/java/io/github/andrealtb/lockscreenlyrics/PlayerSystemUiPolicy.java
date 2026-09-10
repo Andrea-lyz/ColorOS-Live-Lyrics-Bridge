@@ -61,6 +61,18 @@ final class PlayerSystemUiPolicy {
         return OPLUS_HISTORY_PACKAGES.clone();
     }
 
+    static boolean isHistoryPackage(String packageName) {
+        if (packageName == null || packageName.isEmpty()) {
+            return false;
+        }
+        for (String candidate : OPLUS_HISTORY_PACKAGES) {
+            if (candidate.equals(packageName)) {
+                return true;
+            }
+        }
+        return UniversalPlayerBridgeContract.isExtraHistoryPackage(packageName);
+    }
+
     static boolean supportsFavoriteTranslationOverride(String packageName) {
         return QQ_MUSIC.equals(packageName)
                 || NETEASE_MUSIC.equals(packageName)

@@ -48,6 +48,14 @@ public final class PlayerTranslationSettingsTest {
     }
 
     @Test
+    public void translationSettingsAcceptUniversalHostsButNotOfficialBlockedOnes() {
+        assertTrue(PlayerTranslationSettings.isTranslationSettingsTarget("remix.myplayer"));
+        assertTrue(PlayerTranslationSettings.isTranslationSettingsTarget("com.salt.music"));
+        assertFalse(PlayerTranslationSettings.isTranslationSettingsTarget("com.heytap.music"));
+        assertTrue(PlayerTranslationSettings.isTranslationSettingsTarget("com.tencent.qqmusic"));
+    }
+
+    @Test
     public void translationSourceDrivesSupportedSwitches() {
         for (PlayerTranslationSettings.Entry entry : PlayerTranslationSettings.entries()) {
             if ("com.spotify.music".equals(entry.playerPackages[0])

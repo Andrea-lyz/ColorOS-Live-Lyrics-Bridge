@@ -22,7 +22,7 @@ on:
       providers_ref:
         description: "Immutable Provider tag or full 40-character commit SHA."
         required: true
-        default: "providers-v1.1.1"
+        default: "providers-v1.2.0"
         type: string
 
 permissions:
@@ -60,7 +60,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: ${{ env.PROVIDERS_REPOSITORY }}
-          ref: ${{ inputs.providers_ref || 'providers-v1.1.1' }}
+          ref: ${{ inputs.providers_ref || 'providers-v1.2.0' }}
           path: provider-source
           fetch-depth: 0
           token: ${{ secrets.PROVIDERS_REPO_TOKEN || github.token }}
@@ -196,7 +196,7 @@ jobs:
         run: rm -f "$RUNNER_TEMP/release.jks"
 
   build-providers:
-    name: Test and build signed 12-Provider matrix
+    name: Test and build signed 13-Provider matrix
     needs: metadata
     runs-on: ubuntu-latest
     steps:

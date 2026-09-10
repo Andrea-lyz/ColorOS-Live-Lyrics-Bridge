@@ -44,6 +44,8 @@ final class LyricUiSettings {
             "translation_button_packages";
     static final String EXTRA_TRANSLATION_BUTTON_VALUES =
             "translation_button_values";
+    static final String EXTRA_DEFAULT_TRANSLATION_BUTTON_ENABLED =
+            "default_translation_button_enabled";
     static final String EXTRA_RESULT_RECEIVER = "result_receiver";
     static final String EXTRA_CONFIG_REVISION = "config_revision";
     static final String EXTRA_SETTINGS_SOURCE = "settings_source";
@@ -70,6 +72,8 @@ final class LyricUiSettings {
     static final String TRANSLATION_PREFERENCE_KEY = "lyric_info_translation_enabled";
     private static final String TRANSLATION_DEFAULT_KEY = "lyric_info_translation_default";
     private static final String TRANSLATION_BUTTON_KEY = "lyric_info_translation_button";
+    static final String KEY_DEFAULT_TRANSLATION_BUTTON = "lyric_info_translation_button_default";
+    static final int MAX_PLAYER_TRANSLATION_PACKAGES = 256;
     static final String EXTRA_SCROLL_SCALE_ENABLED = "scroll_scale_enabled";
     static final String EXTRA_INACTIVE_BLUR_ENABLED = "inactive_blur_enabled";
     static final String EXTRA_LINE_TIMED_PROGRESS_ENABLED = "line_timed_progress_enabled";
@@ -131,6 +135,13 @@ final class LyricUiSettings {
 
     static String translationButtonKeyForPackage(String packageName) {
         return TRANSLATION_BUTTON_KEY + "." + packageName;
+    }
+
+    static boolean defaultTranslationButtonEnabled(android.content.SharedPreferences preferences) {
+        if (preferences == null) {
+            return true;
+        }
+        return preferences.getBoolean(KEY_DEFAULT_TRANSLATION_BUTTON, true);
     }
 
     static LyricUiConfig withGlobalTranslationDefault(

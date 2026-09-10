@@ -436,6 +436,8 @@ public final class LockscreenLyricsModule extends XposedModule {
     private volatile boolean pendingCustomLyricTakeoverFade;
     private volatile boolean lyricUiSettingsReceiverRegistered;
     private BroadcastReceiver lyricUiSettingsReceiver;
+    private volatile boolean universalBindingsReceiverRegistered;
+    private BroadcastReceiver universalBindingsReceiver;
     private volatile long lyricTrackRowRebindEligibleUntilElapsedMs;
     private volatile long lyricRecyclerFadeInUntilElapsedMs;
     private volatile int lyricRecyclerFadeGeneration;
@@ -968,12 +970,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (TextUtils.isEmpty(packageName)) {
             return false;
         }
-        for (String candidate : PlayerSystemUiPolicy.oplusHistoryPackages()) {
-            if (candidate.equals(packageName)) {
-                return true;
-            }
-        }
-        return false;
+        return PlayerSystemUiPolicy.isHistoryPackage(packageName);
     }
 
     private static String moduleManagedPlayerKind(String packageName) {
@@ -1997,7 +1994,7 @@ public final class LockscreenLyricsModule extends XposedModule {
 
     private boolean userWantsTranslationButton(String packageName) {
         if (TextUtils.isEmpty(packageName)) {
-            return true;
+            return defaultTranslationButtonEnabled();
         }
         Boolean cached = translationButtonEnabledByPackage.get(packageName);
         if (cached != null) {
@@ -2005,16 +2002,27 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
         Context context = currentApplicationContext();
         if (context == null) {
-            return true;
+            return defaultTranslationButtonEnabled();
         }
         boolean enabled = context.getSharedPreferences(
                         TRANSLATION_PREFERENCES_NAME,
                         Context.MODE_PRIVATE)
                 .getBoolean(
                         LyricUiSettings.translationButtonKeyForPackage(packageName),
-                        true);
+                        defaultTranslationButtonEnabled());
         translationButtonEnabledByPackage.put(packageName, enabled);
         return enabled;
+    }
+
+    private boolean defaultTranslationButtonEnabled() {
+        Context context = currentApplicationContext();
+        if (context == null) {
+            return true;
+        }
+        return LyricUiSettings.defaultTranslationButtonEnabled(
+                context.getSharedPreferences(
+                        TRANSLATION_PREFERENCES_NAME,
+                        Context.MODE_PRIVATE));
     }
 
     private void handlePlayerTranslationSettingsChanged(Context context, Intent intent) {
@@ -2037,6 +2045,16 @@ public final class LockscreenLyricsModule extends XposedModule {
                 : intent.getBooleanExtra(
                         LyricUiConfigCodec.DEFAULT_TRANSLATION,
                         lyricUiConfig.defaultTranslationEnabled);
+        if (intent.hasExtra(LyricUiSettings.EXTRA_DEFAULT_TRANSLATION_BUTTON_ENABLED)) {
+            preferences.edit()
+                    .putBoolean(
+                            LyricUiSettings.KEY_DEFAULT_TRANSLATION_BUTTON,
+                            intent.getBooleanExtra(
+                                    LyricUiSettings.EXTRA_DEFAULT_TRANSLATION_BUTTON_ENABLED,
+                                    true))
+                    .apply();
+            translationButtonEnabledByPackage.clear();
+        }
         LyricUiConfig previousConfig = lyricUiConfig;
         LyricUiConfig updatedConfig = LyricUiSettings.withGlobalTranslationDefault(
                 previousConfig,
@@ -2066,10 +2084,10 @@ public final class LockscreenLyricsModule extends XposedModule {
         boolean[] defaults = intent.getBooleanArrayExtra(
                 LyricUiSettings.EXTRA_PLAYER_TRANSLATION_DEFAULTS);
         if (packages != null && defaults != null && packages.length == defaults.length) {
-            int count = Math.min(packages.length, 32);
+            int count = Math.min(packages.length, LyricUiSettings.MAX_PLAYER_TRANSLATION_PACKAGES);
             for (int i = 0; i < count; i++) {
                 String packageName = nullToEmpty(packages[i]);
-                if (!PlayerTranslationSettings.isSupportedPlayerPackage(packageName)) continue;
+                if (!PlayerTranslationSettings.isTranslationSettingsTarget(packageName)) continue;
                 editor.putBoolean(
                         LyricUiSettings.translationDefaultKeyForPackage(packageName),
                         defaults[i]);
@@ -2083,10 +2101,10 @@ public final class LockscreenLyricsModule extends XposedModule {
                 LyricUiSettings.EXTRA_TRANSLATION_BUTTON_VALUES);
         if (buttonPackages != null && buttonValues != null
                 && buttonPackages.length == buttonValues.length) {
-            int count = Math.min(buttonPackages.length, 32);
+            int count = Math.min(buttonPackages.length, LyricUiSettings.MAX_PLAYER_TRANSLATION_PACKAGES);
             for (int i = 0; i < count; i++) {
                 String packageName = nullToEmpty(buttonPackages[i]);
-                if (!PlayerTranslationSettings.isSupportedPlayerPackage(packageName)) continue;
+                if (!PlayerTranslationSettings.isTranslationSettingsTarget(packageName)) continue;
                 editor.putBoolean(
                         LyricUiSettings.translationButtonKeyForPackage(packageName),
                         buttonValues[i]);
@@ -2097,10 +2115,10 @@ public final class LockscreenLyricsModule extends XposedModule {
         String[] clearPackages = intent.getStringArrayExtra(
                 LyricUiSettings.EXTRA_CLEAR_TRANSLATION_PACKAGES);
         if (clearPackages != null) {
-            int count = Math.min(clearPackages.length, 32);
+            int count = Math.min(clearPackages.length, LyricUiSettings.MAX_PLAYER_TRANSLATION_PACKAGES);
             for (int i = 0; i < count; i++) {
                 String packageName = nullToEmpty(clearPackages[i]);
-                if (!PlayerTranslationSettings.isSupportedPlayerPackage(packageName)) continue;
+                if (!PlayerTranslationSettings.isTranslationSettingsTarget(packageName)) continue;
                 editor.remove(translationPreferenceKeyForPackage(packageName));
                 affectedPackages.add(packageName);
             }
@@ -9659,7 +9677,9 @@ public final class LockscreenLyricsModule extends XposedModule {
 
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
     private void ensureLyricUiSettingsReceiver(Context context) {
-        if (context == null || lyricUiSettingsReceiverRegistered) return;
+        if (context == null) return;
+        ensureUniversalPlayerBindingsReceiver(context);
+        if (lyricUiSettingsReceiverRegistered) return;
         synchronized (this) {
             if (lyricUiSettingsReceiverRegistered) return;
             Context appContext = context.getApplicationContext();
@@ -9716,10 +9736,118 @@ public final class LockscreenLyricsModule extends XposedModule {
                 lyricUiSettingsReceiver = receiver;
                 lyricUiSettingsReceiverRegistered = true;
                 infoAlways(BridgeDebugArea.BOOTSTRAP, BridgeEvents.SYSTEMUI_BOOTSTRAP, "Registered protected SystemUI lyric settings receiver");
+                ensureUniversalPlayerBindingsReceiver(appContext);
             } catch (Throwable t) {
                 error("Failed to register protected SystemUI lyric settings receiver", t);
             }
         }
+    }
+
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
+    private void ensureUniversalPlayerBindingsReceiver(Context context) {
+        if (context == null || universalBindingsReceiverRegistered) {
+            return;
+        }
+        Context appContext = context.getApplicationContext();
+        if (appContext == null) {
+            appContext = context;
+        }
+        synchronized (this) {
+            if (universalBindingsReceiverRegistered) {
+                return;
+            }
+        UniversalPlayerBridgeContract.restoreFrom(
+                appContext.getSharedPreferences(
+                        TRANSLATION_PREFERENCES_NAME,
+                        Context.MODE_PRIVATE));
+        syncDeclaredTranslationTogglePackages();
+        BroadcastReceiver receiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context receiverContext, Intent intent) {
+                handleUniversalPlayerBindingsChanged(receiverContext, intent);
+            }
+        };
+        try {
+            IntentFilter filter = new IntentFilter(
+                    UniversalPlayerBridgeContract.ACTION_PLAYER_BINDINGS_CHANGED);
+            if (Build.VERSION.SDK_INT >= 33) {
+                appContext.registerReceiver(
+                        receiver,
+                        filter,
+                        Context.RECEIVER_EXPORTED);
+            } else {
+                appContext.registerReceiver(receiver, filter);
+            }
+            universalBindingsReceiver = receiver;
+            universalBindingsReceiverRegistered = true;
+            infoAlways(
+                    BridgeDebugArea.BOOTSTRAP,
+                    BridgeEvents.SYSTEMUI_BOOTSTRAP,
+                    "Registered Universal Player Provider bindings receiver");
+        } catch (Throwable t) {
+            error("Failed to register Universal Player Provider bindings receiver", t);
+        }
+        }
+    }
+
+    private void handleUniversalPlayerBindingsChanged(Context context, Intent intent) {
+        if (context == null || intent == null) {
+            return;
+        }
+        if (!UniversalPlayerBridgeContract.ACTION_PLAYER_BINDINGS_CHANGED.equals(intent.getAction())) {
+            return;
+        }
+        if (!UniversalPlayerBridgeContract.isAcceptedIdentity(
+                intent.getStringExtra(UniversalPlayerBridgeContract.EXTRA_PROVIDER_IDENTITY))) {
+            warn(
+                    LyricLogFormatter.Area.SETTINGS,
+                    BridgeEvents.DETAIL,
+                    "Rejected Universal Player Provider bindings | identity mismatch");
+            return;
+        }
+        Context appContext = context.getApplicationContext();
+        if (appContext == null) {
+            appContext = context;
+        }
+        SharedPreferences preferences = appContext.getSharedPreferences(
+                TRANSLATION_PREFERENCES_NAME,
+                Context.MODE_PRIVATE);
+        java.util.List<String> bound = UniversalPlayerBridgeContract.sanitizeBoundPackages(
+                intent.getStringArrayListExtra(UniversalPlayerBridgeContract.EXTRA_BOUND_PACKAGES));
+        UniversalPlayerBridgeContract.persist(preferences, true, bound);
+        boolean groupDefault = preferences.getBoolean(
+                LyricUiSettings.translationDefaultKeyForPackage(
+                        UniversalPlayerBridgeContract.TRANSLATION_GROUP_PACKAGE),
+                lyricUiConfig.defaultTranslationEnabled);
+        boolean groupButton = preferences.getBoolean(
+                LyricUiSettings.translationButtonKeyForPackage(
+                        UniversalPlayerBridgeContract.TRANSLATION_GROUP_PACKAGE),
+                defaultTranslationButtonEnabled());
+        SharedPreferences.Editor editor = preferences.edit();
+        for (String packageName : bound) {
+            String defaultKey = LyricUiSettings.translationDefaultKeyForPackage(packageName);
+            if (!preferences.contains(defaultKey)) {
+                editor.putBoolean(defaultKey, groupDefault);
+            }
+            String buttonKey = LyricUiSettings.translationButtonKeyForPackage(packageName);
+            if (!preferences.contains(buttonKey)) {
+                editor.putBoolean(buttonKey, groupButton);
+                translationButtonEnabledByPackage.put(packageName, groupButton);
+            }
+        }
+        editor.apply();
+        syncDeclaredTranslationTogglePackages();
+        reapplyCurrentTranslationButtonSetting();
+        infoAlways(
+                BridgeDebugArea.BOOTSTRAP,
+                BridgeEvents.SETTINGS_APPLIED,
+                "Applied Universal Player Provider bindings | present=true count=" + bound.size());
+    }
+
+    private void syncDeclaredTranslationTogglePackages() {
+        providerDeclaredTranslationTogglePackages.clear();
+        providerDeclaredTranslationTogglePackages.addAll(
+                UniversalPlayerBridgeContract.extraHistoryPackages());
     }
 
     /**
@@ -14621,6 +14749,10 @@ public final class LockscreenLyricsModule extends XposedModule {
             for (String packageName : PlayerSystemUiPolicy.oplusHistoryPackages()) {
                 addIfAbsent(packageName);
             }
+            extraGeneration = UniversalPlayerBridgeContract.bindingsGeneration();
+            for (String packageName : UniversalPlayerBridgeContract.extraHistoryPackages()) {
+                addIfAbsent(packageName);
+            }
         }
 
         private void addIfAbsent(String value) {
@@ -14631,12 +14763,27 @@ public final class LockscreenLyricsModule extends XposedModule {
 
         @Override
         public String get(int index) {
+            refreshExtras();
             return values.get(index);
         }
 
         @Override
         public int size() {
+            refreshExtras();
             return values.size();
+        }
+
+        private int extraGeneration = Integer.MIN_VALUE;
+
+        private void refreshExtras() {
+            int generation = UniversalPlayerBridgeContract.bindingsGeneration();
+            if (generation == extraGeneration) {
+                return;
+            }
+            extraGeneration = generation;
+            for (String packageName : UniversalPlayerBridgeContract.extraHistoryPackages()) {
+                addIfAbsent(packageName);
+            }
         }
 
         @Override

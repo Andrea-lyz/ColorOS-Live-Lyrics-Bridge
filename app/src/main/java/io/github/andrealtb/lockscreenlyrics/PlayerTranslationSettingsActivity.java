@@ -41,6 +41,10 @@ public final class PlayerTranslationSettingsActivity extends SettingsBaseActivit
     private final LinkedHashSet<String> clearRequestedPackages = new LinkedHashSet<>();
     private SharedPreferences preferences;
     private MaterialSwitch fallbackDefault;
+    private MaterialSwitch fallbackButton;
+    private MaterialSwitch universalDefault;
+    private MaterialSwitch universalButton;
+    private boolean universalPresent;
     private long pendingSettingsRevision = -1L;
 
     @Override
@@ -75,7 +79,80 @@ public final class PlayerTranslationSettingsActivity extends SettingsBaseActivit
                 getString(R.string.sub_trans_fallback),
                 config.defaultTranslationEnabled);
         fallbackCard.addView(fallbackDefault, matchWrap());
+        fallbackButton = toggle(
+                getString(R.string.sub_trans_fallback_button),
+                LyricUiSettings.defaultTranslationButtonEnabled(preferences));
+        fallbackCard.addView(fallbackButton, matchWrap());
         content.addView(fallbackCard, marginBottom(dp(12)));
+
+        universalPresent = UniversalPlayerBridgeContract.isPresent(preferences);
+        java.util.List<String> boundPackages = UniversalPlayerBridgeContract.boundPackages(preferences);
+        String universalName = getString(R.string.player_universal);
+        LinearLayout universalCard = paddedCard();
+        if (!universalPresent) {
+            universalCard.setAlpha(0.45f);
+        }
+        LinearLayout universalHeader = new LinearLayout(this);
+        universalHeader.setGravity(Gravity.CENTER_VERTICAL);
+        String universalInitial = universalName.isEmpty()
+                ? "U"
+                : universalName.substring(0, universalName.offsetByCodePoints(0, 1));
+        TextView universalIcon = text(universalInitial, 14, Color.WHITE);
+        universalIcon.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        universalIcon.setGravity(Gravity.CENTER);
+        GradientDrawable universalIconBackground = new GradientDrawable();
+        universalIconBackground.setColor(0xFF0B57D0);
+        universalIconBackground.setCornerRadius(dp(10));
+        universalIcon.setBackground(universalIconBackground);
+        LinearLayout.LayoutParams universalIconParams = new LinearLayout.LayoutParams(dp(32), dp(32));
+        universalIconParams.rightMargin = dp(10);
+        universalHeader.addView(universalIcon, universalIconParams);
+        LinearLayout universalLabels = new LinearLayout(this);
+        universalLabels.setOrientation(LinearLayout.VERTICAL);
+        TextView universalTitle = text(universalName, 13.5f, settingsTextColor());
+        universalTitle.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        universalLabels.addView(universalTitle, matchWrap());
+        TextView universalStatus = text(
+                getString(universalPresent
+                        ? R.string.sub_trans_status_universal_ready
+                        : R.string.sub_trans_status_universal_missing),
+                10.5f,
+                0xFF5F6368);
+        universalStatus.setPadding(0, dp(2), 0, 0);
+        universalLabels.addView(universalStatus, matchWrap());
+        universalHeader.addView(universalLabels, new LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f));
+        universalCard.addView(universalHeader, matchWrap());
+        boolean universalDefaultEnabled = preferences.getBoolean(
+                LyricUiSettings.translationDefaultKeyForPackage(
+                        UniversalPlayerBridgeContract.TRANSLATION_GROUP_PACKAGE),
+                config.defaultTranslationEnabled);
+        universalDefault = toggle(getString(R.string.sub_trans_default), universalDefaultEnabled);
+        universalDefault.setPadding(0, 0, 0, 0);
+        universalDefault.setEnabled(universalPresent);
+        boolean universalButtonEnabled = preferences.getBoolean(
+                LyricUiSettings.translationButtonKeyForPackage(
+                        UniversalPlayerBridgeContract.TRANSLATION_GROUP_PACKAGE),
+                LyricUiSettings.defaultTranslationButtonEnabled(preferences));
+        universalButton = toggle(getString(R.string.sub_trans_button), universalButtonEnabled);
+        universalButton.setPadding(0, 0, 0, 0);
+        universalButton.setEnabled(universalPresent);
+        Button universalClear = button(getString(R.string.sub_trans_clear));
+        universalClear.setEnabled(universalPresent);
+        universalClear.setOnClickListener(view -> {
+            for (String packageName : boundPackages) {
+                clearRequestedPackages.add(packageName);
+            }
+            Toast.makeText(this,
+                    getString(R.string.sub_trans_clear_toast, universalName),
+                    Toast.LENGTH_SHORT).show();
+        });
+        universalCard.addView(universalDefault, matchWrap());
+        universalCard.addView(universalButton, matchWrap());
+        universalCard.addView(universalClear, matchWrap());
+        content.addView(universalCard, marginBottom(dp(12)));
 
         int entryIndex = 0;
         for (PlayerTranslationSettings.Entry entry : PlayerTranslationSettings.entries()) {
@@ -198,6 +275,7 @@ public final class PlayerTranslationSettingsActivity extends SettingsBaseActivit
 
     private void save() {
         boolean globalDefaultEnabled = fallbackDefault.isChecked();
+        boolean globalButtonEnabled = fallbackButton.isChecked();
         LyricUiConfig config = LyricUiSettings.withGlobalTranslationDefault(
                 LyricUiConfigRepository.load(preferences),
                 globalDefaultEnabled);
@@ -208,11 +286,36 @@ public final class PlayerTranslationSettingsActivity extends SettingsBaseActivit
         ArrayList<String> buttonPackages = new ArrayList<>();
         ArrayList<Boolean> buttonValues = new ArrayList<>();
         SharedPreferences.Editor editor = preferences.edit();
+        editor.putBoolean(LyricUiSettings.KEY_DEFAULT_TRANSLATION_BUTTON, globalButtonEnabled);
         for (EntryView entryView : entryViews) {
             if (entryView.defaultMaterialSwitch == null) continue;
             boolean enabled = entryView.defaultMaterialSwitch.isChecked();
             boolean buttonEnabled = entryView.buttonMaterialSwitch.isChecked();
             for (String packageName : entryView.entry.playerPackages) {
+                packages.add(packageName);
+                defaults.add(enabled);
+                editor.putBoolean(
+                        LyricUiSettings.translationDefaultKeyForPackage(packageName),
+                        enabled);
+                buttonPackages.add(packageName);
+                buttonValues.add(buttonEnabled);
+                editor.putBoolean(
+                        LyricUiSettings.translationButtonKeyForPackage(packageName),
+                        buttonEnabled);
+            }
+        }
+        if (universalPresent && universalDefault != null && universalButton != null) {
+            boolean enabled = universalDefault.isChecked();
+            boolean buttonEnabled = universalButton.isChecked();
+            editor.putBoolean(
+                    LyricUiSettings.translationDefaultKeyForPackage(
+                            UniversalPlayerBridgeContract.TRANSLATION_GROUP_PACKAGE),
+                    enabled);
+            editor.putBoolean(
+                    LyricUiSettings.translationButtonKeyForPackage(
+                            UniversalPlayerBridgeContract.TRANSLATION_GROUP_PACKAGE),
+                    buttonEnabled);
+            for (String packageName : UniversalPlayerBridgeContract.boundPackages(preferences)) {
                 packages.add(packageName);
                 defaults.add(enabled);
                 editor.putBoolean(
@@ -240,6 +343,9 @@ public final class PlayerTranslationSettingsActivity extends SettingsBaseActivit
                 .putExtra(
                         LyricUiSettings.EXTRA_DEFAULT_TRANSLATION_ENABLED,
                         globalDefaultEnabled)
+                .putExtra(
+                        LyricUiSettings.EXTRA_DEFAULT_TRANSLATION_BUTTON_ENABLED,
+                        globalButtonEnabled)
                 .putExtra(
                         LyricUiSettings.EXTRA_PLAYER_TRANSLATION_PACKAGES,
                         packages.toArray(new String[0]))

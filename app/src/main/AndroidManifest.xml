@@ -67,5 +67,12 @@
             android:label="@string/debug_settings_title"
             android:theme="@style/Theme.LockscreenLyrics"
             android:parentActivityName=".LyricUiSettingsActivity" />
+        <receiver
+            android:name=".UniversalPlayerBindingsReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="io.github.andrealtb.universallyrics.action.PLAYER_BINDINGS_CHANGED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

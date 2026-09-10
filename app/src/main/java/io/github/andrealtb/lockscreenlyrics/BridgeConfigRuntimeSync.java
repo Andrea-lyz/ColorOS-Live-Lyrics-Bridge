@@ -59,6 +59,25 @@ final class BridgeConfigRuntimeSync {
                         true));
             }
         }
+        if (UniversalPlayerBridgeContract.isPresent(preferences)) {
+            boolean groupDefault = preferences.getBoolean(
+                    LyricUiSettings.translationDefaultKeyForPackage(
+                            UniversalPlayerBridgeContract.TRANSLATION_GROUP_PACKAGE),
+                    config.defaultTranslationEnabled);
+            boolean groupButton = preferences.getBoolean(
+                    LyricUiSettings.translationButtonKeyForPackage(
+                            UniversalPlayerBridgeContract.TRANSLATION_GROUP_PACKAGE),
+                    LyricUiSettings.defaultTranslationButtonEnabled(preferences));
+            for (String packageName : UniversalPlayerBridgeContract.boundPackages(preferences)) {
+                packages.add(packageName);
+                defaults.add(preferences.getBoolean(
+                        LyricUiSettings.translationDefaultKeyForPackage(packageName),
+                        groupDefault));
+                buttons.add(preferences.getBoolean(
+                        LyricUiSettings.translationButtonKeyForPackage(packageName),
+                        groupButton));
+            }
+        }
         boolean[] defaultValues = new boolean[defaults.size()];
         boolean[] buttonValues = new boolean[buttons.size()];
         for (int index = 0; index < defaults.size(); index++) {
@@ -71,6 +90,9 @@ final class BridgeConfigRuntimeSync {
                 .putExtra(
                         LyricUiSettings.EXTRA_DEFAULT_TRANSLATION_ENABLED,
                         config.defaultTranslationEnabled)
+                .putExtra(
+                        LyricUiSettings.EXTRA_DEFAULT_TRANSLATION_BUTTON_ENABLED,
+                        LyricUiSettings.defaultTranslationButtonEnabled(preferences))
                 .putExtra(LyricUiSettings.EXTRA_PLAYER_TRANSLATION_PACKAGES, packageValues)
                 .putExtra(LyricUiSettings.EXTRA_PLAYER_TRANSLATION_DEFAULTS, defaultValues)
                 .putExtra(LyricUiSettings.EXTRA_TRANSLATION_BUTTON_PACKAGES, packageValues)

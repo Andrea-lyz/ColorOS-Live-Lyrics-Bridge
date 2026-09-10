@@ -13,7 +13,7 @@
 
 它不是一套盖在锁屏上的悬浮窗，而是把播放器的完整歌词交给系统原生界面显示。这样既能保留 ColorOS 的锁屏风格、切歌动画和息屏显示，也能补上逐字高亮、翻译和外观设置。
 
-> 当前正式版本：**[v4.1.1](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/releases/tag/v4.1.1)**。
+> 当前正式版本：**v4.2.0**。
 
 ## 主要功能
 
@@ -50,7 +50,7 @@ Provider 与 Bridge 可以独立安装：
 - 额外安装 Bridge：在原生链路之上增加通用增强；不会再次提交一份歌词。
 - 4.1 Provider 是使用 libxposed API 102 与静态作用域的独立 Root / LSPosed 模块。
 
-| 播放器 | 4.1 Provider 模块 | 歌词能力 |
+| 播放器 | 4.2 Provider 模块 | 歌词能力 |
 | --- | --- | --- |
 | Salt Player | `player-salt` | 逐字、翻译、公开翻译 CustomAction |
 | ConePlayer / 光锥音乐（正式版、Google Play 版） | `player-cone` | 完整时间轴、翻译、公开翻译 CustomAction |
@@ -64,8 +64,11 @@ Provider 与 Bridge 可以独立安装：
 | Apple Music | `player-apple` | JNI TTML 逐字与翻译 |
 | Spotify | `player-spotify` | Color Lyrics 逐行或逐字；不支持翻译 |
 | 汽水音乐 | `player-qishui` | 宿主 TrackLyric / 缓存回退，逐字与翻译 |
+| 通用播放器 | `universal-provider` | 在设置 App 中选择目标 MediaSession 播放器；由 system_server 统一补全歌词 |
 
-播放器更新后，私有歌词接口仍可能变化。上表表示当前 4.1 代码与真机验收矩阵，不代表未来所有播放器版本永久兼容。
+通用播放器 Provider 只运行在 `system_server`，在其设置 App 中选择目标播放器。使用它时请关闭
+播放器的蓝牙歌词、车载歌词或类似功能；这些会覆盖标题的路径当前不能同时启用。播放器更新后，
+私有歌词接口仍可能变化。上表表示当前 4.2 代码与真机验收矩阵，不代表未来所有播放器版本永久兼容。
 
 Bridge 已为 Halcyon（`com.ella.music`）、Flamingo（`yos.music.player`）、QZ Music
 （`love.qz.music`）和 PrismMusic（`com.lg.sllocalmusic`）提供纯包名的 SystemUI 歌词入口、
@@ -74,7 +77,7 @@ Bridge 已为 Halcyon（`com.ella.music`）、Flamingo（`yos.music.player`）�
 
 ## 安装
 
-1. 安装自己需要的 4.1 Provider APK，在 LSPosed 中启用它并只勾选对应音乐 App。
+1. 安装自己需要的 4.2 Provider APK；通用播放器在其设置 App 中选择目标播放器，专属 Provider 则在 LSPosed 中只勾选对应音乐 App。
 2. 如需 Bridge 增强，再安装 `ColorOS-Live-Lyrics-Bridge-<版本>.apk`，作用域保持 `system` 与 `com.android.systemui`。
 3. 重启目标播放器与 SystemUI；首次安装或改变作用域后建议重启手机。
 4. 不要同时让旧词幕 Provider 与 4.1 Provider hook 同一播放器。
