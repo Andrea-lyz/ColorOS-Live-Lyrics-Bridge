@@ -71,6 +71,25 @@ Disable Bluetooth/car-lyrics or similar player functions while using it, because
 paths are currently incompatible. This table describes the current 4.2 implementation and
 device-validation matrix, not permanent compatibility with every future player release.
 
+### Universal Player Provider
+
+`Provider-Universal` is for players without a dedicated adapter that still expose a normal Android
+`MediaSession`. It is not an automatic hook for every app: the module lives only in `system_server`,
+and only packages explicitly selected in its settings app enter observation, lyric lookup, and
+metadata enrichment. Unselected music, video, and other media apps are left untouched.
+
+After installation, open **Universal Player Provider**, select target apps from the player list, and
+then choose lyric-source priority, word timing, translations, raw lyrics, and diagnostics as needed.
+It preserves the host's existing metadata and appends only the standard `MediaMetadata["lyricInfo"]`
+payload to a selected active MediaSession. With Bridge installed, Bridge still owns SystemUI styling,
+AOD behavior, and translation-control enhancements.
+
+Do not enable a dedicated Provider and Universal Provider for the same player. Some Bluetooth or
+car-lyrics features overwrite the media title with the current lyric line; disable them while using
+Universal Provider, or first-track matching, caching, and track-change recognition may be unreliable.
+For issues, provide sanitized Provider/Bridge logs, the selected package, and reproduction steps—never
+complete lyrics, cookies, tokens, or personal media paths.
+
 Bridge provides package-only SystemUI lyric-entrance, media-history, and AOD compatibility for
 Halcyon (`com.ella.music`), Flamingo (`yos.music.player`), QZ Music (`love.qz.music`), and
 PrismMusic (`com.lg.sllocalmusic`). This is not lyric-source admission: each player must still

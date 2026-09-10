@@ -70,6 +70,22 @@ Provider 与 Bridge 可以独立安装：
 播放器的蓝牙歌词、车载歌词或类似功能；这些会覆盖标题的路径当前不能同时启用。播放器更新后，
 私有歌词接口仍可能变化。上表表示当前 4.2 代码与真机验收矩阵，不代表未来所有播放器版本永久兼容。
 
+### 通用播放器 Provider
+
+`Provider-Universal` 面向没有专用适配、但能正常创建 Android `MediaSession` 的播放器。它不是
+“全应用自动 Hook”：模块只驻留在 `system_server`，只有在 Provider 设置 App 中由用户勾选的包才会
+进入观察、取词与 metadata 补全链路；未勾选的音乐、视频和其他媒体 App 不会被改写。
+
+安装后先打开 **Universal Player Provider**，在播放器列表中选择目标 App，再按需要调整歌词来源
+优先级、逐字、翻译、原始歌词和调试选项。它会保留宿主已有 metadata，并只把标准
+`MediaMetadata["lyricInfo"]` 附加到选中的当前 MediaSession；安装 Bridge 后仍由 Bridge 负责
+SystemUI 的外观、AOD 和翻译按钮增强。
+
+请不要同时对同一播放器启用专属 Provider 与通用 Provider。部分播放器的蓝牙歌词、车载歌词会把
+当前歌词行写入媒体标题；请关闭这类功能，否则冷启动首曲、匹配、缓存和切歌识别可能不可靠。遇到
+问题时附上已脱敏的 Provider/Bridge 日志、目标包名和复现步骤，不要上传完整歌词、cookie、token
+或私人媒体路径。
+
 Bridge 已为 Halcyon（`com.ella.music`）、Flamingo（`yos.music.player`）、QZ Music
 （`love.qz.music`）和 PrismMusic（`com.lg.sllocalmusic`）提供纯包名的 SystemUI 歌词入口、
 媒体历史与 AOD 兼容。这不是歌词来源白名单：播放器仍必须从自己的 MediaSession 发布
