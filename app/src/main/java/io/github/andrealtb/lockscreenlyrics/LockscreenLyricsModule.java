@@ -14427,6 +14427,16 @@ public final class LockscreenLyricsModule extends XposedModule {
                         canvas.clipRect(left, 0f, right, canvasHeight);
                         if (sink > 0f) {
                             canvas.translate(0f, sink);
+                            // Mid-transition only: defeat Skia's whole-pixel
+                            // baseline snapping so a slow rise (held note) is
+                            // continuous instead of one-pixel steps. Fully sunk
+                            // graphemes are static and keep the crisp path.
+                            if (sink < charLift.maxSink * charLift.ramp - CHAR_LIFT_FRAME_EPSILON) {
+                                canvas.rotate(
+                                        WordLyricRenderConstants.CHAR_LIFT_SUBPIXEL_TILT_DEGREES,
+                                        left,
+                                        y);
+                            }
                         }
                         if (revealedLayer) {
                             drawRevealedText(

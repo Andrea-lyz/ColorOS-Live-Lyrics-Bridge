@@ -63,4 +63,14 @@ public final class WordLyricRenderConstants {
 
     /** Clearance kept between sunk glyphs and whatever sits below them. */
     public static final float CHAR_LIFT_MIN_CLEARANCE_DP = 1f;
+
+    /**
+     * Tiny canvas rotation applied while a grapheme is mid-transition. Skia
+     * snaps the baseline of axis-aligned text to whole device pixels (only x is
+     * sub-pixel positioned), so a slow rise over ~10 physical pixels during a
+     * held note advances in visible one-pixel steps. A non-axis-aligned matrix
+     * switches glyph positioning to sub-pixel on both axes. At this angle a
+     * 100px glyph is displaced by under 0.04px, far below visibility.
+     */
+    public static final float CHAR_LIFT_SUBPIXEL_TILT_DEGREES = 0.02f;
 }
