@@ -36,4 +36,41 @@ public final class WordLyricRenderConstants {
     public static final float OFFICIAL_LYRIC_ACTIVE_ROW_SCALE = 1.0f;
 
     public static final long OFFICIAL_LYRIC_ROW_SCALE_ANIMATION_MS = 340L;
+
+    /**
+     * How far unsung characters rest below the baseline, as a fraction of the
+     * text size. Salt Player's {@code floatUpPercentage} default.
+     */
+    public static final float CHAR_LIFT_MAX_FACTOR = 0.10f;
+
+    /**
+     * Width of the raised-cosine transition window as a fraction of the text
+     * size, so the wave touches the character being sung plus one or two on
+     * each side. Salt Player uses exactly 3.0.
+     */
+    public static final float CHAR_LIFT_WAVE_WIDTH_FACTOR = 3.0f;
+
+    /** How long the unsung text takes to settle into its sunk position when a row activates. */
+    public static final long CHAR_LIFT_SINK_IN_MS = 240L;
+
+    /**
+     * How long the wave takes to run off the end of the text once the last word
+     * is revealed. Without it the front parks at the end of the line with the
+     * final characters still inside the transition window, leaving them
+     * permanently short of the baseline.
+     */
+    public static final long CHAR_LIFT_FINISH_MS = 240L;
+
+    /** Clearance kept between sunk glyphs and whatever sits below them. */
+    public static final float CHAR_LIFT_MIN_CLEARANCE_DP = 1f;
+
+    /**
+     * Tiny canvas rotation applied while a grapheme is mid-transition. Skia
+     * snaps the baseline of axis-aligned text to whole device pixels (only x is
+     * sub-pixel positioned), so a slow rise over ~10 physical pixels during a
+     * held note advances in visible one-pixel steps. A non-axis-aligned matrix
+     * switches glyph positioning to sub-pixel on both axes. At this angle a
+     * 100px glyph is displaced by under 0.04px, far below visibility.
+     */
+    public static final float CHAR_LIFT_SUBPIXEL_TILT_DEGREES = 0.02f;
 }

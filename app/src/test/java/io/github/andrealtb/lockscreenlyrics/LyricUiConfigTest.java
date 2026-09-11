@@ -36,6 +36,22 @@ public final class LyricUiConfigTest {
         assertEquals(66, config.translationFontRatioPercent);
         assertEquals(0, config.lineSpacingTenthsDp);
         assertEquals(0, config.wrappedLineSpacingTenthsDp);
+        assertFalse(config.charLiftEnabled);
+        assertEquals(100, config.charLiftStrengthPercent);
+    }
+
+    @Test
+    public void clampsCharLiftStrengthToTheSupportedRange() {
+        assertEquals(
+                200,
+                new LyricUiConfig.Builder().charLiftStrengthPercent(999).build()
+                        .charLiftStrengthPercent);
+        assertEquals(
+                0,
+                new LyricUiConfig.Builder().charLiftStrengthPercent(-40).build()
+                        .charLiftStrengthPercent);
+        assertTrue(
+                new LyricUiConfig.Builder().charLiftEnabled(true).build().charLiftEnabled);
     }
 
     @Test

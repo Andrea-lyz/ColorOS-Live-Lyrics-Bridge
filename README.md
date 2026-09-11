@@ -121,6 +121,7 @@ Choose a preset first, then fine-tune it if needed. Changes update only the prev
 - per-player translation defaults and remembered translation-button state;
 - guided cleanup of title, credit, and copyright lines at the start of lyrics;
 - progress effects for line-timed lyrics and translations;
+- a character float-up animation in the style of Salt Player: unsung characters rest below the baseline and rise to it as the reveal front reaches them, with an adjustable amount and off by default; it works with word-timed lyrics and with ordinary line-timed lyrics when Line-timed lyric progress is enabled, and is disabled on the low frame rate always-on display;
 - vertical browsing for long lyrics and horizontal scrolling for long translations;
 - 60 / 90 / 120 Hz lyric redraw limits;
 - keep-screen-awake control with an optional custom duration.

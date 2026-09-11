@@ -88,6 +88,8 @@ final class LyricUiSettings {
     static final String KEY_SCREEN_TIMEOUT_SECONDS = LyricUiConfigCodec.SCREEN_TIMEOUT_SECONDS;
     static final boolean DEFAULT_LINE_TIMED_PROGRESS_ENABLED = false;
     static final boolean DEFAULT_TRANSLATION_PROGRESS_ENABLED = false;
+    static final boolean DEFAULT_CHAR_LIFT_ENABLED = false;
+    static final int DEFAULT_CHAR_LIFT_STRENGTH_PERCENT = 100;
     static final boolean DEFAULT_SCREEN_TIMEOUT_ENABLED = true;
     static final int DEFAULT_SCREEN_TIMEOUT_SECONDS = 0;
     static final int MIN_SCREEN_TIMEOUT_SECONDS = 1;

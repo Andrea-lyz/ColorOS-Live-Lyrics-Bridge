@@ -140,6 +140,10 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
     private MaterialSwitch lineTimedProgress;
     private MaterialSwitch translationProgress;
     private TextView translationProgressDependencyHint;
+    private MaterialSwitch charLift;
+    private TextView charLiftDependencyHint;
+    private Slider charLiftStrength;
+    private View charLiftStrengthRow;
     private MaterialSwitch screenTimeout;
     private EditText screenTimeoutSeconds;
     private View screenTimeoutSecondsRow;
@@ -568,6 +572,9 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
         addCardDivider(compatibility);
         lineTimedProgress = toggle(getString(R.string.setting_line_progress), false);
         translationProgress = toggle(getString(R.string.setting_translation_progress), false);
+        charLift = toggle(
+                getString(R.string.setting_char_lift),
+                LyricUiSettings.DEFAULT_CHAR_LIFT_ENABLED);
         screenTimeout = toggle(getString(R.string.setting_screen_timeout), true);
         screenTimeoutSeconds = numberInput(getString(R.string.setting_screen_timeout_seconds_hint));
         compatibility.addView(lineTimedProgress);
@@ -579,6 +586,20 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
                 getColor(R.color.settings_text_muted));
         translationProgressDependencyHint.setPadding(dp(17), 0, dp(17), dp(9));
         compatibility.addView(translationProgressDependencyHint, matchWrap());
+        addCardDivider(compatibility);
+        compatibility.addView(charLift);
+        charLiftDependencyHint = text(
+                getString(R.string.char_lift_dependency_hint),
+                10.5f,
+                getColor(R.color.settings_text_muted));
+        charLiftDependencyHint.setPadding(dp(17), 0, dp(17), dp(9));
+        compatibility.addView(charLiftDependencyHint, matchWrap());
+        charLiftStrength = materialSeek(0, 200);
+        charLiftStrengthRow = conditionalCardRow(labeledMaterialSeek(
+                getString(R.string.setting_char_lift_strength),
+                charLiftStrength,
+                "%"));
+        compatibility.addView(charLiftStrengthRow);
         addCardDivider(compatibility);
         compatibility.addView(screenTimeout);
         screenTimeoutSecondsRow = conditionalCardRow(numberInputRow(
@@ -1444,6 +1465,10 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
             updateConditionalRows();
             changed.onClick(view);
         });
+        charLift.setOnClickListener(view -> {
+            updateConditionalRows();
+            changed.onClick(view);
+        });
         screenTimeout.setOnClickListener(view -> {
             updateConditionalRows();
             changed.onClick(view);
@@ -1748,6 +1773,8 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
                 .defaultTranslationEnabled(draft.defaultTranslationEnabled)
                 .lineTimedProgressEnabled(lineTimedProgress.isChecked())
                 .translationProgressEnabled(translationProgress.isChecked())
+                .charLiftEnabled(charLift.isChecked())
+                .charLiftStrengthPercent(materialProgress(charLiftStrength))
                 .screenTimeoutEnabled(screenTimeout.isChecked())
                 .screenTimeoutSeconds(LyricUiSettings.parseScreenTimeoutSeconds(
                         screenTimeoutSeconds.getText().toString()))
@@ -1787,6 +1814,8 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
         }
         lineTimedProgress.setChecked(config.lineTimedProgressEnabled);
         translationProgress.setChecked(config.translationProgressEnabled);
+        charLift.setChecked(config.charLiftEnabled);
+        setSliderValueSafely(charLiftStrength, config.charLiftStrengthPercent);
         screenTimeout.setChecked(config.screenTimeoutEnabled);
         screenTimeoutSeconds.setText(config.screenTimeoutSeconds <= 0
                 ? "" : Integer.toString(config.screenTimeoutSeconds));
@@ -1827,6 +1856,16 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
                             ? View.VISIBLE
                             : View.GONE);
         }
+        if (charLiftDependencyHint != null) {
+            // The lift only exists for word-timed lyrics, and no toggle here can
+            // make a line-timed song word-timed, so this explains the scope
+            // rather than gating anything.
+            charLiftDependencyHint.setVisibility(
+                    charLift.isChecked() ? View.VISIBLE : View.GONE);
+        }
+        if (charLiftStrengthRow != null) {
+            charLiftStrengthRow.setVisibility(charLift.isChecked() ? View.VISIBLE : View.GONE);
+        }
     }
 
     private static void setSliderValueSafely(Slider slider, float value) {
@@ -1857,7 +1896,8 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
 
     private Slider[] materialValueSliders() {
         return new Slider[]{blurRadius, inactiveScale, glowIntensity, glowRadius,
-                mainFontSize, translationFontRatio, lineSpacing, wrappedLineSpacing};
+                mainFontSize, translationFontRatio, lineSpacing, wrappedLineSpacing,
+                charLiftStrength};
     }
 
     private int materialProgress(Slider slider) {
