@@ -1,7 +1,8 @@
 # 逐字同步的字符上浮动画（Per-character Vertical Lift）改造计划
 
-状态：**实施中（分支 `feat/word-sync-char-lift`）。Slice A / B / C 已合，
-C 的设备回归（§8）未跑，Slice D 未开始。** 2026-09-11 评审发现原 §3.1 的
+状态：**实施中（分支 `feat/word-sync-char-lift`）。Slice A–D 已合，
+本地 `testDebugUnitTest` / `lintDebug` / `assembleDebug` 全绿；
+§8 的设备回归矩阵一条都没跑，Slice E 未开始。** 2026-09-11 评审发现原 §3.1 的
 canvas-x 前沿模型在换行段上会让段尾字素常驻峰值，已改为流坐标模型
 （§3.1/§3.3/§3.4/§4 同步修订）。
 
@@ -384,6 +385,13 @@ renderer 读 `uiConfig.charLiftEnabled` / `charLiftStrengthPercent`，经现有
 ### Slice D：设置 UI + 文档
 - §6.2 / §6.3 全部落地。
 - 出口：开关即时生效（广播链路）；备份导出/导入含新 key；文档测试全绿。
+
+实施记录：开关放在主设置页“兼容性”卡片内，紧邻逐行进度/翻译进度，附一行说明
+（开启时才显示）。`docs/4.0/LYRIC-VISUAL-CONTROLS.md` 没有按 §6.3 原话新增
+“开关条目与默认值”——那篇文档是“歌词亮度与渐隐”子页的 owner 说明，把一个主页面
+开关列进它的字段清单会误导所有权；改为在“不开放的边界”一节说明该开关不属于本页、
+其形状参数仍是 renderer 常量。`charLiftStrengthPercent` 按 §6.1 只留在 Builder /
+codec，不出 UI。
 
 ### Slice E：设备回归矩阵收口（见 §8），完成后在本文件顶部改状态并归档。
 

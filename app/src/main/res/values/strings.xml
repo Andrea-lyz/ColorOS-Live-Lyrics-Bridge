@@ -155,6 +155,8 @@
     <string name="setting_line_progress">普通逐行歌词进度</string>
     <string name="setting_translation_progress">翻译进度</string>
     <string name="translation_progress_dependency_hint">普通逐行歌词需同时开启上一项；逐字歌词可独立使用翻译进度。</string>
+    <string name="setting_char_lift">字符上浮动画</string>
+    <string name="char_lift_dependency_hint">逐字高亮经过时字符轻微上浮。仅逐字歌词生效，息屏低帧率下自动关闭。</string>
     <string name="setting_screen_timeout">歌词显示时保持屏幕点亮</string>
     <string name="setting_screen_timeout_seconds_label">自定义秒数</string>
     <string name="setting_screen_timeout_seconds_hint">留空则保持常亮</string>
