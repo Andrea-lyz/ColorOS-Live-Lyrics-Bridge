@@ -416,10 +416,22 @@ codec，不出 UI。
 | 8 | AOD 低帧率模式 | 无浮动、无额外 invalidate；息屏功耗无回退 |
 | 9 | 首行贴顶 | lift 被 clamp，无顶边裁切 |
 | 10 | 切歌 / track handoff / fade 窗口 | 无残留 lift 状态、无闪烁；`failedBindings` 无新增 |
-| 11 | RTL 歌词 | 浮动方向随前沿方向正确 |
+| 11 | RTL 歌词 | 浮动方向与现有揭示方向一致（含 RTL） |
 | 12 | 开关关 | 与 Slice C 前基线目视 + 性能一致 |
 | 13 | 性能 | `TEXT_VIEW_DRAW` p95 相对基线增幅 < 10%；`maxRefreshRateHz` 限帧下动画随限帧降采样而非卡顿 |
 | 14 | 备份/恢复 | 新 key 往返一致；旧备份导入默认关 |
+| 15 | 行内长停顿（≥500ms） | 字符持续缓慢浮动而非静止悬浮；下一词开始无跳变（前沿在停顿期间本就匀速走完当前词，见下） |
+| 16 | 字素接缝（在 #1 CJK / #2 Latin 各盯一次） | 相邻字素 lift 相同时完全无缝；lift 不同时允许 ≤1px 错位，但不得出现发丝亮缝或接缝压暗 |
+
+\#15 的前提已用单测锁定（`WordRevealFrontContinuityTest`）：`WordLine.wordEndMillis`
+对非末词返回**下一个词的开始时刻**（:205-206），所以词间停顿会把当前词的揭示拉长
+覆盖整个停顿，前沿全程匀速前进、在下一词开始的那一刻恰好走完当前词。全行唯一会
+让前沿停住的是末词揭示结束到行切换之间，正是 §3.1 `decay` 锚定的那一段。因此不需要
+词级的"停滞衰减/恢复"机制；若将来 `wordEndMillis` 改成按词自身时长收尾、词间留真空档，
+该测试会红，那时才需要补。
+
+\#16 是去出血后的接缝质量（§7 Slice C 实施记录第 1 条），取决于 HWUI 对 float
+`clipRect` 的像素对齐。
 
 ## 9. 风险与回退
 
@@ -443,4 +455,6 @@ revert Slice C 单提交即可回基线（A/B/D 均为无行为变化或 UI 层�
   timestamp-highlight 短行（后续如需另立切片）；
 - 不改 AOD 行为、不改 `resolveSlotHeight` / LayoutParams 几何；
 - 不 bump `LyricUiConfig` SCHEMA_VERSION、不新增迁移逻辑；
-- 不在设置预览里做实时动画预览。
+- 不在设置预览里做实时动画预览；
+- RTL 歌词的揭示方向沿用现基线（`drawRevealedText` 从 `segmentLeft` 向右 clip，
+  视觉左→右），本计划不修正它；lift 跟随该方向以保证与羽化前沿同步。
