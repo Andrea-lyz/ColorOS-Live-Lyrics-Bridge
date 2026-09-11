@@ -16,17 +16,26 @@ public final class PlayerSystemUiPolicyTest {
         Set<String> packages = new HashSet<>(
                 Arrays.asList(PlayerSystemUiPolicy.oplusHistoryPackages()));
 
-        assertEquals(21, packages.size());
+        assertEquals(22, packages.size());
         assertTrue(packages.contains(PlayerSystemUiPolicy.MD3_MUSIC));
         for (String packageName : new String[]{
                 PlayerSystemUiPolicy.HALCYON,
                 PlayerSystemUiPolicy.FLAMINGO,
                 PlayerSystemUiPolicy.QZ_MUSIC,
-                PlayerSystemUiPolicy.PRISM_MUSIC
+                PlayerSystemUiPolicy.PRISM_MUSIC,
+                PlayerSystemUiPolicy.READIFY
         }) {
             assertTrue(packages.contains(packageName));
             assertFalse(PlayerSystemUiPolicy
                     .supportsFavoriteTranslationOverride(packageName));
         }
+    }
+
+    @Test
+    public void readifyAdmissionDoesNotIncludeProviderOrOtherPackages() {
+        assertTrue(PlayerSystemUiPolicy.isHistoryPackage("com.readin.app"));
+        assertFalse(PlayerSystemUiPolicy.isHistoryPackage("de.sqlsec.readifylyrics"));
+        assertFalse(PlayerSystemUiPolicy.isHistoryPackage("com.readin.app.preview"));
+        assertFalse(PlayerSystemUiPolicy.supportsFavoriteTranslationOverride("com.readin.app"));
     }
 }

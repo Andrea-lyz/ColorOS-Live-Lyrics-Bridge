@@ -70,7 +70,8 @@ public final class LyricInfoContract {
                     object.optString(JSON_PROVIDER, ""),
                     object.optString(JSON_TRACK_KEY, ""),
                     object.optLong(JSON_SESSION_GENERATION, 0L),
-                    object.optString(JSON_SOURCE, "")
+                    object.optString(JSON_SOURCE, ""),
+                    SentenceWindowContract.position(object, resolvedLyric)
             );
         } catch (Throwable ignored) {
             return null;
@@ -85,6 +86,9 @@ public final class LyricInfoContract {
             JSONObject object = new JSONObject(value);
             String lyric = object.optString(JSON_LYRIC, "");
             Payload originalPayload = parse(value);
+            if (originalPayload != null && originalPayload.snapshotPositionMillis >= 0L) {
+                return new NormalizedPayload(value, originalPayload, false);
+            }
             if (!containsTimedLrc(lyric)) {
                 return new NormalizedPayload(value, originalPayload, false);
             }
@@ -143,6 +147,7 @@ public final class LyricInfoContract {
         public final String trackKey;
         public final long sessionGeneration;
         public final String source;
+        public final long snapshotPositionMillis;
 
         Payload(
                 String songName,
@@ -156,6 +161,14 @@ public final class LyricInfoContract {
                 String trackKey,
                 long sessionGeneration,
                 String source) {
+            this(songName, artist, album, songId, lyric, rawLyric, translationLyric,
+                    provider, trackKey, sessionGeneration, source, -1L);
+        }
+
+        Payload(String songName, String artist, String album, String songId, String lyric,
+                String rawLyric, String translationLyric, String provider, String trackKey,
+                long sessionGeneration, String source, long snapshotPositionMillis) {
+            this.snapshotPositionMillis = snapshotPositionMillis;
             this.songName = songName;
             this.artist = artist;
             this.album = album;

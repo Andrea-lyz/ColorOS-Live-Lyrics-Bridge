@@ -14,6 +14,12 @@ import java.util.Arrays;
  * {@code LockscreenLyricsModule} in step 3.1.
  */
 public final class WordLine {
+    public boolean sentenceWindowExpanded;
+
+    public int visibleWrappedLineLimit() {
+        return sentenceWindowExpanded ? 256 : 2;
+    }
+
 
     public final long timeMillis;
     public final long endTimeMillis;

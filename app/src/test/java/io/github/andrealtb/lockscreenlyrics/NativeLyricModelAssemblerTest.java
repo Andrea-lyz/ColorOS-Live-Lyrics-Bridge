@@ -37,6 +37,26 @@ public final class NativeLyricModelAssemblerTest {
     }
 
     @Test
+    public void snapshotWithoutRawLyricBuildsModelAndSelectsExactCurrentRow() throws Exception {
+        String lrc = "[00:00.000]previous\n[00:01.000]current\n[00:02.000]next\n";
+        for (int index = 0; index < 3; index++) {
+            org.json.JSONObject json = new org.json.JSONObject().put("lyric", lrc)
+                    .put("displayMode", "sentence-window-v1").put("currentLine", index);
+            LyricInfoContract.Payload payload = LyricInfoContract.parse(json.toString());
+            String source = SentenceWindowContract.renderSource(payload);
+            assertTrue(LyricInfoContract.containsTimedLrc(source));
+            WordLyricModel model = assembler().assemble(source, true, payload.lyric, true, "").model;
+            assertEquals(3, model.lines.size());
+            assertEquals(index, model.indexOfLine(model.findActiveLine(payload.snapshotPositionMillis)));
+            assertEquals(index, SentenceWindowContract.visualIndex(payload.snapshotPositionMillis, index, 2));
+        }
+        LyricInfoContract.Payload music = LyricInfoContract.parse(
+                new org.json.JSONObject().put("lyric", lrc).toString());
+        assertEquals("", SentenceWindowContract.renderSource(music));
+        assertEquals(2, SentenceWindowContract.visualIndex(-1L, 0, 2));
+    }
+
+    @Test
     public void assemblesWordTimedPayloadWithAliasesAndSupplementalTranslations() {
         String raw = "[00:01.000] <00:01.000>Hel <00:01.300>lo<00:01.800>\n"
                 + "[00:01.000]你好\n"
