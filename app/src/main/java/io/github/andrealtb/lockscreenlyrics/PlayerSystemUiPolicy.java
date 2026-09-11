@@ -29,6 +29,9 @@ final class PlayerSystemUiPolicy {
     static final String QZ_MUSIC = "love.qz.music";
     static final String PRISM_MUSIC = "com.lg.sllocalmusic";
     static final String MD3_MUSIC = "com.md3music.md3music";
+    // Readify 3.1.0: on-device lyricInfo publication succeeds, but OPlus admission
+    // requires the same package-only compatibility as other native publishers.
+    static final String READIFY = "com.readin.app";
 
     private static final String[] OPLUS_HISTORY_PACKAGES = {
             QQ_MUSIC,
@@ -51,7 +54,8 @@ final class PlayerSystemUiPolicy {
             FLAMINGO,
             QZ_MUSIC,
             PRISM_MUSIC,
-            MD3_MUSIC
+            MD3_MUSIC,
+            READIFY
     };
 
     private PlayerSystemUiPolicy() {

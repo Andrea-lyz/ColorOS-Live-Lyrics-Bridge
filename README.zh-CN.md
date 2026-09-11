@@ -190,3 +190,7 @@ Copyright 2026 Andrea-lyz。本项目采用 [Apache License 2.0](LICENSE) 开源
 插件化歌词源方面提供的开源工作与启发。
 
 Android、ColorOS、OPlus、LSPosed 以及各音乐 App 名称的商标权归各自权利人所有。本项目与这些产品的官方团队没有隶属或背书关系。
+
+## Readify 句子窗口（提案）
+
+Readify 在线朗读适配及事件驱动高亮见 [协议与验证说明](docs/SENTENCE_WINDOWS.md)。需要配套 Provider；Bridge 的系统作用域不变。

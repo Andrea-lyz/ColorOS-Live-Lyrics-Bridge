@@ -11,6 +11,26 @@ import java.util.List;
 
 public final class LyricDrawLayoutEngineTest {
     @Test
+    public void expandedSentenceKeepsAllWrappedCharactersBeyondTwoLines() {
+        String text = "这是一段需要超过两行才能显示完整的朗读文字，末尾几个字也必须保留。";
+        WordLine line = line(text);
+        LyricDrawLayoutEngine engine = new LyricDrawLayoutEngine(
+                (value, start, end) -> end - start);
+        engine.build(line, text, 8f, false, false, 100, null);
+        assertTrue(engine.lines().size() > 2);
+        assertEquals(2, line.visibleWrappedLineLimit());
+        line.sentenceWindowExpanded = true;
+        int visible = Math.min(engine.lines().size(), line.visibleWrappedLineLimit());
+        StringBuilder displayed = new StringBuilder();
+        for (int i = 0; i < visible; i++) {
+            LyricDrawLine row = engine.lines().get(i);
+            displayed.append(text, row.start, row.end);
+        }
+        assertEquals(text, displayed.toString());
+        assertEquals(2, line("ordinary music").visibleWrappedLineLimit());
+    }
+
+    @Test
     public void wrapsAtWhitespaceAndTrimsSegments() {
         LyricDrawLayoutEngine engine = new LyricDrawLayoutEngine(
                 (text, start, end) -> end - start);
