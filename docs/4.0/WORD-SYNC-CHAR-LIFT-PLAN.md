@@ -443,6 +443,7 @@ codec，不出 UI。
 | 顶边裁切 | §5.5 clamp，不改 slot 几何 |
 | 行尾 decay 忘记停帧 → 常驻刷新 | decay 条件带硬时限；#4/#8 验证 |
 | 契约测试漏改导致 CI 红 | Slice B 出口明确列出三个契约测试 |
+| 极短词（词距 < `MIN_WORD_REVEAL_MS` 80ms）交接帧前沿小幅前跳 | **现基线行为，不处理**：`wordEndMillis` 的 `max(begin+80, 下一词 begin)` 夹取会越过下一词起点，交接那一帧 `revealWidth` 从部分跳到全揭示。跳变量不足一个字形，lift 随之抖一帧。设备回归遇到极快音节时不要误判为 lift 缺陷 |
 
 回退开关：任何设备回归失败，`charLiftEnabled` 默认值即为总开关；最坏情况
 revert Slice C 单提交即可回基线（A/B/D 均为无行为变化或 UI 层）。
