@@ -11,6 +11,21 @@ import java.util.Arrays;
  * every timing correction already applied to the clip reveal, the feather edge,
  * and the progress glow instead of carrying a second clock.
  *
+ * <h2>Flow coordinates</h2>
+ *
+ * <p>Distances here are measured in <em>flow</em> coordinates: advance width
+ * accumulated from the start of the line's text, across wrapped segments, using
+ * the same paint the reveal width is measured with. Canvas x is unusable for
+ * this. A wrapped segment that sits entirely before the active word reports a
+ * reveal width equal to its full width, so a per-segment front would pin itself
+ * to that segment's right edge and leave its trailing grapheme parked at the
+ * envelope peak for as long as the row stayed active. Segment origins also
+ * differ under centre/end alignment, so canvas x is not even comparable between
+ * segments of one line.
+ *
+ * <p>Flow coordinates are direction-free: RTL is handled where a flow interval
+ * is mapped back onto a segment's canvas x, not by mirroring the envelope.
+ *
  * <p>Everything here is static, allocation-light, and free of Android types so
  * {@code OfficialLyricTextRenderer} can call it per frame and the JVM unit
  * suite can cover it without Robolectric.
@@ -55,52 +70,42 @@ public final class CharLiftGeometry {
     }
 
     /**
-     * Asymmetric bell envelope over the signed, bump-width normalized distance
-     * to the reveal front. Positive {@code signedDistance} means the front has
-     * already passed the grapheme.
+     * Asymmetric bell envelope over the signed, bump-width normalized flow
+     * distance to the reveal front. Positive {@code signedDistance} means the
+     * front has already passed the grapheme.
      *
      * <p>The rise side is short so a character starts moving just before it
      * lights up; the settle side is long so it drifts back down. Both sides have
      * zero slope at the peak, which keeps the envelope C¹ continuous at
      * {@code signedDistance == 0}.
      */
-    public static float liftEnvelope(float signedDistance, float riseSpan, float settleSpan) {
+    public static float liftEnvelope(float signedDistance) {
         if (Float.isNaN(signedDistance)) {
             return 0f;
         }
         if (signedDistance < 0f) {
-            if (riseSpan <= 0f) {
-                return 0f;
-            }
-            return smootherStep(1f + signedDistance / riseSpan);
+            return smootherStep(
+                    1f + signedDistance / WordLyricRenderConstants.CHAR_LIFT_RISE_SPAN);
         }
-        if (settleSpan <= 0f) {
-            return 0f;
-        }
-        return 1f - smootherStep(signedDistance / settleSpan);
+        return 1f - smootherStep(
+                signedDistance / WordLyricRenderConstants.CHAR_LIFT_SETTLE_SPAN);
     }
 
     /**
-     * Lift in pixels for a grapheme centred at {@code centerX} while the reveal
-     * front sits at {@code frontX}. {@code decay} is the line-level settle
-     * factor from {@link #revealDecay}; {@code rightToLeft} mirrors the envelope
-     * for RTL layout so "already revealed" stays on the settle side.
+     * Lift in pixels for a grapheme centred at flow coordinate
+     * {@code flowCenter} while the reveal front sits at {@code flowFront}.
+     * {@code decay} is the line-level settle factor from {@link #revealDecay}.
      */
     public static float liftFor(
-            float frontX,
-            float centerX,
+            float flowFront,
+            float flowCenter,
             float bumpWidth,
             float maxLift,
-            float decay,
-            boolean rightToLeft) {
+            float decay) {
         if (bumpWidth <= 0f || maxLift <= 0f || decay <= 0f) {
             return 0f;
         }
-        float travelled = rightToLeft ? centerX - frontX : frontX - centerX;
-        float envelope = liftEnvelope(
-                travelled / bumpWidth,
-                WordLyricRenderConstants.CHAR_LIFT_RISE_SPAN,
-                WordLyricRenderConstants.CHAR_LIFT_SETTLE_SPAN);
+        float envelope = liftEnvelope((flowFront - flowCenter) / bumpWidth);
         if (envelope <= 0f) {
             return 0f;
         }
@@ -110,7 +115,8 @@ public final class CharLiftGeometry {
     /**
      * Line-level settle factor. The front stops moving once the last word is
      * revealed, so without this the trailing graphemes would hang in the air;
-     * it decays to 0 over {@code tailMs} and bounds the extra invalidate loop.
+     * it decays to 0 over {@code tailMillis} and bounds the extra invalidate
+     * loop.
      */
     public static float revealDecay(long position, long lineRevealEndMillis, long tailMillis) {
         if (position <= lineRevealEndMillis) {
@@ -143,46 +149,42 @@ public final class CharLiftGeometry {
     }
 
     /**
-     * Left edge of the segment span where the envelope is non-zero, clamped to
-     * {@code [segmentLeft, segmentRight]}. The zone is empty when
+     * Start of the flow interval where the envelope is non-zero, intersected
+     * with one wrapped segment's flow range. The intersection is empty when
      * {@link #liftZoneEnd} is not greater than this value; only graphemes inside
-     * it need the per-grapheme draw path.
+     * it need the per-grapheme draw path, and the caller maps the interval back
+     * onto that segment's canvas x.
      */
     public static float liftZoneStart(
-            float frontX,
+            float flowFront,
             float bumpWidth,
-            float segmentLeft,
-            float segmentRight,
-            boolean rightToLeft) {
-        if (bumpWidth <= 0f || segmentRight <= segmentLeft) {
-            return segmentLeft;
+            float flowSegmentStart,
+            float flowSegmentEnd) {
+        if (bumpWidth <= 0f || flowSegmentEnd <= flowSegmentStart) {
+            return flowSegmentStart;
         }
-        float span = rightToLeft
-                ? WordLyricRenderConstants.CHAR_LIFT_RISE_SPAN
-                : WordLyricRenderConstants.CHAR_LIFT_SETTLE_SPAN;
-        return clampToSegment(frontX - span * bumpWidth, segmentLeft, segmentRight);
+        float start = flowFront
+                - WordLyricRenderConstants.CHAR_LIFT_SETTLE_SPAN * bumpWidth;
+        return clampToSegment(start, flowSegmentStart, flowSegmentEnd);
     }
 
     /**
-     * Right edge of the span described by {@link #liftZoneStart}.
+     * End of the flow interval described by {@link #liftZoneStart}.
      */
     public static float liftZoneEnd(
-            float frontX,
+            float flowFront,
             float bumpWidth,
-            float segmentLeft,
-            float segmentRight,
-            boolean rightToLeft) {
-        if (bumpWidth <= 0f || segmentRight <= segmentLeft) {
-            return segmentLeft;
+            float flowSegmentStart,
+            float flowSegmentEnd) {
+        if (bumpWidth <= 0f || flowSegmentEnd <= flowSegmentStart) {
+            return flowSegmentStart;
         }
-        float span = rightToLeft
-                ? WordLyricRenderConstants.CHAR_LIFT_SETTLE_SPAN
-                : WordLyricRenderConstants.CHAR_LIFT_RISE_SPAN;
-        return clampToSegment(frontX + span * bumpWidth, segmentLeft, segmentRight);
+        float end = flowFront + WordLyricRenderConstants.CHAR_LIFT_RISE_SPAN * bumpWidth;
+        return clampToSegment(end, flowSegmentStart, flowSegmentEnd);
     }
 
-    private static float clampToSegment(float value, float segmentLeft, float segmentRight) {
-        return Math.max(segmentLeft, Math.min(segmentRight, value));
+    private static float clampToSegment(float value, float segmentStart, float segmentEnd) {
+        return Math.max(segmentStart, Math.min(segmentEnd, value));
     }
 
     private static float smoothStep(float progress) {

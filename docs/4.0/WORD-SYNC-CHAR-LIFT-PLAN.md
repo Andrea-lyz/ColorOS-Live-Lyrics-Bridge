@@ -1,6 +1,8 @@
 # 逐字同步的字符上浮动画（Per-character Vertical Lift）改造计划
 
-状态：**计划稿（未启动）。基于 2026-09-11 源码静态取证，尚无实现代码。**
+状态：**实施中（分支 `feat/word-sync-char-lift`）。Slice A / B 已合，
+Slice C 未开始。** 2026-09-11 评审发现原 §3.1 的 canvas-x 前沿模型在换行段上
+会让段尾字素常驻峰值，已改为流坐标模型（§3.1/§3.3/§3.4/§4 同步修订）。
 
 启动门槛：当前 renderer 处于 Phase 6 之后的稳定基线（`OfficialLyricTextRenderer`
 仍在 `LockscreenLyricsModule` 内、`OfficialLyricDrawCoordinator` 已收口 draw 编排）。
@@ -103,14 +105,23 @@ encode/decode（未知 key 容忍，decode 只读已知 key）→
 
 ### 3.1 核心模型：揭示前沿距离驱动的"移动鼓包"（front-distance bump）
 
-不给每个字符单独造时间窗，而是复用已经算出的**揭示前沿 x 坐标**
-（= `x + revealWidth`，与 clip-reveal、羽化、glow 天然同源同步）：
+不给每个字符单独造时间窗，而是复用已经算出的**揭示前沿**（与 clip-reveal、
+羽化、glow 天然同源同步）。前沿与字素中心都取**流坐标**（flow coordinate）：
+从该行文本起点累计、跨换行段连续的 advance 宽度，量尺与 `resolveSegmentRevealWidth`
+同为 `inactivePaint`。
 
 ```
-对激活行中每个字素 g（中心 advance 坐标 cx）：
-  d      = (frontX - cx) / bumpWidth        // 有符号归一化距离，布局方向为正
+flowFront  = Σ(激活段之前各段 width) + 激活段内 revealWidth
+对激活行中每个字素 g（流坐标中心 flowCenter）：
+  d      = (flowFront - flowCenter) / bumpWidth   // 有符号归一化距离
   lift   = maxLift * envelope(d) * decay
 ```
+
+**不能用 canvas x 做前沿坐标。** `resolveSegmentRevealWidth` 对"整段位于激活词
+之前"的换行段返回整段宽度（:13955-13959），若每段自算本段前沿，该段的前沿会
+钉死在段右缘，其行尾字素 `d ≈ 0` → 包络常驻峰值，只要该行还是激活行就一直悬浮，
+只能靠行末 decay 落下——这是行尾常亮式悬浮，不是"换行处按段截断"。另外各段
+canvas x 原点随居中/右对齐而不同，段间根本不可比。流坐标两个问题都不存在。
 
 - `envelope(d)`：钟形包络，支持不对称。建议
   - 前沿未到（d < 0，字符在前沿右侧）：`smootherStep(1 + d / RISE_SPAN)`
@@ -139,10 +150,11 @@ encode/decode（未知 key 容忍，decode 只读已知 key）→
 
 - 字素边界：`java.text.BreakIterator.getCharacterInstance()` 按 grapheme
   切分（正确处理 emoji/代理对/组合字符）；CJK 退化为逐 code point。
-- 每个字素的 advance 区间 `[gx0, gx1)` 用
+- 每个字素的段内 advance 区间 `[gx0, gx1)` 用
   `paint.measureText(text, drawLine.start, boundary)` 前缀宽度差得到，与
   `resolveSegmentRevealWidth` 同一把尺子（`inactivePaint`），保证与前沿坐标
-  严格一致。
+  严格一致。流坐标 `flowCenter = Σ(该段之前各段 width) + (gx0 + gx1) / 2`，
+  段前缀和直接取 `LyricDrawLine.width` 累加，无需额外测量。
 - **切分与测量结果必须缓存**：按 `(line, drawLine.start, drawLine.end,
   textSizeKey, typeface)` keyed，随 `clearGlowCache` / bind epoch 一起失效。
   绝不能每帧跑 BreakIterator + N 次 measureText。
@@ -153,14 +165,21 @@ encode/decode（未知 key 容忍，decode 只读已知 key）→
 对每个需要上浮的字素：
 
 ```java
-canvas.save();
-canvas.clipRect(gx0 - bleed, top, gx1 + bleed, bottom);   // 该字素的横向盒
-canvas.translate(0f, -lift);
-//（在平移后的坐标系里，用与原来完全相同的 x/y 重画）
-canvas.drawText(text, drawLine.start, drawLine.end, x, y, inactivePaint); // 底色
-drawRevealedText(canvas, text, start, end, x, y, segmentWidth, revealWidth, ...); // 揭示层+羽化
-canvas.restore();
+int save = canvas.save();
+try {
+    canvas.clipRect(gx0 - bleed, top, gx1 + bleed, bottom);   // 该字素的横向盒
+    canvas.translate(0f, -lift);
+    //（在平移后的坐标系里，用与原来完全相同的 x/y 重画）
+    canvas.drawText(text, drawLine.start, drawLine.end, x, y, inactivePaint); // 底色
+    drawRevealedText(canvas, text, start, end, x, y, segmentWidth, revealWidth, ...); // 揭示层+羽化
+} finally {
+    canvas.restoreToCount(save);
+}
 ```
+
+必须写成 `save()` / `restoreToCount()`：`BridgeArchitectureGuardTest`
+（:153-154）断言 `LockscreenLyricsModule.java` 不含字面量 `canvas.restore();`，
+现有 `drawRevealedText` / `drawProgressGlow` 也是这个写法。
 
 要点：
 - 全段字符串按原始 x 绘制、只靠 clip 盒选出该字素 → **字形位置、kerning、
@@ -180,17 +199,21 @@ canvas.restore();
 [liftZoneEnd …… 段终点]   —— 现有整段路径原样
 ```
 
-- liftZone = 前沿 ± bumpWidth 与该段 `[x, x+segmentWidth)` 的交集，映射回
-  字素边界取整。典型帧内 1~6 个字素走逐字素路径，其余 90%+ 文本零额外开销。
+- liftZone 在**流坐标**里算：`[flowFront - SETTLE_SPAN*bump, flowFront +
+  RISE_SPAN*bump]` 与该段流区间 `[flowSegStart, flowSegEnd)` 求交，再映射回该段
+  canvas x（LTR `x + (flow - flowSegStart)`，RTL `x + segmentWidth - (flow -
+  flowSegStart)`），最后对齐到字素边界。典型帧内 1~6 个字素走逐字素路径，
+  其余 90%+ 文本零额外开销。
 - 区 1/3 的整段绘制加横向 clip（排除 liftZone），避免与区 2 重像。
-- 激活词跨换行段：每段独立算本段前沿（`resolveSegmentRevealWidth` 已给出
-  段内 revealWidth），鼓包在换行处按段截断——上一段行尾字素回落、下一段行首
-  字素抬起，时间上仍连续。
+- 激活词跨换行段：`flowFront` 全行只算一次（各段 `flowSegStart + 段内
+  revealWidth` 取最大值，`resolveSegmentRevealWidth` 已给出段内 revealWidth），
+  鼓包跨换行连续——上一段行尾字素按真实距离继续回落、下一段行首字素抬起，
+  两段各自与 liftZone 求交即可，没有段边界钉死问题。
 - glow：**保持现状**，`GlowSegmentCache` 位图仍画在固定 baseline。lift ≤ 2dp
   且 glow 为高斯模糊晕影，偏移不可辨；避免为浮起字素破坏位图缓存或每帧跑
   `BlurMaskFilter`。
-- RTL：前沿方向跟随 `resolveTextX` 的布局方向；`d` 的符号按布局方向取，
-  包络定义不变。
+- RTL：流坐标与书写方向无关，包络与 `d` 的符号都不变；方向只影响"流区间 →
+  段内 canvas x"这一层映射（见上）。
 
 ### 3.5 触发与帧续命门控
 
@@ -204,21 +227,33 @@ lift 仅在以下全部成立时计算：
 
 帧续命：现有激活行 invalidate 循环在 `progress >= 1` 后停止，但 decay 尾巴
 （§3.1）还需 ~200ms。在 lift 分支内补充：
-`anyLiftAboveEpsilon || position < lineRevealEndMs + LIFT_SETTLE_TAIL_MS`
-时 `postInvalidateOnAnimation()`。该条件有硬时限，不会形成常驻刷新循环。
+
+```
+activeLine && (anyLift > 0.01f
+        || position < lineRevealEndMs + CHAR_LIFT_SETTLE_TAIL_MS)
+```
+
+时 `postInvalidateOnAnimation()`；`activeLine` 为 false 立即停。该条件有硬时限，
+不会形成常驻刷新循环。`lineRevealEndMs` 取
+`WordLyricRenderSupport.wordRevealEndMillis(model, line, 末词下标)`（含下一行
+起点截断），**不能用 `line.endTimeMillis`**——后者含休止/下一行 pre-roll，
+decay 会拖过头。
 
 ## 4. 纯函数拆分（可单测的新代码）
 
 新增 `render/CharLiftGeometry.java`（纯静态，无 Android 依赖除 BreakIterator）：
 
+所有距离量均为流坐标（§3.1），因此没有 `rightToLeft` 形参；跨度常量由函数内部
+绑定，调用方不再传 span，避免 `liftFor` / `liftZone*` 与包络用不同跨度。
+
 | 函数 | 职责 |
 | --- | --- |
 | `graphemeBoundaries(String text, int start, int end)` | 字素边界 int[]，BreakIterator 封装 |
-| `liftEnvelope(float signedDistance, float riseSpan, float settleSpan)` | §3.1 不对称钟形包络，返回 0..1 |
-| `liftFor(float frontX, float cx, float bumpWidth, float maxLift, float decay)` | 单字素 lift 值 |
+| `liftEnvelope(float signedDistance)` | §3.1 不对称钟形包络，返回 0..1 |
+| `liftFor(float flowFront, float flowCenter, float bumpWidth, float maxLift, float decay)` | 单字素 lift 值 |
 | `revealDecay(long position, long lineRevealEndMs, long tailMs)` | 行末衰减 0..1 |
-| `clampLift(float lift, float glyphTopY)` | §5.5 顶边余量 clamp |
-| `liftZone(float frontX, float bumpWidth, float segLeft, float segRight)` | 段内浮动区间交集 |
+| `clampLift(float lift, float glyphTopY, float topBoundY)` | §5.5 顶边余量 clamp |
+| `liftZoneStart/End(float flowFront, float bumpWidth, float flowSegStart, float flowSegEnd)` | 段内浮动流区间交集（`end <= start` 即空） |
 
 常量放 `render/WordLyricRenderConstants.java`（与现有渲染常量同居）：
 `CHAR_LIFT_MAX_FACTOR = 0.05f`、`CHAR_LIFT_BUMP_WIDTH_FACTOR = 1.6f`、
@@ -227,8 +262,9 @@ lift 仅在以下全部成立时计算：
 
 测试放 `app/src/test/java/.../render/CharLiftGeometryTest.java`，覆盖：
 包络连续性（d=0 峰值、两侧单调、C¹）、decay 边界、字素切分
-（CJK / Latin / emoji / 代理对 / 组合字符）、liftZone 交集空/全覆盖、
-clamp、RTL 符号。
+（CJK / Latin / emoji / 代理对 / 组合字符）、liftZone 交集空/全覆盖/跨换行两段
+同时开区、clamp，以及跨换行段流坐标回归（整段已揭示的段尾字素按真实距离继续
+回落，而非钉在段右缘的常驻峰值）。
 
 ## 5. Renderer 改造点（`LockscreenLyricsModule` 内）
 
@@ -240,14 +276,17 @@ clamp、RTL 符号。
 （**字节级等价，不重排现有调用顺序**）；开启时按 §3.4 三区绘制。
 
 ### 5.2 新私有方法 `drawLiftedGraphemes(...)`
-实现 §3.3 循环。所有几何取自 `CharLiftGeometry` 纯函数 + 字素缓存。
-异常安全：该方法内任何越界/测量失败直接放弃 lift 走整段回退，**绝不向上抛**
-——coordinator 的 draw 异常会把整个 binding 拉黑回落原生渲染（:286-289），
-一个动画增强不允许触发这个降级。
+实现 §3.3 循环（`save()` / `restoreToCount()`，不用 `canvas.restore()`）。
+所有几何取自 `CharLiftGeometry` 纯函数 + 字素缓存。
+异常安全：该方法内 catch 一切 `RuntimeException`，放弃 lift 走整段回退，
+**绝不向上抛**——coordinator 的 draw 异常会把整个 binding 拉黑回落原生渲染
+（:286-289），一个动画增强不允许触发这个降级。
 
 ### 5.3 字素缓存
-`GraphemeLayoutCache`（仿 `GlowSegmentCache` 的小型 LRU，2~4 槽），失效时机
-与 `clearGlowCache()`、`forgetLyricTextViewCaches` 对齐。
+`GraphemeLayoutCache`（仿 `GlowSegmentCache` 的小型 LRU，2~4 槽，key =
+`(line, drawLine.start, drawLine.end, textSizeKey, typeface)`，存字素边界 +
+段内前缀宽度），失效时机与 `clearGlowCache()`、`forgetLyricTextViewCaches`
+对齐。**禁止每帧跑 BreakIterator 或 N 次 measureText。**
 
 ### 5.4 帧续命
 §3.5 的补充 invalidate 条件，加在 lift 分支内部（与 :13070 的既有模式一致）。
@@ -259,8 +298,10 @@ clamp、RTL 符号。
 压缩为可用余量。
 
 ### 5.6 配置消费
-renderer 读 `uiConfig.charLiftEnabled`（+ 可选 `charLiftStrengthPercent`），
-经现有 `refreshLyricUiStyleSettingsIfNeeded()` 快照，无新链路。
+renderer 读 `uiConfig.charLiftEnabled` / `charLiftStrengthPercent`，经现有
+`refreshLyricUiStyleSettingsIfNeeded()` 快照，无新链路。强度映射
+`maxLift = textSize * CHAR_LIFT_MAX_FACTOR * strengthPercent / 100`，再过
+`clampLift`（§5.5）。
 
 ## 6. 配置与设置 UI
 
