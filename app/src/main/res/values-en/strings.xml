@@ -156,7 +156,8 @@
     <string name="setting_translation_progress">Translation progress</string>
     <string name="translation_progress_dependency_hint">Line-timed lyrics also require the option above; word-timed lyrics can use translation progress independently.</string>
     <string name="setting_char_lift">Character lift animation</string>
-    <string name="char_lift_dependency_hint">Characters rise slightly as the word-timed highlight passes them. Word-timed lyrics only, and off automatically on the low frame rate always-on display.</string>
+    <string name="char_lift_dependency_hint">Characters rise from below to the normal baseline as the word-timed highlight passes them. Word-timed lyrics only, and off automatically on the low frame rate always-on display.</string>
+    <string name="setting_char_lift_strength">Character float amount</string>
     <string name="setting_screen_timeout">Keep screen on while lyrics are shown</string>
     <string name="setting_screen_timeout_seconds_label">Timeout seconds</string>
     <string name="setting_screen_timeout_seconds_hint">Empty = keep on</string>

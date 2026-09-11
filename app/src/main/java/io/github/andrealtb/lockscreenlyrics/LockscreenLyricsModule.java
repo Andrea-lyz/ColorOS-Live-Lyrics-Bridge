@@ -12040,6 +12040,12 @@ public final class LockscreenLyricsModule extends XposedModule {
         private long graphemeCacheUseCounter;
         private final CharLiftState charLift = new CharLiftState();
         /**
+         * Canvas y of the translation row's glyph top for the group being drawn,
+         * or 0 when the row has no translation. Sunk main text has to stay above
+         * it: the translation does not sink with the main line.
+         */
+        private float charLiftFloorY;
+        /**
          * Sticky after a lifted draw throws. A draw error reaching the
          * coordinator blacklists the binding and falls back to native rendering
          * for good, so this effect gives itself up instead.
@@ -12848,6 +12854,9 @@ public final class LockscreenLyricsModule extends XposedModule {
             state.translationGap = translationGap;
             state.translationMetricsTop = translationMetrics.top;
             state.translationAmount = translationAmount;
+            // Where drawTranslationPass puts the translation's outward font top.
+            // Unsung main text sinks toward it and must stop short of it.
+            charLiftFloorY = sourceHasTranslation ? top + mainHeight + translationGap : 0f;
             return true;
         }
 
@@ -13606,7 +13615,11 @@ public final class LockscreenLyricsModule extends XposedModule {
                     activeLine,
                     drawProgress,
                     fullLineOverlayAmount,
-                    start);
+                    start,
+                    canvas.getHeight(),
+                    dp(
+                            textView.getContext(),
+                            WordLyricRenderConstants.CHAR_LIFT_MIN_CLEARANCE_DP));
             float lineY = y;
             for (int i = start; i < end; i++) {
                 LyricDrawLine drawLine = drawLines.get(i);
@@ -13639,8 +13652,12 @@ public final class LockscreenLyricsModule extends XposedModule {
                 charLift.flowSegmentStart += drawLine.width;
                 lineY += lineHeight + lineGap;
             }
-            if (charLift.lineActive
-                    && (charLift.settling || charLift.peakLift > CHAR_LIFT_FRAME_EPSILON)) {
+            // Sink is a pure function of playback position, so the only frames
+            // this effect owns are the ones where the row is sinking in and the
+            // ones where the wave is clearing the end of the text. In between it
+            // rides the existing reveal invalidate loop, and a settled row is
+            // static. Both windows have hard time limits.
+            if (charLift.lineActive && (charLift.ramp < 1f || charLift.finishing)) {
                 textView.postInvalidateOnAnimation();
             }
         }
@@ -13663,7 +13680,9 @@ public final class LockscreenLyricsModule extends XposedModule {
                 boolean activeLine,
                 boolean drawProgress,
                 float fullLineOverlayAmount,
-                int windowStart) {
+                int windowStart,
+                float canvasHeight,
+                float minClearance) {
             charLift.reset();
             if (!charLiftEnabled
                     || charLiftUnavailable
@@ -13674,47 +13693,58 @@ public final class LockscreenLyricsModule extends XposedModule {
                     // transition runs, and an animation there costs battery for
                     // motion nobody is watching.
                     || aodLowFrameRateMode
-                    || activeWord == null
                     || line == null
                     || line.timingMode != LyricTimingMode.WORD_TIMED
                     || line.words == null
                     || line.words.isEmpty()
                     || TextUtils.isEmpty(text)
-                    // The cross-fade overlay repaints the whole row unlifted, so
-                    // lifting underneath it would only ghost.
+                    // The cross-fade overlay repaints the whole row undisplaced,
+                    // so sinking underneath it would only ghost.
                     || fullLineOverlayAmount > 0.001f
                     || WordLyricRenderSupport.shouldUseTimestampHighlight(model, line)) {
                 return;
             }
             try {
                 float textSize = inactivePaint.getTextSize();
-                float maxLift = textSize
+                float maxSink = textSize
                         * WordLyricRenderConstants.CHAR_LIFT_MAX_FACTOR
                         * charLiftStrengthPercent
                         / 100f;
-                if (maxLift <= CHAR_LIFT_FRAME_EPSILON) {
+                if (maxSink <= CHAR_LIFT_FRAME_EPSILON) {
                     return;
                 }
+                float ramp = CharLiftGeometry.sinkRamp(
+                        position,
+                        line.timeMillis,
+                        WordLyricRenderConstants.CHAR_LIFT_SINK_IN_MS);
+                if (ramp <= 0f) {
+                    return;
+                }
+                float waveWidth =
+                        textSize * WordLyricRenderConstants.CHAR_LIFT_WAVE_WIDTH_FACTOR;
+                // Before the first word the row is entirely unsung, so the front
+                // sits at the start of the text rather than being absent.
+                float revealFront = activeWord == null
+                        ? 0f
+                        : resolveLineFlowFront(model, line, text, activeWord, wordIndex, position);
                 long lineRevealEndMillis = WordLyricRenderSupport.wordRevealEndMillis(
                         model,
                         line,
                         line.words.size() - 1);
-                float decay = CharLiftGeometry.revealDecay(
+                charLift.flowFront = revealFront
+                        + CharLiftGeometry.finishOvershoot(
                         position,
                         lineRevealEndMillis,
-                        WordLyricRenderConstants.CHAR_LIFT_SETTLE_TAIL_MS);
-                if (decay <= 0f) {
-                    return;
-                }
-                charLift.flowFront = resolveLineFlowFront(
-                        model, line, text, activeWord, wordIndex, position);
+                        WordLyricRenderConstants.CHAR_LIFT_FINISH_MS,
+                        waveWidth);
+                charLift.finishing = position < lineRevealEndMillis
+                        + WordLyricRenderConstants.CHAR_LIFT_FINISH_MS;
                 charLift.flowSegmentStart = flowOffsetBeforeSegment(windowStart);
-                charLift.bumpWidth =
-                        textSize * WordLyricRenderConstants.CHAR_LIFT_BUMP_WIDTH_FACTOR;
-                charLift.maxLift = maxLift;
-                charLift.decay = decay;
-                charLift.settling = position < lineRevealEndMillis
-                        + WordLyricRenderConstants.CHAR_LIFT_SETTLE_TAIL_MS;
+                charLift.waveWidth = waveWidth;
+                charLift.maxSink = maxSink;
+                charLift.ramp = ramp;
+                charLift.floorY = charLiftFloorY > 0f ? charLiftFloorY : canvasHeight;
+                charLift.minClearance = minClearance;
                 charLift.lineActive = true;
             } catch (RuntimeException error) {
                 charLiftUnavailable = true;
@@ -14160,9 +14190,11 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
 
         /**
-         * Resolves the grapheme range of this segment that the bump reaches, in
-         * canvas x. Returns false when the segment is untouched this frame, in
-         * which case the caller keeps the untouched whole-segment draw.
+         * Splits this segment into the sung head, the transition the wave is
+         * crossing, and the unsung tail, in canvas x. Returns false when the
+         * whole segment is already sung, in which case the caller keeps the
+         * untouched whole-segment draw — which is also what makes a settled row
+         * pixel-identical to the effect being off.
          */
         private boolean prepareCharLiftZone(
                 WordLine line,
@@ -14176,18 +14208,28 @@ public final class LockscreenLyricsModule extends XposedModule {
             try {
                 float flowSegmentStart = charLift.flowSegmentStart;
                 float flowSegmentEnd = flowSegmentStart + segmentWidth;
-                float zoneStart = CharLiftGeometry.liftZoneStart(
+                float zoneStart = CharLiftGeometry.waveZoneStart(
                         charLift.flowFront,
-                        charLift.bumpWidth,
+                        charLift.waveWidth,
                         flowSegmentStart,
                         flowSegmentEnd);
-                float zoneEnd = CharLiftGeometry.liftZoneEnd(
+                float zoneEnd = CharLiftGeometry.waveZoneEnd(
                         charLift.flowFront,
-                        charLift.bumpWidth,
+                        charLift.waveWidth,
                         flowSegmentStart,
                         flowSegmentEnd);
+                charLift.segmentLeft = x;
+                charLift.segmentRight = x + segmentWidth;
+                charLift.prefixWidths = null;
+                charLift.firstGrapheme = 0;
+                charLift.lastGrapheme = 0;
                 if (zoneEnd <= zoneStart) {
-                    return false;
+                    // No transition here: the segment is entirely sung or
+                    // entirely unsung. Only the latter still needs drawing work.
+                    float edge = x + (zoneEnd - flowSegmentStart);
+                    charLift.zoneLeft = edge;
+                    charLift.zoneRight = edge;
+                    return charLift.hasTail();
                 }
                 float[] prefixWidths = resolveGraphemePrefixWidths(line, text, drawLine);
                 if (prefixWidths == null || prefixWidths.length < 2) {
@@ -14217,8 +14259,6 @@ public final class LockscreenLyricsModule extends XposedModule {
                 charLift.lastGrapheme = last;
                 charLift.zoneLeft = x + prefixWidths[first];
                 charLift.zoneRight = x + prefixWidths[last];
-                charLift.segmentLeft = x;
-                charLift.segmentRight = x + segmentWidth;
                 return true;
             } catch (RuntimeException error) {
                 charLiftUnavailable = true;
@@ -14226,10 +14266,19 @@ public final class LockscreenLyricsModule extends XposedModule {
             }
         }
 
+        /** Sink shared by every grapheme past the wave, clamped to the floor. */
+        private float resolveTailSink(float y) {
+            return CharLiftGeometry.clampSink(
+                    charLift.maxSink * charLift.ramp,
+                    y + inactivePaint.descent(),
+                    charLift.floorY,
+                    charLift.minClearance);
+        }
+
         /**
-         * Draws the segment everywhere the lift zone does not cover it. The zone
-         * itself is repainted grapheme by grapheme, so leaving the base draw
-         * whole would show an unlifted ghost under every lifted glyph.
+         * Draws the sung head at the normal baseline and the unsung tail
+         * uniformly sunk. The tail is one clipped draw rather than a per-grapheme
+         * walk: past the wave every grapheme carries the same displacement.
          */
         private void drawTextOutsideCharLiftZone(
                 Canvas canvas,
@@ -14250,9 +14299,13 @@ public final class LockscreenLyricsModule extends XposedModule {
                 }
             }
             if (charLift.hasTail()) {
+                float sink = resolveTailSink(y);
                 int save = canvas.save();
                 try {
                     canvas.clipRect(charLift.zoneRight, 0f, canvasWidth, canvasHeight);
+                    if (sink > 0f) {
+                        canvas.translate(0f, sink);
+                    }
                     canvas.drawText(text, drawLine.start, drawLine.end, x, y, paint);
                 } finally {
                     canvas.restoreToCount(save);
@@ -14260,6 +14313,10 @@ public final class LockscreenLyricsModule extends XposedModule {
             }
         }
 
+        /**
+         * The revealed layer only ever reaches the sung head: the reveal front is
+         * the centre of the wave, so nothing past the wave has been revealed.
+         */
         private void drawRevealedTextOutsideCharLiftZone(
                 Canvas canvas,
                 String text,
@@ -14268,46 +14325,28 @@ public final class LockscreenLyricsModule extends XposedModule {
                 float y,
                 float segmentWidth,
                 float revealWidth) {
-            float canvasWidth = canvas.getWidth();
-            float canvasHeight = canvas.getHeight();
-            if (charLift.hasHead()) {
-                int save = canvas.save();
-                try {
-                    canvas.clipRect(0f, 0f, charLift.zoneLeft, canvasHeight);
-                    drawRevealedText(
-                            canvas,
-                            text,
-                            drawLine.start,
-                            drawLine.end,
-                            x,
-                            y,
-                            segmentWidth,
-                            revealWidth);
-                } finally {
-                    canvas.restoreToCount(save);
-                }
+            if (!charLift.hasHead()) {
+                return;
             }
-            if (charLift.hasTail()) {
-                int save = canvas.save();
-                try {
-                    canvas.clipRect(charLift.zoneRight, 0f, canvasWidth, canvasHeight);
-                    drawRevealedText(
-                            canvas,
-                            text,
-                            drawLine.start,
-                            drawLine.end,
-                            x,
-                            y,
-                            segmentWidth,
-                            revealWidth);
-                } finally {
-                    canvas.restoreToCount(save);
-                }
+            int save = canvas.save();
+            try {
+                canvas.clipRect(0f, 0f, charLift.zoneLeft, canvas.getHeight());
+                drawRevealedText(
+                        canvas,
+                        text,
+                        drawLine.start,
+                        drawLine.end,
+                        x,
+                        y,
+                        segmentWidth,
+                        revealWidth);
+            } finally {
+                canvas.restoreToCount(save);
             }
         }
 
         /**
-         * Repaints the lift zone one grapheme at a time. Every pass draws the
+         * Repaints the transition one grapheme at a time. Every pass draws the
          * whole segment string at its original x and lets the clip box select
          * one grapheme, so shaping and kerning stay identical to the whole
          * segment draw and the glyph is only displaced.
@@ -14332,8 +14371,11 @@ public final class LockscreenLyricsModule extends XposedModule {
                 float revealWidth,
                 boolean revealedLayer) {
             float canvasHeight = canvas.getHeight();
-            float glyphTopY = y + inactivePaint.ascent();
+            float glyphBottomY = y + inactivePaint.descent();
             float[] prefixWidths = charLift.prefixWidths;
+            if (prefixWidths == null) {
+                return;
+            }
             try {
                 for (int i = charLift.firstGrapheme; i < charLift.lastGrapheme; i++) {
                     float left = x + prefixWidths[i];
@@ -14343,23 +14385,21 @@ public final class LockscreenLyricsModule extends XposedModule {
                     }
                     float flowCenter = charLift.flowSegmentStart
                             + (prefixWidths[i] + prefixWidths[i + 1]) * 0.5f;
-                    float lift = CharLiftGeometry.clampLift(
-                            CharLiftGeometry.liftFor(
+                    float sink = CharLiftGeometry.clampSink(
+                            CharLiftGeometry.sinkFor(
                                     charLift.flowFront,
                                     flowCenter,
-                                    charLift.bumpWidth,
-                                    charLift.maxLift,
-                                    charLift.decay),
-                            glyphTopY,
-                            0f);
-                    if (!revealedLayer && lift > charLift.peakLift) {
-                        charLift.peakLift = lift;
-                    }
+                                    charLift.waveWidth,
+                                    charLift.maxSink,
+                                    charLift.ramp),
+                            glyphBottomY,
+                            charLift.floorY,
+                            charLift.minClearance);
                     int save = canvas.save();
                     try {
                         canvas.clipRect(left, 0f, right, canvasHeight);
-                        if (lift > 0f) {
-                            canvas.translate(0f, -lift);
+                        if (sink > 0f) {
+                            canvas.translate(0f, sink);
                         }
                         if (revealedLayer) {
                             drawRevealedText(
@@ -15240,14 +15280,18 @@ public final class LockscreenLyricsModule extends XposedModule {
          */
         private static final class CharLiftState {
             boolean lineActive;
-            /** True while the row is still inside its post-reveal settle tail. */
-            boolean settling;
             float flowFront;
             float flowSegmentStart;
-            float bumpWidth;
-            float maxLift;
-            float decay;
-            float peakLift;
+            float waveWidth;
+            float maxSink;
+            /** Sink-in factor while the row settles into its unsung position. */
+            float ramp;
+            /** True while the wave is still running off the end of the text. */
+            boolean finishing;
+            /** Canvas y the sunk glyph bottoms may not cross. */
+            float floorY;
+            /** Clearance kept above {@link #floorY}, in pixels. */
+            float minClearance;
             float zoneLeft;
             float zoneRight;
             float segmentLeft;
@@ -15256,25 +15300,26 @@ public final class LockscreenLyricsModule extends XposedModule {
             int lastGrapheme;
             float[] prefixWidths;
 
-            /** True when any of this segment sits left of the lift zone. */
+            /** True when part of this segment is already sung and sits on the baseline. */
             boolean hasHead() {
                 return zoneLeft > segmentLeft;
             }
 
-            /** True when any of this segment sits right of the lift zone. */
+            /** True when part of this segment is still unsung and sits uniformly low. */
             boolean hasTail() {
                 return zoneRight < segmentRight;
             }
 
             void reset() {
                 lineActive = false;
-                settling = false;
                 flowFront = 0f;
                 flowSegmentStart = 0f;
-                bumpWidth = 0f;
-                maxLift = 0f;
-                decay = 0f;
-                peakLift = 0f;
+                waveWidth = 0f;
+                maxSink = 0f;
+                ramp = 0f;
+                finishing = false;
+                floorY = 0f;
+                minClearance = 0f;
                 zoneLeft = 0f;
                 zoneRight = 0f;
                 segmentLeft = 0f;

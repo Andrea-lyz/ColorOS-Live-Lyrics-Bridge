@@ -1,6 +1,7 @@
 package io.github.andrealtb.lockscreenlyrics;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -22,7 +23,7 @@ public final class CharLiftRendererContractTest {
         String module = module();
         int gate = module.indexOf("private void beginCharLiftLine(");
         assertTrue("beginCharLiftLine is missing", gate >= 0);
-        String body = module.substring(gate, gate + 2_000);
+        String body = module.substring(gate, gate + 3_000);
         assertTrue("lift must bail out on AOD low frame rate", body.contains("aodLowFrameRateMode"));
         assertTrue("lift must bail out without the toggle", body.contains("!charLiftEnabled"));
         assertTrue(
@@ -53,13 +54,32 @@ public final class CharLiftRendererContractTest {
     }
 
     @Test
-    public void settleTailIsAnchoredOnTheLastWordRevealEnd() throws Exception {
+    public void sungCharactersAreLeftStandingWithNothingToDecay() throws Exception {
         String module = module();
+        assertFalse(
+                "the bell model's settle decay has no place in a step model",
+                module.contains("revealDecay"));
+        assertFalse(module.contains("CHAR_LIFT_SETTLE_TAIL_MS"));
         assertTrue(
-                "the decay anchor must be the last word's reveal end, not the row lifetime",
-                module.contains("long lineRevealEndMillis = WordLyricRenderSupport.wordRevealEndMillis("));
+                "the only animation this effect owns is the sink-in ramp",
+                module.contains("CharLiftGeometry.sinkRamp("));
         assertTrue(
-                module.contains("WordLyricRenderConstants.CHAR_LIFT_SETTLE_TAIL_MS"));
+                "the ramp must be anchored on the row's own start",
+                module.contains("WordLyricRenderConstants.CHAR_LIFT_SINK_IN_MS"));
+    }
+
+    @Test
+    public void theRowSinksBeforeItsFirstWordRatherThanOnIt() throws Exception {
+        String module = module();
+        int gate = module.indexOf("private void beginCharLiftLine(");
+        assertTrue("beginCharLiftLine is missing", gate >= 0);
+        String body = module.substring(gate, gate + 3_000);
+        assertFalse(
+                "a row with no active word yet is still unsung and must sink",
+                body.contains("|| activeWord == null"));
+        assertTrue(
+                "the front rests at the start of the text during the pre-roll",
+                body.contains("activeWord == null"));
     }
 
     @Test

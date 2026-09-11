@@ -1,10 +1,12 @@
-# 逐字同步的字符上浮动画（Per-character Vertical Lift）改造计划
+# 逐字同步的字符上浮动画（Salt 式 Float-Up 阶跃模型）改造计划
 
-状态：**实施中（分支 `feat/word-sync-char-lift`）。Slice A–D 已合，
+状态：**实施中（分支 `feat/word-sync-char-lift`）。Slice A–D + F 已合，
 本地 `testDebugUnitTest` / `lintDebug` / `assembleDebug` 全绿；
-§8 的设备回归矩阵一条都没跑，Slice E 未开始。** 2026-09-11 评审发现原 §3.1 的
-canvas-x 前沿模型在换行段上会让段尾字素常驻峰值，已改为流坐标模型
-（§3.1/§3.3/§3.4/§4 同步修订）。
+§8 的设备回归矩阵除首轮 #12 基线外未跑。**
+
+模型经历两次修订：2026-09-11 评审把 canvas-x 前沿改为流坐标（换行段尾字素
+常驻峰值）；实机测试后整个动画模型由钟形鼓包改为 Salt Player 式阶跃
+（Slice F，原因见 §3.1 决策记录）。
 
 启动门槛：当前 renderer 处于 Phase 6 之后的稳定基线（`OfficialLyricTextRenderer`
 仍在 `LockscreenLyricsModule` 内、`OfficialLyricDrawCoordinator` 已收口 draw 编排）。
@@ -14,12 +16,12 @@ canvas-x 前沿模型在换行段上会让段尾字素常驻峰值，已改为�
 
 ## 1. 目标
 
-在 Bridge 侧逐字（word-timed）高亮的基础上，为"揭示前沿正在经过的字符"增加
-Apple Music 风格的轻微垂直上浮动画：字符随逐字进度接近而抬起、经过时到达峰值、
-经过后带缓动回落。要求：
+在 Bridge 侧逐字（word-timed）高亮的基础上，复刻 Salt Player 的字符 Float-Up：
+**未唱字符沉在正常基线下方，被逐字前沿经过时沿升余弦升到正常基线并停在那里**。
+要求：
 
 - 与现有逐字揭示（clip-reveal + 羽化前沿 + glow）完全同步，共用同一个进度时钟；
-- 缓动自然（非线性起落、可不对称：起快落慢）；
+- 已唱/未唱的高度差是常驻状态而非瞬时动画，前沿再快也读得出来；
 - 纯视觉增强，**不需要任何新的歌词时间数据**——沿用 `WordRange` 词级时间戳，
   字符级相位由词内几何插值得出；
 - 用户可开关，默认关闭；关闭时渲染路径与现基线完全一致；
@@ -89,8 +91,9 @@ Apple Music 风格的轻微垂直上浮动画：字符随逐字进度接近而�
   纵向裁剪；行槽几何由模块自算（`resolveSlotHeight` :13201，
   `LYRIC_SLOT_VERTICAL_PADDING_DP = 12f` 等常量在
   `render/WordLyricRenderConstants.java`）。
-- 风险点仅剩行 View 自身 bounds：上浮量必须 clamp 到
-  `字形顶(y + fontMetrics.top)` 距 View 顶边的余量内（§5.5）。
+- 下沉方向的障碍是不随主行下沉的翻译行：`drawTranslationPass`（:12993）把翻译
+  字形外顶边放在 `state.top + state.mainHeight + state.translationGap`，而
+  `translationGap` 只有 2dp。沉底量必须 clamp 在这条线之上（§5.5）。
 
 ### 2.5 配置链路
 
@@ -103,50 +106,35 @@ encode/decode（未知 key 容忍，decode 只读已知 key）→
 `LyricVisualControlsDocumentationTest` 锁 README/文档字符串，若新增用户可见
 视觉控制项需同步文档。Bridge 备份/恢复经 codec map 自动携带新 key。
 
-## 3. 动画模型设计
+## 3. 动画模型设计（Salt 式 Float-Up 阶跃）
 
-### 3.1 核心模型：揭示前沿距离驱动的"移动鼓包"（front-distance bump）
+### 3.1 核心模型：未唱沉底、已唱归位的升余弦阶跃
 
-不给每个字符单独造时间窗，而是复用已经算出的**揭示前沿**（与 clip-reveal、
-羽化、glow 天然同源同步）。前沿与字素中心都取**流坐标**（flow coordinate）：
-从该行文本起点累计、跨换行段连续的 advance 宽度，量尺与 `resolveSegmentRevealWidth`
-同为 `inactivePaint`。
+复刻 Salt Player 的 `LyricsLinePosition.floatUps`（取证见
+`PlayerSource/SaltPlayer/SALT-LYRICS-FLOAT-ANIMATION-REPORT.md` §3 与
+`wb1.m8152`）。前沿与字素中心仍取流坐标（定义见 §3.2）：
 
 ```
-flowFront  = Σ(激活段之前各段 width) + 激活段内 revealWidth
-对激活行中每个字素 g（流坐标中心 flowCenter）：
-  d      = (flowFront - flowCenter) / bumpWidth   // 有符号归一化距离
-  lift   = maxLift * envelope(d) * decay
+S      = inactivePaint.getTextSize()
+H      = S * CHAR_LIFT_MAX_FACTOR(0.10) * charLiftStrengthPercent / 100
+W      = S * CHAR_LIFT_WAVE_WIDTH_FACTOR(3.0)        // 过渡窗口总宽
+u_i    = (flowCenter_i - flowFront + W/2) / W        // 窗口归一化坐标
+w(u)   = 1                     (u <= 0，已唱)
+       | 0                     (u >= 1，未唱)
+       | (1 + cos(u*pi)) / 2   (过渡)
+sink_i = H * (1 - w(u_i)) * sinkRamp
 ```
 
-**不能用 canvas x 做前沿坐标。** `resolveSegmentRevealWidth` 对"整段位于激活词
-之前"的换行段返回整段宽度（:13955-13959），若每段自算本段前沿，该段的前沿会
-钉死在段右缘，其行尾字素 `d ≈ 0` → 包络常驻峰值，只要该行还是激活行就一直悬浮，
-只能靠行末 decay 落下——这是行尾常亮式悬浮，不是"换行处按段截断"。另外各段
-canvas x 原点随居中/右对齐而不同，段间根本不可比。流坐标两个问题都不存在。
+绘制时字素 `translate(0, +sink_i)`：未唱字符停在正常基线**下方** H，被前沿
+经过时沿升余弦升到正常基线并**永久停在那里**。
 
-- `envelope(d)`：钟形包络，支持不对称。建议
-  - 前沿未到（d < 0，字符在前沿右侧）：`smootherStep(1 + d / RISE_SPAN)`
-    —— 前沿逼近时预抬起（RISE_SPAN ≈ 0.6，起得快）；
-  - 前沿已过（d ≥ 0）：`1 - smootherStep(d / SETTLE_SPAN)`
-    —— 回落（SETTLE_SPAN ≈ 1.4，落得慢）；
-  - 两侧在 d=0 处 C¹ 连续（峰值 1）。
-- `bumpWidth`：以字号为尺度，建议 `textSize * 1.6f`（覆盖 1~3 个 CJK 字或
-  一个中等英文单词的宽度）。
-- `maxLift`：建议 `textSize * 0.05f`（32sp 主字号 ≈ 1.6dp），并按 §5.5
-  clamp。
-- `decay`：行揭示完成后的时基衰减。前沿在行尾停住后鼓包不再移动，若无
-  decay 尾部字符会悬停在抬起状态。定义
-  `decay = 1 - smoothStep((position - lineRevealEndMs) / LIFT_SETTLE_TAIL_MS)`，
-  `LIFT_SETTLE_TAIL_MS = 200L`。行切换（activeLine 变更）直接归零。
+**为什么换掉原来的钟形鼓包（决策记录）。** 初版用"抬起→回落"的不对称钟形包络，
+已唱与未唱字符最终都回到同一基线，动画只有过程没有状态。实机反馈"逐字进度一快
+就没动画"：前沿快时每个字素的起落只占几帧，肉眼来不及看见，而任何时刻的静态画面
+里已唱与未唱毫无高度差。阶跃模型的高度差是常驻状态，与前沿速度无关，rap 段落
+同样可读。次因是幅度：原 5% 太小，Salt 默认 10%。
 
-选择该模型的理由：
-1. 与 clip-reveal / 羽化 / glow 用同一个 `revealWidth`，任何时序修正
-   （末词推断、下一行截断、`shouldHoldWordTimedReveal` 起始保持）自动继承，
-   不会出现"字亮了但没浮 / 浮了但没亮"的失步；
-2. 不同词长、不同语言（CJK 逐字 vs Latin 整词时间戳）无需分支——前沿速度
-   本身就编码了节奏；
-3. 只有 3 个可调参数（bumpWidth / maxLift / 不对称比），纯函数可单测。
+用 `cos` 而不是 `smoothStep`，与 Salt 手感一致。
 
 ### 3.2 字素切分与坐标
 
@@ -157,89 +145,91 @@ canvas x 原点随居中/右对齐而不同，段间根本不可比。流坐标�
   `resolveSegmentRevealWidth` 同一把尺子（`inactivePaint`），保证与前沿坐标
   严格一致。流坐标 `flowCenter = Σ(该段之前各段 width) + (gx0 + gx1) / 2`，
   段前缀和直接取 `LyricDrawLine.width` 累加，无需额外测量。
-- **切分与测量结果必须缓存**：按 `(line, drawLine.start, drawLine.end,
-  textSizeKey, typeface)` keyed，随 `clearGlowCache` / bind epoch 一起失效。
-  绝不能每帧跑 BreakIterator + N 次 measureText。
+- **不能用 canvas x 做前沿坐标。** `resolveSegmentRevealWidth` 对"整段位于激活词
+  之前"的换行段返回整段宽度（:13955-13959），若每段自算本段前沿，该段前沿会钉死
+  在段右缘。各段 canvas x 原点还随居中/右对齐不同，段间不可比。
+- 切分与测量结果必须缓存（`GraphemeLayoutCache`），绝不能每帧跑 BreakIterator。
 
 ### 3.3 关键技巧：clip-box + translate 绘制，不逐字符 drawText
 
-不把字符串拆成单字符 `drawText`（会丢 kerning/shaping，Latin 明显）。
-对每个需要上浮的字素：
+不把字符串拆成单字符 `drawText`（会丢 kerning/shaping）。对过渡区每个字素：
 
 ```java
 int save = canvas.save();
 try {
-    canvas.clipRect(gx0 - bleed, top, gx1 + bleed, bottom);   // 该字素的横向盒
-    canvas.translate(0f, -lift);
+    canvas.clipRect(gx0, top, gx1, bottom);   // 该字素的横向盒
+    canvas.translate(0f, +sink_i);
     //（在平移后的坐标系里，用与原来完全相同的 x/y 重画）
-    canvas.drawText(text, drawLine.start, drawLine.end, x, y, inactivePaint); // 底色
-    drawRevealedText(canvas, text, start, end, x, y, segmentWidth, revealWidth, ...); // 揭示层+羽化
+    canvas.drawText(text, drawLine.start, drawLine.end, x, y, inactivePaint);
 } finally {
     canvas.restoreToCount(save);
 }
 ```
 
-必须写成 `save()` / `restoreToCount()`：`BridgeArchitectureGuardTest`
-（:153-154）断言 `LockscreenLyricsModule.java` 不含字面量 `canvas.restore();`，
-现有 `drawRevealedText` / `drawProgressGlow` 也是这个写法。
-
 要点：
-- 全段字符串按原始 x 绘制、只靠 clip 盒选出该字素 → **字形位置、kerning、
-  shaping 与整段绘制完全一致**，字素只是整体位移，不会重排；
-- 揭示层在同一个 translate 里重画并沿用同一 `revealWidth` → 半揭示字素
-  （前沿正穿过字形中间）的填充边界与字形一起上浮，羽化前沿在浮起字素内
-  保持连续；
-- `bleed`：横向出血 0.5px 防 AA 接缝；相邻字素 lift 差 <1px 时视觉无缝。
+- 全段字符串按原始 x 绘制、只靠 clip 盒选出该字素 → 字形位置、kerning、shaping
+  与整段绘制完全一致，字素只是整体位移；
+- 必须写成 `save()` / `restoreToCount()`：`BridgeArchitectureGuardTest`
+  （:153-154）断言 `LockscreenLyricsModule.java` 不含字面量 `canvas.restore();`；
+- **不加横向出血**：底色 `inactivePaint` 带 alpha，相邻 clip 盒重叠会把同一笔
+  半透明墨迹叠两次、把接缝压暗，比它要治的发丝缝更糟。字素盒严格相接。
 
-### 3.4 分区绘制
-
-`drawSegment` 的进度分支改为三区：
+### 3.4 三区绘制
 
 ```
-[段起点 …… liftZoneStart) —— 现有整段路径（底色 + glow + clip-reveal）原样
-[liftZoneStart … liftZoneEnd) —— §3.3 逐字素 clip+translate 绘制
-[liftZoneEnd …… 段终点]   —— 现有整段路径原样
+[段起点 …… front-W/2)   已唱：sink=0，走现有整段路径，canvas 不动
+[front-W/2 … front+W/2) 过渡：逐字素 clip + translate(0,+sink_i)
+[front+W/2 …… 段终点]   未唱：sink 恒为 H，整段一次 clip + translate(0,+H)
 ```
 
-- liftZone 在**流坐标**里算：`[flowFront - SETTLE_SPAN*bump, flowFront +
-  RISE_SPAN*bump]` 与该段流区间 `[flowSegStart, flowSegEnd)` 求交，再映射回该段
-  canvas x（LTR `x + (flow - flowSegStart)`，RTL `x + segmentWidth - (flow -
-  flowSegStart)`），最后对齐到字素边界。典型帧内 1~6 个字素走逐字素路径，
-  其余 90%+ 文本零额外开销。
-- 区 1/3 的整段绘制加横向 clip（排除 liftZone），避免与区 2 重像。
-- 激活词跨换行段：`flowFront` 全行只算一次（各段 `flowSegStart + 段内
-  revealWidth` 取最大值，`resolveSegmentRevealWidth` 已给出段内 revealWidth），
-  鼓包跨换行连续——上一段行尾字素按真实距离继续回落、下一段行首字素抬起，
-  两段各自与 liftZone 求交即可，没有段边界钉死问题。
-- glow：**保持现状**，`GlowSegmentCache` 位图仍画在固定 baseline。lift ≤ 2dp
-  且 glow 为高斯模糊晕影，偏移不可辨；避免为浮起字素破坏位图缓存或每帧跑
-  `BlurMaskFilter`。
-- RTL：流坐标与书写方向无关，包络与 `d` 的符号都不变；方向只影响"流区间 →
-  段内 canvas x"这一层映射（见上）。
+- 尾区不逐字素：过渡窗口之后每个字素位移完全相同，一次 `drawText` 即可。
+- 揭示层只存在于头区与过渡区——前沿是窗口中心，窗口之后没有任何已揭示内容。
+- 底色与揭示层分两趟画，不是一个 clip 里连画两层：glow 在原实现里夹在这两层
+  之间，合成一趟会改变叠放次序。
+- 头区整段已唱时 `sink=0`，此时整个 segment 走原路径 → **行唱完后的稳态与关闭
+  效果逐像素一致**。
+- 各段流区间与过渡区求交、对齐字素边界的逻辑见 `prepareCharLiftZone`。
+- 换行段之间不需要防重叠：任一时刻至多一个段含过渡区，它上面的段全部已唱
+  （sink=0）、下面的段全部未唱（sink=H），下沉方向一致，相对位置不变。
+- glow：**保持现状**，`GlowSegmentCache` 位图仍画在固定 baseline。
+- RTL：流坐标与书写方向无关；方向只影响"流区间 → 段内 canvas x"的映射，而该
+  映射沿用 `drawRevealedText` 既有的左→右揭示方向（§10）。
 
-### 3.5 触发与帧续命门控
+### 3.5 行首下沉与行尾收尾
 
-lift 仅在以下全部成立时计算：
+两个纯函数补足模型两端，都是 `position` 的函数，无每行状态：
 
-1. `activeLine && drawProgress`（后者已含 `!aodLowFrameRateMode`，:13531）；
-2. `line.timingMode == WORD_TIMED`（首期不做 line-timed 进度模式，见 §10）；
-3. `!shouldUseTimestampHighlight(model, line)`（一词短行整行点亮，无前沿
-   可言）；
-4. `uiConfig.charLiftEnabled`。
+- **下沉斜坡** `sinkRamp = smoothStep((position - line.timeMillis) / CHAR_LIFT_SINK_IN_MS)`
+  （240ms）。否则行激活瞬间整行未唱文本会突然出现在下方。行在
+  `line.timeMillis` 之后才激活时 ramp 已到 1、直接沉底，可接受——行激活本身带
+  0.9→1.0 缩放与滑动，会吸收这点。
+- **收尾推进** `finishOvershoot = W/2 * smoothStep((position - lineRevealEnd) / CHAR_LIFT_FINISH_MS)`
+  （240ms），加到 `flowFront` 上。**这一条是本计划相对 Salt 的必要补充**：前沿停在
+  行尾时，最后约 1.5 个字号的字符仍落在过渡窗口内，会永久停在半沉位置。Salt 的行
+  会滚走所以不暴露，我们的行会一直停着。推进半个窗口后全行归位，稳态才真正等于
+  §3.4 说的"与关闭效果逐像素一致"。`lineRevealEnd` 取
+  `WordLyricRenderSupport.wordRevealEndMillis(model, line, 末词下标)`（含下一行
+  起点截断），不能用 `line.endTimeMillis`。
 
-帧续命：现有激活行 invalidate 循环在 `progress >= 1` 后停止，但 decay 尾巴
-（§3.1）还需 ~200ms。在 lift 分支内补充：
+### 3.6 触发与帧续命门控
 
-```
-activeLine && (anyLift > 0.01f
-        || position < lineRevealEndMs + CHAR_LIFT_SETTLE_TAIL_MS)
-```
+sink 仅在以下全部成立时计算：
 
-时 `postInvalidateOnAnimation()`；`activeLine` 为 false 立即停。该条件有硬时限，
-不会形成常驻刷新循环。`lineRevealEndMs` 取
-`WordLyricRenderSupport.wordRevealEndMillis(model, line, 末词下标)`（含下一行
-起点截断），**不能用 `line.endTimeMillis`**——后者含休止/下一行 pre-roll，
-decay 会拖过头。
+1. `activeLine && drawProgress && !aodLowFrameRateMode`——`drawProgress` 并不
+   蕴含非 AOD：`shouldDrawWordProgressForVisual`（:13549）在
+   `aodLineFillAmount < 0.999f` 时即使低帧率模式也返回真，必须单独判；
+2. `line.timingMode == WORD_TIMED` 且 `words` 非空；
+3. `!shouldUseTimestampHighlight(model, line)`；
+4. `fullLineOverlayAmount <= 0.001f`（淡入叠层会重画整行未位移版本，浮起只会拖影）；
+5. `uiConfig.charLiftEnabled` 且 `maxSink > 0`。
+
+**不要求 `activeWord != null`**：首词开始前整行未唱，必须已经沉底，否则首词一响
+整行会突然下坠。此时 `flowFront = 0`（前沿停在文本起点）。
+
+帧续命：sink 是 `position` 的纯函数，揭示进行中已有 `progress < 1` 的 invalidate
+循环，本效果只需额外负责两段有硬时限的窗口：
+`lineActive && (sinkRamp < 1 || 仍在 finishOvershoot 窗口内)`。唱完的行完全静止。
+
 
 ## 4. 纯函数拆分（可单测的新代码）
 
@@ -251,22 +241,26 @@ decay 会拖过头。
 | 函数 | 职责 |
 | --- | --- |
 | `graphemeBoundaries(String text, int start, int end)` | 字素边界 int[]，BreakIterator 封装 |
-| `liftEnvelope(float signedDistance)` | §3.1 不对称钟形包络，返回 0..1 |
-| `liftFor(float flowFront, float flowCenter, float bumpWidth, float maxLift, float decay)` | 单字素 lift 值 |
-| `revealDecay(long position, long lineRevealEndMs, long tailMs)` | 行末衰减 0..1 |
-| `clampLift(float lift, float glyphTopY, float topBoundY)` | §5.5 顶边余量 clamp |
-| `liftZoneStart/End(float flowFront, float bumpWidth, float flowSegStart, float flowSegEnd)` | 段内浮动流区间交集（`end <= start` 即空） |
+| `floatWeight(float u)` | §3.1 升余弦权重，1=已升到基线，0=沉底 |
+| `waveCoordinate(float flowFront, float flowCenter, float waveWidth)` | 字素在过渡窗口内的归一化坐标 u |
+| `sinkFor(float flowFront, float flowCenter, float waveWidth, float maxSink, float ramp)` | 单字素相对正常基线的下沉像素 |
+| `sinkRamp(long position, long lineBeginMillis, long sinkInMillis)` | 行激活时的下沉斜坡 0..1 |
+| `finishOvershoot(long position, long lineRevealEndMillis, long finishMillis, float waveWidth)` | 行尾把波形推离文本末端的额外前沿距离 |
+| `clampSink(float sink, float glyphBottomY, float floorY, float minClearance)` | §5.5 底部余量 clamp |
+| `waveZoneStart/End(float flowFront, float waveWidth, float flowSegStart, float flowSegEnd)` | 段内过渡区流区间交集（`end <= start` 即空） |
 
 常量放 `render/WordLyricRenderConstants.java`（与现有渲染常量同居）：
-`CHAR_LIFT_MAX_FACTOR = 0.05f`、`CHAR_LIFT_BUMP_WIDTH_FACTOR = 1.6f`、
-`CHAR_LIFT_RISE_SPAN = 0.6f`、`CHAR_LIFT_SETTLE_SPAN = 1.4f`、
-`CHAR_LIFT_SETTLE_TAIL_MS = 200L`。
+`CHAR_LIFT_MAX_FACTOR = 0.10f`（Salt `floatUpPercentage` 默认值）、
+`CHAR_LIFT_WAVE_WIDTH_FACTOR = 3.0f`（Salt 窗口宽）、
+`CHAR_LIFT_SINK_IN_MS = 240L`、`CHAR_LIFT_FINISH_MS = 240L`、
+`CHAR_LIFT_MIN_CLEARANCE_DP = 1f`。
 
 测试放 `app/src/test/java/.../render/CharLiftGeometryTest.java`，覆盖：
-包络连续性（d=0 峰值、两侧单调、C¹）、decay 边界、字素切分
-（CJK / Latin / emoji / 代理对 / 组合字符）、liftZone 交集空/全覆盖/跨换行两段
-同时开区、clamp，以及跨换行段流坐标回归（整段已揭示的段尾字素按真实距离继续
-回落，而非钉在段右缘的常驻峰值）。
+`floatWeight` 与 Salt 公式 `(1+cos(uπ))/2` 逐点一致（步长 0.01）及 u≤0 / u≥1 /
+u=0.5 边界、单调性；sink 在头区为 0、尾区为 H、过渡区单调；`sinkRamp` 与
+`finishOvershoot` 的边界与单调性；`clampSink`；字素切分（CJK / Latin / emoji /
+代理对 / 组合字符）；waveZone 交集空/全覆盖/跨换行两段同时开区；以及"已唱字符
+必须停在正常基线"的回归（旧鼓包模型下会有非零位移）。
 
 ## 5. Renderer 改造点（`LockscreenLyricsModule` 内）
 
@@ -293,17 +287,21 @@ decay 会拖过头。
 ### 5.4 帧续命
 §3.5 的补充 invalidate 条件，加在 lift 分支内部（与 :13070 的既有模式一致）。
 
-### 5.5 顶边余量 clamp
-`liftClamp = max(0, y + mainFontMetrics.top - viewTopInset)`；lift 取
-`min(lift, liftClamp)`。**不改 `resolveSlotHeight` 几何**——改行槽高度会波及
-原生 RecyclerView 布局与 AOD 基线，收益（≤2dp）不值。首行贴顶时 lift 自动
-压缩为可用余量。
+### 5.5 底部余量 clamp
+下沉的障碍是不随主行下沉的翻译行。`clampSink(sink, y + inactivePaint.descent(),
+floorY, 1dp)`，其中 `floorY` 在 group 布局阶段算出：有翻译时
+`state.top + state.mainHeight + state.translationGap`（即 `drawTranslationPass`
+放置翻译外顶边的位置），无翻译时取 canvas 底。**不改 `resolveSlotHeight` /
+LayoutParams 几何**——改行槽高度会波及原生 RecyclerView 布局与 AOD 基线。
+换行段之间不需要 clamp，理由见 §3.4。若实机发现有翻译时幅度被压得没意义，
+再议是否为激活的 word-timed 行加 H 的 `translationGap`（那会动 slot 几何，
+本轮不做）。
 
 ### 5.6 配置消费
 renderer 读 `uiConfig.charLiftEnabled` / `charLiftStrengthPercent`，经现有
 `refreshLyricUiStyleSettingsIfNeeded()` 快照，无新链路。强度映射
-`maxLift = textSize * CHAR_LIFT_MAX_FACTOR * strengthPercent / 100`，再过
-`clampLift`（§5.5）。
+`maxSink = textSize * CHAR_LIFT_MAX_FACTOR * strengthPercent / 100`，再过
+`clampSink`（§5.5）。
 
 ## 6. 配置与设置 UI
 
@@ -393,6 +391,24 @@ renderer 读 `uiConfig.charLiftEnabled` / `charLiftStrengthPercent`，经现有
 其形状参数仍是 renderer 常量。`charLiftStrengthPercent` 按 §6.1 只留在 Builder /
 codec，不出 UI。
 
+### Slice F：按实机反馈重做动画模型（Salt 式阶跃）
+
+触发：Slice A–D 装机实测后反馈"逐字进度一快就没动画"。根因与决策见 §3.1。
+
+- `CharLiftGeometry` 换模型：`floatWeight` / `waveCoordinate` / `sinkFor` /
+  `sinkRamp` / `finishOvershoot` / `clampSink` / `waveZoneStart|End`；
+  删除钟形 `liftEnvelope` / `liftFor` / `revealDecay` / `clampLift` /
+  `liftZoneStart|End` 及 `CHAR_LIFT_BUMP_WIDTH_FACTOR` /
+  `CHAR_LIFT_RISE_SPAN` / `CHAR_LIFT_SETTLE_SPAN` / `CHAR_LIFT_SETTLE_TAIL_MS`。
+- renderer：三区改为头/过渡/尾（尾区一次整段 translate），门控放开
+  `activeWord == null`（pre-roll 沉底），顶边 clamp 换成底边 clamp，
+  续帧条件换成下沉斜坡与收尾窗口。
+- 设置页补 `charLiftStrengthPercent` 滑块（0–200，默认 100，仅开关打开时显示）。
+- **相对评审规格的一处必要补充**：`finishOvershoot`。评审认为"已唱 sink=0 是稳定
+  终态、行末不再有衰减问题"，但前沿停在行尾时最后约 1.5 个字号的字符仍在过渡窗口
+  内、永久半沉；单测 `aFullySungSegmentStandsStillAtTheBaseline` 抓到了这一点。
+- 出口：全量单测 + `lintDebug` + `assembleDebug` 绿；设备按 §8 复跑，重点 #19。
+
 ### Slice E：设备回归矩阵收口（见 §8），完成后在本文件顶部改状态并归档。
 
 ## 8. 验证矩阵
@@ -409,7 +425,7 @@ codec，不出 UI。
 | 1 | QRC/KRC 逐字（CJK） | 前沿经过处字符抬起-回落，与高亮/羽化/glow 同步无失步 |
 | 2 | 逐字 Latin 整词时间戳 | 词内字符按前沿速度依次浮动，kerning 无跳变 |
 | 3 | 激活词跨换行段 | 换行处上一段回落、下一段抬起，无双像/漏画 |
-| 4 | 行尾最后一词 | 揭示完成后 ~200ms 内全部落定，无字符悬停、无常驻刷新 |
+| 4 | 行尾最后一词 | 揭示完成后 ~240ms 内全行归位到正常基线，无半沉残留、无常驻刷新 |
 | 5 | 一词短行（timestamp-highlight） | 无浮动，整行点亮行为与基线一致 |
 | 6 | line-timed 歌词（进度开关开/关） | 均无浮动（首期范围外） |
 | 7 | 翻译行 | 不浮动，译文进度/marquee 与基线一致 |
@@ -421,7 +437,11 @@ codec，不出 UI。
 | 13 | 性能 | `TEXT_VIEW_DRAW` p95 相对基线增幅 < 10%；`maxRefreshRateHz` 限帧下动画随限帧降采样而非卡顿 |
 | 14 | 备份/恢复 | 新 key 往返一致；旧备份导入默认关 |
 | 15 | 行内长停顿（≥500ms） | 字符持续缓慢浮动而非静止悬浮；下一词开始无跳变（前沿在停顿期间本就匀速走完当前词，见下） |
-| 16 | 字素接缝（在 #1 CJK / #2 Latin 各盯一次） | 相邻字素 lift 相同时完全无缝；lift 不同时允许 ≤1px 错位，但不得出现发丝亮缝或接缝压暗 |
+| 16 | 字素接缝（在 #1 CJK / #2 Latin 各盯一次） | 相邻字素位移相同时完全无缝；位移不同时允许 ≤1px 错位，但不得出现发丝亮缝或接缝压暗 |
+| 17 | 行激活瞬间 | 未唱文本在 240ms 内平滑沉到下方，首词开始无突跳 |
+| 18 | 有翻译行 | 未唱主行字形不与翻译行字形重叠；若幅度被 clamp 到几乎不可见，记录实测值 |
+| 19 | 快速 rap 段（<120ms/字） | 已唱/未唱仍有清晰可辨的高度差（本次重做的验收点） |
+| 20 | 强度滑块 0 / 100 / 200 | 0 等同关闭；200 幅度约为字号 20%，无裁切、无与翻译行重叠 |
 
 \#15 的前提已用单测锁定（`WordRevealFrontContinuityTest`）：`WordLine.wordEndMillis`
 对非末词返回**下一个词的开始时刻**（:205-206），所以词间停顿会把当前词的揭示拉长
@@ -443,6 +463,7 @@ codec，不出 UI。
 | 顶边裁切 | §5.5 clamp，不改 slot 几何 |
 | 行尾 decay 忘记停帧 → 常驻刷新 | decay 条件带硬时限；#4/#8 验证 |
 | 契约测试漏改导致 CI 红 | Slice B 出口明确列出三个契约测试 |
+| 有翻译行时 2dp `translationGap` 把沉底量压到不可见 | §5.5 clamp 保证不重叠；#18 实测幅度，必要时再议 slot 几何（本轮不做） |
 | 极短词（词距 < `MIN_WORD_REVEAL_MS` 80ms）交接帧前沿小幅前跳 | **现基线行为，不处理**：`wordEndMillis` 的 `max(begin+80, 下一词 begin)` 夹取会越过下一词起点，交接那一帧 `revealWidth` 从部分跳到全揭示。跳变量不足一个字形，lift 随之抖一帧。设备回归遇到极快音节时不要误判为 lift 缺陷 |
 
 回退开关：任何设备回归失败，`charLiftEnabled` 默认值即为总开关；最坏情况
@@ -451,7 +472,9 @@ revert Slice C 单提交即可回基线（A/B/D 均为无行为变化或 UI 层�
 ## 10. 非目标
 
 - 不引入字符级时间数据、不改 Provider / `lyricInfo` / 解析层；
-- 不做水平位移、缩放、模糊等其他字符动效（仅垂直 lift）；
+- 不做水平位移、缩放、模糊等其他字符动效（仅垂直位移）；
+- 不做 Salt 的单字离屏位图缓存（`CharacterBitmapCache`）：我们复用整段
+  `drawText` + clip 盒，shaping 由 HWUI 自己缓存，不需要这一层；
 - 不作用于 line-timed 进度模式、翻译行、`drawCompactLine` 紧凑单行变体、
   timestamp-highlight 短行（后续如需另立切片）；
 - 不改 AOD 行为、不改 `resolveSlotHeight` / LayoutParams 几何；

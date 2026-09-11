@@ -8,9 +8,8 @@ import org.junit.Test;
 
 public final class CharLiftGeometryTest {
 
-    private static final float RISE = WordLyricRenderConstants.CHAR_LIFT_RISE_SPAN;
-    private static final float SETTLE = WordLyricRenderConstants.CHAR_LIFT_SETTLE_SPAN;
-    private static final long TAIL = WordLyricRenderConstants.CHAR_LIFT_SETTLE_TAIL_MS;
+    private static final float WAVE = WordLyricRenderConstants.CHAR_LIFT_WAVE_WIDTH_FACTOR;
+    private static final long SINK_IN = WordLyricRenderConstants.CHAR_LIFT_SINK_IN_MS;
 
     // Each non-ASCII fixture is asserted for char length before it is used.
     // An editor that normalizes the decomposed sequence to its precomposed form
@@ -21,212 +20,266 @@ public final class CharLiftGeometryTest {
     private static final String CJK = "逐字歌";
 
     /** Decomposed "e" + combining acute, followed by "s". */
-    private static final String COMBINING = "és";
+    private static final String COMBINING = "e" + (char) 0x0301 + "s";
 
     /** "a" + U+1D11E musical G clef (a surrogate pair) + "b". */
-    private static final String SURROGATE_PAIR = "a𝄞b";
+    private static final String SURROGATE_PAIR =
+            "a" + new String(Character.toChars(0x1D11E)) + "b";
 
     /** Woman-ZWJ-woman-ZWJ-girl family emoji followed by "!". */
     private static final String EMOJI_ZWJ_SEQUENCE =
-            "👩‍👩‍👧!";
+            new String(Character.toChars(0x1F469))
+                    + (char) 0x200D
+                    + new String(Character.toChars(0x1F469))
+                    + (char) 0x200D
+                    + new String(Character.toChars(0x1F467))
+                    + "!";
 
     @Test
-    public void envelopePeaksAtTheFrontAndVanishesOutsideBothSpans() {
-        assertEquals(1f, CharLiftGeometry.liftEnvelope(0f), 1e-6f);
-        assertEquals(0f, CharLiftGeometry.liftEnvelope(-RISE), 1e-6f);
-        assertEquals(0f, CharLiftGeometry.liftEnvelope(-4f), 1e-6f);
-        assertEquals(0f, CharLiftGeometry.liftEnvelope(SETTLE), 1e-6f);
-        assertEquals(0f, CharLiftGeometry.liftEnvelope(4f), 1e-6f);
-        assertEquals(0f, CharLiftGeometry.liftEnvelope(Float.NaN), 1e-6f);
-
-        for (float d = -2f; d <= 2f; d += 0.01f) {
-            assertTrue(
-                    "envelope exceeded the peak at d=" + d,
-                    CharLiftGeometry.liftEnvelope(d) <= 1f + 1e-6f);
+    public void floatWeightMatchesSaltPlayersRaisedCosine() {
+        for (float u = 0.01f; u < 1f; u += 0.01f) {
+            float expected = (1f + (float) Math.cos(u * Math.PI)) * 0.5f;
+            assertEquals(
+                    "raised cosine diverged at u=" + u,
+                    expected,
+                    CharLiftGeometry.floatWeight(u),
+                    1e-6f);
         }
     }
 
     @Test
-    public void envelopeRisesThenSettlesMonotonically() {
-        float previous = -1f;
-        for (float d = -RISE; d <= 0f; d += RISE / 24f) {
-            float value = CharLiftGeometry.liftEnvelope(d);
-            assertTrue("rise side dipped at d=" + d, value >= previous - 1e-6f);
+    public void floatWeightIsOneBehindTheWaveAndZeroAheadOfIt() {
+        assertEquals(1f, CharLiftGeometry.floatWeight(0f), 1e-6f);
+        assertEquals(1f, CharLiftGeometry.floatWeight(-0.5f), 1e-6f);
+        assertEquals(1f, CharLiftGeometry.floatWeight(-40f), 1e-6f);
+        assertEquals(0f, CharLiftGeometry.floatWeight(1f), 1e-6f);
+        assertEquals(0f, CharLiftGeometry.floatWeight(1.5f), 1e-6f);
+        assertEquals(0f, CharLiftGeometry.floatWeight(40f), 1e-6f);
+        assertEquals(0f, CharLiftGeometry.floatWeight(Float.NaN), 1e-6f);
+        assertEquals(0.5f, CharLiftGeometry.floatWeight(0.5f), 1e-6f);
+    }
+
+    @Test
+    public void floatWeightFallsMonotonicallyAcrossTheWindow() {
+        float previous = 2f;
+        for (float u = 0f; u <= 1f; u += 1f / 64f) {
+            float value = CharLiftGeometry.floatWeight(u);
+            assertTrue("float weight climbed at u=" + u, value <= previous + 1e-6f);
             previous = value;
         }
-        previous = 2f;
-        for (float d = 0f; d <= SETTLE; d += SETTLE / 24f) {
-            float value = CharLiftGeometry.liftEnvelope(d);
-            assertTrue("settle side climbed at d=" + d, value <= previous + 1e-6f);
-            previous = value;
-        }
     }
 
     @Test
-    public void envelopeJoinsSmoothlyAtTheFront() {
-        float step = 0.001f;
-        float before = CharLiftGeometry.liftEnvelope(-step);
-        float after = CharLiftGeometry.liftEnvelope(step);
-        assertEquals("envelope is not continuous at the peak", before, after, 1e-4f);
-
-        float risingSlope = (CharLiftGeometry.liftEnvelope(0f) - before) / step;
-        float settlingSlope = (after - CharLiftGeometry.liftEnvelope(0f)) / step;
-        assertTrue("rise side has a corner at the peak", Math.abs(risingSlope) < 0.02f);
-        assertTrue("settle side has a corner at the peak", Math.abs(settlingSlope) < 0.02f);
+    public void waveCoordinatePutsTheFrontAtTheMiddleOfTheWindow() {
+        assertEquals(0.5f, CharLiftGeometry.waveCoordinate(100f, 100f, 60f), 1e-6f);
+        assertEquals(0f, CharLiftGeometry.waveCoordinate(100f, 70f, 60f), 1e-6f);
+        assertEquals(1f, CharLiftGeometry.waveCoordinate(100f, 130f, 60f), 1e-6f);
     }
 
     @Test
-    public void envelopeIsAsymmetricSoCharactersRiseFasterThanTheySettle() {
+    public void sungCharactersRestAtTheNormalBaselineAndUnsungOnesSitLow() {
+        float wave = 60f;
+        float maxSink = 6f;
+
         assertEquals(
-                CharLiftGeometry.liftEnvelope(-RISE / 2f),
-                CharLiftGeometry.liftEnvelope(SETTLE / 2f),
+                "a sung character must be exactly on the baseline",
+                0f,
+                CharLiftGeometry.sinkFor(100f, 40f, wave, maxSink, 1f),
                 1e-6f);
-        assertTrue("the settle side must reach further than the rise side", SETTLE > RISE);
-        assertTrue(CharLiftGeometry.liftEnvelope(RISE) > 0f);
+        assertEquals(
+                "an unsung character must rest a full sink below it",
+                maxSink,
+                CharLiftGeometry.sinkFor(100f, 200f, wave, maxSink, 1f),
+                1e-6f);
+        assertEquals(
+                "the character at the front is halfway up",
+                maxSink * 0.5f,
+                CharLiftGeometry.sinkFor(100f, 100f, wave, maxSink, 1f),
+                1e-5f);
     }
 
     @Test
-    public void liftScalesWithMaxLiftAndDecay() {
-        assertEquals(4f, CharLiftGeometry.liftFor(100f, 100f, 20f, 4f, 1f), 1e-5f);
-        assertEquals(2f, CharLiftGeometry.liftFor(100f, 100f, 20f, 4f, 0.5f), 1e-5f);
-        assertEquals(0f, CharLiftGeometry.liftFor(100f, 100f, 20f, 4f, 0f), 1e-6f);
-        assertEquals(0f, CharLiftGeometry.liftFor(100f, 100f, 0f, 4f, 1f), 1e-6f);
-        assertEquals(0f, CharLiftGeometry.liftFor(100f, 100f, 20f, 0f, 1f), 1e-6f);
+    public void sinkFallsMonotonicallyAsTheFrontApproaches() {
+        float wave = 60f;
+        float maxSink = 6f;
+        float previous = Float.MAX_VALUE;
+        for (float front = 60f; front <= 140f; front += 2f) {
+            float sink = CharLiftGeometry.sinkFor(front, 100f, wave, maxSink, 1f);
+            assertTrue("sink grew as the front advanced at front=" + front, sink <= previous + 1e-6f);
+            previous = sink;
+        }
+        assertEquals("the grapheme ends up on the baseline", 0f, previous, 1e-6f);
     }
 
     @Test
-    public void liftReachesFurtherBehindTheFrontThanAhead() {
-        float bump = 20f;
-        float ahead = CharLiftGeometry.liftFor(100f, 100f + 0.8f * bump, bump, 4f, 1f);
-        float behind = CharLiftGeometry.liftFor(100f, 100f - 0.8f * bump, bump, 4f, 1f);
-        assertEquals("a grapheme beyond the rise span stays put", 0f, ahead, 1e-6f);
-        assertTrue("a grapheme inside the settle span is still falling", behind > 0f);
-        assertTrue("the settle side must not outrank the peak", behind < 4f);
+    public void sinkScalesWithTheRampAndIgnoresDegenerateInput() {
+        float wave = 60f;
+        assertEquals(3f, CharLiftGeometry.sinkFor(100f, 200f, wave, 6f, 0.5f), 1e-5f);
+        assertEquals(0f, CharLiftGeometry.sinkFor(100f, 200f, wave, 6f, 0f), 1e-6f);
+        assertEquals(0f, CharLiftGeometry.sinkFor(100f, 200f, wave, 0f, 1f), 1e-6f);
+        assertEquals(6f, CharLiftGeometry.sinkFor(100f, 200f, wave, 6f, 4f), 1e-5f);
     }
 
     /**
-     * Flow coordinates run across wrapped segments, so a segment that is already
-     * fully revealed does not pin the front to its own right edge. Measuring in
-     * canvas x per segment would park this grapheme at the envelope peak for the
-     * whole row.
+     * The property the bell-shaped model could not provide: once the front has
+     * moved past a wrapped segment, every grapheme in it stands at the normal
+     * baseline and stays there, so the sung/unsung difference is visible no
+     * matter how fast the front is moving.
      */
     @Test
-    public void trailingGraphemeOfAFullyRevealedSegmentKeepsSettling() {
-        float bump = 40f;
-        float maxLift = 4f;
+    public void aFullySungSegmentStandsStillAtTheBaseline() {
+        float wave = 60f;
+        float maxSink = 6f;
         float firstSegmentWidth = 100f;
         float secondSegmentWidth = 80f;
-        float trailingCenter = 95f;
 
-        float frontInsideSecondSegment = firstSegmentWidth + 30f;
-        float settling = CharLiftGeometry.liftFor(
-                frontInsideSecondSegment, trailingCenter, bump, maxLift, 1f);
-        assertEquals(
-                maxLift * CharLiftGeometry.liftEnvelope(35f / bump),
-                settling,
-                1e-5f);
-        assertTrue("the grapheme must already be falling", settling < maxLift * 0.5f);
-        assertTrue("the grapheme must not have landed yet", settling > 0f);
+        float front = firstSegmentWidth + 30f;
+        for (float center = 5f; center < firstSegmentWidth; center += 5f) {
+            assertEquals(
+                    "a sung grapheme drifted off the baseline at " + center,
+                    0f,
+                    CharLiftGeometry.sinkFor(front, center, wave, maxSink, 1f),
+                    1e-6f);
+        }
 
         float frontAtLineEnd = firstSegmentWidth + secondSegmentWidth;
         assertEquals(
-                "a front a whole segment away must leave no lift",
                 0f,
-                CharLiftGeometry.liftFor(frontAtLineEnd, trailingCenter, bump, maxLift, 1f),
+                CharLiftGeometry.sinkFor(frontAtLineEnd, 95f, wave, maxSink, 1f),
                 1e-6f);
-
-        float pinnedToSegmentEdge = CharLiftGeometry.liftFor(
-                firstSegmentWidth, trailingCenter, bump, maxLift, 1f);
         assertTrue(
-                "a per-segment front would have parked this grapheme at the peak",
-                pinnedToSegmentEdge > settling * 3f);
+                "the last characters are still mid-rise while the front parks on them",
+                CharLiftGeometry.sinkFor(frontAtLineEnd, frontAtLineEnd - 1f, wave, maxSink, 1f)
+                        > 0f);
+        assertEquals(
+                "and the finish overshoot puts the whole row on one baseline",
+                0f,
+                CharLiftGeometry.sinkFor(
+                        frontAtLineEnd + wave * 0.5f,
+                        frontAtLineEnd - 1f,
+                        wave,
+                        maxSink,
+                        1f),
+                1e-6f);
     }
 
     @Test
-    public void revealDecayHoldsUntilTheLineEndsThenFadesOverTheTail() {
-        assertEquals(1f, CharLiftGeometry.revealDecay(1_000L, 2_000L, TAIL), 1e-6f);
-        assertEquals(1f, CharLiftGeometry.revealDecay(2_000L, 2_000L, TAIL), 1e-6f);
-        assertEquals(0f, CharLiftGeometry.revealDecay(2_000L + TAIL, 2_000L, TAIL), 1e-6f);
-        assertEquals(0f, CharLiftGeometry.revealDecay(9_000L, 2_000L, TAIL), 1e-6f);
-        assertEquals(0f, CharLiftGeometry.revealDecay(2_001L, 2_000L, 0L), 1e-6f);
-        assertEquals(0.5f, CharLiftGeometry.revealDecay(2_000L + TAIL / 2L, 2_000L, TAIL), 1e-5f);
+    public void theFinishOvershootClearsTheEndOfTheText() {
+        float wave = 60f;
+        long revealEnd = 5_000L;
+        long finish = WordLyricRenderConstants.CHAR_LIFT_FINISH_MS;
 
-        float previous = 2f;
-        for (long offset = 0L; offset <= TAIL; offset += 10L) {
-            float value = CharLiftGeometry.revealDecay(2_000L + offset, 2_000L, TAIL);
-            assertTrue("decay climbed at +" + offset + "ms", value <= previous + 1e-6f);
+        assertEquals(
+                "nothing may move while the row is still being sung",
+                0f,
+                CharLiftGeometry.finishOvershoot(4_000L, revealEnd, finish, wave),
+                1e-6f);
+        assertEquals(0f, CharLiftGeometry.finishOvershoot(revealEnd, revealEnd, finish, wave), 1e-6f);
+        assertEquals(
+                "the wave ends up a half window past the text",
+                wave * 0.5f,
+                CharLiftGeometry.finishOvershoot(revealEnd + finish, revealEnd, finish, wave),
+                1e-5f);
+        assertEquals(
+                wave * 0.5f,
+                CharLiftGeometry.finishOvershoot(revealEnd + 60_000L, revealEnd, finish, wave),
+                1e-5f);
+        assertEquals(0f, CharLiftGeometry.finishOvershoot(revealEnd + 10L, revealEnd, finish, 0f), 1e-6f);
+
+        float previous = -1f;
+        for (long offset = 0L; offset <= finish; offset += 10L) {
+            float value = CharLiftGeometry.finishOvershoot(
+                    revealEnd + offset, revealEnd, finish, wave);
+            assertTrue("the overshoot went backwards at +" + offset + "ms", value >= previous - 1e-6f);
             previous = value;
         }
     }
 
     @Test
-    public void clampLiftUsesTheHeadroomAboveTheGlyph() {
-        assertEquals(1.5f, CharLiftGeometry.clampLift(1.5f, 40f, 10f), 1e-6f);
-        assertEquals(4f, CharLiftGeometry.clampLift(9f, 40f, 36f), 1e-6f);
-        assertEquals(0f, CharLiftGeometry.clampLift(9f, 40f, 40f), 1e-6f);
-        assertEquals(0f, CharLiftGeometry.clampLift(9f, 40f, 44f), 1e-6f);
-        assertEquals(0f, CharLiftGeometry.clampLift(0f, 40f, 0f), 1e-6f);
+    public void sinkRampRunsFromTheRowStartAndThenHoldsAtFull() {
+        assertEquals(0f, CharLiftGeometry.sinkRamp(1_000L, 1_000L, SINK_IN), 1e-6f);
+        assertEquals(0f, CharLiftGeometry.sinkRamp(900L, 1_000L, SINK_IN), 1e-6f);
+        assertEquals(1f, CharLiftGeometry.sinkRamp(1_000L + SINK_IN, 1_000L, SINK_IN), 1e-6f);
+        assertEquals(1f, CharLiftGeometry.sinkRamp(90_000L, 1_000L, SINK_IN), 1e-6f);
+        assertEquals(0.5f, CharLiftGeometry.sinkRamp(1_000L + SINK_IN / 2L, 1_000L, SINK_IN), 1e-5f);
+        assertEquals(1f, CharLiftGeometry.sinkRamp(1_001L, 1_000L, 0L), 1e-6f);
+
+        float previous = -1f;
+        for (long offset = 0L; offset <= SINK_IN; offset += 10L) {
+            float value = CharLiftGeometry.sinkRamp(1_000L + offset, 1_000L, SINK_IN);
+            assertTrue("ramp fell at +" + offset + "ms", value >= previous - 1e-6f);
+            previous = value;
+        }
     }
 
     @Test
-    public void liftZoneCoversTheFrontNeighbourhoodClampedToTheSegment() {
-        float bump = 20f;
-        float start = CharLiftGeometry.liftZoneStart(100f, bump, 0f, 200f);
-        float end = CharLiftGeometry.liftZoneEnd(100f, bump, 0f, 200f);
-        assertEquals(100f - SETTLE * bump, start, 1e-4f);
-        assertEquals(100f + RISE * bump, end, 1e-4f);
-        assertTrue(start < end);
+    public void clampSinkKeepsClearanceBelowTheGlyph() {
+        assertEquals(6f, CharLiftGeometry.clampSink(6f, 100f, 200f, 1f), 1e-6f);
+        assertEquals(4f, CharLiftGeometry.clampSink(9f, 100f, 105f, 1f), 1e-6f);
+        assertEquals(0f, CharLiftGeometry.clampSink(9f, 100f, 101f, 1f), 1e-6f);
+        assertEquals(0f, CharLiftGeometry.clampSink(9f, 100f, 90f, 1f), 1e-6f);
+        assertEquals(0f, CharLiftGeometry.clampSink(0f, 100f, 200f, 1f), 1e-6f);
     }
 
-    /**
-     * A bump straddling a wrap must open a zone in both segments: the tail of
-     * the finished segment is still settling while the head of the next one is
-     * already rising.
-     */
     @Test
-    public void liftZoneSpansBothSegmentsAroundAWrap() {
-        float bump = 40f;
-        float front = 130f;
+    public void waveZoneCoversTheTransitionClampedToTheSegment() {
+        float wave = 60f;
+        float start = CharLiftGeometry.waveZoneStart(100f, wave, 0f, 200f);
+        float end = CharLiftGeometry.waveZoneEnd(100f, wave, 0f, 200f);
+        assertEquals(70f, start, 1e-4f);
+        assertEquals(130f, end, 1e-4f);
+    }
 
+    @Test
+    public void waveZoneSpansBothSegmentsAroundAWrap() {
+        float wave = 60f;
+        float front = 110f;
+
+        assertEquals(80f, CharLiftGeometry.waveZoneStart(front, wave, 0f, 100f), 1e-4f);
+        assertEquals(100f, CharLiftGeometry.waveZoneEnd(front, wave, 0f, 100f), 1e-4f);
+
+        assertEquals(100f, CharLiftGeometry.waveZoneStart(front, wave, 100f, 180f), 1e-4f);
+        assertEquals(140f, CharLiftGeometry.waveZoneEnd(front, wave, 100f, 180f), 1e-4f);
+    }
+
+    @Test
+    public void waveZoneIsEmptyWhereTheSegmentIsEntirelySungOrEntirelyUnsung() {
+        float wave = 60f;
+
+        float sungStart = CharLiftGeometry.waveZoneStart(500f, wave, 0f, 100f);
+        float sungEnd = CharLiftGeometry.waveZoneEnd(500f, wave, 0f, 100f);
+        assertTrue("a fully sung segment needs no transition", sungEnd <= sungStart);
+
+        float unsungStart = CharLiftGeometry.waveZoneStart(-500f, wave, 0f, 100f);
+        float unsungEnd = CharLiftGeometry.waveZoneEnd(-500f, wave, 0f, 100f);
+        assertTrue("a fully unsung segment needs no transition", unsungEnd <= unsungStart);
+    }
+
+    @Test
+    public void waveZoneCollapsesForDegenerateInput() {
+        assertEquals(4f, CharLiftGeometry.waveZoneStart(100f, 0f, 4f, 40f), 1e-6f);
+        assertEquals(4f, CharLiftGeometry.waveZoneEnd(100f, 0f, 4f, 40f), 1e-6f);
+        assertEquals(4f, CharLiftGeometry.waveZoneStart(100f, 60f, 4f, 4f), 1e-6f);
+        assertEquals(4f, CharLiftGeometry.waveZoneEnd(100f, 60f, 4f, 4f), 1e-6f);
+    }
+
+    @Test
+    public void theWaveWindowIsThreeTextSizesWide() {
+        assertEquals(3.0f, WAVE, 1e-6f);
+        float textSize = 32f;
+        float wave = textSize * WAVE;
         assertEquals(
-                front - SETTLE * bump,
-                CharLiftGeometry.liftZoneStart(front, bump, 0f, 100f),
-                1e-4f);
-        assertEquals(100f, CharLiftGeometry.liftZoneEnd(front, bump, 0f, 100f), 1e-4f);
-
-        assertEquals(100f, CharLiftGeometry.liftZoneStart(front, bump, 100f, 180f), 1e-4f);
+                "a grapheme one and a half text sizes ahead is still fully down",
+                0f,
+                CharLiftGeometry.floatWeight(
+                        CharLiftGeometry.waveCoordinate(0f, textSize * 1.5f, wave)),
+                1e-6f);
         assertEquals(
-                front + RISE * bump,
-                CharLiftGeometry.liftZoneEnd(front, bump, 100f, 180f),
-                1e-4f);
-    }
-
-    @Test
-    public void liftZoneIsEmptyWhenTheFrontIsAwayFromTheSegment() {
-        float bump = 20f;
-        float start = CharLiftGeometry.liftZoneStart(500f, bump, 0f, 100f);
-        float end = CharLiftGeometry.liftZoneEnd(500f, bump, 0f, 100f);
-        assertEquals(100f, start, 1e-6f);
-        assertTrue("a far front must not open a zone", end <= start);
-
-        float beforeStart = CharLiftGeometry.liftZoneStart(-500f, bump, 0f, 100f);
-        float beforeEnd = CharLiftGeometry.liftZoneEnd(-500f, bump, 0f, 100f);
-        assertTrue("a front before the segment must not open a zone", beforeEnd <= beforeStart);
-    }
-
-    @Test
-    public void liftZoneCanCoverTheWholeSegment() {
-        float bump = 400f;
-        assertEquals(0f, CharLiftGeometry.liftZoneStart(5f, bump, 0f, 10f), 1e-6f);
-        assertEquals(10f, CharLiftGeometry.liftZoneEnd(5f, bump, 0f, 10f), 1e-6f);
-    }
-
-    @Test
-    public void liftZoneCollapsesForDegenerateInput() {
-        assertEquals(4f, CharLiftGeometry.liftZoneStart(100f, 0f, 4f, 40f), 1e-6f);
-        assertEquals(4f, CharLiftGeometry.liftZoneEnd(100f, 0f, 4f, 40f), 1e-6f);
-        assertEquals(4f, CharLiftGeometry.liftZoneStart(100f, 20f, 4f, 4f), 1e-6f);
-        assertEquals(4f, CharLiftGeometry.liftZoneEnd(100f, 20f, 4f, 4f), 1e-6f);
+                "a grapheme one and a half text sizes behind is fully up",
+                1f,
+                CharLiftGeometry.floatWeight(
+                        CharLiftGeometry.waveCoordinate(0f, -textSize * 1.5f, wave)),
+                1e-6f);
     }
 
     @Test

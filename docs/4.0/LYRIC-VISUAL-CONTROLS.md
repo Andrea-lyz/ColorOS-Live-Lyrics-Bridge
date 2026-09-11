@@ -67,8 +67,9 @@
 曲线和 Recycler 几何。它们仍是 renderer 的设备证据常量，避免与系统原生渐隐重复合成或
 破坏滚动/AOD 时序。
 
-“字符上浮动画”不在本页：它是主设置页“兼容性”分组里的开关（`charLiftEnabled`，
-默认关），只影响逐字歌词的字形位移，不动任何亮度或渐隐字段。它的形状参数——鼓包宽度、
-起落跨度、行末衰减尾巴、峰值幅度系数——与上面这些一样仍是 renderer 常量
-（`WordLyricRenderConstants.CHAR_LIFT_*`），只暴露开关与 `charLiftStrengthPercent`
-缩放位（首版不出 UI）。设计与验证矩阵见 `WORD-SYNC-CHAR-LIFT-PLAN.md`。
+“字符上浮动画”不在本页：它是主设置页“兼容性”分组里的开关（`charLiftEnabled`）
+与幅度滑块（`charLiftStrengthPercent`，0–200%，默认 100%），默认关闭，只影响逐字
+歌词的字形位移，不动任何亮度或渐隐字段。它的形状参数——过渡窗口宽度、下沉幅度
+系数、下沉与收尾时长——与上面这些一样仍是 renderer 常量
+（`WordLyricRenderConstants.CHAR_LIFT_*`）。设计与验证矩阵见
+`WORD-SYNC-CHAR-LIFT-PLAN.md`。

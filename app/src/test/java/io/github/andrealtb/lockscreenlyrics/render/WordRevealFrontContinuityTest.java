@@ -8,14 +8,15 @@ import org.junit.Test;
 import java.util.ArrayList;
 
 /**
- * Pins the reveal-front timing the character lift depends on.
+ * Pins the reveal-front timing the character float-up depends on.
  *
- * <p>The lift decays only where the front stops moving. That is safe because a
- * non-final word's reveal end is the next word's begin
- * ({@link WordLine#wordEndMillis}), so a pause between two words stretches the
- * current word's sweep instead of stalling the front. If that ever changes,
- * characters would hover mid-row through every pause and the lift would need a
- * stall decay of its own, so these assertions are load-bearing.
+ * <p>Each character's height is a pure function of its distance to the front,
+ * so the front's motion is the animation. A non-final word's reveal end is the
+ * next word's begin ({@link WordLine#wordEndMillis}), which means a pause
+ * between two words stretches the current word's sweep instead of stalling the
+ * front, and the handoff introduces no jump. If that ever changes, characters
+ * would freeze mid-rise through every pause and then snap, so these assertions
+ * are load-bearing.
  */
 public final class WordRevealFrontContinuityTest {
 
