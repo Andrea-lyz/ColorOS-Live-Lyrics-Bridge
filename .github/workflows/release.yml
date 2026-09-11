@@ -174,7 +174,7 @@ jobs:
         run: rm -f "$RUNNER_TEMP/release.jks"
 
   build-providers:
-    name: Test and build signed 13-Provider matrix
+    name: Test and build signed 14-Provider matrix
     needs: metadata
     runs-on: ubuntu-latest
     steps:

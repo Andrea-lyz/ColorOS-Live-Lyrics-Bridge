@@ -1,6 +1,6 @@
-# 4.2 正式发布流程
+# 4.2.1 正式发布流程
 
-适用范围：Bridge `4.2.0`、13 个独立 Provider API 102 套件与 LSPosed mirror。
+适用范围：Bridge `4.2.1`、14 个独立 Provider API 102 套件与 LSPosed mirror。
 
 涉及仓库：
 
@@ -45,8 +45,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
 
 - Bridge versionName/versionCode、`v<version>` 与 LSP `<versionCode>-<version>` tag；
 - Provider source repository/main 与 metadata 阶段冻结的 commit SHA；
-- 13 个 module/applicationId/scope/内部版本；
-- 14 个 APK 与 17 项最终资产的精确数量；
+- 14 个 module/applicationId/scope/内部版本；
+- 15 个 APK 与 18 项最终资产的精确数量；
 - 规范文件名、正式签名证书 SHA-256、固定 Android build-tools；
 - 最终 APK DEX 禁用字符串。
 
@@ -106,10 +106,10 @@ RC mode 必须：
 
 1. checkout Providers `main` 并记录解析后的不可变 Provider SHA；
 2. Bridge 标准测试、release lint、正式签名 release 构建；
-3. Provider `testV5Matrix`、13 module release/R8、正式签名；
-4. 校验 14 APK 的 DEX 禁用字符串、包名、版本、证书和 zipalign；
-5. 生成 13 APK Provider ZIP、asset manifest 和 `SHA256SUMS`；
-6. 上传恰好 17 项 complete artifact；
+3. Provider `testV5Matrix`、14 module release/R8、正式签名；
+4. 校验 15 APK 的 DEX 禁用字符串、包名、版本、证书和 zipalign；
+5. 生成 14 APK Provider ZIP、asset manifest 和 `SHA256SUMS`；
+6. 上传恰好 18 项 complete artifact；
 7. 跳过 publish job，不创建公开 Release。
 
 下载 complete artifact 后，再独立复算哈希并重跑 asset verifier。真机只测试该 batch；
@@ -165,24 +165,24 @@ workflow 拒绝覆盖已经存在的公开 Release。发布后修复使用新版
 
 ## 10. 正式资产白名单
 
-`4.2.0` 预期恰好 17 项：
+`4.2.1` 预期恰好 18 项：
 
-1. `ColorOS-Live-Lyrics-Bridge-v4.2.0.apk`
-2. 13 个 `ColorOS-Live-Lyrics-Provider-<Name>-v4.2.0.apk`
-3. `ColorOS-Live-Lyrics-Providers-v4.2.0.zip`
-4. `release-assets-v4.2.0.json`
+1. `ColorOS-Live-Lyrics-Bridge-v4.2.1.apk`
+2. 14 个 `ColorOS-Live-Lyrics-Provider-<Name>-v4.2.1.apk`
+3. `ColorOS-Live-Lyrics-Providers-v4.2.1.zip`
+4. `release-assets-v4.2.1.json`
 5. `SHA256SUMS`
 
-Provider ZIP 只能包含 13 个顶层 APK，不含目录、debug/unsigned APK 或旧包名。
+Provider ZIP 只能包含 14 个顶层 APK，不含目录、debug/unsigned APK 或旧包名。
 
 ## 11. 发布后独立复核
 
 1. 等待 workflow 结束，用 `gh run view` 核对每个 job；不能从轮询中推测成功。
-2. 分别从 Bridge 与 LSP Release 下载 17 项资产。
+2. 分别从 Bridge 与 LSP Release 下载 18 项资产。
 3. 比较两个 Release 的文件名、字节数和 SHA-256。
-4. 对 14 APK 重跑 package/version/certificate/zipalign 检查。
+4. 对 15 APK 重跑 package/version/certificate/zipalign 检查。
 5. 核对 Bridge tag、Provider `main` 的已冻结 SHA、LSP tag 与三个 commit。
 6. 用公开下载的 Bridge + 至少一个 Provider 做最后安装冒烟。
 7. 将 run、commit、tag、哈希和设备结论写入 4.1 发布台账。
 
-只有这些门禁全部关闭，才能将 v4.2.0 标记为正式完成。
+只有这些门禁全部关闭，才能将 v4.2.1 标记为正式完成。
