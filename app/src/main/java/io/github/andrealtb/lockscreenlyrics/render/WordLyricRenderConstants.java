@@ -36,4 +36,19 @@ public final class WordLyricRenderConstants {
     public static final float OFFICIAL_LYRIC_ACTIVE_ROW_SCALE = 1.0f;
 
     public static final long OFFICIAL_LYRIC_ROW_SCALE_ANIMATION_MS = 340L;
+
+    /** Peak per-character lift as a fraction of the text size (32sp main row ≈ 1.6dp). */
+    public static final float CHAR_LIFT_MAX_FACTOR = 0.05f;
+
+    /** Bump width as a fraction of the text size; covers one to three CJK glyphs. */
+    public static final float CHAR_LIFT_BUMP_WIDTH_FACTOR = 1.6f;
+
+    /** Normalized distance the lift rises over ahead of the reveal front. */
+    public static final float CHAR_LIFT_RISE_SPAN = 0.6f;
+
+    /** Normalized distance the lift settles over behind the reveal front; rises fast, falls slow. */
+    public static final float CHAR_LIFT_SETTLE_SPAN = 1.4f;
+
+    /** Tail after the line is fully revealed, over which the remaining lift decays to zero. */
+    public static final long CHAR_LIFT_SETTLE_TAIL_MS = 200L;
 }
