@@ -1,8 +1,8 @@
-# 逐字同步的字符上浮动画（Salt 式 Float-Up 阶跃模型）改造计划
+# 逐字同步与普通逐行进度的字符上浮动画（Salt 式 Float-Up 阶跃模型）改造计划
 
-状态：**实施中（分支 `feat/word-sync-char-lift`）。Slice A–D + F 已合，
-本地 `testDebugUnitTest` / `lintDebug` / `assembleDebug` 全绿；
-§8 的设备回归矩阵除首轮 #12 基线外未跑。**
+状态：**实施中（分支 `feat/word-sync-char-lift`）。Slice A–D + F + F.1 已合；
+Slice G 已落源码、契约测试与文案，`testDebugUnitTest` / `lintDebug` /
+`assembleDebug` 已通过，待用户按 §8 #21/#22 实机验收。**
 
 模型经历三次修订：2026-09-11 评审把 canvas-x 前沿改为流坐标（换行段尾字素
 常驻峰值）；实机测试后整个动画模型由钟形鼓包改为 Salt Player 式阶跃
@@ -18,14 +18,16 @@
 
 ## 1. 目标
 
-在 Bridge 侧逐字（word-timed）高亮的基础上，复刻 Salt Player 的字符 Float-Up：
-**未唱字符沉在正常基线下方，被逐字前沿经过时沿升余弦升到正常基线并停在那里**。
+在 Bridge 侧逐字（word-timed）高亮与普通逐行（line-timed）进度的基础上，复刻 Salt
+Player 的字符 Float-Up：
+**未唱字符沉在正常基线下方，被揭示前沿经过时沿升余弦升到正常基线并停在那里**。
 要求：
 
-- 与现有逐字揭示（clip-reveal + 羽化前沿 + glow）完全同步，共用同一个进度时钟；
+- 与现有逐字/普通逐行揭示（clip-reveal + 羽化前沿 + glow）完全同步，共用同一个进度时钟；
 - 已唱/未唱的高度差是常驻状态而非瞬时动画，前沿再快也读得出来；
-- 纯视觉增强，**不需要任何新的歌词时间数据**——沿用 `WordRange` 词级时间戳，
-  字符级相位由词内几何插值得出；
+- 纯视觉增强，**不需要任何新的歌词时间数据**——逐字歌词沿用 `WordRange` 词级
+  时间戳，普通逐行歌词沿用既有行起点与 display-end；字符级相位由当前揭示前沿的
+  几何插值得出；
 - 用户可开关，默认关闭；关闭时渲染路径与现基线完全一致；
 - AOD 低帧率模式下强制禁用；
 - 不修改 Provider、`lyricInfo` 契约、歌词解析、Recycler ownership、AOD 时序。
@@ -216,9 +218,11 @@ try {
   （240ms），加到 `flowFront` 上。**这一条是本计划相对 Salt 的必要补充**：前沿停在
   行尾时，最后约 1.5 个字号的字符仍落在过渡窗口内，会永久停在半沉位置。Salt 的行
   会滚走所以不暴露，我们的行会一直停着。推进半个窗口后全行归位，稳态才真正等于
-  §3.4 说的"与关闭效果逐像素一致"。`lineRevealEnd` 取
-  `WordLyricRenderSupport.wordRevealEndMillis(model, line, 末词下标)`（含下一行
-  起点截断），不能用 `line.endTimeMillis`。
+  §3.4 说的"与关闭效果逐像素一致"。`lineRevealEnd` 由
+  `resolveCharLiftLineRevealEnd(model, line)` 按 timing mode 取值：逐字歌词仍用
+  `WordLyricRenderSupport.wordRevealEndMillis(model, line, 末词下标)`（含下一行起点
+  截断）；开启进度的普通逐行歌词改用 `resolveLineDisplayEndMillis(model, line)`，与其
+  线性揭示的终点完全一致。
 
 ### 3.6 触发与帧续命门控
 
@@ -227,7 +231,8 @@ sink 仅在以下全部成立时计算：
 1. `activeLine && drawProgress && !aodLowFrameRateMode`——`drawProgress` 并不
    蕴含非 AOD：`shouldDrawWordProgressForVisual`（:13549）在
    `aodLineFillAmount < 0.999f` 时即使低帧率模式也返回真，必须单独判；
-2. `line.timingMode == WORD_TIMED` 且 `words` 非空；
+2. `line.timingMode == WORD_TIMED`，或 `line.timingMode == LINE_TIMED` 且
+   `lineTimedProgressEnabled`，并且 `words` 非空；其余 timing mode 仍直接 return；
 3. `!shouldUseTimestampHighlight(model, line)`；
 4. `fullLineOverlayAmount <= 0.001f`（淡入叠层会重画整行未位移版本，浮起只会拖影）；
 5. `uiConfig.charLiftEnabled` 且 `maxSink > 0`。
@@ -332,11 +337,10 @@ renderer 读 `uiConfig.charLiftEnabled` / `charLiftStrengthPercent`，经现有
 - 开关放 `LyricUiSettingsActivity` 现有"进度/动效"分组（紧邻
   `line_timed_progress_enabled` 开关），复用其 pref 写入 + 定向广播模式；
   key 常量进 `LyricUiSettings`（对应 `KEY_*` = codec key 的现有模式）。
-- `strings.xml`（zh + 默认）：标题"字符上浮动画"、摘要"逐字歌词高亮经过时
-  字符轻微上浮（Apple Music 风格）。仅对逐字歌词生效，AOD 下自动关闭"。
-- 依赖提示：非逐字歌词（LINE_TIMED 未开进度）时开关无效果——照
-  `shouldShowTranslationProgressDependencyHint` 的现有提示模式给一行说明，
-  不做强制联动。
+- `strings.xml`（zh + 默认）：标题"字符上浮动画"；提示明确逐字歌词可用，普通
+  逐行歌词需要同时开启"普通逐行歌词进度"，AOD 低帧率下自动关闭。
+- 依赖提示：不新增或强制联动设置；字符上浮总开关与既有普通逐行歌词进度开关共同
+  决定 LINE_TIMED 是否启用。
 - 预览：`LyricVisualLayersPreviewView` 首期不加动画预览（预览是静态帧），
   仅文案说明；如后续需要，预览动画单独立项。
 
@@ -380,7 +384,8 @@ renderer 读 `uiConfig.charLiftEnabled` / `charLiftStrengthPercent`，经现有
 4. **`fullLineOverlayAmount > 0.001f` 时整行不浮。** 淡入叠层会把整行未浮
    版本重画一遍，浮起只会拖影。
 
-新增源码契约测试 `CharLiftRendererContractTest`（6 条）：AOD/门控、异常不外抛
+新增源码契约测试 `CharLiftRendererContractTest`（8 条）：AOD/门控、普通逐行模式
+受 `lineTimedProgressEnabled` 约束、LINE_TIMED 的 reveal-end 走 display-end、异常不外抛
 且置 `charLiftUnavailable`、decay 锚点、字素几何只经缓存、`clearGlowCache`
 一并清理、`drawCompactLine` 不接入。
 - 出口（本地）：单测全绿；`assembleDebug` 通过。
@@ -434,6 +439,28 @@ codec，不出 UI。
 - 验证：修复后 trace 中首段 `flowFront == reveal` 逐帧相等、过渡区从段首扫到段末；
   三段行中间段在前沿逼近换行处时首字预抬；用户实机确认。
 
+### Slice G：扩展到普通逐行歌词进度
+
+触发：Salt Player 式阶跃模型已在逐字歌曲实机验收；普通逐行歌词在开启"普通逐行歌词
+进度"时已复用同一条整行线性 reveal 管线，故只放开同一动画的适用范围，不改变模型、
+幅度、时序或设置 schema。
+
+- `beginCharLiftLine` 继续允许 `WORD_TIMED`；新增 `LINE_TIMED &&
+  lineTimedProgressEnabled` 分支，其余 timing mode、空 `words`、AOD 低帧率、淡入叠层等
+  原有门控不变。
+- 不新增设置开关：普通逐行歌词的上浮仅在"字符上浮动画"与"普通逐行歌词进度"都开启时
+  生效；关闭任一开关均保持既有渲染。
+- 新私有 `resolveCharLiftLineRevealEnd(model, line)` 明确分叉：`WORD_TIMED` 保持
+  `wordRevealEndMillis`；`LINE_TIMED` 取 `resolveLineDisplayEndMillis`，与
+  `resolveLineElapsedProgress` 的线性揭示终点一致。
+- **可接受差异（不改映射）**：普通逐行歌词的 reveal 恰在下一行起点达到 1；末段最后约
+  1.5 个字号在行切换前仍会处于过渡窗口，随后由既有行切换动画吸收。若提前推进或改写
+  reveal 映射，会使 lift 与羽化前沿失步，因此本切片不处理。
+- 契约测试锁定 LINE_TIMED 的 `lineTimedProgressEnabled` 门控与 display-end 分叉；中英文
+  设置提示、README 和视觉控制文档同步说明依赖关系。
+- 出口：`testDebugUnitTest`、`lintDebug`、`assembleDebug` 全绿；设备按 #21/#22 验收，且
+  逐字歌曲的既有上浮行为不变。
+
 ### Slice E：设备回归矩阵收口（见 §8），完成后在本文件顶部改状态并归档。
 
 ## 8. 验证矩阵
@@ -452,7 +479,7 @@ codec，不出 UI。
 | 3 | 激活词跨换行段 | 换行处上一段回落、下一段抬起，无双像/漏画 |
 | 4 | 行尾最后一词 | 揭示完成后 ~240ms 内全行归位到正常基线，无半沉残留、无常驻刷新 |
 | 5 | 一词短行（timestamp-highlight） | 无浮动，整行点亮行为与基线一致 |
-| 6 | line-timed 歌词（进度开关开/关） | 均无浮动（首期范围外） |
+| 6 | 普通逐行歌词（进度开关开/关） | 开：随整行线性揭示前沿上浮；关：无上浮、保持既有整行状态 |
 | 7 | 翻译行 | 不浮动，译文进度/marquee 与基线一致 |
 | 8 | AOD 低帧率模式 | 无浮动、无额外 invalidate；息屏功耗无回退 |
 | 9 | 首行贴顶 | lift 被 clamp，无顶边裁切 |
@@ -467,9 +494,11 @@ codec，不出 UI。
 | 18 | 有翻译行 | 未唱主行字形不与翻译行字形重叠；若幅度被 clamp 到几乎不可见，记录实测值 |
 | 19 | 快速 rap 段（<120ms/字） | 已唱/未唱仍有清晰可辨的高度差（本次重做的验收点） |
 | 20 | 强度滑块 0 / 100 / 200 | 0 等同关闭；200 幅度约为字号 20%，无裁切、无与翻译行重叠 |
-| 21 | 背靠背行（行间无空档） | 行切换瞬间末尾字符不得出现可见弹跳 |
+| 21 | 逐行歌词单段行 | 前沿线性扫过；已唱/未唱高度差常驻 |
+| 22 | 逐行歌词多段行含滑动窗口 | 窗口切换时 lift 不错位、不闪 |
+| 23 | 背靠背行（行间无空档） | 行切换瞬间末尾字符不得出现可见弹跳 |
 
-\#21 的成因：`wordRevealEndMillis`（`WordLyricRenderSupport.java:103-118`）对末词
+\#23 的成因：`wordRevealEndMillis`（`WordLyricRenderSupport.java:103-118`）对末词
 用 `Math.min(end, 下一行 timeMillis)` 截断。两行背靠背时 `lineRevealEnd` 等于下一行
 开始，§3.5 的收尾窗口刚要开始本行就转为非激活行、按正常基线绘制，末尾 1~2 个字从
 半沉直接回到基线，收尾动画一帧都没播。行间有空档时不受影响。该弹跳（≤H/2，32sp 下

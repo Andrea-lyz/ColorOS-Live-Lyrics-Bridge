@@ -68,8 +68,9 @@
 破坏滚动/AOD 时序。
 
 “字符上浮动画”不在本页：它是主设置页“兼容性”分组里的开关（`charLiftEnabled`）
-与幅度滑块（`charLiftStrengthPercent`，0–200%，默认 100%），默认关闭，只影响逐字
-歌词的字形位移，不动任何亮度或渐隐字段。它的形状参数——过渡窗口宽度、下沉幅度
+与幅度滑块（`charLiftStrengthPercent`，0–200%，默认 100%），默认关闭；逐字歌词始终
+可用，普通逐行歌词需同时开启“普通逐行歌词进度”。它只影响主歌词的字形位移，不动
+任何亮度或渐隐字段。它的形状参数——过渡窗口宽度、下沉幅度
 系数、下沉与收尾时长——与上面这些一样仍是 renderer 常量
 （`WordLyricRenderConstants.CHAR_LIFT_*`）。设计与验证矩阵见
 `WORD-SYNC-CHAR-LIFT-PLAN.md`。

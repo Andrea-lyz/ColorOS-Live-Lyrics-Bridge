@@ -30,8 +30,31 @@ public final class CharLiftRendererContractTest {
                 "lift must bail out for a timestamp-highlighted short row",
                 body.contains("shouldUseTimestampHighlight"));
         assertTrue(
-                "lift must bail out for anything but word timing",
+                "WORD_TIMED lift must remain allowed",
                 body.contains("line.timingMode != LyricTimingMode.WORD_TIMED"));
+        assertTrue(
+                "LINE_TIMED lift must remain behind the line-progress setting",
+                body.contains("line.timingMode != LyricTimingMode.LINE_TIMED"));
+        assertTrue(
+                "LINE_TIMED lift must stay off when line progress is disabled",
+                body.contains("!lineTimedProgressEnabled"));
+    }
+
+    @Test
+    public void lineTimedLiftUsesTheLineProgressDisplayEnd() throws Exception {
+        String module = module();
+        int start = module.indexOf("private long resolveCharLiftLineRevealEnd(");
+        assertTrue("resolveCharLiftLineRevealEnd is missing", start >= 0);
+        String body = module.substring(start, start + 1_000);
+        assertTrue(
+                "line-timed rows must select their display-end anchor",
+                body.contains("line.timingMode == LyricTimingMode.LINE_TIMED"));
+        assertTrue(
+                "line-timed rows must end where their linear reveal ends",
+                body.contains("return resolveLineDisplayEndMillis(model, line);"));
+        assertTrue(
+                "word-timed rows must retain their word-reveal anchor",
+                body.contains("WordLyricRenderSupport.wordRevealEndMillis("));
     }
 
     @Test

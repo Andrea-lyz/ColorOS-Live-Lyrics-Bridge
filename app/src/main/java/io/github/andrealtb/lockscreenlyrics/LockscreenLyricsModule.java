@@ -13694,7 +13694,9 @@ public final class LockscreenLyricsModule extends XposedModule {
                     // motion nobody is watching.
                     || aodLowFrameRateMode
                     || line == null
-                    || line.timingMode != LyricTimingMode.WORD_TIMED
+                    || (line.timingMode != LyricTimingMode.WORD_TIMED
+                    && (line.timingMode != LyricTimingMode.LINE_TIMED
+                    || !lineTimedProgressEnabled))
                     || line.words == null
                     || line.words.isEmpty()
                     || TextUtils.isEmpty(text)
@@ -13727,10 +13729,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 float revealFront = activeWord == null
                         ? 0f
                         : resolveLineFlowFront(model, line, text, activeWord, wordIndex, position);
-                long lineRevealEndMillis = WordLyricRenderSupport.wordRevealEndMillis(
-                        model,
-                        line,
-                        line.words.size() - 1);
+                long lineRevealEndMillis = resolveCharLiftLineRevealEnd(model, line);
                 charLift.flowFront = revealFront
                         + CharLiftGeometry.finishOvershoot(
                         position,
@@ -13754,6 +13753,22 @@ public final class LockscreenLyricsModule extends XposedModule {
                 charLiftUnavailable = true;
                 charLift.reset();
             }
+        }
+
+        /**
+         * Resolves the endpoint of the reveal that the lift front follows. A
+         * line-timed row has one synthetic whole-row range, but its linear
+         * reveal runs until the display end (normally the next row's start),
+         * rather than until the word-timing fallback would infer.
+         */
+        private long resolveCharLiftLineRevealEnd(WordLyricModel model, WordLine line) {
+            if (line.timingMode == LyricTimingMode.LINE_TIMED) {
+                return resolveLineDisplayEndMillis(model, line);
+            }
+            return WordLyricRenderSupport.wordRevealEndMillis(
+                    model,
+                    line,
+                    line.words.size() - 1);
         }
 
         /**
