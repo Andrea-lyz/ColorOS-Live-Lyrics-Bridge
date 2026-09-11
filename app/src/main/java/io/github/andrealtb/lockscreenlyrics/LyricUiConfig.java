@@ -46,6 +46,8 @@ final class LyricUiConfig {
     final boolean defaultTranslationEnabled;
     final boolean lineTimedProgressEnabled;
     final boolean translationProgressEnabled;
+    final boolean charLiftEnabled;
+    final int charLiftStrengthPercent;
     final boolean screenTimeoutEnabled;
     final int screenTimeoutSeconds;
     final int mainFontTenthsSp;
@@ -95,6 +97,8 @@ final class LyricUiConfig {
         defaultTranslationEnabled = builder.defaultTranslationEnabled;
         lineTimedProgressEnabled = builder.lineTimedProgressEnabled;
         translationProgressEnabled = builder.translationProgressEnabled;
+        charLiftEnabled = builder.charLiftEnabled;
+        charLiftStrengthPercent = clamp(builder.charLiftStrengthPercent, 0, 200);
         screenTimeoutEnabled = builder.screenTimeoutEnabled;
         screenTimeoutSeconds = LyricUiSettings.sanitizeScreenTimeoutSeconds(
                 builder.screenTimeoutSeconds);
@@ -198,6 +202,8 @@ final class LyricUiConfig {
                 && defaultTranslationEnabled == other.defaultTranslationEnabled
                 && lineTimedProgressEnabled == other.lineTimedProgressEnabled
                 && translationProgressEnabled == other.translationProgressEnabled
+                && charLiftEnabled == other.charLiftEnabled
+                && charLiftStrengthPercent == other.charLiftStrengthPercent
                 && screenTimeoutEnabled == other.screenTimeoutEnabled
                 && screenTimeoutSeconds == other.screenTimeoutSeconds
                 && mainFontTenthsSp == other.mainFontTenthsSp
@@ -223,7 +229,8 @@ final class LyricUiConfig {
                 glowRadiusPercent, primaryColor, glowColor, motionMode,
                 passiveVerticalPanEnabled, translationMarqueeEnabled, maxRefreshRateHz,
                 defaultTranslationEnabled, lineTimedProgressEnabled,
-                translationProgressEnabled, screenTimeoutEnabled, screenTimeoutSeconds,
+                translationProgressEnabled, charLiftEnabled, charLiftStrengthPercent,
+                screenTimeoutEnabled, screenTimeoutSeconds,
                 mainFontTenthsSp, translationFontRatioPercent, fontWeight, alignment,
                 lineSpacingTenthsDp, wrappedLineSpacingTenthsDp);
     }
@@ -256,6 +263,8 @@ final class LyricUiConfig {
         private boolean defaultTranslationEnabled = true;
         private boolean lineTimedProgressEnabled;
         private boolean translationProgressEnabled;
+        private boolean charLiftEnabled = LyricUiSettings.DEFAULT_CHAR_LIFT_ENABLED;
+        private int charLiftStrengthPercent = LyricUiSettings.DEFAULT_CHAR_LIFT_STRENGTH_PERCENT;
         private boolean screenTimeoutEnabled = true;
         private int screenTimeoutSeconds;
         private int mainFontTenthsSp = 220;
@@ -297,6 +306,8 @@ final class LyricUiConfig {
             defaultTranslationEnabled = source.defaultTranslationEnabled;
             lineTimedProgressEnabled = source.lineTimedProgressEnabled;
             translationProgressEnabled = source.translationProgressEnabled;
+            charLiftEnabled = source.charLiftEnabled;
+            charLiftStrengthPercent = source.charLiftStrengthPercent;
             screenTimeoutEnabled = source.screenTimeoutEnabled;
             screenTimeoutSeconds = source.screenTimeoutSeconds;
             mainFontTenthsSp = source.mainFontTenthsSp;
@@ -355,6 +366,8 @@ final class LyricUiConfig {
         Builder defaultTranslationEnabled(boolean v) { defaultTranslationEnabled = v; return this; }
         Builder lineTimedProgressEnabled(boolean v) { lineTimedProgressEnabled = v; return this; }
         Builder translationProgressEnabled(boolean v) { translationProgressEnabled = v; return this; }
+        Builder charLiftEnabled(boolean v) { charLiftEnabled = v; return this; }
+        Builder charLiftStrengthPercent(int v) { charLiftStrengthPercent = v; return this; }
         Builder screenTimeoutEnabled(boolean v) { screenTimeoutEnabled = v; return this; }
         Builder screenTimeoutSeconds(int v) { screenTimeoutSeconds = v; return this; }
         Builder mainFontTenthsSp(int v) { mainFontTenthsSp = v; return this; }

@@ -12039,6 +12039,10 @@ public final class LockscreenLyricsModule extends XposedModule {
                 LyricUiSettings.DEFAULT_LINE_TIMED_PROGRESS_ENABLED;
         private volatile boolean translationProgressEnabled =
                 LyricUiSettings.DEFAULT_TRANSLATION_PROGRESS_ENABLED;
+        private volatile boolean charLiftEnabled =
+                LyricUiSettings.DEFAULT_CHAR_LIFT_ENABLED;
+        private volatile int charLiftStrengthPercent =
+                LyricUiSettings.DEFAULT_CHAR_LIFT_STRENGTH_PERCENT;
         private volatile LyricUiConfig uiConfig = LyricUiConfig.defaults();
         private volatile LyricUiPalette palette = LyricUiPalette.from(uiConfig);
         private volatile boolean aodLowFrameRateMode;
@@ -12118,6 +12122,8 @@ public final class LockscreenLyricsModule extends XposedModule {
             inactiveBlurEnabled = config.blurEnabled;
             lineTimedProgressEnabled = config.lineTimedProgressEnabled;
             translationProgressEnabled = config.translationProgressEnabled;
+            charLiftEnabled = config.charLiftEnabled;
+            charLiftStrengthPercent = config.charLiftStrengthPercent;
             clearGlowCache();
             if (isLyricLayoutDiagnosticsEnabled()) {
                 StructuredBridgeLog.info(

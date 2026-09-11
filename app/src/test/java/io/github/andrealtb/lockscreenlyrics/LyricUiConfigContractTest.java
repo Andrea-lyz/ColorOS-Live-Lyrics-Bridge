@@ -43,6 +43,8 @@ public final class LyricUiConfigContractTest {
             "defaultTranslationEnabled",
             "lineTimedProgressEnabled",
             "translationProgressEnabled",
+            "charLiftEnabled",
+            "charLiftStrengthPercent",
             "screenTimeoutEnabled",
             "screenTimeoutSeconds",
             "mainFontTenthsSp",
@@ -81,6 +83,8 @@ public final class LyricUiConfigContractTest {
                 .defaultTranslationEnabled(false)
                 .lineTimedProgressEnabled(true)
                 .translationProgressEnabled(true)
+                .charLiftEnabled(true)
+                .charLiftStrengthPercent(140)
                 .screenTimeoutEnabled(false)
                 .screenTimeoutSeconds(120)
                 .mainFontTenthsSp(245)
