@@ -1,8 +1,9 @@
 # 逐字同步的字符上浮动画（Per-character Vertical Lift）改造计划
 
-状态：**实施中（分支 `feat/word-sync-char-lift`）。Slice A / B 已合，
-Slice C 未开始。** 2026-09-11 评审发现原 §3.1 的 canvas-x 前沿模型在换行段上
-会让段尾字素常驻峰值，已改为流坐标模型（§3.1/§3.3/§3.4/§4 同步修订）。
+状态：**实施中（分支 `feat/word-sync-char-lift`）。Slice A / B / C 已合，
+C 的设备回归（§8）未跑，Slice D 未开始。** 2026-09-11 评审发现原 §3.1 的
+canvas-x 前沿模型在换行段上会让段尾字素常驻峰值，已改为流坐标模型
+（§3.1/§3.3/§3.4/§4 同步修订）。
 
 启动门槛：当前 renderer 处于 Phase 6 之后的稳定基线（`OfficialLyricTextRenderer`
 仍在 `LockscreenLyricsModule` 内、`OfficialLyricDrawCoordinator` 已收口 draw 编排）。
@@ -354,6 +355,25 @@ renderer 读 `uiConfig.charLiftEnabled` / `charLiftStrengthPercent`，经现有
 
 ### Slice C：renderer 消费（开关驱动，默认关 = 逐像素零 diff）
 - §5.1-5.6 全部落地。
+
+实施时相对本文的四处调整（已在代码注释里就地说明）：
+
+1. **取消横向出血。** §3.3 原写 0.5px bleed 防 AA 接缝，但底色用的
+   `inactivePaint` 带 44% 左右的 alpha，相邻 clip 盒重叠会把同一笔半透明
+   墨迹叠两次、把接缝压暗——比它要治的发丝缝更糟。改为字素盒严格相接，
+   每列像素只画一次。若设备验证真出现接缝，再单独处理。
+2. **底色与揭示层分两趟画**，不是 §3.3 那样一个 clip 里连画两层。glow 在原
+   实现里夹在这两层之间，合成一趟会把浮起字素的底色画到 glow 上面，改变叠
+   放次序。
+3. **AOD 显式门控。** `drawProgress` 并不蕴含 `!aodLowFrameRateMode`——
+   `shouldDrawWordProgressForVisual` 在 AOD 填充过渡期间照样为真，所以
+   `beginCharLiftLine` 单独判了 `aodLowFrameRateMode`。
+4. **`fullLineOverlayAmount > 0.001f` 时整行不浮。** 淡入叠层会把整行未浮
+   版本重画一遍，浮起只会拖影。
+
+新增源码契约测试 `CharLiftRendererContractTest`（6 条）：AOD/门控、异常不外抛
+且置 `charLiftUnavailable`、decay 锚点、字素几何只经缓存、`clearGlowCache`
+一并清理、`drawCompactLine` 不接入。
 - 出口（本地）：单测全绿；`assembleDebug` 通过。
 - 出口（设备，开关关）：逐字 / line-timed / 翻译 / AOD / 换行长行 五场景
   与基线目视一致，`BridgePerformanceSampler` 的 `TEXT_VIEW_DRAW` 指标无回退。

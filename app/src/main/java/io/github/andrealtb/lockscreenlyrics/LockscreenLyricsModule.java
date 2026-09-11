@@ -51,6 +51,7 @@ import android.widget.TextView;
 import org.json.JSONObject;
 
 import io.github.andrealtb.lockscreenlyrics.render.CachedDrawFrame;
+import io.github.andrealtb.lockscreenlyrics.render.CharLiftGeometry;
 import io.github.andrealtb.lockscreenlyrics.render.DrawFrame;
 import io.github.andrealtb.lockscreenlyrics.render.LyricDrawLine;
 import io.github.andrealtb.lockscreenlyrics.render.LyricDrawLayoutEngine;
@@ -11963,6 +11964,9 @@ public final class LockscreenLyricsModule extends XposedModule {
         private static final float SETTLED_GLOW_RADIUS_FACTOR = 1.22f;
         private static final float SETTLED_GLOW_ALPHA_FACTOR = 0.88f;
         private static final float WRAPPED_LINE_BASE_GAP_DP = 1f;
+        // Sub-pixel lift is invisible; treat it as landed so the extra animation
+        // frames stop instead of running forever behind a settled row.
+        private static final float CHAR_LIFT_FRAME_EPSILON = 0.01f;
         private static int visibleMainDrawLines(WordLine line) {
             return line == null ? 2 : line.visibleWrappedLineLimit();
         }
@@ -12027,6 +12031,20 @@ public final class LockscreenLyricsModule extends XposedModule {
                 new GlowSegmentCache()
         };
         private long glowCacheUseCounter;
+        private final GraphemeLayoutCache[] graphemeLayoutCaches = {
+                new GraphemeLayoutCache(),
+                new GraphemeLayoutCache(),
+                new GraphemeLayoutCache(),
+                new GraphemeLayoutCache()
+        };
+        private long graphemeCacheUseCounter;
+        private final CharLiftState charLift = new CharLiftState();
+        /**
+         * Sticky after a lifted draw throws. A draw error reaching the
+         * coordinator blacklists the binding and falls back to native rendering
+         * for good, so this effect gives itself up instead.
+         */
+        private boolean charLiftUnavailable;
         private BlurMaskFilter glowMaskFilter;
         private int glowMaskRadiusKey = -1;
         private float translationAnimationStartAmount = 1f;
@@ -13578,6 +13596,17 @@ public final class LockscreenLyricsModule extends XposedModule {
             applyFade(alpha, focusAmount);
             int start = Math.max(0, Math.min(windowStart, drawLines.size()));
             int end = Math.min(drawLines.size(), start + count);
+            beginCharLiftLine(
+                    model,
+                    line,
+                    text,
+                    activeWord,
+                    wordIndex,
+                    position,
+                    activeLine,
+                    drawProgress,
+                    fullLineOverlayAmount,
+                    start);
             float lineY = y;
             for (int i = start; i < end; i++) {
                 LyricDrawLine drawLine = drawLines.get(i);
@@ -13607,8 +13636,132 @@ public final class LockscreenLyricsModule extends XposedModule {
                         activeLine,
                         drawProgress,
                         fullLineOverlayAmount);
+                charLift.flowSegmentStart += drawLine.width;
                 lineY += lineHeight + lineGap;
             }
+            if (charLift.lineActive
+                    && (charLift.settling || charLift.peakLift > CHAR_LIFT_FRAME_EPSILON)) {
+                textView.postInvalidateOnAnimation();
+            }
+        }
+
+        /**
+         * Line-level lift state for one {@link #drawMainLineWindow} pass. The
+         * reveal front is resolved once per line in flow coordinates (advance
+         * width accumulated across wrapped segments) because a per-segment front
+         * pins itself to the right edge of any segment that sits entirely before
+         * the active word, which would park that segment's trailing grapheme at
+         * the envelope peak for the rest of the row.
+         */
+        private void beginCharLiftLine(
+                WordLyricModel model,
+                WordLine line,
+                String text,
+                WordRange activeWord,
+                int wordIndex,
+                long position,
+                boolean activeLine,
+                boolean drawProgress,
+                float fullLineOverlayAmount,
+                int windowStart) {
+            charLift.reset();
+            if (!charLiftEnabled
+                    || charLiftUnavailable
+                    || !activeLine
+                    || !drawProgress
+                    // drawProgress alone does not rule out AOD: the low frame
+                    // rate path still draws word progress while the fill
+                    // transition runs, and an animation there costs battery for
+                    // motion nobody is watching.
+                    || aodLowFrameRateMode
+                    || activeWord == null
+                    || line == null
+                    || line.timingMode != LyricTimingMode.WORD_TIMED
+                    || line.words == null
+                    || line.words.isEmpty()
+                    || TextUtils.isEmpty(text)
+                    // The cross-fade overlay repaints the whole row unlifted, so
+                    // lifting underneath it would only ghost.
+                    || fullLineOverlayAmount > 0.001f
+                    || WordLyricRenderSupport.shouldUseTimestampHighlight(model, line)) {
+                return;
+            }
+            try {
+                float textSize = inactivePaint.getTextSize();
+                float maxLift = textSize
+                        * WordLyricRenderConstants.CHAR_LIFT_MAX_FACTOR
+                        * charLiftStrengthPercent
+                        / 100f;
+                if (maxLift <= CHAR_LIFT_FRAME_EPSILON) {
+                    return;
+                }
+                long lineRevealEndMillis = WordLyricRenderSupport.wordRevealEndMillis(
+                        model,
+                        line,
+                        line.words.size() - 1);
+                float decay = CharLiftGeometry.revealDecay(
+                        position,
+                        lineRevealEndMillis,
+                        WordLyricRenderConstants.CHAR_LIFT_SETTLE_TAIL_MS);
+                if (decay <= 0f) {
+                    return;
+                }
+                charLift.flowFront = resolveLineFlowFront(
+                        model, line, text, activeWord, wordIndex, position);
+                charLift.flowSegmentStart = flowOffsetBeforeSegment(windowStart);
+                charLift.bumpWidth =
+                        textSize * WordLyricRenderConstants.CHAR_LIFT_BUMP_WIDTH_FACTOR;
+                charLift.maxLift = maxLift;
+                charLift.decay = decay;
+                charLift.settling = position < lineRevealEndMillis
+                        + WordLyricRenderConstants.CHAR_LIFT_SETTLE_TAIL_MS;
+                charLift.lineActive = true;
+            } catch (RuntimeException error) {
+                charLiftUnavailable = true;
+                charLift.reset();
+            }
+        }
+
+        /**
+         * Flow coordinate of the reveal front: the furthest point any wrapped
+         * segment has revealed. A segment before the active word reports its
+         * full width, the segment holding the front reports a partial width, and
+         * later segments report zero, so the maximum is the front itself and it
+         * stays monotonic across a wrap.
+         */
+        private float resolveLineFlowFront(
+                WordLyricModel model,
+                WordLine line,
+                String text,
+                WordRange activeWord,
+                int wordIndex,
+                long position) {
+            float flow = 0f;
+            float front = 0f;
+            for (int i = 0; i < drawLines.size(); i++) {
+                LyricDrawLine candidate = drawLines.get(i);
+                float revealWidth = resolveWordRevealWidthForSegment(
+                        model,
+                        line,
+                        text,
+                        candidate,
+                        activeWord,
+                        wordIndex,
+                        position,
+                        candidate.width);
+                front = Math.max(front, flow + revealWidth);
+                flow += candidate.width;
+            }
+            return front;
+        }
+
+        private float flowOffsetBeforeSegment(int windowStart) {
+            float flow = 0f;
+            int limit = Math.max(0, Math.min(windowStart, drawLines.size()));
+            for (int i = 0; i < limit; i++) {
+                flow += drawLines.get(i).width;
+            }
+            return flow;
         }
 
         private static float smoothStep(float progress) {
@@ -13812,15 +13965,38 @@ public final class LockscreenLyricsModule extends XposedModule {
             boolean timestampHighlight = activeLine
                     && !drawProgress
                     && WordLyricRenderSupport.shouldUseTimestampHighlight(model, line);
-            canvas.drawText(
+            TextPaint basePaint = timestampHighlight
+                    ? inactivePaint
+                    : activeLine && !drawProgress ? activePaint : inactivePaint;
+            float segmentWidth = drawLine.width;
+            float revealWidth = drawProgress && activeWord != null
+                    ? resolveWordRevealWidthForSegment(
+                    model,
+                    line,
                     text,
-                    drawLine.start,
-                    drawLine.end,
-                    x,
-                    y,
-                    timestampHighlight
-                            ? inactivePaint
-                            : activeLine && !drawProgress ? activePaint : inactivePaint);
+                    drawLine,
+                    activeWord,
+                    wordIndex,
+                    position,
+                    segmentWidth)
+                    : 0f;
+            boolean lifted = charLift.lineActive
+                    && prepareCharLiftZone(line, text, drawLine, x, segmentWidth);
+            if (lifted) {
+                drawTextOutsideCharLiftZone(canvas, text, drawLine, x, y, basePaint);
+                drawLiftedGraphemes(
+                        canvas,
+                        text,
+                        drawLine,
+                        x,
+                        y,
+                        basePaint,
+                        segmentWidth,
+                        revealWidth,
+                        false);
+            } else {
+                canvas.drawText(text, drawLine.start, drawLine.end, x, y, basePaint);
+            }
             if (!drawProgress) {
                 if (timestampHighlight) {
                     drawProgressGlow(
@@ -13844,7 +14020,6 @@ public final class LockscreenLyricsModule extends XposedModule {
                 return;
             }
 
-            float segmentWidth = drawLine.width;
             if (activeWord == null) {
                 if (activeLine && line.timingMode != LyricTimingMode.WORD_TIMED) {
                     if (fullLineOverlayAmount > 0.001f) {
@@ -13863,39 +14038,17 @@ public final class LockscreenLyricsModule extends XposedModule {
                 return;
             }
 
-            float revealWidth;
-            if (drawLine.end <= activeWord.start) {
-                revealWidth = segmentWidth;
-            } else if (drawLine.start >= activeWord.end) {
-                revealWidth = 0f;
-            } else {
-                revealWidth = resolveSegmentRevealWidth(
+            float glowRevealWidth = revealWidth;
+            if (glowPosition != position) {
+                glowRevealWidth = resolveWordRevealWidthForSegment(
                         model,
                         line,
                         text,
                         drawLine,
-                        activeWord,
-                        wordIndex,
-                        position);
-            }
-            float glowRevealWidth = revealWidth;
-            if (glowPosition != position) {
-                if (glowActiveWord == null) {
-                    glowRevealWidth = 0f;
-                } else if (drawLine.end <= glowActiveWord.start) {
-                    glowRevealWidth = segmentWidth;
-                } else if (drawLine.start >= glowActiveWord.end) {
-                    glowRevealWidth = 0f;
-                } else {
-                    glowRevealWidth = resolveSegmentRevealWidth(
-                            model,
-                            line,
-                            text,
-                            drawLine,
-                            glowActiveWord,
-                            glowWordIndex,
-                            glowPosition);
-                }
+                        glowActiveWord,
+                        glowWordIndex,
+                        glowPosition,
+                        segmentWidth);
             }
             if (glowRevealWidth > 0f) {
                 drawProgressGlow(
@@ -13910,15 +14063,36 @@ public final class LockscreenLyricsModule extends XposedModule {
                         glowRevealWidth);
             }
             if (revealWidth > 0f) {
-                drawRevealedText(
-                        canvas,
-                        text,
-                        drawLine.start,
-                        drawLine.end,
-                        x,
-                        y,
-                        segmentWidth,
-                        revealWidth);
+                if (lifted) {
+                    drawRevealedTextOutsideCharLiftZone(
+                            canvas,
+                            text,
+                            drawLine,
+                            x,
+                            y,
+                            segmentWidth,
+                            revealWidth);
+                    drawLiftedGraphemes(
+                            canvas,
+                            text,
+                            drawLine,
+                            x,
+                            y,
+                            basePaint,
+                            segmentWidth,
+                            revealWidth,
+                            true);
+                } else {
+                    drawRevealedText(
+                            canvas,
+                            text,
+                            drawLine.start,
+                            drawLine.end,
+                            x,
+                            y,
+                            segmentWidth,
+                            revealWidth);
+                }
             }
             if (activeLine) {
                 drawFullLineOverlayIfNeeded(
@@ -13949,6 +14123,335 @@ public final class LockscreenLyricsModule extends XposedModule {
             activePaint.setColor(scaleAlpha(originalColor, amount));
             canvas.drawText(text, start, end, x, y, activePaint);
             activePaint.setColor(originalColor);
+        }
+
+        /**
+         * Revealed width of {@code drawLine} for one word, including the cheap
+         * fully-before / fully-after answers. Shared by the draw path and by
+         * {@link #resolveLineFlowFront} so the lift and the clip reveal can
+         * never disagree about where the front is.
+         */
+        private float resolveWordRevealWidthForSegment(
+                WordLyricModel model,
+                WordLine line,
+                String text,
+                LyricDrawLine drawLine,
+                WordRange word,
+                int wordIndex,
+                long position,
+                float segmentWidth) {
+            if (word == null) {
+                return 0f;
+            }
+            if (drawLine.end <= word.start) {
+                return segmentWidth;
+            }
+            if (drawLine.start >= word.end) {
+                return 0f;
+            }
+            return resolveSegmentRevealWidth(
+                    model,
+                    line,
+                    text,
+                    drawLine,
+                    word,
+                    wordIndex,
+                    position);
+        }
+
+        /**
+         * Resolves the grapheme range of this segment that the bump reaches, in
+         * canvas x. Returns false when the segment is untouched this frame, in
+         * which case the caller keeps the untouched whole-segment draw.
+         */
+        private boolean prepareCharLiftZone(
+                WordLine line,
+                String text,
+                LyricDrawLine drawLine,
+                float x,
+                float segmentWidth) {
+            if (segmentWidth <= 0f || drawLine.start >= drawLine.end) {
+                return false;
+            }
+            try {
+                float flowSegmentStart = charLift.flowSegmentStart;
+                float flowSegmentEnd = flowSegmentStart + segmentWidth;
+                float zoneStart = CharLiftGeometry.liftZoneStart(
+                        charLift.flowFront,
+                        charLift.bumpWidth,
+                        flowSegmentStart,
+                        flowSegmentEnd);
+                float zoneEnd = CharLiftGeometry.liftZoneEnd(
+                        charLift.flowFront,
+                        charLift.bumpWidth,
+                        flowSegmentStart,
+                        flowSegmentEnd);
+                if (zoneEnd <= zoneStart) {
+                    return false;
+                }
+                float[] prefixWidths = resolveGraphemePrefixWidths(line, text, drawLine);
+                if (prefixWidths == null || prefixWidths.length < 2) {
+                    return false;
+                }
+                float localStart = zoneStart - flowSegmentStart;
+                float localEnd = zoneEnd - flowSegmentStart;
+                int first = -1;
+                int last = -1;
+                for (int i = 0; i + 1 < prefixWidths.length; i++) {
+                    if (prefixWidths[i + 1] <= localStart) {
+                        continue;
+                    }
+                    if (prefixWidths[i] >= localEnd) {
+                        break;
+                    }
+                    if (first < 0) {
+                        first = i;
+                    }
+                    last = i + 1;
+                }
+                if (first < 0 || last <= first) {
+                    return false;
+                }
+                charLift.prefixWidths = prefixWidths;
+                charLift.firstGrapheme = first;
+                charLift.lastGrapheme = last;
+                charLift.zoneLeft = x + prefixWidths[first];
+                charLift.zoneRight = x + prefixWidths[last];
+                charLift.segmentLeft = x;
+                charLift.segmentRight = x + segmentWidth;
+                return true;
+            } catch (RuntimeException error) {
+                charLiftUnavailable = true;
+                return false;
+            }
+        }
+
+        /**
+         * Draws the segment everywhere the lift zone does not cover it. The zone
+         * itself is repainted grapheme by grapheme, so leaving the base draw
+         * whole would show an unlifted ghost under every lifted glyph.
+         */
+        private void drawTextOutsideCharLiftZone(
+                Canvas canvas,
+                String text,
+                LyricDrawLine drawLine,
+                float x,
+                float y,
+                TextPaint paint) {
+            float canvasWidth = canvas.getWidth();
+            float canvasHeight = canvas.getHeight();
+            if (charLift.hasHead()) {
+                int save = canvas.save();
+                try {
+                    canvas.clipRect(0f, 0f, charLift.zoneLeft, canvasHeight);
+                    canvas.drawText(text, drawLine.start, drawLine.end, x, y, paint);
+                } finally {
+                    canvas.restoreToCount(save);
+                }
+            }
+            if (charLift.hasTail()) {
+                int save = canvas.save();
+                try {
+                    canvas.clipRect(charLift.zoneRight, 0f, canvasWidth, canvasHeight);
+                    canvas.drawText(text, drawLine.start, drawLine.end, x, y, paint);
+                } finally {
+                    canvas.restoreToCount(save);
+                }
+            }
+        }
+
+        private void drawRevealedTextOutsideCharLiftZone(
+                Canvas canvas,
+                String text,
+                LyricDrawLine drawLine,
+                float x,
+                float y,
+                float segmentWidth,
+                float revealWidth) {
+            float canvasWidth = canvas.getWidth();
+            float canvasHeight = canvas.getHeight();
+            if (charLift.hasHead()) {
+                int save = canvas.save();
+                try {
+                    canvas.clipRect(0f, 0f, charLift.zoneLeft, canvasHeight);
+                    drawRevealedText(
+                            canvas,
+                            text,
+                            drawLine.start,
+                            drawLine.end,
+                            x,
+                            y,
+                            segmentWidth,
+                            revealWidth);
+                } finally {
+                    canvas.restoreToCount(save);
+                }
+            }
+            if (charLift.hasTail()) {
+                int save = canvas.save();
+                try {
+                    canvas.clipRect(charLift.zoneRight, 0f, canvasWidth, canvasHeight);
+                    drawRevealedText(
+                            canvas,
+                            text,
+                            drawLine.start,
+                            drawLine.end,
+                            x,
+                            y,
+                            segmentWidth,
+                            revealWidth);
+                } finally {
+                    canvas.restoreToCount(save);
+                }
+            }
+        }
+
+        /**
+         * Repaints the lift zone one grapheme at a time. Every pass draws the
+         * whole segment string at its original x and lets the clip box select
+         * one grapheme, so shaping and kerning stay identical to the whole
+         * segment draw and the glyph is only displaced.
+         *
+         * <p>The clip boxes tile exactly, without the bleed the plan first
+         * proposed: overlapping boxes would blend the same partly transparent
+         * ink twice and darken the seam, which is worse than the hairline it
+         * would hide.
+         *
+         * <p>{@code revealedLayer} selects the layer being repainted. Base and
+         * revealed text are two separate passes so the progress glow keeps its
+         * original place between them.
+         */
+        private void drawLiftedGraphemes(
+                Canvas canvas,
+                String text,
+                LyricDrawLine drawLine,
+                float x,
+                float y,
+                TextPaint basePaint,
+                float segmentWidth,
+                float revealWidth,
+                boolean revealedLayer) {
+            float canvasHeight = canvas.getHeight();
+            float glyphTopY = y + inactivePaint.ascent();
+            float[] prefixWidths = charLift.prefixWidths;
+            try {
+                for (int i = charLift.firstGrapheme; i < charLift.lastGrapheme; i++) {
+                    float left = x + prefixWidths[i];
+                    float right = x + prefixWidths[i + 1];
+                    if (right <= left) {
+                        continue;
+                    }
+                    float flowCenter = charLift.flowSegmentStart
+                            + (prefixWidths[i] + prefixWidths[i + 1]) * 0.5f;
+                    float lift = CharLiftGeometry.clampLift(
+                            CharLiftGeometry.liftFor(
+                                    charLift.flowFront,
+                                    flowCenter,
+                                    charLift.bumpWidth,
+                                    charLift.maxLift,
+                                    charLift.decay),
+                            glyphTopY,
+                            0f);
+                    if (!revealedLayer && lift > charLift.peakLift) {
+                        charLift.peakLift = lift;
+                    }
+                    int save = canvas.save();
+                    try {
+                        canvas.clipRect(left, 0f, right, canvasHeight);
+                        if (lift > 0f) {
+                            canvas.translate(0f, -lift);
+                        }
+                        if (revealedLayer) {
+                            drawRevealedText(
+                                    canvas,
+                                    text,
+                                    drawLine.start,
+                                    drawLine.end,
+                                    x,
+                                    y,
+                                    segmentWidth,
+                                    revealWidth);
+                        } else {
+                            canvas.drawText(text, drawLine.start, drawLine.end, x, y, basePaint);
+                        }
+                    } finally {
+                        canvas.restoreToCount(save);
+                    }
+                }
+            } catch (RuntimeException error) {
+                // Never let this reach the coordinator: one draw error there
+                // blacklists the binding and drops the row back to native
+                // rendering permanently. Repaint the layer whole so the frame
+                // stays complete, and stop lifting until the next cache reset.
+                charLiftUnavailable = true;
+                int save = canvas.save();
+                try {
+                    if (revealedLayer) {
+                        drawRevealedText(
+                                canvas,
+                                text,
+                                drawLine.start,
+                                drawLine.end,
+                                x,
+                                y,
+                                segmentWidth,
+                                revealWidth);
+                    } else {
+                        canvas.drawText(text, drawLine.start, drawLine.end, x, y, basePaint);
+                    }
+                } finally {
+                    canvas.restoreToCount(save);
+                }
+            }
+        }
+
+        /**
+         * Advance width from {@code drawLine.start} to every grapheme boundary
+         * in the segment, measured with the same paint the reveal width uses.
+         * Cached per segment: the boundary walk and the prefix measurements are
+         * far too expensive to repeat every frame.
+         */
+        private float[] resolveGraphemePrefixWidths(
+                WordLine line,
+                String text,
+                LyricDrawLine drawLine) {
+            if (line == null || TextUtils.isEmpty(text) || drawLine.start >= drawLine.end) {
+                return null;
+            }
+            int textSizeKey = Math.max(1, Math.round(inactivePaint.getTextSize() * 10f));
+            Typeface typeface = inactivePaint.getTypeface();
+            GraphemeLayoutCache target = null;
+            for (GraphemeLayoutCache cache : graphemeLayoutCaches) {
+                if (cache.matches(
+                        line, text, drawLine.start, drawLine.end, textSizeKey, typeface)) {
+                    cache.lastUsed = ++graphemeCacheUseCounter;
+                    return cache.prefixWidths;
+                }
+                if (target == null || cache.lastUsed < target.lastUsed) {
+                    target = cache;
+                }
+            }
+            if (target == null) {
+                return null;
+            }
+            int[] boundaries = CharLiftGeometry.graphemeBoundaries(
+                    text, drawLine.start, drawLine.end);
+            if (boundaries.length < 2) {
+                return null;
+            }
+            float[] prefixWidths = new float[boundaries.length];
+            for (int i = 1; i < boundaries.length; i++) {
+                prefixWidths[i] = inactivePaint.measureText(text, drawLine.start, boundaries[i]);
+            }
+            target.line = line;
+            target.text = text;
+            target.start = drawLine.start;
+            target.end = drawLine.end;
+            target.textSizeKey = textSizeKey;
+            target.typeface = typeface;
+            target.prefixWidths = prefixWidths;
+            target.lastUsed = ++graphemeCacheUseCounter;
+            return prefixWidths;
         }
 
         private float resolveSegmentRevealWidth(
@@ -14337,6 +14840,11 @@ public final class LockscreenLyricsModule extends XposedModule {
             for (GlowSegmentCache cache : glowSegmentCaches) {
                 cache.clear();
             }
+            for (GraphemeLayoutCache cache : graphemeLayoutCaches) {
+                cache.clear();
+            }
+            charLift.reset();
+            charLiftUnavailable = false;
             clearRenderableTranslationCache();
         }
 
@@ -14720,6 +15228,94 @@ public final class LockscreenLyricsModule extends XposedModule {
                 line = null;
                 text = null;
                 typeface = null;
+                lastUsed = 0L;
+            }
+        }
+
+        /**
+         * Reusable per-line scratch for the character lift. Flow coordinates are
+         * accumulated advance width from the start of the line's text across
+         * wrapped segments, which is the only frame of reference that stays
+         * comparable across a wrap.
+         */
+        private static final class CharLiftState {
+            boolean lineActive;
+            /** True while the row is still inside its post-reveal settle tail. */
+            boolean settling;
+            float flowFront;
+            float flowSegmentStart;
+            float bumpWidth;
+            float maxLift;
+            float decay;
+            float peakLift;
+            float zoneLeft;
+            float zoneRight;
+            float segmentLeft;
+            float segmentRight;
+            int firstGrapheme;
+            int lastGrapheme;
+            float[] prefixWidths;
+
+            /** True when any of this segment sits left of the lift zone. */
+            boolean hasHead() {
+                return zoneLeft > segmentLeft;
+            }
+
+            /** True when any of this segment sits right of the lift zone. */
+            boolean hasTail() {
+                return zoneRight < segmentRight;
+            }
+
+            void reset() {
+                lineActive = false;
+                settling = false;
+                flowFront = 0f;
+                flowSegmentStart = 0f;
+                bumpWidth = 0f;
+                maxLift = 0f;
+                decay = 0f;
+                peakLift = 0f;
+                zoneLeft = 0f;
+                zoneRight = 0f;
+                segmentLeft = 0f;
+                segmentRight = 0f;
+                firstGrapheme = 0;
+                lastGrapheme = 0;
+                prefixWidths = null;
+            }
+        }
+
+        private static final class GraphemeLayoutCache {
+            WordLine line;
+            String text;
+            Typeface typeface;
+            int start;
+            int end;
+            int textSizeKey;
+            float[] prefixWidths;
+            long lastUsed;
+
+            boolean matches(
+                    WordLine candidateLine,
+                    String candidateText,
+                    int candidateStart,
+                    int candidateEnd,
+                    int candidateTextSizeKey,
+                    Typeface candidateTypeface) {
+                return prefixWidths != null
+                        && line == candidateLine
+                        && TextUtils.equals(text, candidateText)
+                        && start == candidateStart
+                        && end == candidateEnd
+                        && textSizeKey == candidateTextSizeKey
+                        && typeface == candidateTypeface;
+            }
+
+            void clear() {
+                line = null;
+                text = null;
+                typeface = null;
+                prefixWidths = null;
                 lastUsed = 0L;
             }
         }
