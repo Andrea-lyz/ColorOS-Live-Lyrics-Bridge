@@ -231,6 +231,23 @@ public final class CharLiftGeometry {
                 flowFront + waveWidth * 0.5f, flowSegmentStart, flowSegmentEnd);
     }
 
+    /**
+     * Advances the line's flow front by one wrapped segment's reveal. The front
+     * is the sum of every segment's revealed width, clamped to that segment's
+     * width. It must not be {@code max(front, flowOffset + reveal)}: a segment
+     * after the front reveals nothing, and its flow offset alone would pin the
+     * front to the end of every segment before it, parking the wave on the last
+     * grapheme of the first wrapped line for as long as that line is sung.
+     */
+    public static float accumulateFlowFront(
+            float frontSoFar, float segmentRevealWidth, float segmentWidth) {
+        if (Float.isNaN(segmentRevealWidth) || segmentRevealWidth <= 0f) {
+            return frontSoFar;
+        }
+        float width = Math.max(0f, segmentWidth);
+        return frontSoFar + Math.min(segmentRevealWidth, width);
+    }
+
     private static float clampToSegment(float value, float segmentStart, float segmentEnd) {
         return Math.max(segmentStart, Math.min(segmentEnd, value));
     }

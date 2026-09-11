@@ -4,9 +4,11 @@
 本地 `testDebugUnitTest` / `lintDebug` / `assembleDebug` 全绿；
 §8 的设备回归矩阵除首轮 #12 基线外未跑。**
 
-模型经历两次修订：2026-09-11 评审把 canvas-x 前沿改为流坐标（换行段尾字素
+模型经历三次修订：2026-09-11 评审把 canvas-x 前沿改为流坐标（换行段尾字素
 常驻峰值）；实机测试后整个动画模型由钟形鼓包改为 Salt Player 式阶跃
-（Slice F，原因见 §3.1 决策记录）。
+（Slice F，原因见 §3.1 决策记录）；2026-09-12 实机 trace 发现全行前沿的
+"各段取最大值"公式把换行行的前沿钉在首段末端，改为各段揭示宽度求和
+（Slice F.1，见 §3.2 与 §7）。
 
 启动门槛：当前 renderer 处于 Phase 6 之后的稳定基线（`OfficialLyricTextRenderer`
 仍在 `LockscreenLyricsModule` 内、`OfficialLyricDrawCoordinator` 已收口 draw 编排）。
@@ -148,6 +150,13 @@ sink_i = H * (1 - w(u_i)) * sinkRamp
 - **不能用 canvas x 做前沿坐标。** `resolveSegmentRevealWidth` 对"整段位于激活词
   之前"的换行段返回整段宽度（:13955-13959），若每段自算本段前沿，该段前沿会钉死
   在段右缘。各段 canvas x 原点还随居中/右对齐不同，段间不可比。
+- **全行前沿是各段揭示宽度的求和，不是 `max(flowSegStart + 段内 revealWidth)`。**
+  `CharLiftGeometry.accumulateFlowFront` 逐段累加 `min(revealWidth, width)`。
+  取最大值的写法看似等价，实际不成立：前沿之后的段 revealWidth 为 0，但它的
+  `flowSegStart` 等于前面所有段的总宽，`max` 会把前沿顶到前一段末端。实机表现
+  是换行行的前两内行只有最后一两个字母（过渡窗口末端）在动，只有末段整段有波浪
+  （2026-09-12 Anti-Hero trace：首段 reveal 40→862px 期间 flowFront 恒为 936 =
+  首段宽）。回归测试 `flowFrontFollowsThePartialRevealOfTheFirstWrappedLine`。
 - 切分与测量结果必须缓存（`GraphemeLayoutCache`），绝不能每帧跑 BreakIterator。
 
 ### 3.3 关键技巧：clip-box + translate 绘制，不逐字符 drawText
@@ -248,6 +257,7 @@ sink 仅在以下全部成立时计算：
 | `finishOvershoot(long position, long lineRevealEndMillis, long finishMillis, float waveWidth)` | 行尾把波形推离文本末端的额外前沿距离 |
 | `clampSink(float sink, float glyphBottomY, float floorY, float minClearance)` | §5.5 底部余量 clamp |
 | `waveZoneStart/End(float flowFront, float waveWidth, float flowSegStart, float flowSegEnd)` | 段内过渡区流区间交集（`end <= start` 即空） |
+| `accumulateFlowFront(float frontSoFar, float segmentRevealWidth, float segmentWidth)` | 全行前沿逐段求和（§3.2，禁止 max） |
 
 常量放 `render/WordLyricRenderConstants.java`（与现有渲染常量同居）：
 `CHAR_LIFT_MAX_FACTOR = 0.10f`（Salt `floatUpPercentage` 默认值）、
@@ -408,6 +418,21 @@ codec，不出 UI。
   终态、行末不再有衰减问题"，但前沿停在行尾时最后约 1.5 个字号的字符仍在过渡窗口
   内、永久半沉；单测 `aFullySungSegmentStandsStillAtTheBaseline` 抓到了这一点。
 - 出口：全量单测 + `lintDebug` + `assembleDebug` 绿；设备按 §8 复跑，重点 #19。
+
+### Slice F.1：换行行前沿钉死修复（实机 trace 驱动）
+
+触发：Slice F 装机后反馈"同一 item ≥2 内行时只有最后一内行有动画，前面的内行
+只有尾巴一两个字母在动"。
+
+- 取证：在 `drawSegment` 临时加逐段 WARN trace（已移除），Anti-Hero 两段行
+  936/522px：首段 reveal 40→862px 全程 `flowFront=936`，过渡区钉在 782–936。
+- 根因：`resolveLineFlowFront` 用 `max(front, flow + revealWidth)`，后续未唱段
+  `flow + 0` 等于前面各段总宽。§3.4 原评审公式本身错误。
+- 修复：`CharLiftGeometry.accumulateFlowFront` 逐段求和；renderer 改用之；
+  `charLiftUnavailable` 被置位处补 `CHAR_LIFT_UNAVAILABLE` WARN（原为静默吞错，
+  取证盲区）。
+- 验证：修复后 trace 中首段 `flowFront == reveal` 逐帧相等、过渡区从段首扫到段末；
+  三段行中间段在前沿逼近换行处时首字预抬；用户实机确认。
 
 ### Slice E：设备回归矩阵收口（见 §8），完成后在本文件顶部改状态并归档。
 

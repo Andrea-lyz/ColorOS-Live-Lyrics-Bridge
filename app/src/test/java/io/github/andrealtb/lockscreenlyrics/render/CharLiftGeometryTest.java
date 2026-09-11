@@ -346,4 +346,43 @@ public final class CharLiftGeometryTest {
         assertEquals(0, CharLiftGeometry.graphemeBoundaries("", 0, 0).length);
         assertEquals(0, CharLiftGeometry.graphemeBoundaries(null, 0, 4).length);
     }
+
+    // Device trace, Anti-Hero, two wrapped lines of 936px and 522px: while the
+    // first line was sung (reveal 40 -> 862px) the front must follow that
+    // reveal. The max(front, flowOffset + reveal) formula pinned it at 936px,
+    // the first segment's width, because the unsung second segment contributed
+    // its flow offset with zero reveal.
+    @Test
+    public void flowFrontFollowsThePartialRevealOfTheFirstWrappedLine() {
+        float front = 0f;
+        front = CharLiftGeometry.accumulateFlowFront(front, 40f, 936f);
+        front = CharLiftGeometry.accumulateFlowFront(front, 0f, 522f);
+        assertEquals(40f, front, 1e-4f);
+
+        front = 0f;
+        front = CharLiftGeometry.accumulateFlowFront(front, 862f, 936f);
+        front = CharLiftGeometry.accumulateFlowFront(front, 0f, 522f);
+        assertEquals(862f, front, 1e-4f);
+        assertTrue("front must not be pinned to the first segment width", front < 936f);
+    }
+
+    @Test
+    public void flowFrontCrossesTheWrapAsTheSumOfSegmentReveals() {
+        float front = 0f;
+        front = CharLiftGeometry.accumulateFlowFront(front, 936f, 936f);
+        front = CharLiftGeometry.accumulateFlowFront(front, 120f, 522f);
+        assertEquals(1056f, front, 1e-4f);
+
+        front = 0f;
+        front = CharLiftGeometry.accumulateFlowFront(front, 936f, 936f);
+        front = CharLiftGeometry.accumulateFlowFront(front, 522f, 522f);
+        assertEquals(1458f, front, 1e-4f);
+    }
+
+    @Test
+    public void flowFrontClampsOverlongRevealsAndIgnoresInvalidOnes() {
+        assertEquals(936f, CharLiftGeometry.accumulateFlowFront(0f, 1000f, 936f), 1e-4f);
+        assertEquals(10f, CharLiftGeometry.accumulateFlowFront(10f, -5f, 936f), 1e-4f);
+        assertEquals(10f, CharLiftGeometry.accumulateFlowFront(10f, Float.NaN, 936f), 1e-4f);
+    }
 }

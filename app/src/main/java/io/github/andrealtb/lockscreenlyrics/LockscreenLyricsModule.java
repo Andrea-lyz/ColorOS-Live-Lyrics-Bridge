@@ -13747,16 +13747,20 @@ public final class LockscreenLyricsModule extends XposedModule {
                 charLift.minClearance = minClearance;
                 charLift.lineActive = true;
             } catch (RuntimeException error) {
+                StructuredBridgeLog.warn(
+                        BridgeDebugArea.RENDERER,
+                        BridgeEvents.CHAR_LIFT_UNAVAILABLE,
+                        "Character lift disabled until the next cache reset: " + error);
                 charLiftUnavailable = true;
                 charLift.reset();
             }
         }
 
         /**
-         * Flow coordinate of the reveal front: the furthest point any wrapped
-         * segment has revealed. A segment before the active word reports its
+         * Flow coordinate of the reveal front: the total revealed advance across
+         * the wrapped segments. A segment before the active word reports its
          * full width, the segment holding the front reports a partial width, and
-         * later segments report zero, so the maximum is the front itself and it
+         * later segments report zero, so the sum is the front itself and it
          * stays monotonic across a wrap.
          */
         private float resolveLineFlowFront(
@@ -13766,21 +13770,25 @@ public final class LockscreenLyricsModule extends XposedModule {
                 WordRange activeWord,
                 int wordIndex,
                 long position) {
-            float flow = 0f;
+            // Sum, never max: a segment after the front reports zero reveal,
+            // and its flow offset alone would otherwise pin the front to the end
+            // of every segment before it (observed on device: the wave parked
+            // at the end of the first wrapped line for the whole line).
             float front = 0f;
             for (int i = 0; i < drawLines.size(); i++) {
                 LyricDrawLine candidate = drawLines.get(i);
-                float revealWidth = resolveWordRevealWidthForSegment(
-                        model,
-                        line,
-                        text,
-                        candidate,
-                        activeWord,
-                        wordIndex,
-                        position,
+                front = CharLiftGeometry.accumulateFlowFront(
+                        front,
+                        resolveWordRevealWidthForSegment(
+                                model,
+                                line,
+                                text,
+                                candidate,
+                                activeWord,
+                                wordIndex,
+                                position,
+                                candidate.width),
                         candidate.width);
-                front = Math.max(front, flow + revealWidth);
-                flow += candidate.width;
             }
             return front;
         }
@@ -14261,6 +14269,10 @@ public final class LockscreenLyricsModule extends XposedModule {
                 charLift.zoneRight = x + prefixWidths[last];
                 return true;
             } catch (RuntimeException error) {
+                StructuredBridgeLog.warn(
+                        BridgeDebugArea.RENDERER,
+                        BridgeEvents.CHAR_LIFT_UNAVAILABLE,
+                        "Character lift disabled until the next cache reset: " + error);
                 charLiftUnavailable = true;
                 return false;
             }
@@ -14423,6 +14435,10 @@ public final class LockscreenLyricsModule extends XposedModule {
                 // blacklists the binding and drops the row back to native
                 // rendering permanently. Repaint the layer whole so the frame
                 // stays complete, and stop lifting until the next cache reset.
+                StructuredBridgeLog.warn(
+                        BridgeDebugArea.RENDERER,
+                        BridgeEvents.CHAR_LIFT_UNAVAILABLE,
+                        "Character lift disabled until the next cache reset: " + error);
                 charLiftUnavailable = true;
                 int save = canvas.save();
                 try {
