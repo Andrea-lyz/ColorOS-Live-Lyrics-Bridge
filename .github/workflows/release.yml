@@ -1,4 +1,4 @@
-name: Build 4.1 RC and Release
+name: Build and Release
 
 on:
   push:
@@ -19,17 +19,12 @@ on:
         required: true
         default: "1"
         type: string
-      providers_ref:
-        description: "Immutable Provider tag or full 40-character commit SHA."
-        required: true
-        default: "providers-v1.2.0"
-        type: string
 
 permissions:
   contents: write
 
 concurrency:
-  group: cll-4-1-release-${{ github.ref }}-${{ inputs.mode || 'tag' }}
+  group: cll-release-${{ github.ref }}-${{ inputs.mode || 'tag' }}
   cancel-in-progress: false
 
 env:
@@ -49,33 +44,31 @@ jobs:
       lsp_tag: ${{ steps.meta.outputs.lsp_tag }}
       bridge_sha: ${{ steps.meta.outputs.bridge_sha }}
       providers_sha: ${{ steps.meta.outputs.providers_sha }}
-      providers_ref: ${{ steps.meta.outputs.providers_ref }}
     steps:
       - name: Checkout Bridge
         uses: actions/checkout@v6
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
-      - name: Checkout immutable Provider source
+      - name: Checkout Provider main and freeze its commit
         uses: actions/checkout@v6
         with:
           repository: ${{ env.PROVIDERS_REPOSITORY }}
-          ref: ${{ inputs.providers_ref || 'providers-v1.2.0' }}
+          ref: main
           path: provider-source
-          fetch-depth: 0
+          fetch-depth: 1
           token: ${{ secrets.PROVIDERS_REPO_TOKEN || github.token }}
 
       - name: Validate cross-repository contracts
         shell: pwsh
         run: ./scripts/validate-release-contract.ps1 -ProviderRepoRoot ./provider-source
 
-      - name: Resolve metadata and reject mutable inputs
+      - name: Resolve release metadata and frozen Provider commit
         id: meta
         shell: pwsh
         env:
           REQUESTED_MODE: ${{ inputs.mode }}
           REQUESTED_RC_NUMBER: ${{ inputs.rc_number }}
-          REQUESTED_PROVIDERS_REF: ${{ inputs.providers_ref }}
         run: |
           $ErrorActionPreference = 'Stop'
           $contract = Get-Content -LiteralPath release/bridge-release-contract.json -Raw | ConvertFrom-Json
@@ -93,25 +86,10 @@ jobs:
               }
           }
 
-          $providersRef = if ([string]::IsNullOrWhiteSpace($env:REQUESTED_PROVIDERS_REF)) {
-              [string]$contract.providersSourceTag
-          } else {
-              $env:REQUESTED_PROVIDERS_REF
-          }
           $providersSha = (git -C provider-source rev-parse HEAD).Trim()
           $bridgeSha = (git rev-parse HEAD).Trim()
           if ($providersSha -notmatch '^[0-9a-f]{40}$' -or $bridgeSha -notmatch '^[0-9a-f]{40}$') {
               throw 'Unable to resolve full source commits.'
-          }
-
-          $providerTags = @((git -C provider-source tag --points-at HEAD) | ForEach-Object { $_.Trim() })
-          $isFullSha = $providersRef -match '^[0-9a-fA-F]{40}$'
-          $isExactTag = $providerTags -contains $providersRef
-          if (-not $isFullSha -and -not $isExactTag) {
-              throw "providers_ref must be a full SHA or a tag pointing at HEAD: $providersRef"
-          }
-          if ($mode -eq 'release' -and -not ($providerTags -contains $contract.providersSourceTag)) {
-              throw "GA Provider commit is not tagged $($contract.providersSourceTag)."
           }
 
           if ($mode -eq 'rc') {
@@ -130,7 +108,6 @@ jobs:
           "lsp_tag=$($contract.lspTag)" >> $env:GITHUB_OUTPUT
           "bridge_sha=$bridgeSha" >> $env:GITHUB_OUTPUT
           "providers_sha=$providersSha" >> $env:GITHUB_OUTPUT
-          "providers_ref=$providersRef" >> $env:GITHUB_OUTPUT
 
   build-bridge:
     name: Test and build signed Bridge
@@ -189,6 +166,7 @@ jobs:
           path: out/*.apk
           if-no-files-found: error
           retention-days: 14
+          compression-level: 0
 
       - name: Remove release keystore
         if: always()
@@ -200,7 +178,7 @@ jobs:
     needs: metadata
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout immutable Provider source
+      - name: Checkout frozen Provider commit
         uses: actions/checkout@v6
         with:
           repository: ${{ env.PROVIDERS_REPOSITORY }}
@@ -226,7 +204,7 @@ jobs:
           set -euo pipefail
           printf '%s' '${{ secrets.SIGNING_KEY }}' | base64 --decode > "$RUNNER_TEMP/release.jks"
 
-      - name: Test and build signed Provider matrix
+      - name: Test and build signed Provider matrix in one Gradle invocation
         shell: bash
         env:
           RELEASE_STORE_FILE: ${{ runner.temp }}/release.jks
@@ -236,8 +214,7 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x ./gradlew
-          ./gradlew --no-daemon testV5Matrix --rerun-tasks
-          ./gradlew --no-daemon assembleV5MatrixRelease --build-cache
+          ./gradlew --no-daemon testV5Matrix assembleV5MatrixRelease --build-cache
 
       - name: Collect canonical Provider assets
         shell: pwsh
@@ -252,6 +229,7 @@ jobs:
             out/v5-provider-matrix.json
           if-no-files-found: error
           retention-days: 14
+          compression-level: 0
 
       - name: Remove release keystore
         if: always()
@@ -269,7 +247,7 @@ jobs:
       - name: Checkout Bridge
         uses: actions/checkout@v6
 
-      - name: Checkout immutable Provider source
+      - name: Checkout frozen Provider commit
         uses: actions/checkout@v6
         with:
           repository: ${{ env.PROVIDERS_REPOSITORY }}
@@ -316,6 +294,7 @@ jobs:
           path: release-assets/*
           if-no-files-found: error
           retention-days: 14
+          compression-level: 0
 
   publish:
     name: Publish GitHub and LSP releases

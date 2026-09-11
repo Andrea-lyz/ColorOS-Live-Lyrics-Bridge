@@ -9,7 +9,7 @@
 - `Xposed-Modules-Repo/io.github.andrealtb.lockscreenlyrics`（本地 `LSPRepo`）
 
 更新文档、推送分支或完成 RC 不等于授权正式发布。只有用户明确要求发布时，才能创建
-Provider source tag、LSP tag、Bridge tag 或 GitHub Release。
+LSP tag、Bridge tag 或 GitHub Release。
 
 ## 1. 冻结源代码
 
@@ -44,7 +44,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
 契约必须一致地拥有：
 
 - Bridge versionName/versionCode、`v<version>` 与 LSP `<versionCode>-<version>` tag；
-- Provider source repository/tag；
+- Provider source repository/main 与 metadata 阶段冻结的 commit SHA；
 - 13 个 module/applicationId/scope/内部版本；
 - 14 个 APK 与 17 项最终资产的精确数量；
 - 规范文件名、正式签名证书 SHA-256、固定 Android build-tools；
@@ -97,15 +97,14 @@ Release Notes 必须是完整历史风格正文，至少包含架构变化、用
 推送 Bridge/Provider 的候选分支，但不打 tag。手动运行：
 
 ```text
-Build 4.1 RC and Release
+Build and Release
 mode=rc
 rc_number=<N>
-providers_ref=<完整 40 位 Provider SHA>
 ```
 
 RC mode 必须：
 
-1. checkout 不可变 Provider SHA；
+1. checkout Providers `main` 并记录解析后的不可变 Provider SHA；
 2. Bridge 标准测试、release lint、正式签名 release 构建；
 3. Provider `testV5Matrix`、13 module release/R8、正式签名；
 4. 校验 14 APK 的 DEX 禁用字符串、包名、版本、证书和 zipalign；
@@ -134,9 +133,9 @@ RC mode 必须：
 
 ## 7. 锁定 Provider 源码
 
-1. Provider 工作树必须干净，候选 commit 已推送。
-2. 创建契约规定的 Provider source tag，例如 `providers-v1.2.0`。
-3. 推送 tag 后从远端核对其完整 commit。
+1. Provider `main` 工作树必须干净，候选 commit 已推送。
+2. workflow 只从 `Andrea-lyz/ColorOS-Live-Lyrics-Providers` 的 `main` checkout，并在 metadata 阶段记录完整 commit SHA。
+3. 后续构建、打包和资产 manifest 只使用该 SHA；运行中 `main` 移动不影响本次 batch。
 4. 不在 Provider 仓库重复维护另一套 APK Release；APK 由 Bridge/LSP 协调 Release 交付。
 
 ## 8. LSPRepo metadata 先行
@@ -156,7 +155,7 @@ RC mode 必须：
 3. 在最终 Bridge commit 创建 `v<version>` 并推送。
 4. tag 事件自动进入 release mode；workflow 必须确认：
    - Bridge tag 等于契约 tag；
-   - Provider source tag 指向预期 commit；
+   - Provider `main` 已解析为完整 commit SHA，且 Provider/Bridge 发布契约一致；
    - LSP tag 已存在；
    - `.github/release-notes/<version>.md` 已存在。
 5. publish job 创建 Bridge GitHub Release 与 LSP mirror Release。
@@ -182,7 +181,7 @@ Provider ZIP 只能包含 13 个顶层 APK，不含目录、debug/unsigned APK �
 2. 分别从 Bridge 与 LSP Release 下载 17 项资产。
 3. 比较两个 Release 的文件名、字节数和 SHA-256。
 4. 对 14 APK 重跑 package/version/certificate/zipalign 检查。
-5. 核对 Bridge tag、Provider source tag、LSP tag 与三个 commit。
+5. 核对 Bridge tag、Provider `main` 的已冻结 SHA、LSP tag 与三个 commit。
 6. 用公开下载的 Bridge + 至少一个 Provider 做最后安装冒烟。
 7. 将 run、commit、tag、哈希和设备结论写入 4.1 发布台账。
 
