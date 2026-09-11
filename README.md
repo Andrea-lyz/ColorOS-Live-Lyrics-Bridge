@@ -13,12 +13,13 @@ Bring lyrics from more music apps to the native ColorOS / OPlus lock-screen lyri
 
 This is not a floating overlay. It passes a player's full lyric timeline to the system UI, keeping the ColorOS look, transitions, and always-on display while adding word-by-word highlighting, translations, and appearance controls.
 
-> Current release: **v4.2.1**.
+> Current release: **v4.3.0**.
 
 ## What it does
 
 - Shows full lyrics on the native ColorOS lock screen and AOD lyric page.
 - Supports line-timed lyrics, word-by-word highlighting, and translations when the player provides the required data.
+- Offers an optional Salt Player-style character float-up animation that follows the reveal front; ordinary line-timed lyrics use it when Line-timed lyric progress is enabled.
 - Wraps or smoothly browses long lines instead of shrinking them into tiny text.
 - Lets you adjust active, unrevealed, translation, and inactive lyric brightness independently, including top/bottom edge fading and an optional extra inactive-row fade.
 - Also controls color, glow, blur, text size, weight, alignment, scaling, motion, lyric-row spacing, and wrapped-line spacing.
@@ -50,7 +51,7 @@ Providers and Bridge can be installed independently:
 - Provider plus Bridge: Bridge adds generic enhancements without submitting a second lyric payload.
 - 4.1 Providers are independent Root / LSPosed modules using libxposed API 102 and static scope.
 
-| Player | 4.2 Provider module | Lyric capability |
+| Player | 4.3 Provider module | Lyric capability |
 | --- | --- | --- |
 | Salt Player | `player-salt` | Word timing, translations, public translation CustomAction |
 | ConePlayer (standard and Google Play) | `player-cone` | Full timeline, translations, public translation CustomAction |

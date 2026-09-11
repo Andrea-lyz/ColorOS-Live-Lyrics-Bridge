@@ -1,6 +1,6 @@
-# 4.2.1 正式发布流程
+# 4.3.0 正式发布流程
 
-适用范围：Bridge `4.2.1`、14 个独立 Provider API 102 套件与 LSPosed mirror。
+适用范围：Bridge `4.3.0`、14 个独立 Provider API 102 套件与 LSPosed mirror。
 
 涉及仓库：
 
@@ -150,7 +150,7 @@ RC mode 必须：
 
 ## 9. Bridge tag 与正式 workflow
 
-1. 将审核通过的 `4.1` 分支按仓库策略合入公开默认分支。
+1. 将审核通过的功能分支按仓库策略合入公开默认分支。
 2. 从干净 clone/默认分支再跑普通 debug CI。
 3. 在最终 Bridge commit 创建 `v<version>` 并推送。
 4. tag 事件自动进入 release mode；workflow 必须确认：
@@ -165,12 +165,12 @@ workflow 拒绝覆盖已经存在的公开 Release。发布后修复使用新版
 
 ## 10. 正式资产白名单
 
-`4.2.1` 预期恰好 18 项：
+`4.3.0` 预期恰好 18 项：
 
-1. `ColorOS-Live-Lyrics-Bridge-v4.2.1.apk`
-2. 14 个 `ColorOS-Live-Lyrics-Provider-<Name>-v4.2.1.apk`
-3. `ColorOS-Live-Lyrics-Providers-v4.2.1.zip`
-4. `release-assets-v4.2.1.json`
+1. `ColorOS-Live-Lyrics-Bridge-v4.3.0.apk`
+2. 14 个 `ColorOS-Live-Lyrics-Provider-<Name>-v4.3.0.apk`
+3. `ColorOS-Live-Lyrics-Providers-v4.3.0.zip`
+4. `release-assets-v4.3.0.json`
 5. `SHA256SUMS`
 
 Provider ZIP 只能包含 14 个顶层 APK，不含目录、debug/unsigned APK 或旧包名。
@@ -183,6 +183,6 @@ Provider ZIP 只能包含 14 个顶层 APK，不含目录、debug/unsigned APK �
 4. 对 15 APK 重跑 package/version/certificate/zipalign 检查。
 5. 核对 Bridge tag、Provider `main` 的已冻结 SHA、LSP tag 与三个 commit。
 6. 用公开下载的 Bridge + 至少一个 Provider 做最后安装冒烟。
-7. 将 run、commit、tag、哈希和设备结论写入 4.1 发布台账。
+7. 将 run、commit、tag、哈希和设备结论写入 4.3 发布台账。
 
-只有这些门禁全部关闭，才能将 v4.2.1 标记为正式完成。
+只有这些门禁全部关闭，才能将 v4.3.0 标记为正式完成。

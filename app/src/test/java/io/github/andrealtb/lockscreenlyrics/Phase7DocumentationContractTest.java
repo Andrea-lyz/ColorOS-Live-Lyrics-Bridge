@@ -54,19 +54,19 @@ public final class Phase7DocumentationContractTest {
     @Test
     public void releaseDocumentsUseTheNewRepositoryAndCanonicalAssets() throws Exception {
         String process = readProjectFile("docs/RELEASE_PROCESS.md");
-        String notes = readProjectFile(".github/release-notes/4.2.1.md");
-        String archive = readProjectFile("docs/releases/v4.2.1.md");
+        String notes = readProjectFile(".github/release-notes/4.3.0.md");
+        String archive = readProjectFile("docs/releases/v4.3.0.md");
 
         assertTrue(process.contains("Andrea-lyz/ColorOS-Live-Lyrics-Providers"));
         assertTrue(process.contains("mode=rc"));
         assertTrue(process.contains("18"));
         assertFalse(process.contains("Andrea-lyz/LyricProvider"));
-        assertTrue(notes.contains("Readify TTS Provider"));
+        assertTrue(notes.contains("Character float-up"));
         assertTrue(notes.contains("libxposed API 102"));
-        assertTrue(notes.contains("release-assets-v4.2.1.json"));
+        assertTrue(notes.contains("release-assets-v4.3.0.json"));
         assertTrue(notes.contains("SHA256SUMS"));
         assertFalse(notes.matches("(?is).*(npatch|non-root).*"));
-        assertTrue(archive.contains("140-4.2.1"));
+        assertTrue(archive.contains("141-4.3.0"));
     }
 
     private static String readProjectFile(String relativePath) throws Exception {

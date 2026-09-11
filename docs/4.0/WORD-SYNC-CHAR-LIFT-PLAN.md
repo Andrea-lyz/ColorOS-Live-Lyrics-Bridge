@@ -1,8 +1,8 @@
 # 逐字同步与普通逐行进度的字符上浮动画（Salt 式 Float-Up 阶跃模型）改造计划
 
-状态：**实施中（分支 `feat/word-sync-char-lift`）。Slice A–D + F + F.1 已合；
-Slice G 已落源码、契约测试与文案，`testDebugUnitTest` / `lintDebug` /
-`assembleDebug` 已通过，待用户按 §8 #21/#22 实机验收。**
+状态：**已完成（v4.3.0 发布基线）。Slice A–D + F + F.1 + G 已合；
+`testDebugUnitTest` / `lintDebug` / `assembleDebug` 已通过，用户已实机确认逐字歌词（含
+换行多段行）与开启普通逐行歌词进度后的 LINE_TIMED 字符上浮效果。**
 
 模型经历三次修订：2026-09-11 评审把 canvas-x 前沿改为流坐标（换行段尾字素
 常驻峰值）；实机测试后整个动画模型由钟形鼓包改为 Salt Player 式阶跃
