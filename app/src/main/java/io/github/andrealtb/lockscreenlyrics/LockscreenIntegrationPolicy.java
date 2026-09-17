@@ -130,6 +130,33 @@ public final class LockscreenIntegrationPolicy {
         return Math.max(0L, storedPosition + (long) (speed * elapsed));
     }
 
+    /**
+     * Keeps a playing lyric clock on its local wall-clock trajectory when a media session
+     * republishes a slightly different quantized position. Some players publish positions in
+     * coarse steps (for example 400 ms) while the framework extrapolates between callbacks. A
+     * small correction in either direction is a clock update, not a seek; large changes and
+     * state changes must remain authoritative.
+     */
+    static long smoothPlayingPosition(
+            int previousState,
+            int state,
+            long previousPosition,
+            long candidatePosition,
+            long correctionThresholdMillis) {
+        if (state != 3
+                || previousState != 3
+                || previousPosition < 0L
+                || candidatePosition < 0L
+                || correctionThresholdMillis < 0L) {
+            return candidatePosition;
+        }
+        long delta = candidatePosition - previousPosition;
+        if (delta < correctionThresholdMillis && delta > -correctionThresholdMillis) {
+            return previousPosition;
+        }
+        return candidatePosition;
+    }
+
     static boolean isLikelyPlaybackTrackRestart(long previousPosition, long nextPosition) {
         return previousPosition >= 8_000L
                 && nextPosition >= 0L

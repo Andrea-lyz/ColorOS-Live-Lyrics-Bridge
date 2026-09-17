@@ -145,6 +145,9 @@ final class LyricTimingTuningConstants {
         /** Position-delta threshold that counts as a "jump" for lyric playback. */
         static final long PLAYBACK_POSITION_JUMP_MS = 1_500L;
 
+        /** Small backward clock corrections ignored while a track remains playing. */
+        static final long PLAYBACK_SMALL_CORRECTION_MS = 600L;
+
         /** Maximum number of retry passes for the bound-frame reconciliation loop. */
         static final int BOUND_FRAME_RETRY_MAX = 4;
 

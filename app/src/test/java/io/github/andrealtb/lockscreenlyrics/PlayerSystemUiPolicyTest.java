@@ -12,6 +12,15 @@ import static org.junit.Assert.assertTrue;
 
 public final class PlayerSystemUiPolicyTest {
     @Test
+    public void qqMusicKeepsItsNativeCardActionRow() {
+        assertTrue(PlayerSystemUiPolicy.preservesNativeActionRow(PlayerSystemUiPolicy.QQ_MUSIC));
+        assertFalse(PlayerSystemUiPolicy.preservesNativeActionRow(PlayerSystemUiPolicy.KUWO));
+        assertFalse(PlayerSystemUiPolicy.preservesNativeActionRow(PlayerSystemUiPolicy.POWERAMP));
+        assertFalse(PlayerSystemUiPolicy.preservesNativeActionRow(PlayerSystemUiPolicy.NETEASE_MUSIC));
+        assertFalse(PlayerSystemUiPolicy.preservesNativeActionRow(null));
+    }
+
+    @Test
     public void nativePlayerPackagesReceiveOnlySystemUiCompatibility() {
         Set<String> packages = new HashSet<>(
                 Arrays.asList(PlayerSystemUiPolicy.oplusHistoryPackages()));

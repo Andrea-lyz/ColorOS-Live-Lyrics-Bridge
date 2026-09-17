@@ -95,6 +95,19 @@ final class PlayerSystemUiPolicy {
                 || MD3_MUSIC.equals(packageName);
     }
 
+    /**
+     * Players whose card must keep the action rule ColorOS picked for them.
+     *
+     * Forcing OPlus Rule0 switches the card to {@code PreferSemanticActionsRule0}, which recomposes
+     * the whole transport row instead of only the favorite slot. QQ Music is the observed case
+     * (PJZ110 2026-09-17): with Rule0 forced and even with the translation button disabled, the card
+     * resolved to {@code PreferSemanticActionsRule0} and its buttons rendered as
+     * next/translate/previous/pause. Do not trade the player's control row for a toggle slot.
+     */
+    static boolean preservesNativeActionRow(String packageName) {
+        return QQ_MUSIC.equals(packageName);
+    }
+
     static boolean isPoweramp(String packageName) {
         return POWERAMP.equals(packageName);
     }

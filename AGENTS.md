@@ -1,100 +1,36 @@
-# Repository Guidelines
+# Bridge Repository Instructions
 
-## Project Structure & Module Organization
+本文件补充工作区根 AGENTS.md，仅保留 Bridge 专项约束。
 
-This is a Gradle Kotlin DSL Android project for an LSPosed/libxposed API 102 module.
+## 源码入口
 
-- `app/src/main/java/io/github/andrealtb/lockscreenlyrics/` contains player adapters, lyric parsing, metadata contracts, and SystemUI hooks.
-- `app/src/main/resources/META-INF/xposed/` defines the module entry point, metadata, and static scope.
-- `app/src/test/java/.../lockscreenlyrics/` contains JVM unit tests.
-- `libxposed-api-stubs/` provides compile-only API 102 classes; do not package or add runtime behavior here.
-- `docs/` documents the player-facing `lyricInfo` integration contract and the LyricProvider bridge contract used by external provider APKs.
-- `release/bridge-release-contract.json` is the machine-owned 4.0 version, scope, signing, Provider source, and asset-count contract.
-- `.github/workflows/` contains debug and signed-release automation. `GIF.gif` is the README demonstration asset.
+- `app/src/main/java/io/github/andrealtb/lockscreenlyrics/`：Bridge 设置、通用策略及 SystemUI Hook；播放器适配在独立 Providers 仓库。
+- `app/src/main/resources/META-INF/xposed/`：入口、API 元数据和静态 scope。
+- `app/src/test/java/`：JVM 单元测试；`libxposed-api-stubs/` 仅供编译，不打包、不增加运行时行为。
+- 发布任务查 `docs/RELEASE_PROCESS.md` 与 `release/bridge-release-contract.json`，不在本文件重复版本、矩阵、资产数量和工作流步骤。
 
-## Build, Test, and Development Commands
+## SystemUI、Recycler 与 AOD
 
-JDK 21 is required, although Android output targets Java 17 bytecode.
+- Bridge scope 只含 `system` / `com.android.systemui`。PlayerSystemUiPolicy 中的包策略须有 SystemUI/OPlus 兼容或翻译 action 证据。
+- 所有歌词 View Hook 以 LyricsRecyclerView 所属关系严格门禁；普通 TextView 不进入歌词自绘、遮罩、尺寸和缓存逻辑。
+- 首次 attach 的透明、偏移或 0x0 可能是官方过渡状态，不能仅凭这些条件延迟 prime、setCurrentLyric 或 row scale。
+- 不强制私有 AOD 状态，不在切换期叠加重复 scroll/height/visibility/active-index 补丁。几何修复限定歌词区域、一次性、带原因日志，并与已知良好设备窗口比较。
+- 首行 [00:00.000] 别名不代表逐字进度已开始；第一词之前不伪造 karaoke fill。末词视觉收尾查当前 WordLyricRenderSupport.lastWordRevealEndMillis 及测试，不改写存储时间戳或行生命周期。
+- 保持当前歌词项几何，除非任务就是修复滚动/尺寸。反射和 Hook 失败安全降级，避免 SystemUI 崩溃。
+- 设置页维持当前固定浅色和 edge-to-edge；视觉修改不顺手改变 LyricUiConfig schema、renderer 或 AOD 时序。最终设备外观由用户确认。
 
-```powershell
-.\scripts\gradle-local.cmd :app:assembleDebug
-.\scripts\gradle-local.cmd :app:testDebugUnitTest
-adb install -r app\build\outputs\apk\debug\app-debug.apk
-adb logcat -v time -s LockscreenLyrics
-```
+## 本地开发
 
-`scripts\gradle-local.cmd` discovers a real JDK 21 from `SALT_LYRIC_JAVA_HOME` or common local JDK locations, runs Gradle through a temporary ASCII drive letter, bypasses the local PowerShell script execution policy for this helper only, keeps the wrapper cache in `.gradle-user-home/`, and leaves build outputs in the standard module directories such as `app/build/outputs/`. This avoids Windows/Gradle test-worker classpath corruption when the repository path contains Chinese characters while keeping the APK path predictable. If existing Gradle lock files, project cache directories, or `local.properties` have restrictive ACLs, the script falls back to writable temp locations, mirrors the project to `%TEMP%\salt-lyric-project-overlay`, maps the workspace `android-sdk` to an ASCII drive letter, and prints the fallback paths it used. `assembleDebug` produces the test APK. `testDebugUnitTest` runs the JUnit 4 suite. After installation, enable Bridge only for `system` and `com.android.systemui`; player scopes belong to independent Provider APKs.
+从工作区根使用 `scripts/dev.cmd bridge <Gradle tasks>`，或本仓库 `scripts/gradle-local.cmd <Gradle tasks>`。
+入口负责 JDK/ASCII 路径处理；环境问题再检查脚本和构建配置，不依赖旧环境快照。
 
-## Release Process
+- Java 沿用四空格缩进与现有命名风格；不为风格重排无关代码。
+- JVM 测试使用 JUnit 4、`*Test.java`，针对相关行为添加有意义的回归；外部 fixture 缺失时通过显式属性及 Assume 处理。
+- 验证范围遵循根目录约定；提交前检查 `git diff --check`。
 
-Before publishing, confirm the intended diff and update all release-facing files in the same commit:
+## 发布与交付
 
-- Bump `defaultVersionName` and `versionCode` in `app/build.gradle.kts`.
-- Add `.github/release-notes/<version>.md`; the release workflow uses this file for both the source GitHub release and the LSPosed mirror release.
-- Add `docs/releases/v<version>.md`; this is the durable in-repo changelog archive and must not be skipped.
-- Update README when behavior, packaging, scope, or user-facing installation notes change. Public LSPosed metadata is owned only by the independent `LSPRepo` checkout.
-
-## Provider 4.0 Integration
-
-The Bridge owns only `system` / `com.android.systemui` hooks and generic rendering,
-AOD, translation, and OPlus compatibility enhancements. Independent Providers own every
-player-process hook and publish through the player's own
-`MediaSession` / `MediaMetadata["lyricInfo"]`.
-
-When adding or changing a Provider-backed player:
-
-- Keep every player package out of the Bridge `scope.list`.
-- Do not add Provider applicationIds, source ids, private broadcasts, sender kinds, or payload
-  registries to the Bridge.
-- Publish a ColorOS-compatible native `lyricInfo` payload from the player's own MediaSession.
-- Keep track identity, generation, replay, artwork, and player-specific reflection inside the
-  Provider.
-- Add a player package to `PlayerSystemUiPolicy` only for a device-proven SystemUI/OPlus
-  compatibility requirement or translation action policy.
-- Verify the Provider without Bridge first, then verify that Bridge adds enhancement without a
-  second lyric submission.
-
-Provider APKs are independent Root / LSPosed modules. They are not bundled into the Bridge APK,
-do not use NPatch, and should be signed with the release keystore selected for the Provider suite.
-
-Validate locally before tagging:
-
-```powershell
-.\gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\validate-release-contract.ps1 -ProviderRepoRoot ..\ColorOS-Live-Lyrics-Providers
-git diff --check
-```
-
-Publish from clean, committed Bridge and Provider sources:
-
-- `release/bridge-release-contract.json` and Provider `release/v5-provider-matrix.json` own the version, immutable Provider source tag, 12-module matrix, scopes, canonical asset names, release certificate, and exact asset counts. Do not duplicate these lists in workflow jobs.
-- RC uses the manual `Build 4.0 RC and Release` workflow in `rc` mode with an immutable full Provider SHA or exact Provider tag. RC uploads one private complete artifact and must not create a GitHub or LSP Release.
-- The Provider job checks out `Andrea-lyz/ColorOS-Live-Lyrics-Providers`, runs `testV5Matrix` and `assembleV5MatrixRelease`, and collects exactly the 12 explicit contract modules.
-- The package job verifies all 13 APKs with `aapt2`, `apksigner`, and `zipalign`, requires the frozen release certificate, builds the 12-APK Provider ZIP, and emits `SHA256SUMS` plus a source/asset manifest.
-- Public release mode is tag-only. Push the Provider source tag first, then the LSPRepo metadata commit and `<versionCode>-<version>` tag, verify that remote tag, and only then push Bridge `v<version>`.
-- Existing public Releases are never overwritten by workflow reruns. Fixes after publication use a new version and tag.
-
-After the workflow succeeds, verify the source release, the LSPosed release, and LSPosed module presentation:
-
-- Confirm the exact contract-owned 16 assets exist on both the Bridge and LSP Releases: 1 Bridge APK, 12 Provider APKs, the Provider ZIP, `SHA256SUMS`, and the release asset manifest.
-- Update `LSPRepo/README.md`, `SUMMARY`, `SOURCE_URL`, and `SCOPE` directly; ensure the LSP tag points at that metadata commit so LSPosed Manager sees the update.
-- Download both public asset sets again and verify them against `SHA256SUMS`; do not infer success from the workflow summary alone.
-- Check the public LSPosed module page ordering after tag or metadata fixes.
-
-## Coding Style & Naming Conventions
-
-Use four-space indentation and standard Java brace placement. Prefer `final` for immutable values, `UPPER_SNAKE_CASE` for constants, `lowerCamelCase` for methods and fields, and descriptive class names such as `SaltPlayerAdapter`. Keep reflection and hook failures guarded: SystemUI must degrade safely instead of crashing. Preserve fixed lyric-item geometry unless a change explicitly addresses scroll stability.
-
-No formatter is enforced; run `git diff --check` before committing.
-
-## Testing Guidelines
-
-Use JUnit 4 and name test classes `*Test.java`; test methods should describe behavior, for example `explicitSuffixDoesNotChangeTrackIdentity`. Add deterministic parser or identity regressions for bug fixes. Fixture-dependent tests must use an explicit system property and `Assume` when the fixture is absent. There is no formal coverage threshold.
-
-## Commit & Pull Request Guidelines
-
-History uses short, imperative subjects such as `Fix lockscreen lyric rendering` and `Build lyrics core with JDK 21`. Use `[skip ci]` only for documentation-only changes. Pull requests should explain affected processes, list build/test results, link relevant issues, and include screenshots or a short recording for visual lyric changes. Include focused `adb logcat` excerpts for hook or timing changes.
-
-## Security & Configuration
-
-Keep signing credentials in environment variables or repository secrets. Never commit keystores, passwords, device logs containing personal media paths, `local.properties`, or generated APKs.
+- 发布流程、签名、源代码冻结和门禁以当前发布文档及机器契约为准；按任务授权执行，不把本地构建当成正式发布授权。
+- Release Notes 同步 `.github/release-notes/<version>.md` 与 `docs/releases/v<version>.md`；LSP 元数据由独立 LSPRepo 维护。
+- 发布完成需独立核对源仓库/LSP 资产、哈希与模块展示，不只看 Actions 成功。已公开版本不通过重跑覆盖，修复使用新版本。
+- PR 说明行为变化、受影响进程和实际验证；视觉/时序问题附已有截图或脱敏日志，缺少设备证据时如实标注，不擅自操作设备补证。

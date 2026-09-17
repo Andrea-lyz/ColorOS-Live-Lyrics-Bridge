@@ -1353,7 +1353,13 @@ public final class LockscreenLyricsModule extends XposedModule {
                 ? "null"
                 : controllerArg.getClass().getName()));
         if (hasTranslationAction || canOverrideWithTranslation) {
-            ensureTranslationToggleRule0(packageName);
+            if (PlayerSystemUiPolicy.preservesNativeActionRow(packageName)) {
+                dropTranslationToggleRule0(packageName);
+                translationButtonDebug("Rule0 ensure skipped: player keeps its native action row"
+                        + ", package=" + nullToEmpty(packageName));
+            } else {
+                ensureTranslationToggleRule0(packageName);
+            }
         }
 
         Object result = chain.proceed();
@@ -1430,6 +1436,19 @@ public final class LockscreenLyricsModule extends XposedModule {
         refreshPendingTranslationToggleRule0Packages();
     }
 
+    /**
+     * Keeps a native-action-row player out of the forced Rule0 refresh so the cached, already
+     * patched argument map cannot re-apply Rule0 to it on the next {@code updatePkgActionsRule}.
+     */
+    private void dropTranslationToggleRule0(String packageName) {
+        if (TextUtils.isEmpty(packageName)) {
+            return;
+        }
+        translationToggleRule0Packages.remove(packageName);
+        pendingTranslationToggleRule0Packages.remove(packageName);
+        refreshedTranslationToggleRule0Packages.remove(packageName);
+    }
+
     private void refreshPendingTranslationToggleRule0Packages() {
         ArrayList<String> pendingPackages = new ArrayList<>();
         for (String packageName : pendingTranslationToggleRule0Packages) {
@@ -1464,7 +1483,11 @@ public final class LockscreenLyricsModule extends XposedModule {
                 if (!(refreshArgs[0] instanceof Map)) {
                     return;
                 }
-                knownTranslationPackages.addAll(translationToggleRule0Packages);
+                for (String packageName : translationToggleRule0Packages) {
+                    if (!PlayerSystemUiPolicy.preservesNativeActionRow(packageName)) {
+                        knownTranslationPackages.add(packageName);
+                    }
+                }
                 refreshArgs = TranslationActionRulePolicy.patch(
                         refreshArgs, knownTranslationPackages);
                 updateMethod.invoke(selector, refreshArgs);
@@ -4080,6 +4103,20 @@ public final class LockscreenLyricsModule extends XposedModule {
             clearActiveRendererTargets();
             activeRendererWordLine = null;
             beginOfficialLyricTrackHandoff("playback position reset");
+        }
+        long rawComputedPosition = computedPosition;
+        computedPosition = LockscreenIntegrationPolicy.smoothPlayingPosition(
+                lastSystemUiPlaybackState,
+                state,
+                previousPosition,
+                computedPosition,
+                LyricTimingTuningConstants.LyricGeneral.PLAYBACK_SMALL_CORRECTION_MS);
+        if (computedPosition != rawComputedPosition) {
+            info(BridgeDebugArea.MEDIA, BridgeEvents.DETAIL,
+                    "Smoothed small playback clock correction, previousPosition="
+                            + previousPosition
+                            + ", rawPosition=" + rawComputedPosition
+                            + ", acceptedPosition=" + computedPosition);
         }
         long nextPosition = storedPosition >= 0 ? storedPosition : computedPosition;
         if (isPlaybackStateInMotion(state) && isFiniteNonZero(speed) && computedPosition >= 0) {
@@ -13707,6 +13744,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 return;
             }
             try {
+                // activeWord == null keeps the front at the start during pre-roll.
                 float textSize = inactivePaint.getTextSize();
                 float maxSink = textSize
                         * WordLyricRenderConstants.CHAR_LIFT_MAX_FACTOR

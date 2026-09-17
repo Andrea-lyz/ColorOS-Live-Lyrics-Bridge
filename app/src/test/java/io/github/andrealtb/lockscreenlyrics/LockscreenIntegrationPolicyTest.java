@@ -99,6 +99,20 @@ public class LockscreenIntegrationPolicyTest {
     }
 
     @Test
+    public void smoothsSmallPlayingCorrectionsInEitherDirection() {
+        assertEquals(10_000L, LockscreenIntegrationPolicy.smoothPlayingPosition(
+                3, 3, 10_000L, 9_800L, 600L));
+        assertEquals(10_000L, LockscreenIntegrationPolicy.smoothPlayingPosition(
+                3, 3, 10_000L, 10_200L, 600L));
+        assertEquals(9_000L, LockscreenIntegrationPolicy.smoothPlayingPosition(
+                3, 3, 10_000L, 9_000L, 600L));
+        assertEquals(9_800L, LockscreenIntegrationPolicy.smoothPlayingPosition(
+                2, 3, 10_000L, 9_800L, 600L));
+        assertEquals(9_800L, LockscreenIntegrationPolicy.smoothPlayingPosition(
+                3, 2, 10_000L, 9_800L, 600L));
+    }
+
+    @Test
     public void pausedPositionDoesNotAdvanceWithElapsedRealtime() {
         assertEquals(27_696L, LockscreenIntegrationPolicy.extrapolatePlaybackPosition(
                 false,

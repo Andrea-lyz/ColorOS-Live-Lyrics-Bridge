@@ -171,6 +171,33 @@ final class TranslationToggleMediaActionBinder {
             overrideCandidate = findOverrideFallback(mediaButtonEx, actionList);
             overrideActionId = "";
         }
+        if (overrideCandidate == null
+                && allowOverride
+                && hasTranslationPayload(modelTranslationCount, payloadTranslationChars)) {
+            Object synthetic = createSyntheticTranslationAction(mediaButtonEx, packageName);
+            if (synthetic != null) {
+                ArrayList<Object> withTranslation = new ArrayList<>(actionList.size() + 1);
+                withTranslation.add(synthetic);
+                withTranslation.addAll(actionList);
+                actionList = withTranslation;
+                tryInvokeOneArgByName(mediaButtonEx, "setRule0CustomActions", withTranslation);
+                writeFieldValue(mediaButtonEx, "rule0CustomActions", withTranslation);
+                // Mark the extension as custom-action capable as well. Some players start with
+                // an empty Rule0 list and hasCustomAction=false; leaving that bit unchanged can make the
+                // OPlus binder discard the newly supplied Rule0 action on its next pass.
+                tryInvokeOneArgByName(mediaButtonEx, "setHasCustomAction", true);
+                debug("Created translation action for player without custom actions, package="
+                        + nullToEmpty(packageName));
+                configure(
+                        mediaButtonEx,
+                        actionList,
+                        synthetic,
+                        packageName,
+                        "public",
+                        "");
+                return;
+            }
+        }
         if (overrideCandidate != null && allowOverride) {
             configure(
                     mediaButtonEx,
@@ -185,6 +212,73 @@ final class TranslationToggleMediaActionBinder {
                 + ", currentProvider=" + nullToEmpty(currentProviderPackage)
                 + ", modelTranslations=" + modelTranslationCount
                 + ", payloadTranslationChars=" + payloadTranslationChars);
+    }
+
+    private static boolean hasTranslationPayload(int modelTranslationCount, int payloadTranslationChars) {
+        return modelTranslationCount > 0 || payloadTranslationChars > 0;
+    }
+
+    /**
+     * When a player exposes neither PlaybackState.CustomAction nor an OPlus heart action, build
+     * the same SystemUI MediaAction type that the framework uses for public custom actions so its
+     * click is still handled entirely inside the Bridge.
+     */
+    private Object createSyntheticTranslationAction(Object mediaButtonEx, String packageName) {
+        Context context = host.currentApplicationContext();
+        TranslationIcon translationIcon = findTranslationIcon(context, packageName);
+        if (mediaButtonEx == null || translationIcon == null || translationIcon.icon == null) {
+            return null;
+        }
+        try {
+            ClassLoader loader = mediaButtonEx.getClass().getClassLoader();
+            Class<?> actionExClass = Class.forName(
+                    "com.android.systemui.media.controls.models.player.OplusMediaActionEx",
+                    true,
+                    loader);
+            Object actionEx = actionExClass.getDeclaredConstructor(
+                    boolean.class,
+                    Icon.class,
+                    android.net.Uri.class,
+                    boolean.class,
+                    Boolean.class,
+                    boolean.class,
+                    String.class).newInstance(
+                    false,
+                    translationIcon.icon,
+                    null,
+                    false,
+                    null,
+                    false,
+                    null);
+            Class<?> actionClass = Class.forName(
+                    "com.android.systemui.media.controls.shared.model.MediaAction",
+                    true,
+                    loader);
+            Runnable click = () -> {
+                boolean before = host.isLyricInfoTranslationEnabled(packageName);
+                debug("synthetic translation action clicked, package="
+                        + nullToEmpty(packageName) + ", enabledBefore=" + before);
+                host.onTranslationToggleClicked(packageName);
+            };
+            return actionClass.getDeclaredConstructor(
+                    Drawable.class,
+                    Runnable.class,
+                    CharSequence.class,
+                    Drawable.class,
+                    Integer.class,
+                    actionExClass).newInstance(
+                    translationIcon.drawable,
+                    click,
+                    TranslationActionPresentationPolicy.contentDescription(
+                            host.isLyricInfoTranslationEnabled(packageName)),
+                    null,
+                    null,
+                    actionEx);
+        } catch (Throwable t) {
+            debug("synthetic translation action unavailable, package="
+                    + nullToEmpty(packageName) + ", reason=" + t.getClass().getSimpleName());
+            return null;
+        }
     }
 
     // OPlus models have mutable structural hashCode/equals; key snapshots by weak identity.
