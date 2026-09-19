@@ -355,6 +355,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     private volatile Object oplusMediaActionPrioritySelector;
     private volatile Method oplusUpdatePkgActionsRuleMethod;
     private volatile Object[] lastOplusPkgActionsRuleArgs;
+    private volatile Object[] rawOplusPkgActionsRuleArgs;
     private String lastTranslationModelRebindKey = "";
     private final Set<String> translationToggleRule0Packages =
             ConcurrentHashMap.newKeySet();
@@ -458,6 +459,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     private volatile long screenTimeoutKeepAwakeUntilElapsedMs;
     private volatile boolean aodLowFrameRateLyricMode;
     private BroadcastReceiver screenTimeoutReceiver;
+    private volatile boolean screenTurnedOffForLockState;
     private PowerManager.WakeLock screenTimeoutWakeLock;
     private PowerManager screenTimeoutPowerManager;
     private KeyguardManager screenTimeoutKeyguardManager;
@@ -1301,10 +1303,20 @@ public final class LockscreenLyricsModule extends XposedModule {
             return chain.proceed();
         }
 
+        Object[] rawArgs = args.toArray(new Object[0]);
+        rawOplusPkgActionsRuleArgs = TranslationActionRulePolicy.snapshotRawArgs(rawArgs);
+
+        Context lockContext = currentApplicationContext();
+        boolean keyguardLocked = isDeviceKeyguardLocked(lockContext);
+        if (!keyguardLocked) {
+            lastOplusPkgActionsRuleArgs = rawArgs.clone();
+            return chain.proceed();
+        }
+
         ArrayList<String> knownTranslationPackages =
                 new ArrayList<>(translationToggleRule0Packages);
         Object[] patchedArgs = TranslationActionRulePolicy.patch(
-                args.toArray(new Object[0]), knownTranslationPackages);
+                rawArgs, knownTranslationPackages);
         lastOplusPkgActionsRuleArgs = patchedArgs.clone();
         Object result = chain.proceed(patchedArgs);
         markTranslationToggleRule0PackagesRefreshed(knownTranslationPackages);
@@ -1340,13 +1352,20 @@ public final class LockscreenLyricsModule extends XposedModule {
         Object packageNameArg = chain.getArg(0);
         Object controllerArg = chain.getArg(2);
         String packageName = packageNameArg instanceof String ? (String) packageNameArg : "";
-        boolean hasTranslationAction = !TextUtils.isEmpty(packageName)
+        Context lockContext = currentApplicationContext();
+        boolean keyguardLocked = isDeviceKeyguardLocked(lockContext);
+        boolean isCurrentProvider = isCurrentLyricProviderPackage(packageName);
+        boolean hasTranslationAction = keyguardLocked
+                && isCurrentProvider
+                && !TextUtils.isEmpty(packageName)
                 && controllerHasTranslationAction(controllerArg);
-        boolean canOverrideWithTranslation =
-                PlayerTranslationTogglePolicy.canOverrideFavoriteActionWithTranslation(
+        boolean canOverrideWithTranslation = keyguardLocked
+                && isCurrentProvider
+                && PlayerTranslationTogglePolicy.canOverrideFavoriteActionWithTranslation(
                         packageName,
                         providerDeclaredTranslationTogglePackages);
         translationButtonDebug("createActionsFromState package=" + nullToEmpty(packageName)
+                + ", keyguardLocked=" + keyguardLocked
                 + ", hasPublicAction=" + hasTranslationAction
                 + ", canOverride=" + canOverrideWithTranslation
                 + ", controller=" + (controllerArg == null
@@ -1360,6 +1379,8 @@ public final class LockscreenLyricsModule extends XposedModule {
             } else {
                 ensureTranslationToggleRule0(packageName);
             }
+        } else {
+            dropTranslationToggleRule0(packageName);
         }
 
         Object result = chain.proceed();
@@ -1375,7 +1396,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                     translationButtonDebug("createActionsFromState result for "
                             + packageName
                             + ", class=" + result.getClass().getName());
-                    boolean userWantsButton = userWantsTranslationButton(packageName);
+                    boolean userWantsButton = keyguardLocked && userWantsTranslationButton(packageName);
                     translationToggleActionBinder.applyTranslationToggle(
                             packageName,
                             result,
@@ -1440,6 +1461,25 @@ public final class LockscreenLyricsModule extends XposedModule {
      * Keeps a native-action-row player out of the forced Rule0 refresh so the cached, already
      * patched argument map cannot re-apply Rule0 to it on the next {@code updatePkgActionsRule}.
      */
+    private void restoreOriginalPkgActionsRules() {
+        Object selector = oplusMediaActionPrioritySelector;
+        Method updateMethod = oplusUpdatePkgActionsRuleMethod;
+        Object[] rawSnapshot = rawOplusPkgActionsRuleArgs;
+        if (selector == null || updateMethod == null || rawSnapshot == null) {
+            return;
+        }
+        try {
+            synchronized (selector) {
+                Object[] cleanArgs = TranslationActionRulePolicy.snapshotRawArgs(rawSnapshot);
+                updateMethod.invoke(selector, cleanArgs);
+                lastOplusPkgActionsRuleArgs = cleanArgs.clone();
+            }
+            translationButtonDebug("Restored native OPlus action rules from clean snapshot");
+        } catch (Throwable t) {
+            error("Failed to restore native OPlus action rules from snapshot", t);
+        }
+    }
+
     private void dropTranslationToggleRule0(String packageName) {
         if (TextUtils.isEmpty(packageName)) {
             return;
@@ -1465,21 +1505,21 @@ public final class LockscreenLyricsModule extends XposedModule {
 
         Object selector = oplusMediaActionPrioritySelector;
         Method updateMethod = oplusUpdatePkgActionsRuleMethod;
-        Object[] cachedArgs = lastOplusPkgActionsRuleArgs;
+        Object[] baseArgs = rawOplusPkgActionsRuleArgs != null ? rawOplusPkgActionsRuleArgs : lastOplusPkgActionsRuleArgs;
         if (selector == null
                 || updateMethod == null
-                || cachedArgs == null) {
+                || baseArgs == null) {
             translationButtonDebug("refresh Rule0 waiting, pending=" + pendingPackages
                     + ", selector=" + (selector != null)
                     + ", updateMethod=" + (updateMethod != null)
-                    + ", cachedArgs=" + (cachedArgs != null));
+                    + ", baseArgs=" + (baseArgs != null));
             return;
         }
 
         try {
             ArrayList<String> knownTranslationPackages = new ArrayList<>();
             synchronized (selector) {
-                Object[] refreshArgs = cachedArgs.clone();
+                Object[] refreshArgs = TranslationActionRulePolicy.snapshotRawArgs(baseArgs);
                 if (!(refreshArgs[0] instanceof Map)) {
                     return;
                 }
@@ -1614,10 +1654,118 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
     }
 
+    private String resolveMediaEntryKey(Object manager, String packageName) {
+        if (manager == null || TextUtils.isEmpty(packageName)) {
+            return packageName;
+        }
+        try {
+            Method findEntryMethod = manager.getClass().getMethod("findExistingEntry", String.class);
+            findEntryMethod.setAccessible(true);
+            Object result = findEntryMethod.invoke(manager, packageName);
+            if (result instanceof String && !((String) result).isEmpty()) {
+                return (String) result;
+            }
+        } catch (Throwable ignored) {
+        }
+        return packageName;
+    }
+
+    /**
+     * Re-runs SystemUI's full media rebuild for every live entry of {@code packageName} by calling
+     * {@code LegacyMediaDataManagerImpl.updateState(key, state)} directly.
+     *
+     * <p>The synthetic {@code updateMediaDataFromPlayState} entry is guarded by
+     * {@code mediaPlayerIndex != -1 || state == PLAYING}; notification-keyed entries fail the index
+     * check and a stale controller state fails the PLAYING check, so a lock/unlock rebind silently
+     * did nothing until the player itself changed state (PJZ110 2026-09-19). {@code updateState}
+     * has no such guard: it re-runs {@code createActionsFromState} (our gate) and
+     * {@code onMediaDataLoaded} (priority recompute) for the real entry key and session token.</p>
+     */
+    private boolean requestDirectMediaDataUpdateState(Object exManager, String packageName) {
+        if (exManager == null || TextUtils.isEmpty(packageName)) {
+            return false;
+        }
+        Object legacyManager = invokeNoArgByName(exManager, "getMediaDataManager");
+        Object entries = legacyManager == null ? null : readFieldValue(legacyManager, "mediaEntries");
+        if (!(entries instanceof Map)) {
+            translationButtonDebug("direct updateState unavailable, package=" + packageName
+                    + ", legacyManager=" + (legacyManager == null ? "null" : legacyManager.getClass().getName())
+                    + ", entries=" + (entries == null ? "null" : entries.getClass().getName()));
+            return false;
+        }
+        Method updateState = null;
+        for (Class<?> current = legacyManager.getClass(); current != null && updateState == null;
+                current = current.getSuperclass()) {
+            try {
+                updateState = current.getDeclaredMethod("updateState", String.class, PlaybackState.class);
+                updateState.setAccessible(true);
+            } catch (NoSuchMethodException ignored) {
+                // keep walking
+            }
+        }
+        if (updateState == null) {
+            translationButtonDebug("direct updateState unavailable: method missing on "
+                    + legacyManager.getClass().getName());
+            return false;
+        }
+        Context context = currentApplicationContext();
+        if (context == null) {
+            return false;
+        }
+        List<Map.Entry<?, ?>> snapshot;
+        try {
+            snapshot = new ArrayList<>(((Map<?, ?>) entries).entrySet());
+        } catch (Throwable t) {
+            return false;
+        }
+        int updated = 0;
+        for (Map.Entry<?, ?> entry : snapshot) {
+            Object key = entry.getKey();
+            Object data = entry.getValue();
+            if (!(key instanceof String) || data == null) continue;
+            if (!packageName.equals(invokeNoArgByName(data, "getPackageName"))) continue;
+            Object token = invokeNoArgByName(data, "getToken");
+            if (!(token instanceof android.media.session.MediaSession.Token)) {
+                translationButtonDebug("direct updateState skipped: token null, key=" + key);
+                continue;
+            }
+            PlaybackState state;
+            try {
+                state = new MediaController(context, (android.media.session.MediaSession.Token) token)
+                        .getPlaybackState();
+            } catch (Throwable t) {
+                state = null;
+            }
+            if (state == null) {
+                translationButtonDebug("direct updateState skipped: state null, key=" + key);
+                continue;
+            }
+            try {
+                updateState.invoke(legacyManager, key, state);
+                updated++;
+                translationButtonDebug("direct updateState requested, key=" + key
+                        + ", state=" + state.getState());
+            } catch (Throwable t) {
+                error("Failed direct MediaDataManager.updateState for " + key, t);
+            }
+        }
+        return updated > 0;
+    }
+
     private boolean requestOplusTranslationActionRebind(String packageName) {
         String safePackage = normalizeTranslationPreferencePackage(packageName);
         Method refreshMethod = oplusPlaybackStateRefreshMethod;
         Object manager = oplusMediaDataManager.get();
+        if (requestDirectMediaDataUpdateState(manager, safePackage)) {
+            infoAlways(
+                    BridgeDebugArea.PLAYER_SPECIAL,
+                    BridgeEvents.TRANSLATION_ACTION_REBIND,
+                    "Requested translation action MediaData rebind via updateState"
+                            + " | package=" + safePackage
+                            + ", enabled=" + isLyricInfoTranslationEnabledFromCache(safePackage)
+                            + ", keyguardLocked=" + isDeviceKeyguardLocked(currentApplicationContext()));
+            return true;
+        }
         MediaController controller;
         String controllerPackage;
         synchronized (systemUiPlaybackControllerLock) {
@@ -1650,13 +1798,15 @@ public final class LockscreenLyricsModule extends XposedModule {
                             + ", controllerPackage=" + nullToEmpty(controllerPackage));
             return false;
         }
+        String resolvedKey = resolveMediaEntryKey(manager, safePackage);
         try {
-            refreshMethod.invoke(null, manager, safePackage, playbackState);
+            refreshMethod.invoke(null, manager, resolvedKey, playbackState);
             infoAlways(
                     BridgeDebugArea.PLAYER_SPECIAL,
                     BridgeEvents.TRANSLATION_ACTION_REBIND,
                     "Requested translation action MediaData rebind"
                             + " | package=" + safePackage
+                            + ", key=" + resolvedKey
                             + ", enabled="
                             + isLyricInfoTranslationEnabledFromCache(safePackage)
                             + ", playbackState=" + playbackState.getState());
@@ -9697,6 +9847,17 @@ public final class LockscreenLyricsModule extends XposedModule {
                         screenTimeoutPausedByUserPresent = false;
                         releaseScreenTimeoutWakeLock("screen off");
                         maybeLogScreenTimeout("Paused screen timeout keep-awake after screen off", true);
+                        screenTurnedOffForLockState = true;
+                        infoAlways(BridgeDebugArea.PLAYER_SPECIAL, BridgeEvents.TRANSLATION_ACTION_REBIND,
+                                "Keyguard locked screen off, requesting rebind for " + currentTranslationPreferencePackage());
+                        requestOplusTranslationActionRebind(currentTranslationPreferencePackage());
+                        // Keyguard may become locked slightly after SCREEN_OFF; re-run once so the
+                        // gate is evaluated against the settled lock state.
+                        mainHandler.postDelayed(() -> {
+                            if (isDeviceKeyguardLocked(receiverContext)) {
+                                requestOplusTranslationActionRebind(currentTranslationPreferencePackage());
+                            }
+                        }, 600L);
                         return;
                     }
                     if (Intent.ACTION_SCREEN_ON.equals(action)) {
@@ -9709,6 +9870,12 @@ public final class LockscreenLyricsModule extends XposedModule {
                         screenTimeoutPausedByScreenOff = false;
                         screenTimeoutPausedByUserPresent = false;
                         updateScreenTimeoutWakeLock(receiverContext);
+                        // Check if device is actually locked (handles delay-lock window where screen was turned on before keyguard locked)
+                        if (!isDeviceKeyguardLocked(receiverContext)) {
+                            screenTurnedOffForLockState = false;
+                            restoreOriginalPkgActionsRules();
+                            requestOplusTranslationActionRebind(currentTranslationPreferencePackage());
+                        }
                         return;
                     }
                     if (Intent.ACTION_USER_PRESENT.equals(action)) {
@@ -9721,6 +9888,11 @@ public final class LockscreenLyricsModule extends XposedModule {
                         maybeLogScreenTimeout(
                                 "Paused screen timeout keep-awake pending keyguard recheck",
                                 true);
+                        screenTurnedOffForLockState = false;
+                        restoreOriginalPkgActionsRules();
+                        infoAlways(BridgeDebugArea.PLAYER_SPECIAL, BridgeEvents.TRANSLATION_ACTION_REBIND,
+                                "Keyguard unlocked user present, requesting rebind for " + currentTranslationPreferencePackage());
+                        requestOplusTranslationActionRebind(currentTranslationPreferencePackage());
                         return;
                     }
                 }
@@ -10215,6 +10387,25 @@ public final class LockscreenLyricsModule extends XposedModule {
     private boolean isScreenInteractiveForWakeLock() {
         PowerManager powerManager = screenTimeoutPowerManager;
         return powerManager == null || powerManager.isInteractive();
+    }
+
+    private boolean isDeviceKeyguardLocked(Context context) {
+        Context appContext = applicationContextOf(context);
+        if (appContext != null) {
+            try {
+                KeyguardManager keyguardManager = screenTimeoutKeyguardManager;
+                if (keyguardManager == null) {
+                    keyguardManager =
+                            (KeyguardManager) appContext.getSystemService(Context.KEYGUARD_SERVICE);
+                    screenTimeoutKeyguardManager = keyguardManager;
+                }
+                if (keyguardManager != null) {
+                    return keyguardManager.isKeyguardLocked();
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        return screenTurnedOffForLockState;
     }
 
     private boolean isKeyguardShowingForScreenTimeout(Context context) {

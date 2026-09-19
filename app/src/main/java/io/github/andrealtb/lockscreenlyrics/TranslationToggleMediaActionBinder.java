@@ -109,13 +109,20 @@ final class TranslationToggleMediaActionBinder {
         OriginalButton original = originalButton(mediaButtonEx, (List<?>) actions);
         original.restore(mediaButtonEx);
         List<?> actionList = new ArrayList<>(original.actions);
-        boolean knownWithoutTranslation = packageName.equals(currentProviderPackage)
-                && modelTranslationCount == 0;
-        boolean showButton = userWantsButton && !knownWithoutTranslation;
-        allowOverride = allowOverride && showButton;
+        boolean isCurrentProvider = packageName.equals(currentProviderPackage);
+        boolean hasTranslation = hasTranslationPayload(modelTranslationCount, payloadTranslationChars);
+        boolean knownWithoutTranslation = isCurrentProvider && modelTranslationCount == 0;
+        boolean canShowPublicAction = userWantsButton && isCurrentProvider && !knownWithoutTranslation;
+        boolean canShowOverride = userWantsButton && isCurrentProvider && hasTranslation;
+        allowOverride = allowOverride && canShowOverride;
+
         Object heartAction = invokeNoArgByName(mediaButtonEx, "getHeartAction");
         debug("inspect Rule0 actions, package=" + nullToEmpty(packageName)
                 + ", count=" + actionList.size()
+                + ", isCurrentProvider=" + isCurrentProvider
+                + ", hasTranslation=" + hasTranslation
+                + ", canShowPublic=" + canShowPublicAction
+                + ", canShowOverride=" + canShowOverride
                 + ", heart=" + (heartAction == null
                 ? "null"
                 : heartAction.getClass().getName())
@@ -129,43 +136,47 @@ final class TranslationToggleMediaActionBinder {
             boolean integrationAction =
                     LyricInfoContract.ACTION_TOGGLE_TRANSLATION.equals(actionId);
             boolean legacySaltAction = SALT_DESKTOP_LYRIC_ACTION.equals(actionId);
-            if (!integrationAction && !legacySaltAction) {
-                if (overrideCandidate == null && allowOverride
-                        && PlayerTranslationTogglePolicy.isOverrideActionCandidate(packageName, actionId)) {
-                    overrideCandidate = mediaAction;
-                    overrideActionId = actionId;
-                }
-                continue;
-            }
-            if (!showButton) {
-                if (integrationAction) {
+            if (integrationAction) {
+                if (!canShowPublicAction) {
                     removeRule0Action(mediaButtonEx, actionList, mediaAction);
-                    debug("Removed lyricInfo translation toggle action, package="
-                            + nullToEmpty(packageName)
-                            + " (button disabled by user)");
-                } else {
-                    debug("Left player desktop-lyric action untouched, package="
-                            + nullToEmpty(packageName)
-                            + " (button disabled by user)");
+                    debug("Removed lyricInfo translation toggle action for " + packageName);
+                    return;
+                }
+                configure(
+                        mediaButtonEx,
+                        actionList,
+                        mediaAction,
+                        packageName,
+                        "public",
+                        actionId);
+                if (PlayerTranslationTogglePolicy
+                        .shouldBindOplusHeartAlongsidePublicTranslationAction(packageName)) {
+                    bindOplusHeartAlongsidePublicAction(
+                            mediaButtonEx,
+                            mediaAction,
+                            packageName);
                 }
                 return;
             }
-            configure(
-                    mediaButtonEx,
-                    actionList,
-                    mediaAction,
-                    packageName,
-                    integrationAction ? "public" : "salt-legacy",
-                    actionId);
-            if (integrationAction
-                    && PlayerTranslationTogglePolicy
-                            .shouldBindOplusHeartAlongsidePublicTranslationAction(packageName)) {
-                bindOplusHeartAlongsidePublicAction(
+            if (legacySaltAction) {
+                if (!canShowOverride) {
+                    debug("Left player desktop-lyric action untouched for " + packageName);
+                    return;
+                }
+                configure(
                         mediaButtonEx,
+                        actionList,
                         mediaAction,
-                        packageName);
+                        packageName,
+                        "salt-legacy",
+                        actionId);
+                return;
             }
-            return;
+            if (overrideCandidate == null && allowOverride
+                    && PlayerTranslationTogglePolicy.isOverrideActionCandidate(packageName, actionId)) {
+                overrideCandidate = mediaAction;
+                overrideActionId = actionId;
+            }
         }
         if (overrideCandidate == null && !PlayerSystemUiPolicy.MD3_MUSIC.equals(packageName)) {
             overrideCandidate = findOverrideFallback(mediaButtonEx, actionList);
@@ -468,6 +479,16 @@ final class TranslationToggleMediaActionBinder {
     private void promoteTranslationToggleAction(
             Object mediaButtonEx, List<?> actions, Object translationAction, String packageName) {
         if (actions.isEmpty()) {
+            return;
+        }
+        if (actions.get(0) == translationAction || PlayerSystemUiPolicy.preservesNativeActionRow(packageName)) {
+            debug("promote translation action skipped for " + packageName);
+            return;
+        }
+        // If translationAction is not in actions (e.g. it is an OPlus heartAction),
+        // do NOT inject it into rule0CustomActions to avoid inflating the action list and displacing buttons.
+        if (!actions.contains(translationAction)) {
+            debug("promote translation action skipped: action is not in rule0CustomActions, package=" + packageName);
             return;
         }
         ArrayList<Object> ordered = new ArrayList<>(actions.size());
