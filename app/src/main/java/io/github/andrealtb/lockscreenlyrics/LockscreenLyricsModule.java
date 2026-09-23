@@ -7230,7 +7230,11 @@ public final class LockscreenLyricsModule extends XposedModule {
 
     private Object onLyricsRecyclerPrepareScalePivot(XposedInterface.Chain chain) throws Throwable {
         Object result = chain.proceed();
-        Object textView = chain.getArg(0);
+        int textViewIndex = chain.getExecutable() instanceof Method
+                ? OfficialLyricScalePivotMethodPolicy.textViewArgumentIndex(
+                        (Method) chain.getExecutable())
+                : OfficialLyricScalePivotMethodPolicy.NOT_A_PIVOT_METHOD;
+        Object textView = textViewIndex >= 0 ? chain.getArg(textViewIndex) : null;
         if (textView instanceof TextView) {
             applyOfficialLyricScalePivot((TextView) textView);
         }
@@ -7257,17 +7261,12 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private static boolean isLyricsRecyclerScalePivotMethod(Method method) {
-        if (method == null
-                || method.getReturnType() != void.class) {
-            return false;
-        }
         // Method names drift across same-version SystemUIPlugin binaries (verified m/k plus the
-        // current u/v/C device variant). The shape is narrow and safe: any LyricsRecyclerView
-        // void(single TextView subtype) method can only operate on the lyric row; restoring the
-        // configured pivot after it returns is idempotent even for style/binding helpers.
-        Class<?>[] parameterTypes = method.getParameterTypes();
-        return parameterTypes.length == 1
-                && TextView.class.isAssignableFrom(parameterTypes[0]);
+        // current u/v/C device variant, and ColorOS 17's static d). The shapes are narrow and
+        // safe: they can only operate on the lyric row, and restoring the configured pivot after
+        // they return is idempotent even for style/binding helpers.
+        return OfficialLyricScalePivotMethodPolicy.textViewArgumentIndex(method)
+                != OfficialLyricScalePivotMethodPolicy.NOT_A_PIVOT_METHOD;
     }
 
     private static boolean isOfficialTimedCurrentLyricMethod(Method method) {

@@ -15,11 +15,25 @@ public final class OfficialLyricScalePivotHookContractTest {
         String module = readProjectFile(
                 "app/src/main/java/io/github/andrealtb/lockscreenlyrics/LockscreenLyricsModule.java");
 
-        assertTrue(module.contains("parameterTypes.length == 1"));
-        assertTrue(module.contains("TextView.class.isAssignableFrom(parameterTypes[0])"));
+        assertTrue(module.contains(
+                "OfficialLyricScalePivotMethodPolicy.textViewArgumentIndex(method)"));
+        assertTrue(module.contains("chain.getArg(textViewIndex)"));
         assertTrue(module.contains("currentMethods="));
         assertTrue(module.contains("pivotMethods="));
         assertFalse(module.contains("isVerifiedOfficialScalePivotMethodName"));
+    }
+
+    @Test
+    public void coloros17PluginEvidenceShowsStaticHelperOnEveryLayout() throws Exception {
+        String evidence = readProjectFile(
+                "app/src/test/resources/fixtures/official-lyrics-recycler-pivot-evidence-c17.txt");
+
+        assertTrue(evidence.contains("apkVersionCode=17000002"));
+        assertTrue(evidence.contains(
+                "sourceSha256=149E49653C882478A080911C62A0A5720B12F6D22652C62C947ACEA40E78BD69"));
+        assertTrue(evidence.contains("public static final void d(LyricsRecyclerView lyricsRecyclerView,"
+                + " AppCompatTextView appCompatTextView)"));
+        assertTrue(evidence.contains("layoutListenerCall="));
     }
 
     @Test

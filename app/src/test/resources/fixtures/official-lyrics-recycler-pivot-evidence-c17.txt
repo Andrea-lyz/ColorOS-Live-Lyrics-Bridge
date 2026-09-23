@@ -1,0 +1,11 @@
+apk=SystemUIPlugin_17.000.002.apk
+apkPackage=com.oplus.systemui.plugins
+apkVersionCode=17000002
+apkSha256=2CDD17E165FCFD2E257BF863C70D85F3978534381F7019038F1A5FAD912667EB
+source=jadx/sources/com/oplus/systemui/plugins/shared/template/component/media/view/LyricsRecyclerView.java
+sourceSha256=149E49653C882478A080911C62A0A5720B12F6D22652C62C947ACEA40E78BD69
+signature=public static final void d(LyricsRecyclerView lyricsRecyclerView, AppCompatTextView appCompatTextView)
+centerPivot=appCompatTextView.setPivotX((paddingLeft / 2.0f) + appCompatTextView.getPaddingLeft())
+inactiveScale=otherLineTextScaleRatio 0.73
+layoutListenerCall=seedling/capsule/g.java case 3: if (v.getWidth() > 0 && v.getHeight() > 0) LyricsRecyclerView.d(holder.c, (AppCompatTextView) v)
+transitionCall=view/n.java onBindViewHolder payload: LyricsRecyclerView.d(lyricsRecyclerView, appCompatTextView)
