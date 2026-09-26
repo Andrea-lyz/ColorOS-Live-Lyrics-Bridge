@@ -24,6 +24,7 @@ public final class BridgeEvents {
     public static final String SET_CURRENT_LYRIC_GEOMETRY = "SET_CURRENT_LYRIC_GEOMETRY";
     public static final String ARTWORK_PROBE = "ARTWORK_PROBE";
     public static final String TRANSLATION_ACTION_REBIND = "TRANSLATION_ACTION_REBIND";
+    public static final String NATIVE_CLOCK_ALIGNED = "NATIVE_CLOCK_ALIGNED";
     public static final String DETAIL = "DETAIL";
     public static final String FAILURE = "FAILURE";
 

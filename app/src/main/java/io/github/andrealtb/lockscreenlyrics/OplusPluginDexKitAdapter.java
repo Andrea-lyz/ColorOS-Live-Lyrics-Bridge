@@ -7,8 +7,11 @@ import android.graphics.drawable.Icon;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindClass;
+import org.luckypray.dexkit.query.FindMethod;
 import org.luckypray.dexkit.query.matchers.ClassMatcher;
+import org.luckypray.dexkit.query.matchers.MethodMatcher;
 import org.luckypray.dexkit.result.ClassDataList;
+import org.luckypray.dexkit.result.MethodDataList;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
@@ -17,7 +20,10 @@ import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Resolves obfuscated OPlus plugin media-model classes without relying on {@code m6.*}. */
+/**
+ * Resolves obfuscated OPlus plugin targets (media-model classes and the immersive lyric position
+ * controller) without relying on {@code m6.*} or other obfuscated names.
+ */
 final class OplusPluginDexKitAdapter {
     private static final Object DEXKIT_LOAD_LOCK = new Object();
 
@@ -26,56 +32,108 @@ final class OplusPluginDexKitAdapter {
     private OplusPluginDexKitAdapter() {
     }
 
+    /**
+     * Resolves every plugin target in one DexKit scan. The media-model targets and the lyric
+     * position controller fail independently, so a missing one never costs the other.
+     */
     @SuppressLint("DuplicateCreateDexKit")
-    static Targets resolve(ClassLoader classLoader) throws ReflectiveOperationException {
+    static Resolution resolveAll(ClassLoader classLoader, String lyricsRecyclerViewClass) {
         ensureDexKitLoaded();
         //noinspection DuplicateCreateDexKit -- this plugin ClassLoader is scanned once.
         try (DexKitBridge bridge = DexKitBridge.create(classLoader, true)) {
-            Class<?> mediaModelClass = findSingleClass(
-                    bridge,
-                    classLoader,
-                    "MediaModel",
-                    "MediaModel(uniqueId=",
-                    ", lyricModel=",
-                    ", isLyricSupported=");
-            Class<?> multiIconClass = findSingleClass(
-                    bridge,
-                    classLoader,
-                    "MultiIconModel",
-                    "MultiIconModel(staticIcon=",
-                    ", lottieIcon=");
-            Class<?> staticIconClass = findSingleClass(
-                    bridge,
-                    classLoader,
-                    "StaticIcon",
-                    "StaticIcon(icon=",
-                    ", iconModelForCard=");
-            Class<?> normalIconClass = findSingleClass(
-                    bridge,
-                    classLoader,
-                    "NormalIcon",
-                    "NormalIcon(icon=",
-                    ", primaryColor=");
-            Class<?> lottieIconClass = findSingleClass(
-                    bridge,
-                    classLoader,
-                    "LottieIcon",
-                    "LottieIcon[assetName: ",
-                    " repeatCount=");
-            Class<?> lyricModelClass = findSingleClass(
-                    bridge,
-                    classLoader,
-                    "LyricModel",
-                    "LyricModel(lines=");
-            return bindResolvedClasses(
-                    mediaModelClass,
-                    multiIconClass,
-                    staticIconClass,
-                    normalIconClass,
-                    lottieIconClass,
-                    lyricModelClass,
-                    true);
+            Method controller = null;
+            Throwable controllerFailure = null;
+            try {
+                controller = findLyricPositionController(bridge, classLoader, lyricsRecyclerViewClass);
+            } catch (Throwable t) {
+                controllerFailure = t;
+            }
+            Targets targets = null;
+            Throwable targetsFailure = null;
+            try {
+                targets = resolveTargets(bridge, classLoader);
+            } catch (Throwable t) {
+                targetsFailure = t;
+            }
+            return new Resolution(targets, targetsFailure, controller, controllerFailure);
         }
+    }
+
+    private static Targets resolveTargets(DexKitBridge bridge, ClassLoader classLoader)
+            throws ReflectiveOperationException {
+        Class<?> mediaModelClass = findSingleClass(
+                bridge,
+                classLoader,
+                "MediaModel",
+                "MediaModel(uniqueId=",
+                ", lyricModel=",
+                ", isLyricSupported=");
+        Class<?> multiIconClass = findSingleClass(
+                bridge,
+                classLoader,
+                "MultiIconModel",
+                "MultiIconModel(staticIcon=",
+                ", lottieIcon=");
+        Class<?> staticIconClass = findSingleClass(
+                bridge,
+                classLoader,
+                "StaticIcon",
+                "StaticIcon(icon=",
+                ", iconModelForCard=");
+        Class<?> normalIconClass = findSingleClass(
+                bridge,
+                classLoader,
+                "NormalIcon",
+                "NormalIcon(icon=",
+                ", primaryColor=");
+        Class<?> lottieIconClass = findSingleClass(
+                bridge,
+                classLoader,
+                "LottieIcon",
+                "LottieIcon[assetName: ",
+                " repeatCount=");
+        Class<?> lyricModelClass = findSingleClass(
+                bridge,
+                classLoader,
+                "LyricModel",
+                "LyricModel(lines=");
+        return bindResolvedClasses(
+                mediaModelClass,
+                multiIconClass,
+                staticIconClass,
+                normalIconClass,
+                lottieIconClass,
+                lyricModelClass,
+                true);
+    }
+
+    /**
+     * The immersive controller entry {@code void (Long position, boolean animate)} that forwards
+     * to the recycler's timed {@code (boolean, long)} method and schedules the next row change
+     * from the same position. Matched by shape and call, never by its obfuscated name.
+     */
+    private static Method findLyricPositionController(
+            DexKitBridge bridge,
+            ClassLoader classLoader,
+            String lyricsRecyclerViewClass) throws ReflectiveOperationException {
+        MethodDataList methods = bridge.findMethod(FindMethod.create()
+                .matcher(MethodMatcher.create()
+                        .paramTypes(Long.class, boolean.class)
+                        .returnType(void.class)
+                        .addInvoke(MethodMatcher.create()
+                                .declaredClass(lyricsRecyclerViewClass)
+                                .paramTypes(boolean.class, long.class)
+                                .returnType(void.class))));
+        if (methods.size() != 1) {
+            throw new IllegalStateException(
+                    "Expected one lyric position controller, found " + methods.size());
+        }
+        Method method = methods.get(0).getMethodInstance(classLoader);
+        if (Modifier.isStatic(method.getModifiers())) {
+            throw new IllegalStateException("Lyric position controller is static: " + method);
+        }
+        method.setAccessible(true);
+        return method;
     }
 
     static Targets legacy(ClassLoader classLoader) throws ReflectiveOperationException {
@@ -238,6 +296,32 @@ final class OplusPluginDexKitAdapter {
                 System.loadLibrary("dexkit");
                 dexKitLoaded = true;
             }
+        }
+    }
+
+    static final class Resolution {
+        private final Targets targets;
+        private final Throwable targetsFailure;
+        /** Null when the plugin build has no unique controller entry; the module then only guards. */
+        final Method lyricPositionController;
+        final Throwable lyricPositionControllerFailure;
+
+        Resolution(
+                Targets targets,
+                Throwable targetsFailure,
+                Method lyricPositionController,
+                Throwable lyricPositionControllerFailure) {
+            this.targets = targets;
+            this.targetsFailure = targetsFailure;
+            this.lyricPositionController = lyricPositionController;
+            this.lyricPositionControllerFailure = lyricPositionControllerFailure;
+        }
+
+        Targets requireTargets() {
+            if (targets == null) {
+                throw new IllegalStateException("OPlus plugin media-model targets unresolved", targetsFailure);
+            }
+            return targets;
         }
     }
 
