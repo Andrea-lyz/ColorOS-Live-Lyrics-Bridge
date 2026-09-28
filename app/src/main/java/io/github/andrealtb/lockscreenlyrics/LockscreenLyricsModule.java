@@ -336,6 +336,14 @@ public final class LockscreenLyricsModule extends XposedModule {
     private final KuWoSystemUiRuntime kuWoRuntime = new KuWoSystemUiRuntime();
     private volatile boolean oplusPluginMediaModelHookInstalled;
     private volatile OplusPluginDexKitAdapter.Targets oplusPluginKuWoTargets;
+    /** Immersive controller entry resolved in the same DexKit pass as the media-model targets. */
+    private volatile Method resolvedLyricPositionController;
+    private volatile boolean lyricPositionControllerHooked;
+    // Monotonic guard for the vendor timed-lyric method; touched only on the SystemUI main thread.
+    private WeakReference<View> timedLyricGuardRecycler = new WeakReference<>(null);
+    private WeakReference<WordLyricModel> timedLyricGuardModel = new WeakReference<>(null);
+    private long timedLyricGuardPosition = -1L;
+    private long timedLyricGuardElapsedMs = -1L;
     private volatile boolean oplusMediaPolicyHooksInstalled;
     private volatile boolean oplusHistoryWhitelistHookInstalled;
     private volatile boolean oplusMediaBlacklistHookInstalled;
@@ -5415,11 +5423,18 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
         boolean officialTimedCurrentLyric =
                 isOfficialTimedCurrentLyricExecutable(chain.getExecutable());
+        // Position only: the animate flag and the index/scroll transaction remain the vendor's.
+        Object[] guardedArgs = officialTimedCurrentLyric
+                ? guardTimedLyricArgs(chain, recyclerView)
+                : null;
         int requestedTargetIndex = -1;
         int previousOfficialIndex = -1;
         LyricsRecyclerGeometry beforeGeometry = null;
         try {
-            requestedTargetIndex = resolveLyricsRecyclerTargetIndex(chain, recycler);
+            requestedTargetIndex = resolveLyricsRecyclerTargetIndex(
+                    chain,
+                    recycler,
+                    guardedArgs == null ? null : guardedArgs[1]);
             if (recyclerView != null) {
                 previousOfficialIndex = readLyricsRecyclerCurrentIndex(recyclerView);
                 if (recyclerView.isShown()) {
@@ -5437,7 +5452,8 @@ public final class LockscreenLyricsModule extends XposedModule {
         // alpha=0, and l(true, position) for ordinary progression. Do not rewrite that transaction:
         // it is the single owner of n, SmoothScroller cancellation, adapter notifications and row
         // transforms. Earlier seek/re-entry patches changed the boolean and raced those four pieces.
-        Object result = chain.proceed();
+        // Only the position may change: the controller entry aligns it, this call only guards it.
+        Object result = guardedArgs != null ? chain.proceed(guardedArgs) : chain.proceed();
         if (recyclerView != null) {
             int officialIndex = readLyricsRecyclerCurrentIndex(recyclerView);
             int observedTargetIndex = officialIndex >= 0
@@ -5460,7 +5476,10 @@ public final class LockscreenLyricsModule extends XposedModule {
         return result;
     }
 
-    private int resolveLyricsRecyclerTargetIndex(XposedInterface.Chain chain, Object recycler) {
+    private int resolveLyricsRecyclerTargetIndex(
+            XposedInterface.Chain chain,
+            Object recycler,
+            Object guardedPosition) {
         try {
             Class<?>[] parameterTypes = chain.getExecutable().getParameterTypes();
             if (parameterTypes.length > 0) {
@@ -5472,7 +5491,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             if (parameterTypes.length == 2
                     && isBooleanParameter(parameterTypes[0])
                     && (parameterTypes[1] == long.class || parameterTypes[1] == Long.class)) {
-                Object positionArg = chain.getArg(1);
+                Object positionArg = guardedPosition != null ? guardedPosition : chain.getArg(1);
                 if (positionArg instanceof Number) {
                     WordLyricModel model = currentWordLyricModel;
                     if (model != null) {
@@ -6779,6 +6798,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             activatePluginHookGeneration(pluginLoader);
             tryInstallLyricsRecyclerViewHook(pluginLoader);
             tryInstallKuWoPluginMediaModelHook(pluginLoader);
+            tryInstallLyricPositionControllerHook(pluginLoader);
         }
         return result;
     }
@@ -6799,6 +6819,8 @@ public final class LockscreenLyricsModule extends XposedModule {
             lyricsRecyclerSetCurrentUnavailable = false;
             oplusPluginMediaModelHookInstalled = false;
             oplusPluginKuWoTargets = null;
+            resolvedLyricPositionController = null;
+            lyricPositionControllerHooked = false;
         }
         synchronized (officialLyricsRecyclerCompatibilityLock) {
             officialLyricsRecyclerBindings.clear();
@@ -6842,7 +6864,16 @@ public final class LockscreenLyricsModule extends XposedModule {
         try {
             OplusPluginDexKitAdapter.Targets targets;
             try {
-                targets = OplusPluginDexKitAdapter.resolve(pluginLoader);
+                OplusPluginDexKitAdapter.Resolution resolution =
+                        OplusPluginDexKitAdapter.resolveAll(pluginLoader, LYRICS_RECYCLER_VIEW_CLASS);
+                // Captured before the media-model check so a model miss cannot drop it.
+                resolvedLyricPositionController = resolution.lyricPositionController;
+                if (resolution.lyricPositionController == null) {
+                    infoAlways(BridgeDebugArea.BOOTSTRAP, BridgeEvents.HOOK_FAILED,
+                            "Lyric position controller unresolved; timed lyric guard only: "
+                                    + resolution.lyricPositionControllerFailure);
+                }
+                targets = resolution.requireTargets();
             } catch (Throwable dexKitFailure) {
                 warn(
                         LyricLogFormatter.Area.SYSTEM_UI,
@@ -6877,6 +6908,107 @@ public final class LockscreenLyricsModule extends XposedModule {
                     "lyric-policy",
                     "Skipped KuWo plugin media model hook: " + t);
         }
+    }
+
+    private void tryInstallLyricPositionControllerHook(ClassLoader pluginLoader) {
+        Method controller = resolvedLyricPositionController;
+        if (lyricPositionControllerHooked || controller == null || pluginLoader == null) {
+            return;
+        }
+        try {
+            XposedInterface.HookHandle handle = hook(controller)
+                    .setId(HOOK_ID_LYRICS_RECYCLER + "-controller-position")
+                    .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                    .intercept(this::onLyricControllerPositionUpdate);
+            rememberPluginHookHandle(pluginLoader, handle);
+            lyricPositionControllerHooked = true;
+            infoAlways(BridgeDebugArea.BOOTSTRAP, BridgeEvents.HOOK_INSTALLED,
+                    "Hooked lyric position controller, method="
+                            + controller.getDeclaringClass().getName() + "#" + controller.getName());
+        } catch (Throwable t) {
+            error("Failed to hook lyric position controller", t);
+        }
+    }
+
+    /**
+     * Aligns the position the vendor controller forwards to the timed lyric method and uses for
+     * its next row-change timer. Only the position argument changes; see
+     * {@link NativeLyricClockPolicy}.
+     */
+    private Object onLyricControllerPositionUpdate(XposedInterface.Chain chain) throws Throwable {
+        Object positionArg = chain.getArg(0);
+        if (!(positionArg instanceof Long) || !isModuleLyricClockUsable()) {
+            return chain.proceed();
+        }
+        long vendorPosition = (Long) positionArg;
+        long aligned = NativeLyricClockPolicy.controllerPosition(
+                vendorPosition,
+                estimatePlaybackPositionMillis(),
+                LyricTimingTuningConstants.LyricGeneral.PLAYBACK_SMALL_CORRECTION_MS);
+        if (aligned == vendorPosition) {
+            return chain.proceed();
+        }
+        Object[] args = chain.getArgs().toArray(new Object[0]);
+        args[0] = aligned;
+        logNativeLyricClockAlignment("controller", vendorPosition, aligned);
+        return chain.proceed(args);
+    }
+
+    /**
+     * The module clock may drive the vendor list only while it runs from a real PlaybackState
+     * anchor and the module owns the rendered model; otherwise vendor timing is untouched.
+     */
+    private boolean isModuleLyricClockUsable() {
+        return lastPlaybackIsPlaying
+                && lastComputedPositionMs >= 0L
+                && lastComputedPositionElapsedMs >= 0L
+                && currentWordLyricModel != null
+                && !hasSentenceWindow();
+    }
+
+    /**
+     * Returns replacement arguments for the vendor timed-lyric call, or null to keep them. Only
+     * the monotonic guard applies here; see {@link NativeLyricClockPolicy#timedLyricPosition}.
+     */
+    private Object[] guardTimedLyricArgs(XposedInterface.Chain chain, View recyclerView) {
+        Object positionArg = chain.getArg(1);
+        WordLyricModel model = currentWordLyricModel;
+        if (!(positionArg instanceof Number) || recyclerView == null || !isModuleLyricClockUsable()) {
+            timedLyricGuardPosition = -1L;
+            return null;
+        }
+        long now = SystemClock.elapsedRealtime();
+        long vendorPosition = ((Number) positionArg).longValue();
+        long held = timedLyricGuardRecycler.get() == recyclerView && timedLyricGuardModel.get() == model
+                ? NativeLyricClockPolicy.heldPosition(
+                timedLyricGuardPosition, timedLyricGuardElapsedMs, now, lastPlaybackSpeed)
+                : -1L;
+        long guarded = NativeLyricClockPolicy.timedLyricPosition(
+                vendorPosition,
+                held,
+                LyricTimingTuningConstants.LyricGeneral.PLAYBACK_SMALL_CORRECTION_MS);
+        timedLyricGuardRecycler = new WeakReference<>(recyclerView);
+        timedLyricGuardModel = new WeakReference<>(model);
+        timedLyricGuardPosition = guarded;
+        timedLyricGuardElapsedMs = now;
+        if (guarded == vendorPosition) {
+            return null;
+        }
+        Object[] args = chain.getArgs().toArray(new Object[0]);
+        args[1] = guarded;
+        logNativeLyricClockAlignment("guard", vendorPosition, guarded);
+        return args;
+    }
+
+    private void logNativeLyricClockAlignment(String source, long vendorPosition, long aligned) {
+        StructuredBridgeLog.debug(
+                BridgeDebugArea.RENDERER,
+                BridgeEvents.NATIVE_CLOCK_ALIGNED,
+                () -> "Aligned vendor lyric clock, source=" + source
+                        + ", vendor=" + vendorPosition
+                        + ", aligned=" + aligned
+                        + ", deltaMs=" + (aligned - vendorPosition)
+                        + ", controllerHooked=" + lyricPositionControllerHooked);
     }
 
     private Object onKuWoPluginMediaModelBuilt(XposedInterface.Chain chain) throws Throwable {
