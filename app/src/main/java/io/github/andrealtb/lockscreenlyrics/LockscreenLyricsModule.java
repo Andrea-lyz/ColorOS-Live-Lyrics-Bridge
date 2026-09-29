@@ -1699,18 +1699,21 @@ public final class LockscreenLyricsModule extends XposedModule {
 
     /**
      * Re-runs SystemUI's full media rebuild for every live entry of {@code packageName} by calling
-     * {@code LegacyMediaDataManagerImpl.updateState(key, state)} directly.
+     * the MediaDataManager state entry directly: {@code updateState(key, state)} on ColorOS 16,
+     * {@code onStateUpdate(key, state)} on ColorOS 17 (see {@link MediaDataStateUpdateResolver}).
      *
      * <p>The synthetic {@code updateMediaDataFromPlayState} entry is guarded by
      * {@code mediaPlayerIndex != -1 || state == PLAYING}; notification-keyed entries fail the index
      * check and a stale controller state fails the PLAYING check, so a lock/unlock rebind silently
-     * did nothing until the player itself changed state (PJZ110 2026-09-19). {@code updateState}
+     * did nothing until the player itself changed state (PJZ110 2026-09-19). The direct entry
      * has no such guard: it re-runs {@code createActionsFromState} (our gate) and
      * {@code onMediaDataLoaded} (priority recompute) for the real entry key and session token.</p>
+     *
+     * @return the entry name when at least one media entry was rebuilt, otherwise {@code null}
      */
-    private boolean requestDirectMediaDataUpdateState(Object exManager, String packageName) {
+    private String requestDirectMediaDataUpdateState(Object exManager, String packageName) {
         if (exManager == null || TextUtils.isEmpty(packageName)) {
-            return false;
+            return null;
         }
         Object legacyManager = invokeNoArgByName(exManager, "getMediaDataManager");
         Object entries = legacyManager == null ? null : readFieldValue(legacyManager, "mediaEntries");
@@ -1718,32 +1721,24 @@ public final class LockscreenLyricsModule extends XposedModule {
             translationButtonDebug("direct updateState unavailable, package=" + packageName
                     + ", legacyManager=" + (legacyManager == null ? "null" : legacyManager.getClass().getName())
                     + ", entries=" + (entries == null ? "null" : entries.getClass().getName()));
-            return false;
+            return null;
         }
-        Method updateState = null;
-        for (Class<?> current = legacyManager.getClass(); current != null && updateState == null;
-                current = current.getSuperclass()) {
-            try {
-                updateState = current.getDeclaredMethod("updateState", String.class, PlaybackState.class);
-                updateState.setAccessible(true);
-            } catch (NoSuchMethodException ignored) {
-                // keep walking
-            }
-        }
+        Method updateState = MediaDataStateUpdateResolver.resolve(legacyManager.getClass());
         if (updateState == null) {
             translationButtonDebug("direct updateState unavailable: method missing on "
                     + legacyManager.getClass().getName());
-            return false;
+            return null;
         }
+        String entryName = updateState.getName();
         Context context = currentApplicationContext();
         if (context == null) {
-            return false;
+            return null;
         }
         List<Map.Entry<?, ?>> snapshot;
         try {
             snapshot = new ArrayList<>(((Map<?, ?>) entries).entrySet());
         } catch (Throwable t) {
-            return false;
+            return null;
         }
         int updated = 0;
         for (Map.Entry<?, ?> entry : snapshot) {
@@ -1770,24 +1765,25 @@ public final class LockscreenLyricsModule extends XposedModule {
             try {
                 updateState.invoke(legacyManager, key, state);
                 updated++;
-                translationButtonDebug("direct updateState requested, key=" + key
+                translationButtonDebug("direct " + entryName + " requested, key=" + key
                         + ", state=" + state.getState());
             } catch (Throwable t) {
-                error("Failed direct MediaDataManager.updateState for " + key, t);
+                error("Failed direct MediaDataManager." + entryName + " for " + key, t);
             }
         }
-        return updated > 0;
+        return updated > 0 ? entryName : null;
     }
 
     private boolean requestOplusTranslationActionRebind(String packageName) {
         String safePackage = normalizeTranslationPreferencePackage(packageName);
         Method refreshMethod = oplusPlaybackStateRefreshMethod;
         Object manager = oplusMediaDataManager.get();
-        if (requestDirectMediaDataUpdateState(manager, safePackage)) {
+        String directEntry = requestDirectMediaDataUpdateState(manager, safePackage);
+        if (directEntry != null) {
             infoAlways(
                     BridgeDebugArea.PLAYER_SPECIAL,
                     BridgeEvents.TRANSLATION_ACTION_REBIND,
-                    "Requested translation action MediaData rebind via updateState"
+                    "Requested translation action MediaData rebind via " + directEntry
                             + " | package=" + safePackage
                             + ", enabled=" + isLyricInfoTranslationEnabledFromCache(safePackage)
                             + ", keyguardLocked=" + isDeviceKeyguardLocked(currentApplicationContext()));
