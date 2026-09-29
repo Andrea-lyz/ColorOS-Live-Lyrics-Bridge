@@ -1,6 +1,8 @@
 package io.github.andrealtb.lockscreenlyrics;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import android.graphics.Bitmap;
@@ -88,34 +90,85 @@ public class OplusPluginDexKitAdapterTest {
         }
     }
 
+    /** ColorOS 16 MediaModel order: isPlayingState precedes the lyric model; the flag is last. */
     @SuppressWarnings("unused")
-    private static final class FakeMediaModel {
+    private static final class FakeColorOs16MediaModel {
         final FakeMultiIcon albumArt = null;
         final FakeMultiIcon topRight = null;
-        final FakeLyricModel lyricModel = null;
         final boolean playing = false;
+        final List<?> buttons = null;
+        final FakeLyricModel lyricModel = null;
         final boolean lyricSupported = false;
     }
 
+    /** ColorOS 17 MediaInfo order: primaryColor and artworkFullBgEnable follow the flag. */
+    @SuppressWarnings("unused")
+    private static final class FakeColorOs17MediaInfo {
+        final Object albumArt = null;
+        final FakeLyricModel lyricModel = null;
+        final boolean lyricSupported = false;
+        final Object primaryColor = null;
+        final boolean artworkFullBgEnable = false;
+    }
+
+    @SuppressWarnings("unused")
+    private static final class FakeModelWithoutFlagAfterLyricModel {
+        final boolean playing = false;
+        final FakeLyricModel lyricModel = null;
+        final Object primaryColor = null;
+    }
+
     @Test
-    public void bindsObfuscatedPluginModelsByStructure() throws Exception {
+    public void bindsColorOs16ModelWithAlbumArtRepair() {
         OplusPluginDexKitAdapter.Targets targets =
                 OplusPluginDexKitAdapter.bindResolvedClasses(
-                        FakeMediaModel.class,
-                        FakeMultiIcon.class,
-                        FakeStaticIcon.class,
-                        FakeNormalIcon.class,
-                        FakeLottieIcon.class,
+                        FakeColorOs16MediaModel.class,
                         FakeLyricModel.class,
+                        modelClass -> OplusPluginDexKitAdapter.bindArtwork(
+                                modelClass,
+                                FakeMultiIcon.class,
+                                FakeStaticIcon.class,
+                                FakeNormalIcon.class,
+                                FakeLottieIcon.class),
                         true);
 
         assertTrue(targets.resolvedByDexKit);
-        assertEquals("albumArt", targets.albumArtField.getName());
         assertEquals("lyricModel", targets.lyricModelField.getName());
         assertEquals("lyricSupported", targets.lyricSupportedField.getName());
-        assertEquals("staticIcon", targets.staticIconGetter.getName());
-        assertEquals("lottieIcon", targets.lottieIconGetter.getName());
-        assertEquals("bitmap", targets.iconModelBitmapGetter.getName());
-        assertEquals("color", targets.iconModelColorGetter.getName());
+        assertNull(targets.artworkFailure);
+        OplusPluginDexKitAdapter.Artwork artwork = targets.artwork;
+        assertNotNull(artwork);
+        assertEquals("albumArt", artwork.albumArtField.getName());
+        assertEquals("staticIcon", artwork.staticIconGetter.getName());
+        assertEquals("lottieIcon", artwork.lottieIconGetter.getName());
+        assertEquals("bitmap", artwork.iconModelBitmapGetter.getName());
+        assertEquals("color", artwork.iconModelColorGetter.getName());
+    }
+
+    @Test
+    public void coloros17LyricFlagIsTheBooleanAfterTheLyricModelNotTheLast() {
+        OplusPluginDexKitAdapter.Targets targets =
+                OplusPluginDexKitAdapter.bindResolvedClasses(
+                        FakeColorOs17MediaInfo.class,
+                        FakeLyricModel.class,
+                        modelClass -> {
+                            throw new IllegalStateException("Expected one StaticIcon, found 0: []");
+                        },
+                        true);
+
+        assertEquals("lyricModel", targets.lyricModelField.getName());
+        assertEquals("lyricSupported", targets.lyricSupportedField.getName());
+        // Album-art repair is optional: its failure never costs the lyric fields.
+        assertNull(targets.artwork);
+        assertTrue(targets.artworkFailure instanceof IllegalStateException);
+    }
+
+    @Test(expected = IllegalStateException.class)
+    public void modelWithoutBooleanAfterTheLyricModelIsRejected() {
+        OplusPluginDexKitAdapter.bindResolvedClasses(
+                FakeModelWithoutFlagAfterLyricModel.class,
+                FakeLyricModel.class,
+                modelClass -> null,
+                true);
     }
 }

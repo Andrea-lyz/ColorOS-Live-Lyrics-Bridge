@@ -6985,7 +6985,11 @@ public final class LockscreenLyricsModule extends XposedModule {
             if (hooked > 0) {
                 oplusPluginMediaModelHookInstalled = true;
                 infoAlways(BridgeDebugArea.BOOTSTRAP, BridgeEvents.HOOK_INSTALLED, "Hooked OPlus KuWo plugin media model, constructors=" + hooked
-                        + ", resolver=" + (targets.resolvedByDexKit ? "dexkit" : "legacy"));
+                        + ", resolver=" + (targets.resolvedByDexKit ? "dexkit" : "legacy")
+                        + ", lyricSupportedField=" + targets.lyricSupportedField.getName()
+                        + ", albumArtRepair=" + (targets.artwork != null
+                                ? "on"
+                                : "off: " + targets.artworkFailure));
             }
         } catch (Throwable t) {
             warn(
@@ -7106,18 +7110,24 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
         try {
             OplusPluginDexKitAdapter.Targets targets = oplusPluginKuWoTargets;
+            String description = String.valueOf(model);
             String title = readKuWoMediaModelText(
                     model,
+                    description,
                     "h",
                     "f6173h",
                     "songName=",
                     ", artist=");
             String artist = readKuWoMediaModelText(
                     model,
+                    description,
                     "i",
                     "f6174i",
                     "artist=",
                     ", iconBeforeArtist=");
+            // A missing label counts as supported so it can never trigger a restore.
+            boolean lyricSupported = !Boolean.FALSE.equals(
+                    KuWoPluginMediaModelReader.readLyricSupported(description));
             String trackKey = buildTrackKey(title, artist);
             Field lyricField = targets == null
                     ? findFieldOfType(model.getClass(), "s")
@@ -7132,13 +7142,15 @@ public final class LockscreenLyricsModule extends XposedModule {
                         title,
                         artist,
                         lyricModel,
-                        lineCount);
+                        lineCount,
+                        lyricSupported);
                 if (result.repairAlbumArt) {
                     albumArtRepaired = repairKuWoPluginAlbumArt(
                             model,
                             result.repairTitle,
                             result.repairArtist);
                 }
+                boolean lyricSupportRestored = false;
                 if (result.lyricToRestore != null) {
                     if (lyricField != null) {
                         lyricField.setAccessible(true);
@@ -7146,6 +7158,8 @@ public final class LockscreenLyricsModule extends XposedModule {
                     }
                     setKuWoPluginLyricSupported(model, targets);
                     lineCount = countLyricModelLines(result.lyricToRestore);
+                } else if (result.restoreLyricSupport) {
+                    lyricSupportRestored = setKuWoPluginLyricSupported(model, targets);
                 }
                 // Commit even when repairAlbumArt returned false. Repair swallows
                 // failures; skipping commit here would drop same-track memory.
@@ -7164,6 +7178,8 @@ public final class LockscreenLyricsModule extends XposedModule {
                         == KuWoSameTrackLyricRetention.Action.RESTORE_EMPTY_MODEL
                         && kuWoRuntime.takeMediaModelLog(now)) {
                     info(BridgeDebugArea.MEDIA, BridgeEvents.DETAIL, "Retained same-track KuWo plugin lyric model, lines=" + lineCount);
+                } else if (lyricSupportRestored && kuWoRuntime.takeMediaModelLog(now)) {
+                    info(BridgeDebugArea.MEDIA, BridgeEvents.DETAIL, "Restored same-track KuWo plugin lyric support, lines=" + lineCount);
                 }
             }
             if (albumArtRepaired) {
@@ -7191,25 +7207,30 @@ public final class LockscreenLyricsModule extends XposedModule {
             logKuWoPluginAlbumArtSkip(title, artist, "missing-plugin-targets");
             return false;
         }
-        Field albumArtField = targets.albumArtField;
+        // The install log already reports why repair is off for this plugin build.
+        OplusPluginDexKitAdapter.Artwork artwork = targets.artwork;
+        if (artwork == null) {
+            return false;
+        }
+        Field albumArtField = artwork.albumArtField;
         Object albumArt = readField(model, albumArtField);
         if (albumArt == null) {
             logKuWoPluginAlbumArtSkip(title, artist, "no-album-art");
             return false;
         }
         try {
-            Object staticIcon = targets.staticIconGetter.invoke(albumArt);
+            Object staticIcon = artwork.staticIconGetter.invoke(albumArt);
             if (staticIcon == null) {
                 return false;
             }
-            Object lottie = targets.lottieIconGetter.invoke(albumArt);
-            Field drawableField = targets.staticDrawableField;
-            Field bitmapField = targets.staticBitmapField;
-            Field cardModelField = targets.cardIconModelField;
+            Object lottie = artwork.lottieIconGetter.invoke(albumArt);
+            Field drawableField = artwork.staticDrawableField;
+            Field bitmapField = artwork.staticBitmapField;
+            Field cardModelField = artwork.cardIconModelField;
             Object cardModel = readField(staticIcon, cardModelField);
             Bitmap cardBitmap = cardModel == null
                     ? null
-                    : (Bitmap) targets.iconModelBitmapGetter.invoke(cardModel);
+                    : (Bitmap) artwork.iconModelBitmapGetter.invoke(cardModel);
             Object staticBitmapValue = readField(staticIcon, bitmapField);
             Bitmap staticBitmap = staticBitmapValue instanceof Bitmap
                     ? (Bitmap) staticBitmapValue
@@ -7240,20 +7261,20 @@ public final class LockscreenLyricsModule extends XposedModule {
             Drawable repairedDrawable = snapshot.loadDrawable(currentApplicationContext());
             Integer primaryColor = cardModel == null
                     ? null
-                    : (Integer) targets.iconModelColorGetter.invoke(cardModel);
-            Object repairedCardModel = targets.normalIconConstructor.newInstance(
+                    : (Integer) artwork.iconModelColorGetter.invoke(cardModel);
+            Object repairedCardModel = artwork.normalIconConstructor.newInstance(
                     bitmap,
                     primaryColor);
-            Object repairedMiniModel = targets.normalIconConstructor.newInstance(
+            Object repairedMiniModel = artwork.normalIconConstructor.newInstance(
                     bitmap,
                     primaryColor);
-            Object repairedStaticIcon = targets.staticIconConstructor.newInstance(
+            Object repairedStaticIcon = artwork.staticIconConstructor.newInstance(
                     snapshot,
                     repairedDrawable,
                     bitmap,
                     repairedMiniModel,
                     repairedCardModel);
-            Object repairedAlbumArt = targets.multiIconConstructor.newInstance(
+            Object repairedAlbumArt = artwork.multiIconConstructor.newInstance(
                     repairedStaticIcon,
                     lottie);
             albumArtField.setAccessible(true);
@@ -7268,26 +7289,50 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
     }
 
-    private static void setKuWoPluginLyricSupported(
+    /**
+     * Sets the model's lyric-support flag and confirms it through the {@code isLyricSupported=}
+     * label. A write that does not reach the label is undone, so a misidentified boolean (ColorOS
+     * 17 keeps artworkFullBgEnable next to the flag) is never left changed. The model is still
+     * inside its constructor hook, so no other thread can observe the probe.
+     */
+    private boolean setKuWoPluginLyricSupported(
             Object model,
             OplusPluginDexKitAdapter.Targets targets) throws IllegalAccessException {
+        if (Boolean.TRUE.equals(KuWoPluginMediaModelReader.readLyricSupported(String.valueOf(model)))) {
+            return true;
+        }
         Field supportedField = targets == null
                 ? findBooleanSuffixField(model.getClass(), "u")
                 : targets.lyricSupportedField;
-        if (supportedField != null) {
-            supportedField.setAccessible(true);
-            supportedField.setBoolean(model, true);
+        if (supportedField == null) {
+            return false;
         }
+        supportedField.setAccessible(true);
+        boolean previous = supportedField.getBoolean(model);
+        supportedField.setBoolean(model, true);
+        if (Boolean.TRUE.equals(KuWoPluginMediaModelReader.readLyricSupported(String.valueOf(model)))) {
+            return true;
+        }
+        supportedField.setBoolean(model, previous);
+        if (kuWoRuntime.takeLyricSupportMismatchLogOnce()) {
+            warn(
+                    LyricLogFormatter.Area.SYSTEM_UI,
+                    "lyric-policy",
+                    "KuWo plugin lyric-support field did not match the isLyricSupported label;"
+                            + " write undone, field=" + supportedField.getName());
+        }
+        return false;
     }
 
     private static String readKuWoMediaModelText(
             Object model,
+            String description,
             String primaryField,
             String fallbackField,
             String label,
             String nextLabel) {
         String labeled = KuWoPluginMediaModelReader.readLabeledText(
-                String.valueOf(model),
+                description,
                 label,
                 nextLabel);
         if (labeled != null) {

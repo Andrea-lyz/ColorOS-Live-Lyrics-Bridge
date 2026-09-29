@@ -14,6 +14,7 @@ public final class KuWoSystemUiRuntime {
     private volatile boolean artworkRestoreLogged;
     private volatile long sameIdentityArtworkRestoreLoggedAt;
     private volatile boolean carLyricIdentityNormalizedLogged;
+    private volatile boolean lyricSupportMismatchLogged;
     private volatile long seedlingArtworkRepairLoggedAt;
     private long mediaModelRetainLoggedAt;
 
@@ -62,6 +63,14 @@ public final class KuWoSystemUiRuntime {
             return false;
         }
         carLyricIdentityNormalizedLogged = true;
+        return true;
+    }
+
+    public boolean takeLyricSupportMismatchLogOnce() {
+        if (lyricSupportMismatchLogged) {
+            return false;
+        }
+        lyricSupportMismatchLogged = true;
         return true;
     }
 }

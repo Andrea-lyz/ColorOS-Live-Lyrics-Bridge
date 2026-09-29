@@ -9,6 +9,11 @@ package io.github.andrealtb.lockscreenlyrics.players.kuwo;
  * (the repair helper swallows failures). Skip {@link #commit} only when a
  * plugin-model write throws before it is reached. REMEMBER/CLEAR must update
  * memory in that false-return path, matching the previous in-module order.
+ *
+ * <p>ColorOS 17 recomputes isLyricSupported on every MediaData rebuild, so a same-track
+ * rebuild can keep its lines but lose the flag. Once a track has shown lyric support, such a
+ * rebuild asks the caller to set the flag back ({@link Result#restoreLyricSupport}). A track that
+ * never showed support is left alone.</p>
  */
 public final class KuWoSameTrackLyricRetention {
     public enum Action {
@@ -25,25 +30,33 @@ public final class KuWoSameTrackLyricRetention {
                 null,
                 false,
                 null,
-                null);
+                null,
+                false,
+                true);
 
         public final Action action;
         public final Object lyricToRestore;
         public final boolean repairAlbumArt;
         public final String repairTitle;
         public final String repairArtist;
+        public final boolean restoreLyricSupport;
+        private final boolean incomingLyricSupported;
 
         Result(
                 Action action,
                 Object lyricToRestore,
                 boolean repairAlbumArt,
                 String repairTitle,
-                String repairArtist) {
+                String repairArtist,
+                boolean restoreLyricSupport,
+                boolean incomingLyricSupported) {
             this.action = action;
             this.lyricToRestore = lyricToRestore;
             this.repairAlbumArt = repairAlbumArt;
             this.repairTitle = repairTitle;
             this.repairArtist = repairArtist;
+            this.restoreLyricSupport = restoreLyricSupport;
+            this.incomingLyricSupported = incomingLyricSupported;
         }
     }
 
@@ -52,6 +65,7 @@ public final class KuWoSameTrackLyricRetention {
     private String title;
     private String artist;
     private Object lastLyric;
+    private boolean lyricSupportShown;
 
     public Object lock() {
         return lock;
@@ -62,14 +76,16 @@ public final class KuWoSameTrackLyricRetention {
             String incomingTitle,
             String incomingArtist,
             Object incomingLyric,
-            int incomingLineCount) {
+            int incomingLineCount,
+            boolean incomingLyricSupported) {
         synchronized (lock) {
             return decideUnlocked(
                     incomingTrackKey,
                     incomingTitle,
                     incomingArtist,
                     incomingLyric,
-                    incomingLineCount);
+                    incomingLineCount,
+                    incomingLyricSupported);
         }
     }
 
@@ -94,14 +110,16 @@ public final class KuWoSameTrackLyricRetention {
             String incomingTitle,
             String incomingArtist,
             Object incomingLyric,
-            int incomingLineCount) {
+            int incomingLineCount,
+            boolean incomingLyricSupported) {
         synchronized (lock) {
             Result result = decideUnlocked(
                     incomingTrackKey,
                     incomingTitle,
                     incomingArtist,
                     incomingLyric,
-                    incomingLineCount);
+                    incomingLineCount,
+                    incomingLyricSupported);
             commitUnlocked(
                     result,
                     incomingTrackKey,
@@ -141,7 +159,8 @@ public final class KuWoSameTrackLyricRetention {
             String incomingTitle,
             String incomingArtist,
             Object incomingLyric,
-            int incomingLineCount) {
+            int incomingLineCount,
+            boolean incomingLyricSupported) {
         boolean trackChanged = !isEmpty(incomingTrackKey)
                 && !incomingTrackKey.equals(trackKey);
         if (trackChanged) {
@@ -155,14 +174,18 @@ public final class KuWoSameTrackLyricRetention {
                         lastLyric,
                         true,
                         title,
-                        artist);
+                        artist,
+                        false,
+                        incomingLyricSupported);
             }
             return new Result(
                     Action.CLEAR_FOR_TRACK_CHANGE,
                     null,
                     false,
                     incomingTitle,
-                    incomingArtist);
+                    incomingArtist,
+                    false,
+                    incomingLyricSupported);
         }
         if (incomingLineCount <= 0 && lastLyric != null) {
             return new Result(
@@ -170,7 +193,9 @@ public final class KuWoSameTrackLyricRetention {
                     lastLyric,
                     true,
                     incomingTitle,
-                    incomingArtist);
+                    incomingArtist,
+                    false,
+                    incomingLyricSupported);
         }
         if (incomingLineCount > 0 && incomingLyric != null) {
             return new Result(
@@ -178,7 +203,9 @@ public final class KuWoSameTrackLyricRetention {
                     null,
                     true,
                     incomingTitle,
-                    incomingArtist);
+                    incomingArtist,
+                    lyricSupportShown && !incomingLyricSupported,
+                    incomingLyricSupported);
         }
         return Result.NOOP;
     }
@@ -197,6 +224,7 @@ public final class KuWoSameTrackLyricRetention {
             title = incomingTitle;
             artist = incomingArtist;
             lastLyric = null;
+            lyricSupportShown = false;
             return;
         }
         if (result.action == Action.REMEMBER_CURRENT) {
@@ -206,6 +234,7 @@ public final class KuWoSameTrackLyricRetention {
                 artist = incomingArtist;
             }
             lastLyric = incomingLyric;
+            lyricSupportShown |= result.incomingLyricSupported;
         }
     }
 

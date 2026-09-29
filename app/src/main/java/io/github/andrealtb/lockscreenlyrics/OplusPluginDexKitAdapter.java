@@ -8,7 +8,6 @@ import android.graphics.drawable.Icon;
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindClass;
 import org.luckypray.dexkit.query.FindMethod;
-import org.luckypray.dexkit.query.matchers.ClassMatcher;
 import org.luckypray.dexkit.query.matchers.MethodMatcher;
 import org.luckypray.dexkit.result.ClassDataList;
 import org.luckypray.dexkit.result.MethodDataList;
@@ -23,9 +22,20 @@ import java.util.List;
 /**
  * Resolves obfuscated OPlus plugin targets (media-model classes and the immersive lyric position
  * controller) without relying on {@code m6.*} or other obfuscated names.
+ *
+ * <p>The model that carries the lyric fields is {@code MediaModel} on ColorOS 16 and
+ * {@code MediaInfo} on ColorOS 17 (SystemUIPlugin 17.000.002 wraps it in a new
+ * {@code MediaModel(info=, progress=)}). Only the lyric fields are required. Album-art repair
+ * binds separately and stays off when the icon models lack the ColorOS 16 shape: the ColorOS 17
+ * StaticIcon has no Icon field and derives its colors from an artwork result the plugin does not
+ * expose.</p>
  */
 final class OplusPluginDexKitAdapter {
     private static final Object DEXKIT_LOAD_LOCK = new Object();
+    private static final String[] MEDIA_MODEL_ANCHORS_COLOROS16 = {
+            "MediaModel(uniqueId=", ", lyricModel=", ", isLyricSupported="};
+    private static final String[] MEDIA_INFO_ANCHORS_COLOROS17 = {
+            "MediaInfo(uniqueId=", ", lyricModel=", ", isLyricSupported="};
 
     private static volatile boolean dexKitLoaded;
 
@@ -65,45 +75,38 @@ final class OplusPluginDexKitAdapter {
                 bridge,
                 classLoader,
                 "MediaModel",
-                "MediaModel(uniqueId=",
-                ", lyricModel=",
-                ", isLyricSupported=");
-        Class<?> multiIconClass = findSingleClass(
-                bridge,
-                classLoader,
-                "MultiIconModel",
-                "MultiIconModel(staticIcon=",
-                ", lottieIcon=");
-        Class<?> staticIconClass = findSingleClass(
-                bridge,
-                classLoader,
-                "StaticIcon",
-                "StaticIcon(icon=",
-                ", iconModelForCard=");
-        Class<?> normalIconClass = findSingleClass(
-                bridge,
-                classLoader,
-                "NormalIcon",
-                "NormalIcon(icon=",
-                ", primaryColor=");
-        Class<?> lottieIconClass = findSingleClass(
-                bridge,
-                classLoader,
-                "LottieIcon",
-                "LottieIcon[assetName: ",
-                " repeatCount=");
+                MEDIA_MODEL_ANCHORS_COLOROS16,
+                MEDIA_INFO_ANCHORS_COLOROS17);
         Class<?> lyricModelClass = findSingleClass(
                 bridge,
                 classLoader,
                 "LyricModel",
-                "LyricModel(lines=");
+                new String[] {"LyricModel(lines="});
         return bindResolvedClasses(
                 mediaModelClass,
-                multiIconClass,
-                staticIconClass,
-                normalIconClass,
-                lottieIconClass,
                 lyricModelClass,
+                modelClass -> bindArtwork(
+                        modelClass,
+                        findSingleClass(
+                                bridge,
+                                classLoader,
+                                "MultiIconModel",
+                                new String[] {"MultiIconModel(staticIcon=", ", lottieIcon="}),
+                        findSingleClass(
+                                bridge,
+                                classLoader,
+                                "StaticIcon",
+                                new String[] {"StaticIcon(icon=", ", iconModelForCard="}),
+                        findSingleClass(
+                                bridge,
+                                classLoader,
+                                "NormalIcon",
+                                new String[] {"NormalIcon(icon=", ", primaryColor="}),
+                        findSingleClass(
+                                bridge,
+                                classLoader,
+                                "LottieIcon",
+                                new String[] {"LottieIcon[assetName: ", " repeatCount="})),
                 true);
     }
 
@@ -139,29 +142,54 @@ final class OplusPluginDexKitAdapter {
     static Targets legacy(ClassLoader classLoader) throws ReflectiveOperationException {
         return bindResolvedClasses(
                 classLoader.loadClass("m6.t"),
-                classLoader.loadClass("m6.v"),
-                classLoader.loadClass("m6.z"),
-                classLoader.loadClass("m6.i"),
-                classLoader.loadClass("m6.q"),
                 classLoader.loadClass("m6.s"),
+                modelClass -> bindArtwork(
+                        modelClass,
+                        classLoader.loadClass("m6.v"),
+                        classLoader.loadClass("m6.z"),
+                        classLoader.loadClass("m6.i"),
+                        classLoader.loadClass("m6.q")),
                 false);
     }
 
+    /**
+     * Binds the required lyric fields. An artwork binding failure only turns album-art repair
+     * off and is kept for the install log.
+     */
     static Targets bindResolvedClasses(
+            Class<?> mediaModelClass,
+            Class<?> lyricModelClass,
+            ArtworkBinder artworkBinder,
+            boolean resolvedByDexKit) {
+        Field lyricModelField = requireField(mediaModelClass, lyricModelClass, 0);
+        Field lyricSupportedField = requireBooleanFieldAfter(lyricModelField);
+        Artwork artwork = null;
+        Throwable artworkFailure = null;
+        try {
+            artwork = artworkBinder.bind(mediaModelClass);
+        } catch (Throwable t) {
+            artworkFailure = t;
+        }
+        return new Targets(
+                mediaModelClass,
+                lyricModelField,
+                lyricSupportedField,
+                artwork,
+                artworkFailure,
+                resolvedByDexKit);
+    }
+
+    static Artwork bindArtwork(
             Class<?> mediaModelClass,
             Class<?> multiIconClass,
             Class<?> staticIconClass,
             Class<?> normalIconClass,
-            Class<?> lottieIconClass,
-            Class<?> lyricModelClass,
-            boolean resolvedByDexKit) throws ReflectiveOperationException {
+            Class<?> lottieIconClass) throws ReflectiveOperationException {
         Class<?> iconModelClass = normalIconClass.getSuperclass();
         if (iconModelClass == null || iconModelClass == Object.class) {
             throw new IllegalStateException("NormalIcon has no icon-model superclass");
         }
         Field albumArtField = requireField(mediaModelClass, multiIconClass, 0);
-        Field lyricModelField = requireField(mediaModelClass, lyricModelClass, 0);
-        Field lyricSupportedField = requireLastField(mediaModelClass, boolean.class);
         requireField(staticIconClass, Icon.class, 0);
         Field staticDrawableField = requireField(staticIconClass, Drawable.class, 0);
         Field staticBitmapField = requireField(staticIconClass, Bitmap.class, 0);
@@ -186,11 +214,8 @@ final class OplusPluginDexKitAdapter {
                 multiIconClass,
                 staticIconClass,
                 lottieIconClass);
-        return new Targets(
-                mediaModelClass,
+        return new Artwork(
                 albumArtField,
-                lyricModelField,
-                lyricSupportedField,
                 staticIconGetter,
                 lottieIconGetter,
                 staticDrawableField,
@@ -200,17 +225,16 @@ final class OplusPluginDexKitAdapter {
                 colorGetter,
                 staticIconConstructor,
                 normalIconConstructor,
-                multiIconConstructor,
-                resolvedByDexKit);
+                multiIconConstructor);
     }
 
     private static Class<?> findSingleClass(
             DexKitBridge bridge,
             ClassLoader classLoader,
             String description,
-            String... anchors) throws ReflectiveOperationException {
+            String[]... anchorSets) throws ReflectiveOperationException {
         ClassDataList classes = bridge.findClass(FindClass.create()
-                .matcher(ClassMatcher.create().usingEqStrings(anchors)));
+                .matcher(SystemUiDexKitAdapter.buildAnchorMatcher(anchorSets)));
         if (classes.size() != 1) {
             throw new IllegalStateException(
                     "Expected one " + description + ", found " + classes.size() + ": " + classes);
@@ -229,15 +253,30 @@ final class OplusPluginDexKitAdapter {
         return field;
     }
 
-    private static Field requireLastField(Class<?> owner, Class<?> fieldType) {
-        List<Field> matches = fields(owner, fieldType);
-        if (matches.isEmpty()) {
-            throw new IllegalStateException(
-                    "Missing field " + fieldType.getName() + " in " + owner.getName());
+    /**
+     * The lyric-support flag is the first boolean after the lyric model, matching the property
+     * and toString order on ColorOS 16 ({@code t -> u}) and 17 ({@code p -> q}). The last boolean
+     * is not it: ColorOS 17 appends {@code artworkFullBgEnable}. ART lists declared fields in dex
+     * order, which follows these obfuscated names; the module still checks every write against
+     * the {@code isLyricSupported=} label.
+     */
+    static Field requireBooleanFieldAfter(Field lyricModelField) {
+        Class<?> owner = lyricModelField.getDeclaringClass();
+        boolean afterLyricModel = false;
+        for (Field field : owner.getDeclaredFields()) {
+            if (field.equals(lyricModelField)) {
+                afterLyricModel = true;
+                continue;
+            }
+            if (afterLyricModel
+                    && !Modifier.isStatic(field.getModifiers())
+                    && field.getType() == boolean.class) {
+                field.setAccessible(true);
+                return field;
+            }
         }
-        Field field = matches.get(matches.size() - 1);
-        field.setAccessible(true);
-        return field;
+        throw new IllegalStateException(
+                "Missing boolean after " + lyricModelField.getName() + " in " + owner.getName());
     }
 
     private static List<Field> fields(Class<?> owner, Class<?> fieldType) {
@@ -325,11 +364,37 @@ final class OplusPluginDexKitAdapter {
         }
     }
 
+    interface ArtworkBinder {
+        Artwork bind(Class<?> mediaModelClass) throws ReflectiveOperationException;
+    }
+
     static final class Targets {
         final Class<?> mediaModelClass;
-        final Field albumArtField;
         final Field lyricModelField;
         final Field lyricSupportedField;
+        /** Null when album-art repair is unavailable; {@link #artworkFailure} says why. */
+        final Artwork artwork;
+        final Throwable artworkFailure;
+        final boolean resolvedByDexKit;
+
+        Targets(
+                Class<?> mediaModelClass,
+                Field lyricModelField,
+                Field lyricSupportedField,
+                Artwork artwork,
+                Throwable artworkFailure,
+                boolean resolvedByDexKit) {
+            this.mediaModelClass = mediaModelClass;
+            this.lyricModelField = lyricModelField;
+            this.lyricSupportedField = lyricSupportedField;
+            this.artwork = artwork;
+            this.artworkFailure = artworkFailure;
+            this.resolvedByDexKit = resolvedByDexKit;
+        }
+    }
+
+    static final class Artwork {
+        final Field albumArtField;
         final Method staticIconGetter;
         final Method lottieIconGetter;
         final Field staticDrawableField;
@@ -340,13 +405,9 @@ final class OplusPluginDexKitAdapter {
         final Constructor<?> staticIconConstructor;
         final Constructor<?> normalIconConstructor;
         final Constructor<?> multiIconConstructor;
-        final boolean resolvedByDexKit;
 
-        Targets(
-                Class<?> mediaModelClass,
+        Artwork(
                 Field albumArtField,
-                Field lyricModelField,
-                Field lyricSupportedField,
                 Method staticIconGetter,
                 Method lottieIconGetter,
                 Field staticDrawableField,
@@ -356,12 +417,8 @@ final class OplusPluginDexKitAdapter {
                 Method iconModelColorGetter,
                 Constructor<?> staticIconConstructor,
                 Constructor<?> normalIconConstructor,
-                Constructor<?> multiIconConstructor,
-                boolean resolvedByDexKit) {
-            this.mediaModelClass = mediaModelClass;
+                Constructor<?> multiIconConstructor) {
             this.albumArtField = albumArtField;
-            this.lyricModelField = lyricModelField;
-            this.lyricSupportedField = lyricSupportedField;
             this.staticIconGetter = staticIconGetter;
             this.lottieIconGetter = lottieIconGetter;
             this.staticDrawableField = staticDrawableField;
@@ -372,7 +429,6 @@ final class OplusPluginDexKitAdapter {
             this.staticIconConstructor = staticIconConstructor;
             this.normalIconConstructor = normalIconConstructor;
             this.multiIconConstructor = multiIconConstructor;
-            this.resolvedByDexKit = resolvedByDexKit;
         }
     }
 }

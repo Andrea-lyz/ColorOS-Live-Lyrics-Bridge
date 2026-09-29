@@ -18,7 +18,8 @@ public final class KuWoSameTrackLyricRetentionTest {
                 "Song",
                 "Artist",
                 lyric,
-                4);
+                4,
+                true);
         assertEquals(
                 KuWoSameTrackLyricRetention.Action.CLEAR_FOR_TRACK_CHANGE,
                 first.action);
@@ -42,7 +43,8 @@ public final class KuWoSameTrackLyricRetentionTest {
                 "Your Type",
                 "Carly Rae Jepsen",
                 null,
-                0);
+                0,
+                true);
         assertEquals(KuWoSameTrackLyricRetention.Action.RESTORE_EMPTY_MODEL, restore.action);
         assertSame(lyric, restore.lyricToRestore);
         assertEquals("Your Type", restore.repairTitle);
@@ -62,7 +64,8 @@ public final class KuWoSameTrackLyricRetentionTest {
                 "I'm sorry I'm sorry I love you",
                 "Your Type-Carly Rae Jepsen",
                 null,
-                0);
+                0,
+                true);
         assertEquals(
                 KuWoSameTrackLyricRetention.Action.RETAIN_CAR_LYRIC_MUTATION,
                 retained.action);
@@ -87,7 +90,8 @@ public final class KuWoSameTrackLyricRetentionTest {
                 "360",
                 "Charli xcx",
                 new Object(),
-                9);
+                9,
+                true);
         assertEquals(KuWoSameTrackLyricRetention.Action.CLEAR_FOR_TRACK_CHANGE, cleared.action);
         assertFalse(cleared.repairAlbumArt);
         assertNull(cleared.lyricToRestore);
@@ -105,7 +109,8 @@ public final class KuWoSameTrackLyricRetentionTest {
                 "Song",
                 "Artist",
                 second,
-                3);
+                3,
+                true);
         assertEquals(KuWoSameTrackLyricRetention.Action.REMEMBER_CURRENT, remembered.action);
         assertEquals("song|artist", retention.rememberedTrackKey());
         assertSame(second, retention.rememberedLyric());
@@ -120,7 +125,8 @@ public final class KuWoSameTrackLyricRetentionTest {
                 "C",
                 "D",
                 new Object(),
-                4);
+                4,
+                true);
         assertEquals(
                 KuWoSameTrackLyricRetention.Action.CLEAR_FOR_TRACK_CHANGE,
                 cleared.action);
@@ -138,13 +144,15 @@ public final class KuWoSameTrackLyricRetentionTest {
                 "Your Type",
                 "Carly Rae Jepsen",
                 null,
-                0);
+                0,
+                true);
         KuWoSameTrackLyricRetention.Result retained = retention.evaluateAndCommit(
                 "i'm sorry i'm sorry i love you|your type-carly rae jepsen",
                 "I'm sorry I'm sorry I love you",
                 "Your Type-Carly Rae Jepsen",
                 null,
-                0);
+                0,
+                true);
         assertEquals(
                 KuWoSameTrackLyricRetention.Action.RETAIN_CAR_LYRIC_MUTATION,
                 retained.action);
@@ -153,19 +161,72 @@ public final class KuWoSameTrackLyricRetentionTest {
         assertEquals("Your Type", retained.repairTitle);
     }
 
+    @Test
+    public void sameTrackRebuildThatDropsShownLyricSupportAsksForRestore() {
+        KuWoSameTrackLyricRetention retention = rememberCurrent("song|artist", "Song", "Artist");
+        Object lyric = retention.rememberedLyric();
+
+        KuWoSameTrackLyricRetention.Result rebuilt = retention.evaluateAndCommit(
+                "song|artist",
+                "Song",
+                "Artist",
+                lyric,
+                8,
+                false);
+        assertEquals(KuWoSameTrackLyricRetention.Action.REMEMBER_CURRENT, rebuilt.action);
+        assertTrue(rebuilt.restoreLyricSupport);
+        assertNull(rebuilt.lyricToRestore);
+        assertSame(lyric, retention.rememberedLyric());
+    }
+
+    @Test
+    public void trackThatNeverShowedLyricSupportIsLeftAlone() {
+        KuWoSameTrackLyricRetention retention = new KuWoSameTrackLyricRetention();
+        Object lyric = new Object();
+        retention.evaluateAndCommit("song|artist", "Song", "Artist", lyric, 8, false);
+        for (int rebuild = 0; rebuild < 2; rebuild++) {
+            KuWoSameTrackLyricRetention.Result result = retention.evaluateAndCommit(
+                    "song|artist",
+                    "Song",
+                    "Artist",
+                    lyric,
+                    8,
+                    false);
+            assertEquals(KuWoSameTrackLyricRetention.Action.REMEMBER_CURRENT, result.action);
+            assertFalse(result.restoreLyricSupport);
+        }
+    }
+
+    @Test
+    public void trackChangeForgetsShownLyricSupport() {
+        KuWoSameTrackLyricRetention retention = rememberCurrent("a|b", "A", "B");
+        retention.evaluateAndCommit("c|d", "C", "D", new Object(), 5, true);
+
+        KuWoSameTrackLyricRetention.Result next = retention.evaluateAndCommit(
+                "c|d",
+                "C",
+                "D",
+                new Object(),
+                5,
+                false);
+        assertEquals(KuWoSameTrackLyricRetention.Action.REMEMBER_CURRENT, next.action);
+        assertFalse(next.restoreLyricSupport);
+    }
+
     private static KuWoSameTrackLyricRetention rememberCurrent(
             String trackKey,
             String title,
             String artist) {
         KuWoSameTrackLyricRetention retention = new KuWoSameTrackLyricRetention();
         Object lyric = new Object();
-        retention.evaluateAndCommit(trackKey, title, artist, lyric, 1);
+        retention.evaluateAndCommit(trackKey, title, artist, lyric, 1, true);
         KuWoSameTrackLyricRetention.Result remembered = retention.evaluateAndCommit(
                 trackKey,
                 title,
                 artist,
                 lyric,
-                8);
+                8,
+                true);
         assertEquals(KuWoSameTrackLyricRetention.Action.REMEMBER_CURRENT, remembered.action);
         assertSame(lyric, retention.rememberedLyric());
         return retention;

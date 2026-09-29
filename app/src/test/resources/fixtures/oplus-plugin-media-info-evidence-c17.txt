@@ -1,0 +1,17 @@
+apk=SystemUIPlugin_17.000.002.apk
+apkPackage=com.oplus.systemui.plugins
+apkVersionCode=17000002
+apkSha256=2CDD17E165FCFD2E257BF863C70D85F3978534381F7019038F1A5FAD912667EB
+source=dexdump -d classes.dex classes2.dex (build-tools 36.1.0); jadx 1.5.6 sources/com/oplus/systemui/plugins/shared/data/media/model/
+mediaInfo=Lcom/oplus/systemui/plugins/shared/data/media/model/t; (classes2.dex)
+toStringConstStrings="MediaInfo(uniqueId=" ", voiceLabel=" ", actionIntent=" ", albumArt=" ", rotate=" ", topRightIcon=" ", topRightIconImmersive=" ", songName=" ", artist=" ", iconBeforeArtist=" ", iconBeforeArtistVoiceLabel=" ", processMode=" ", pkg=" ", btnList=" ", picList=" ", lyricModel=" ", isLyricSupported=" ", primaryColor=" ", artworkFullBgEnable=" ")"
+anchorUniqueness="MediaInfo(uniqueId=", ", lyricModel=" and ", isLyricSupported=" are each used by t only across both dex files; "MediaModel(uniqueId=" is used by no class
+instanceFieldsDexOrder=a:String b:String c:PendingIntent d:y e:String f:y g:LinkedHashMap h:String i:String j:y k:String l:String m:String n:List o:List p:s q:Z r:a s:Z t:Object
+constructors=1 <init>(String, String, PendingIntent, y, String, y, LinkedHashMap, String, String, y, String, String, String, List, List, s, Z, Z)V
+fieldRoles=p lyricModel; q isLyricSupported (first boolean after p); s artworkFullBgEnable (the last boolean); t lazy hashCode
+wrapper=u MediaModel(info=t a, progress=v b)
+lyricModel=s LyricModel(lines=List a) with a lazy hashCode
+multiIcon=y MultiIconModel(staticIcon=A a, lottieIcon=q b): public final fields, no getters
+staticIcon=A StaticIcon(drawable=Drawable a, bitmap=Bitmap b, iconModelForMini=i c, iconModelForCard=h d, artResult=b e): no Icon field
+coloros16=m6.t MediaModel (SystemUIPlugin 16.001.002 user): q isPlayingState:Z precedes t lyricModel:s; u isLyricSupported:Z is the first boolean after t and the last field
+effect=OplusPluginDexKitAdapter accepts either anchor set, binds the flag as the first boolean after the lyric model, and leaves album-art repair off when the icon models do not bind

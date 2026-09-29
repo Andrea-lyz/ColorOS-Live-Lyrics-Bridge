@@ -38,6 +38,20 @@ public final class KuWoPluginMediaModelReaderTest {
     }
 
     @Test
+    public void lyricSupportedReadsTheModelFlagAfterLyricText() {
+        // ColorOS 17 MediaInfo: lyric text may contain the label; the model's own flag is last.
+        assertEquals(Boolean.TRUE, KuWoPluginMediaModelReader.readLyricSupported(
+                "MediaInfo(uniqueId=1, songName=a, isLyricSupported=false, lyricModel="
+                        + "LyricModel(lines=[x, isLyricSupported=false]), isLyricSupported=true,"
+                        + " primaryColor=a(b=0), artworkFullBgEnable=false)"));
+        // ColorOS 16 MediaModel ends with the flag.
+        assertEquals(Boolean.FALSE, KuWoPluginMediaModelReader.readLyricSupported(
+                "MediaModel(uniqueId=1, lyricModel=null, isLyricSupported=false)"));
+        assertNull(KuWoPluginMediaModelReader.readLyricSupported("MediaModel(uniqueId=1)"));
+        assertNull(KuWoPluginMediaModelReader.readLyricSupported(null));
+    }
+
+    @Test
     public void containsPlayerPackageScansStringFields() {
         assertTrue(KuWoPluginMediaModelReader.containsPlayerPackage(new KuWoModel()));
         assertFalse(KuWoPluginMediaModelReader.containsPlayerPackage(new OtherModel()));
