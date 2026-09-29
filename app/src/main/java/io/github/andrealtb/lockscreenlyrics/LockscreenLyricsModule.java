@@ -609,6 +609,8 @@ public final class LockscreenLyricsModule extends XposedModule {
     private View activeLyricRefreshAnchor;
     private volatile long lastRecyclerAdapterNotifyGuardLogAt;
     private final ThreadLocal<Boolean> suppressLyricsRecyclerHook = new ThreadLocal<>();
+    /** Set while the Bridge replays updatePkgActionsRule; see {@link #replayOplusPkgActionsRule}. */
+    private final ThreadLocal<Boolean> replayingOplusPkgActionsRule = new ThreadLocal<>();
     private final OfficialLyricTextRenderer officialLyricTextRenderer = new OfficialLyricTextRenderer();
     private final OfficialLyricFrameResolver officialLyricFrameResolver =
             new OfficialLyricFrameResolver();
@@ -1366,6 +1368,11 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private Object onOplusMediaUpdatePkgActionsRule(XposedInterface.Chain chain) throws Throwable {
+        if (Boolean.TRUE.equals(replayingOplusPkgActionsRule.get())) {
+            // A Bridge replay already carries the exact rules to apply. Recording it as the raw
+            // vendor snapshot would make the unlock restore re-apply the patched rules.
+            return chain.proceed();
+        }
         oplusMediaActionPrioritySelector = chain.getThisObject();
         List<Object> args = chain.getArgs();
         if (args.isEmpty() || !(args.get(0) instanceof Map)) {
@@ -1540,12 +1547,26 @@ public final class LockscreenLyricsModule extends XposedModule {
         try {
             synchronized (selector) {
                 Object[] cleanArgs = TranslationActionRulePolicy.snapshotRawArgs(rawSnapshot);
-                updateMethod.invoke(selector, cleanArgs);
+                replayOplusPkgActionsRule(updateMethod, selector, cleanArgs);
                 lastOplusPkgActionsRuleArgs = cleanArgs.clone();
             }
             translationButtonDebug("Restored native OPlus action rules from clean snapshot");
         } catch (Throwable t) {
             error("Failed to restore native OPlus action rules from snapshot", t);
+        }
+    }
+
+    /**
+     * Applies rules the Bridge prepared itself. The call re-enters the updatePkgActionsRule hook
+     * on this thread, which then passes it through unchanged.
+     */
+    private void replayOplusPkgActionsRule(Method updateMethod, Object selector, Object[] args)
+            throws ReflectiveOperationException {
+        replayingOplusPkgActionsRule.set(Boolean.TRUE);
+        try {
+            updateMethod.invoke(selector, args);
+        } finally {
+            replayingOplusPkgActionsRule.remove();
         }
     }
 
@@ -1599,7 +1620,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 }
                 refreshArgs = TranslationActionRulePolicy.patch(
                         refreshArgs, knownTranslationPackages);
-                updateMethod.invoke(selector, refreshArgs);
+                replayOplusPkgActionsRule(updateMethod, selector, refreshArgs);
                 lastOplusPkgActionsRuleArgs = refreshArgs.clone();
             }
             markTranslationToggleRule0PackagesRefreshed(knownTranslationPackages);
