@@ -6907,12 +6907,12 @@ public final class LockscreenLyricsModule extends XposedModule {
             }
             if (factoryHooks > 0) {
                 infoAlways(BridgeDebugArea.BOOTSTRAP, BridgeEvents.HOOK_INSTALLED,
-                        "Hooked OPlus plugin ClassLoader factory, constructors=" + hooked);
+                        "Hooked OPlus plugin ClassLoader factory, constructorHooks=" + hooked);
             }
             if (!pluginClassLoaderConstructorHookInstalled) {
                 infoAlways(BridgeDebugArea.BOOTSTRAP, BridgeEvents.HOOK_FAILED,
-                        "No OPlus plugin ClassLoader constructor or factory; plugin hooks wait for"
-                                + " the first lyric view attachment");
+                        "No OPlus plugin ClassLoader constructor or factory; only the"
+                                + " LyricsRecyclerView hooks install, on first attachment");
             }
         } catch (Throwable t) {
             error("Failed to hook OPlus plugin ClassLoader constructors", t);
