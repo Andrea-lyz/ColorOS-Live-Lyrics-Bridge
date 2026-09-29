@@ -558,6 +558,10 @@ public final class LockscreenLyricsModule extends XposedModule {
             new WeakHashMap<>();
     private static final LyricsRecyclerFieldAccessor LYRICS_RECYCLER_FIELD_ACCESSOR =
             new LyricsRecyclerFieldAccessor();
+    // ColorOS 17 has no readable index field (n); the row each recycler was last sent through its
+    // immersive entry stands in for it. Weak keys: a detached recycler never outlives SystemUI.
+    private static final WeakHashMap<Object, ImmersiveEntryIndex> IMMERSIVE_ENTRY_INDEXES =
+            new WeakHashMap<>();
     private static final LyricsRecyclerMatch NO_LYRICS_RECYCLER_MATCH =
             new LyricsRecyclerMatch(null, null);
     private static final ThreadLocal<Rect> VIEW_VISIBLE_RECT =
@@ -7316,6 +7320,8 @@ public final class LockscreenLyricsModule extends XposedModule {
         try {
             int currentLyricHooks = 0;
             int scalePivotHooks = 0;
+            int rowStyleHooks = 0;
+            int immersiveEntryHooks = 0;
             Class<?> current = lyricsRecyclerViewClass;
             while (current != null) {
                 for (Method method : current.getDeclaredMethods()) {
@@ -7341,19 +7347,50 @@ public final class LockscreenLyricsModule extends XposedModule {
                                 .intercept(this::onLyricsRecyclerPrepareScalePivot);
                         rememberPluginHookHandle(pluginLoader, handle);
                         scalePivotHooks++;
+                    } else if (OfficialLyricRowStyleMethodPolicy.matches(
+                            method, lyricsRecyclerViewClass)) {
+                        method.setAccessible(true);
+                        XposedInterface.HookHandle handle = hook(method)
+                                .setId(HOOK_ID_LYRICS_RECYCLER
+                                        + "-row-style-"
+                                        + rowStyleHooks)
+                                .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                                .intercept(this::onLyricsRecyclerRowStyleApplied);
+                        rememberPluginHookHandle(pluginLoader, handle);
+                        rowStyleHooks++;
+                    } else if (OfficialImmersiveLyricEntryPolicy.matches(
+                            method, lyricsRecyclerViewClass)) {
+                        method.setAccessible(true);
+                        XposedInterface.HookHandle handle = hook(method)
+                                .setId(HOOK_ID_LYRICS_RECYCLER
+                                        + "-immersive-entry-"
+                                        + immersiveEntryHooks)
+                                .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                                .intercept(this::onLyricsRecyclerImmersiveEntry);
+                        rememberPluginHookHandle(pluginLoader, handle);
+                        immersiveEntryHooks++;
                     }
                 }
                 current = current.getSuperclass();
             }
-            if (currentLyricHooks > 0 || scalePivotHooks > 0) {
+            if (currentLyricHooks > 0
+                    || scalePivotHooks > 0
+                    || rowStyleHooks > 0
+                    || immersiveEntryHooks > 0) {
                 infoAlways(BridgeDebugArea.BOOTSTRAP, BridgeEvents.HOOK_INSTALLED, "Hooked LyricsRecyclerView runtime methods, currentMethods="
                         + currentLyricHooks
-                        + ", pivotMethods=" + scalePivotHooks);
+                        + ", pivotMethods=" + scalePivotHooks
+                        + ", rowStyleMethods=" + rowStyleHooks
+                        + ", immersiveEntryMethods=" + immersiveEntryHooks);
             }
             if (currentLyricHooks == 0) {
+                // Module-driven positioning invokes the ColorOS 16 entry only; the ColorOS 17
+                // immersive entry is observed and aligned, never called by the module.
                 lyricsRecyclerSetCurrentUnavailable = true;
-                info(BridgeDebugArea.AOD, BridgeEvents.SURFACE_STATE_CHANGED, "No LyricsRecyclerView current lyric hook target found on "
-                        + lyricsRecyclerViewClass.getName());
+                if (immersiveEntryHooks == 0) {
+                    info(BridgeDebugArea.AOD, BridgeEvents.SURFACE_STATE_CHANGED, "No LyricsRecyclerView current lyric hook target found on "
+                            + lyricsRecyclerViewClass.getName());
+                }
             }
         } catch (Throwable t) {
             error("Failed to hook LyricsRecyclerView current lyric updates", t);
@@ -7362,11 +7399,165 @@ public final class LockscreenLyricsModule extends XposedModule {
 
     private Object onLyricsRecyclerPrepareScalePivot(XposedInterface.Chain chain) throws Throwable {
         Object result = chain.proceed();
-        Object textView = chain.getArg(0);
+        int textViewIndex = chain.getExecutable() instanceof Method
+                ? OfficialLyricScalePivotMethodPolicy.textViewArgumentIndex(
+                        (Method) chain.getExecutable())
+                : OfficialLyricScalePivotMethodPolicy.NOT_A_PIVOT_METHOD;
+        Object textView = textViewIndex >= 0 ? chain.getArg(textViewIndex) : null;
         if (textView instanceof TextView) {
             applyOfficialLyricScalePivot((TextView) textView);
         }
         return result;
+    }
+
+    private Object onLyricsRecyclerRowStyleApplied(XposedInterface.Chain chain) throws Throwable {
+        Object result = chain.proceed();
+        Object textView = chain.getArg(0);
+        if (textView instanceof TextView) {
+            TextView row = (TextView) textView;
+            if (Boolean.TRUE.equals(chain.getArg(1))) {
+                rememberOfficialActiveLyricTypeface(row.getTypeface());
+            }
+            // The vendor just replaced the row RenderEffect (blur 0 active / 6px inactive). Drop the
+            // cached Bridge effect so the next draw reapplies the configured blur over it.
+            synchronized (VIEW_VISUAL_EFFECT_CACHE_LOCK) {
+                VIEW_LYRIC_RENDER_EFFECT_MODE.remove(row);
+                VIEW_BLUR_DISABLED.remove(row);
+            }
+            row.invalidate();
+        }
+        return result;
+    }
+
+    /**
+     * ColorOS 17 counterpart of {@link #onLyricsRecyclerSetCurrentLyric}: records the row the
+     * vendor applies as the official index and keeps it on the module clock within the
+     * small-correction band. Only the model position may change; see
+     * {@link OfficialImmersiveLyricEntryPolicy}.
+     */
+    private Object onLyricsRecyclerImmersiveEntry(XposedInterface.Chain chain) throws Throwable {
+        if (LyricsRecyclerPolicy.shouldSkipSetCurrentLyricHook(
+                Boolean.TRUE.equals(suppressLyricsRecyclerHook.get()))) {
+            return chain.proceed();
+        }
+        Object recycler = chain.getThisObject();
+        View recyclerView = recycler instanceof View ? (View) recycler : null;
+        Object model = chain.getArg(0);
+        ImmersiveLyricsModelAccess.Snapshot snapshot = ImmersiveLyricsModelAccess.read(model);
+        if (recyclerView == null || snapshot == null) {
+            return chain.proceed();
+        }
+        rememberLyricsRecyclerView(recyclerView);
+        long[] startTimes = ImmersiveLyricsModelAccess.startTimes(snapshot.lines);
+        int vendorIndex = snapshot.index;
+        int targetIndex = resolveImmersiveEntryIndex(recycler, vendorIndex, startTimes);
+        Object[] args = null;
+        if (targetIndex != vendorIndex) {
+            Object aligned = targetIndex >= 0 && targetIndex < snapshot.lineCount()
+                    ? ImmersiveLyricsModelAccess.withIndex(model, snapshot.lines, targetIndex)
+                    : null;
+            if (aligned != null) {
+                args = chain.getArgs().toArray(new Object[0]);
+                args[0] = aligned;
+            } else {
+                targetIndex = vendorIndex;
+            }
+        }
+        int previousOfficialIndex = readLyricsRecyclerCurrentIndex(recyclerView);
+        synchronized (IMMERSIVE_ENTRY_INDEXES) {
+            IMMERSIVE_ENTRY_INDEXES.put(recycler, new ImmersiveEntryIndex(targetIndex, startTimes));
+        }
+        LyricsRecyclerGeometry beforeGeometry = null;
+        try {
+            if (recyclerView.isShown()) {
+                activateSystemUiLyricModeFromSurface("immersiveEntry");
+            }
+            beforeGeometry = captureLyricsRecyclerGeometry(
+                    recyclerView,
+                    targetIndex >= 0 ? targetIndex : previousOfficialIndex);
+        } catch (Throwable t) {
+            error("Failed while reading LyricsRecyclerView immersive entry", t);
+        }
+        Object result = args != null ? chain.proceed(args) : chain.proceed();
+        if (targetIndex >= 0) {
+            rememberLyricsRecyclerTargetIndex(targetIndex);
+        }
+        maybeLogLyricsRecyclerSetCurrentGeometry(
+                targetIndex,
+                beforeGeometry,
+                captureLyricsRecyclerGeometry(recyclerView, targetIndex));
+        scheduleLyricsRecyclerOwnershipSnapshots(
+                recyclerView,
+                "official-current-immersive",
+                targetIndex);
+        return result;
+    }
+
+    private int resolveImmersiveEntryIndex(Object recycler, int vendorIndex, long[] startTimes) {
+        if (vendorIndex < 0 || startTimes == null) {
+            return vendorIndex;
+        }
+        LyricInfoContract.Payload payload = currentLyricProviderPayload;
+        if (payload != null && payload.snapshotPositionMillis >= 0L) {
+            int pinned = OfficialImmersiveLyricEntryPolicy.indexAt(
+                    startTimes,
+                    payload.snapshotPositionMillis);
+            if (pinned != vendorIndex) {
+                info(BridgeDebugArea.RENDERER, BridgeEvents.DETAIL,
+                        "Pinned native lyric index; current="
+                                + payload.snapshotPositionMillis / 1000L);
+            }
+            return pinned;
+        }
+        if (!isModuleLyricClockUsable()) {
+            return vendorIndex;
+        }
+        long position = estimatePlaybackPositionMillis();
+        int moduleIndex = OfficialImmersiveLyricEntryPolicy.indexAt(startTimes, position);
+        long intoRowMillis = moduleIndex >= 0 ? position - startTimes[moduleIndex] : -1L;
+        int previousIndex;
+        synchronized (IMMERSIVE_ENTRY_INDEXES) {
+            ImmersiveEntryIndex previous = IMMERSIVE_ENTRY_INDEXES.get(recycler);
+            previousIndex = previous != null && previous.sameLines(startTimes)
+                    ? previous.index
+                    : -1;
+        }
+        int aligned = OfficialImmersiveLyricEntryPolicy.alignedIndex(
+                vendorIndex,
+                previousIndex,
+                moduleIndex,
+                intoRowMillis,
+                LyricTimingTuningConstants.LyricGeneral.PLAYBACK_SMALL_CORRECTION_MS);
+        if (aligned != vendorIndex) {
+            int loggedPrevious = previousIndex;
+            StructuredBridgeLog.debug(
+                    BridgeDebugArea.RENDERER,
+                    BridgeEvents.NATIVE_CLOCK_ALIGNED,
+                    () -> "Aligned vendor lyric row, source=immersive"
+                            + ", vendorIndex=" + vendorIndex
+                            + ", alignedIndex=" + aligned
+                            + ", previousIndex=" + loggedPrevious
+                            + ", moduleIntoRowMs=" + intoRowMillis);
+        }
+        return aligned;
+    }
+
+    /**
+     * ColorOS 17 swaps the lyric row typeface with its active state (see
+     * {@link OfficialLyricRowStyleMethodPolicy}). A row measured with the inactive typeface and
+     * drawn with the active one wraps differently, which pushed its translation out of the slot.
+     * The renderer therefore measures and draws every row with the active-row typeface; rows
+     * measured before it was known are re-measured once.
+     */
+    private void rememberOfficialActiveLyricTypeface(Typeface typeface) {
+        if (!officialLyricTextRenderer.setOfficialBaseTypeface(typeface)) {
+            return;
+        }
+        infoAlways(BridgeDebugArea.RENDERER, BridgeEvents.RENDER_STATE_CHANGED,
+                "Learned official active lyric typeface; re-measuring visible lyric rows once"
+                        + " | weight="
+                        + (Build.VERSION.SDK_INT >= 28 ? typeface.getWeight() : -1));
+        mainHandler.post(() -> redrawLyricRenderTargets(false, true));
     }
 
     private static boolean isLyricsRecyclerCurrentLyricMethod(Method method) {
@@ -7389,17 +7580,12 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private static boolean isLyricsRecyclerScalePivotMethod(Method method) {
-        if (method == null
-                || method.getReturnType() != void.class) {
-            return false;
-        }
         // Method names drift across same-version SystemUIPlugin binaries (verified m/k plus the
-        // current u/v/C device variant). The shape is narrow and safe: any LyricsRecyclerView
-        // void(single TextView subtype) method can only operate on the lyric row; restoring the
-        // configured pivot after it returns is idempotent even for style/binding helpers.
-        Class<?>[] parameterTypes = method.getParameterTypes();
-        return parameterTypes.length == 1
-                && TextView.class.isAssignableFrom(parameterTypes[0]);
+        // current u/v/C device variant, and ColorOS 17's static d). The shapes are narrow and
+        // safe: they can only operate on the lyric row, and restoring the configured pivot after
+        // they return is idempotent even for style/binding helpers.
+        return OfficialLyricScalePivotMethodPolicy.textViewArgumentIndex(method)
+                != OfficialLyricScalePivotMethodPolicy.NOT_A_PIVOT_METHOD;
     }
 
     private static boolean isOfficialTimedCurrentLyricMethod(Method method) {
@@ -9888,7 +10074,40 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private static int readLyricsRecyclerCurrentIndex(Object recycler) {
-        return LYRICS_RECYCLER_FIELD_ACCESSOR.readCurrentIndex(recycler, -1);
+        int fieldIndex = LYRICS_RECYCLER_FIELD_ACCESSOR.readCurrentIndex(recycler, Integer.MIN_VALUE);
+        if (fieldIndex != Integer.MIN_VALUE) {
+            return fieldIndex;
+        }
+        if (recycler == null) {
+            return -1;
+        }
+        synchronized (IMMERSIVE_ENTRY_INDEXES) {
+            ImmersiveEntryIndex entry = IMMERSIVE_ENTRY_INDEXES.get(recycler);
+            return entry == null ? -1 : entry.index;
+        }
+    }
+
+    /** Last row a ColorOS 17 recycler was sent, with a cheap identity of the lines it applies to. */
+    private static final class ImmersiveEntryIndex {
+        final int index;
+        final int lineCount;
+        final long firstStartMs;
+        final long lastStartMs;
+
+        ImmersiveEntryIndex(int index, long[] startTimes) {
+            this.index = index;
+            this.lineCount = startTimes == null ? 0 : startTimes.length;
+            this.firstStartMs = lineCount == 0 ? -1L : startTimes[0];
+            this.lastStartMs = lineCount == 0 ? -1L : startTimes[lineCount - 1];
+        }
+
+        boolean sameLines(long[] startTimes) {
+            int count = startTimes == null ? 0 : startTimes.length;
+            return count > 0
+                    && count == lineCount
+                    && startTimes[0] == firstStartMs
+                    && startTimes[count - 1] == lastStartMs;
+        }
     }
 
     private static long readLongField(Object target, String fieldName, long defaultValue) {
@@ -12443,6 +12662,9 @@ public final class LockscreenLyricsModule extends XposedModule {
         private Typeface configuredTypeface;
         private int configuredTypefaceWeight = Integer.MIN_VALUE;
         private boolean configuredTypefaceCached;
+        // Official active-row typeface on builds that swap it per row state (ColorOS 17); null
+        // keeps each row's own TextView typeface, which is stable on ColorOS 16.
+        private volatile Typeface officialBaseTypeface;
         private final LyricGroupDrawContext lyricGroupDrawContext =
                 new LyricGroupDrawContext();
         private long modelSwitchRevealStartedAtMs = -1L;
@@ -15418,9 +15640,25 @@ public final class LockscreenLyricsModule extends XposedModule {
             return availableHeight <= dp(textView.getContext(), 52f);
         }
 
+        /** Returns true when the typeface changed and measured rows must be refreshed. */
+        boolean setOfficialBaseTypeface(Typeface typeface) {
+            if (typeface == null || typeface == officialBaseTypeface) {
+                return false;
+            }
+            officialBaseTypeface = typeface;
+            return true;
+        }
+
+        // Measurement and drawing must share one typeface, or a row wraps differently when the
+        // vendor swaps its typeface on activation.
+        private Typeface officialTypefaceOf(TextView textView) {
+            Typeface base = officialBaseTypeface;
+            return base != null ? base : textView.getTypeface();
+        }
+
         private void configurePaints(
                 TextView textView, boolean compactSlot, boolean untranslatedLayout) {
-            Typeface typeface = resolveConfiguredTypeface(textView.getTypeface());
+            Typeface typeface = resolveConfiguredTypeface(officialTypefaceOf(textView));
             if (inactivePaint.getTypeface() != typeface
                     || playedPaint.getTypeface() != typeface
                     || activePaint.getTypeface() != typeface
@@ -15542,7 +15780,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
 
         private void configureGeometryPaints(TextView textView, boolean untranslatedLayout) {
-            Typeface typeface = resolveConfiguredTypeface(textView.getTypeface());
+            Typeface typeface = resolveConfiguredTypeface(officialTypefaceOf(textView));
             inactivePaint.setTypeface(typeface);
             translationPaint.setTypeface(typeface);
             float mainSize = sp(

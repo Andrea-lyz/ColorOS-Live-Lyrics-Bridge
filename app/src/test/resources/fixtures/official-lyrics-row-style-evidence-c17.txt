@@ -1,0 +1,13 @@
+apk=SystemUIPlugin_17.000.002.apk
+apkPackage=com.oplus.systemui.plugins
+apkVersionCode=17000002
+apkSha256=2CDD17E165FCFD2E257BF863C70D85F3978534381F7019038F1A5FAD912667EB
+source=jadx/sources/com/oplus/systemui/plugins/shared/template/component/media/view/LyricsRecyclerView.java
+sourceSha256=149E49653C882478A080911C62A0A5720B12F6D22652C62C947ACEA40E78BD69
+signature=public final void h(AppCompatTextView appCompatTextView, boolean z)
+inactiveTypeface=appCompatTextView.setTypeface(D)
+activeTypeface=appCompatTextView.setTypeface(C)
+baseTypeface=view/n.java onCreateViewHolder: LyricsRecyclerView.C = appCompatTextView.getTypeface()
+derivedTypeface=view/n.java onCreateViewHolder: LyricsRecyclerView.D = Typeface.create(LyricsRecyclerView.C, lyricsRecyclerView.i, false)
+otherLineFontWeight=media_immersive_card_section.xml app:otherLineFontWeight="600"
+symptom=row measured with D (one wrapped line) but drawn with C once active (two lines); translation pushed below the 224px slot, 319px needed
