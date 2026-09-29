@@ -1,0 +1,14 @@
+apk=SystemUIPlugin_17.000.002.apk
+apkPackage=com.oplus.systemui.plugins
+apkVersionCode=17000002
+apkSha256=2CDD17E165FCFD2E257BF863C70D85F3978534381F7019038F1A5FAD912667EB
+source=jadx/sources/com/oplus/systemui/plugins/shared/template/component/media/view/LyricsRecyclerView.java
+sourceSha256=149E49653C882478A080911C62A0A5720B12F6D22652C62C947ACEA40E78BD69
+entry=public final void o(com.oplus.systemui.plugins.shared.template.section.model.media.h lyricModel, boolean z)
+model=section/model/media/h.java: public final List a; public final int b; public h(List list, int i); toString "ImmersiveLyricsModel(lines=..., position=...)"
+line=data/media/model/r.java: public final long a; public final String b; toString "LyricLine(timeMillis=..., content=...)"
+currentIndexField=c (int, initial -1): o() same-list path "this.c = i2"; view/f.java replaceLyricsData "lyricsRecyclerView.c = i"; field n is now a float
+caller=MPImmersiveSectionViewModel$immersiveLyricsModel$2: new h(list, f.o(list, position, 0)); next row via f.C(position, list) when due within 1000ms
+lookup=com/heytap/log/strategy/f.java o(List list, long j, int i): first row with start > position; none -> last row; first row -> default i; else previous row
+rowBlur=LyricsRecyclerView.h(): inactive setRenderEffect(RenderEffect.createBlurEffect(6.0f, 6.0f, CLAMP)); active createBlurEffect(0.0f, 0.0f, CLAMP); re-applied only when the active tag flips
+coloros17_0_0_105=plugin APK hash differs (43FC34F7...); o/h/d shapes and bodies unchanged
