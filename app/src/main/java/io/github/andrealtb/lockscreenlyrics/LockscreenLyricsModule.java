@@ -7316,6 +7316,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         try {
             int currentLyricHooks = 0;
             int scalePivotHooks = 0;
+            int rowStyleHooks = 0;
             Class<?> current = lyricsRecyclerViewClass;
             while (current != null) {
                 for (Method method : current.getDeclaredMethods()) {
@@ -7341,14 +7342,26 @@ public final class LockscreenLyricsModule extends XposedModule {
                                 .intercept(this::onLyricsRecyclerPrepareScalePivot);
                         rememberPluginHookHandle(pluginLoader, handle);
                         scalePivotHooks++;
+                    } else if (OfficialLyricRowStyleMethodPolicy.matches(
+                            method, lyricsRecyclerViewClass)) {
+                        method.setAccessible(true);
+                        XposedInterface.HookHandle handle = hook(method)
+                                .setId(HOOK_ID_LYRICS_RECYCLER
+                                        + "-row-style-"
+                                        + rowStyleHooks)
+                                .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                                .intercept(this::onLyricsRecyclerRowStyleApplied);
+                        rememberPluginHookHandle(pluginLoader, handle);
+                        rowStyleHooks++;
                     }
                 }
                 current = current.getSuperclass();
             }
-            if (currentLyricHooks > 0 || scalePivotHooks > 0) {
+            if (currentLyricHooks > 0 || scalePivotHooks > 0 || rowStyleHooks > 0) {
                 infoAlways(BridgeDebugArea.BOOTSTRAP, BridgeEvents.HOOK_INSTALLED, "Hooked LyricsRecyclerView runtime methods, currentMethods="
                         + currentLyricHooks
-                        + ", pivotMethods=" + scalePivotHooks);
+                        + ", pivotMethods=" + scalePivotHooks
+                        + ", rowStyleMethods=" + rowStyleHooks);
             }
             if (currentLyricHooks == 0) {
                 lyricsRecyclerSetCurrentUnavailable = true;
@@ -7371,6 +7384,33 @@ public final class LockscreenLyricsModule extends XposedModule {
             applyOfficialLyricScalePivot((TextView) textView);
         }
         return result;
+    }
+
+    private Object onLyricsRecyclerRowStyleApplied(XposedInterface.Chain chain) throws Throwable {
+        Object result = chain.proceed();
+        Object textView = chain.getArg(0);
+        if (textView instanceof TextView && Boolean.TRUE.equals(chain.getArg(1))) {
+            rememberOfficialActiveLyricTypeface(((TextView) textView).getTypeface());
+        }
+        return result;
+    }
+
+    /**
+     * ColorOS 17 swaps the lyric row typeface with its active state (see
+     * {@link OfficialLyricRowStyleMethodPolicy}). A row measured with the inactive typeface and
+     * drawn with the active one wraps differently, which pushed its translation out of the slot.
+     * The renderer therefore measures and draws every row with the active-row typeface; rows
+     * measured before it was known are re-measured once.
+     */
+    private void rememberOfficialActiveLyricTypeface(Typeface typeface) {
+        if (!officialLyricTextRenderer.setOfficialBaseTypeface(typeface)) {
+            return;
+        }
+        infoAlways(BridgeDebugArea.RENDERER, BridgeEvents.RENDER_STATE_CHANGED,
+                "Learned official active lyric typeface; re-measuring visible lyric rows once"
+                        + " | weight="
+                        + (Build.VERSION.SDK_INT >= 28 ? typeface.getWeight() : -1));
+        mainHandler.post(() -> redrawLyricRenderTargets(false, true));
     }
 
     private static boolean isLyricsRecyclerCurrentLyricMethod(Method method) {
@@ -12442,6 +12482,9 @@ public final class LockscreenLyricsModule extends XposedModule {
         private Typeface configuredTypeface;
         private int configuredTypefaceWeight = Integer.MIN_VALUE;
         private boolean configuredTypefaceCached;
+        // Official active-row typeface on builds that swap it per row state (ColorOS 17); null
+        // keeps each row's own TextView typeface, which is stable on ColorOS 16.
+        private volatile Typeface officialBaseTypeface;
         private final LyricGroupDrawContext lyricGroupDrawContext =
                 new LyricGroupDrawContext();
         private long modelSwitchRevealStartedAtMs = -1L;
@@ -15417,9 +15460,25 @@ public final class LockscreenLyricsModule extends XposedModule {
             return availableHeight <= dp(textView.getContext(), 52f);
         }
 
+        /** Returns true when the typeface changed and measured rows must be refreshed. */
+        boolean setOfficialBaseTypeface(Typeface typeface) {
+            if (typeface == null || typeface == officialBaseTypeface) {
+                return false;
+            }
+            officialBaseTypeface = typeface;
+            return true;
+        }
+
+        // Measurement and drawing must share one typeface, or a row wraps differently when the
+        // vendor swaps its typeface on activation.
+        private Typeface officialTypefaceOf(TextView textView) {
+            Typeface base = officialBaseTypeface;
+            return base != null ? base : textView.getTypeface();
+        }
+
         private void configurePaints(
                 TextView textView, boolean compactSlot, boolean untranslatedLayout) {
-            Typeface typeface = resolveConfiguredTypeface(textView.getTypeface());
+            Typeface typeface = resolveConfiguredTypeface(officialTypefaceOf(textView));
             if (inactivePaint.getTypeface() != typeface
                     || playedPaint.getTypeface() != typeface
                     || activePaint.getTypeface() != typeface
@@ -15541,7 +15600,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
 
         private void configureGeometryPaints(TextView textView, boolean untranslatedLayout) {
-            Typeface typeface = resolveConfiguredTypeface(textView.getTypeface());
+            Typeface typeface = resolveConfiguredTypeface(officialTypefaceOf(textView));
             inactivePaint.setTypeface(typeface);
             translationPaint.setTypeface(typeface);
             float mainSize = sp(
