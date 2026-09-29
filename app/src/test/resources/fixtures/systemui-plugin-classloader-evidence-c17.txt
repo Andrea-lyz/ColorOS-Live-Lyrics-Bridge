@@ -1,0 +1,13 @@
+apk=C17-SystemUI.apk
+apkPackage=com.android.systemui
+apkVersionName=17.99.02
+apkVersionCode=179902
+apkSha256=DA83AE63B6CFC43A4CE57F21EE7A54444E14DADA85B24AD36D2FE74181F0A927
+dex=classes2.dex (dexdump -l plain)
+loaderClass=Lcom/android/systemui/shared/plugins/OPlusPluginClassLoader; superclass Ldalvik/system/PathClassLoader; instance fields mBase Ljava/lang/ClassLoader; mPackages [Ljava/lang/String;
+loaderDirectMethods=<clinit>()V only; no <init>
+loaderVirtualMethods=loadClass(Ljava/lang/String;Z)Ljava/lang/Class; iterates mPackages before delegating
+factory=Lcom/android/systemui/shared/plugins/PluginInstance$PluginFactory;->createClassLoader()Ljava/lang/ClassLoader; PUBLIC FINAL
+factoryBody=jadx PluginInstance.java:222-226 new OPlusPluginClassLoader(path, lib, ClassLoader.getSystemClassLoader()); mBase = baseClassLoader; mPackages = {"com.android.systemui.common", "com.android.systemui.log", "com.android.systemui.plugin"}; VarHandle.storeStoreFence()
+factoryCallers=PluginFactory.createPlugin and createPluginContext, only when getCacheClassLoader(pluginPackage) returns null
+coloros16=SystemUI 16.99.12 OPlusPluginClassLoader(String, String, ClassLoader, String...) assigns mBase and mPackages; created by PluginInstance$Factory$$ExternalSyntheticLambda0

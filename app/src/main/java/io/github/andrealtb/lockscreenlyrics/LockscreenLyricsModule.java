@@ -123,6 +123,12 @@ public final class LockscreenLyricsModule extends XposedModule {
     private static final String OPLUS_MEDIA_BLACKLIST_METHOD = "isInMediaBlackList";
     private static final String OPLUS_PLUGIN_CLASS_LOADER_CLASS =
             "com.android.systemui.shared.plugins.OPlusPluginClassLoader";
+    // ColorOS 17 SystemUI has no OPlusPluginClassLoader constructor: the factory builds the loader
+    // and assigns its package filter afterwards, so plugin hooks start when the factory returns.
+    private static final String OPLUS_PLUGIN_FACTORY_CLASS =
+            "com.android.systemui.shared.plugins.PluginInstance$PluginFactory";
+    private static final String OPLUS_PLUGIN_FACTORY_CREATE_CLASS_LOADER_METHOD =
+            "createClassLoader";
     private static final String LYRICS_RECYCLER_VIEW_CLASS =
             "com.oplus.systemui.plugins.shared.template.component.media.view.LyricsRecyclerView";
     private static final String LYRICS_SWITCHER_VIEW_CLASS =
@@ -155,6 +161,8 @@ public final class LockscreenLyricsModule extends XposedModule {
             "oplus-translation-button-image-bitmap";
     private static final String HOOK_ID_PLUGIN_CLASS_LOADER_CONSTRUCTOR =
             "oplus-word-plugin-classloader-constructor";
+    private static final String HOOK_ID_PLUGIN_CLASS_LOADER_FACTORY =
+            "oplus-word-plugin-classloader-factory";
     private static final String HOOK_ID_LYRICS_RECYCLER = "oplus-word-lyrics-recycler";
     private static final String HOOK_ID_LYRICS_RECYCLER_NOTIFY_GUARD =
             "oplus-word-lyrics-recycler-notify-guard";
@@ -487,6 +495,8 @@ public final class LockscreenLyricsModule extends XposedModule {
     private volatile boolean pluginClassLoaderConstructorHookInstalled;
     private final Object pluginHookGenerationLock = new Object();
     private WeakReference<ClassLoader> activePluginClassLoader = new WeakReference<>(null);
+    // Last plugin loader whose early hooks ran; the constructor and factory entries may both fire.
+    private WeakReference<ClassLoader> readyPluginClassLoader = new WeakReference<>(null);
     private final ArrayList<XposedInterface.HookHandle> activePluginHookHandles =
             new ArrayList<>();
     private volatile boolean lyricsRecyclerSetCurrentUnavailable;
@@ -6757,8 +6767,8 @@ public final class LockscreenLyricsModule extends XposedModule {
                     classLoader.loadClass(LYRICS_RECYCLER_VIEW_CLASS);
             tryInstallLyricsRecyclerViewHook(lyricsRecyclerViewClass);
         } catch (Throwable ignored) {
-            // The Seedling plugin class is loaded lazily. The targeted plugin ClassLoader
-            // constructor hook, or its first View attachment, installs the lyric-local hooks.
+            // The Seedling plugin class is loaded lazily. The plugin ClassLoader constructor or
+            // factory hook, or its first View attachment, installs the lyric-local hooks.
         }
     }
 
@@ -6785,12 +6795,53 @@ public final class LockscreenLyricsModule extends XposedModule {
                         .intercept(this::onPluginClassLoaderConstructed);
                 hooked++;
             }
-            pluginClassLoaderConstructorHookInstalled = hooked > 0;
-            if (pluginClassLoaderConstructorHookInstalled) {
+            int factoryHooks = tryInstallPluginClassLoaderFactoryHook(classLoader);
+            pluginClassLoaderConstructorHookInstalled = hooked + factoryHooks > 0;
+            if (hooked > 0) {
                 infoAlways(BridgeDebugArea.BOOTSTRAP, BridgeEvents.HOOK_INSTALLED, "Hooked OPlus plugin ClassLoader constructors, methods=" + hooked);
+            }
+            if (factoryHooks > 0) {
+                infoAlways(BridgeDebugArea.BOOTSTRAP, BridgeEvents.HOOK_INSTALLED,
+                        "Hooked OPlus plugin ClassLoader factory, constructors=" + hooked);
+            }
+            if (!pluginClassLoaderConstructorHookInstalled) {
+                infoAlways(BridgeDebugArea.BOOTSTRAP, BridgeEvents.HOOK_FAILED,
+                        "No OPlus plugin ClassLoader constructor or factory; plugin hooks wait for"
+                                + " the first lyric view attachment");
             }
         } catch (Throwable t) {
             error("Failed to hook OPlus plugin ClassLoader constructors", t);
+        }
+    }
+
+    /**
+     * ColorOS 17 inlined the OPlusPluginClassLoader constructor into
+     * {@code PluginInstance$PluginFactory.createClassLoader()}, which assigns the loader's base
+     * and package filter only after construction. Its return value is the first point where the
+     * loader can resolve plugin classes.
+     */
+    @SuppressLint("PrivateApi") // LSPosed hook targets the vendor plugin factory by name.
+    private int tryInstallPluginClassLoaderFactoryHook(ClassLoader classLoader) {
+        Method factoryMethod;
+        try {
+            factoryMethod = classLoader.loadClass(OPLUS_PLUGIN_FACTORY_CLASS)
+                    .getDeclaredMethod(OPLUS_PLUGIN_FACTORY_CREATE_CLASS_LOADER_METHOD);
+        } catch (ClassNotFoundException | NoSuchMethodException e) {
+            return 0;
+        }
+        if (!OplusPluginClassLoaderPolicy.isClassLoaderFactory(factoryMethod)) {
+            return 0;
+        }
+        try {
+            factoryMethod.setAccessible(true);
+            XposedInterface.HookHandle handle = hook(factoryMethod)
+                    .setId(HOOK_ID_PLUGIN_CLASS_LOADER_FACTORY)
+                    .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                    .intercept(this::onPluginClassLoaderCreated);
+            return handle == null ? 0 : 1;
+        } catch (Throwable t) {
+            error("Failed to hook OPlus plugin ClassLoader factory", t);
+            return 0;
         }
     }
 
@@ -6798,13 +6849,37 @@ public final class LockscreenLyricsModule extends XposedModule {
         Object result = chain.proceed();
         Object thisObject = chain.getThisObject();
         if (thisObject instanceof ClassLoader) {
-            ClassLoader pluginLoader = (ClassLoader) thisObject;
-            activatePluginHookGeneration(pluginLoader);
-            tryInstallLyricsRecyclerViewHook(pluginLoader);
-            tryInstallKuWoPluginMediaModelHook(pluginLoader);
-            tryInstallLyricPositionControllerHook(pluginLoader);
+            onPluginClassLoaderReady((ClassLoader) thisObject);
         }
         return result;
+    }
+
+    private Object onPluginClassLoaderCreated(XposedInterface.Chain chain) throws Throwable {
+        Object result = chain.proceed();
+        if (result instanceof ClassLoader
+                && OplusPluginClassLoaderPolicy.isPluginClassLoader(
+                        result, OPLUS_PLUGIN_CLASS_LOADER_CLASS)) {
+            onPluginClassLoaderReady((ClassLoader) result);
+        }
+        return result;
+    }
+
+    private void onPluginClassLoaderReady(ClassLoader pluginLoader) {
+        // A loader whose package filter is still unassigned cannot load plugin classes yet; the
+        // factory hook (ColorOS 17) or the first lyric view attachment installs the hooks then.
+        if (!OplusPluginClassLoaderPolicy.isReady(pluginLoader)) {
+            return;
+        }
+        synchronized (pluginHookGenerationLock) {
+            if (readyPluginClassLoader.get() == pluginLoader) {
+                return;
+            }
+            readyPluginClassLoader = new WeakReference<>(pluginLoader);
+        }
+        activatePluginHookGeneration(pluginLoader);
+        tryInstallLyricsRecyclerViewHook(pluginLoader);
+        tryInstallKuWoPluginMediaModelHook(pluginLoader);
+        tryInstallLyricPositionControllerHook(pluginLoader);
     }
 
     private void activatePluginHookGeneration(ClassLoader pluginLoader) {
