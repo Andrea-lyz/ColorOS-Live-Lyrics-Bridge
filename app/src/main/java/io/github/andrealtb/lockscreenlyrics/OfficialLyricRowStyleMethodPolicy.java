@@ -11,8 +11,11 @@ import java.lang.reflect.Modifier;
  *
  * <p>ColorOS 17 (SystemUIPlugin 17.000.002) {@code void h(AppCompatTextView, boolean active)}
  * swaps the row typeface together with its RenderEffect and shadow: the base typeface for the
- * active row and a weight-600 derivative for the others. ColorOS 16 builds have no such helper.
- * Only the shape is trusted, and only methods declared by the recycler class itself.</p>
+ * active row and a weight-600 derivative for the others. SystemUIPlugin 16.001.002 new, new10
+ * and old builds declare the same instance helper ({@code h} or {@code i}) with equal active and
+ * other-line weights (700), so learning the active typeface does not change their rendering; the
+ * user build uses a static three-argument {@code d(...)} that this shape does not match. Only
+ * the shape is trusted, and only methods declared by the recycler class itself.</p>
  */
 final class OfficialLyricRowStyleMethodPolicy {
     private OfficialLyricRowStyleMethodPolicy() {

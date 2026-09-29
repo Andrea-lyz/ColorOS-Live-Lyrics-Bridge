@@ -12791,9 +12791,13 @@ public final class LockscreenLyricsModule extends XposedModule {
         private Typeface configuredTypeface;
         private int configuredTypefaceWeight = Integer.MIN_VALUE;
         private boolean configuredTypefaceCached;
-        // Official active-row typeface on builds that swap it per row state (ColorOS 17); null
-        // keeps each row's own TextView typeface, which is stable on ColorOS 16.
+        // Official active-row typeface, learned from the vendor row style helper that swaps it per
+        // row state (ColorOS 17: 700 active / 600 inactive). Some ColorOS 16 plugin builds have
+        // the same helper with equal weights. null keeps each row's own TextView typeface.
         private volatile Typeface officialBaseTypeface;
+        // Part of the row slot-height cache key: rows measured before the typeface was learned,
+        // or with an earlier one, must be measured again.
+        private volatile int officialBaseTypefaceGeneration;
         private final LyricGroupDrawContext lyricGroupDrawContext =
                 new LyricGroupDrawContext();
         private long modelSwitchRevealStartedAtMs = -1L;
@@ -13978,6 +13982,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             typographyKey = 31 * typographyKey
                     + (uiConfig.glowEnabled ? uiConfig.glowRadiusPercent : 0);
             typographyKey = 31 * typographyKey + uiConfig.wrappedLineSpacingTenthsDp;
+            typographyKey = 31 * typographyKey + officialBaseTypefaceGeneration;
             if (line.slotHeightCollapsedValue > 0
                     && line.slotHeightExpandedValue > 0
                     && line.slotHeightWidthKey == widthKey
@@ -15775,6 +15780,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 return false;
             }
             officialBaseTypeface = typeface;
+            officialBaseTypefaceGeneration++;
             return true;
         }
 

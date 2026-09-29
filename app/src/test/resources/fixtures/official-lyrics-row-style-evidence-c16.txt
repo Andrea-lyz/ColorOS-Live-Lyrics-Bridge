@@ -1,0 +1,11 @@
+apkPackage=com.oplus.systemui.plugins
+apkVersionName=16.001.002
+new=SystemUIPlugin_16.001.002_new.apk sha256=AD74975487C99D7A9ED29EBF8F5F644283A3AD096F89B75E2BCA3003CCA1BE7A helper=public final void h(AppCompatTextView appCompatTextView, boolean z10)
+new10=SystemUIPlugin_16.001.002_new10.apk sha256=C68BF570B8580690AB2761A73DB6B5B23315B4F4ADD89E42BFE25BAA45D72B74 helper=public final void i(AppCompatTextView appCompatTextView, boolean z10)
+old=SystemUIPlugin_16.001.002_old.apk sha256=B4E5FBA2E3ADB6D45CB03D68D06A7B0BE95CBAB0976B030E07750D0F3586ED7D helper=public final void h(AppCompatTextView appCompatTextView, boolean z10)
+user=SystemUIPlugin_16.001.002_user.apk sha256=102574EDA9B856F8F12729AB96CE5B1E7E5994635FB072F02B543536DE6EBEC7 helper=public static final void d(LyricsRecyclerView lyricsRecyclerView, AppCompatTextView appCompatTextView, boolean z10)
+helperBody=active: setRenderEffect(active effect), setTypeface(J); inactive: setRenderEffect(inactive effect), setTypeface(K); only when the lyric_render_effect_tag flips
+caller=x6.g.onBindViewHolder after setText (new): lyricsRecyclerView.h(appCompatTextView, i3 == lyricsRecyclerView.n)
+typefaces=x6.g.onCreateViewHolder: J = appCompatTextView.getTypeface() when null; K = Typeface.create(J, otherLineFontWeight, false) when null
+weights=style MediaPlayerCardLyricItem fontFamily "OPPO Sans 4.0" textFontWeight 700; normal_card_media_player_immersive LyricsRecyclerView otherLineFontWeight 700 (all four builds)
+effect=OfficialLyricRowStyleMethodPolicy matches new/new10/old; the learned active typeface has the same weight as the inactive one, and the setText hook already clears the row blur cache before this helper runs
