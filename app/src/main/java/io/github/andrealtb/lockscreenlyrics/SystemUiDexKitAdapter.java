@@ -101,6 +101,10 @@ public final class SystemUiDexKitAdapter {
                     selectorClass,
                     "lyric entrance lookup",
                     SystemUiDexKitAdapter::isLyricEntranceLookupShape);
+            Method resolveLyricSupport = findOptionalMethod(
+                    selectorClass,
+                    "lyric support gate",
+                    SystemUiDexKitAdapter::isLyricSupportGateShape);
             Method updatePkgActionsRule = requireUniqueMethod(
                     selectorClass,
                     "media action rule update",
@@ -140,6 +144,7 @@ public final class SystemUiDexKitAdapter {
                     getRusWhiteList,
                     mediaRusConfigWhiteListGetter,
                     getLyricEntrance,
+                    resolveLyricSupport,
                     updatePkgActionsRule,
                     createActionsFromState,
                     loadLyricInBg,
@@ -225,6 +230,10 @@ public final class SystemUiDexKitAdapter {
                 getRusWhiteList,
                 mediaRusConfigWhiteListGetter,
                 selectorClass.getDeclaredMethod("getLyricEntrance", String.class),
+                findOptionalMethod(
+                        selectorClass,
+                        "lyric support gate",
+                        SystemUiDexKitAdapter::isLyricSupportGateShape),
                 updatePkgActionsRule,
                 strategyClass.getDeclaredMethod(
                         "createActionsFromState",
@@ -461,6 +470,19 @@ public final class SystemUiDexKitAdapter {
     }
 
     /**
+     * {@code resolveLyricSupport(String, MediaMetadata)} applies the RUS lyricEnable gate:
+     * lyricEnable 1 demands the player's own {@code oplus.media.config=1} metadata. Present on
+     * SystemUI 16.99.12 (New) and 17.99.02, absent on older builds. The exact name is required;
+     * the class itself is resolved by DexKit anchors.
+     */
+    static boolean isLyricSupportGateShape(Method method) {
+        return !Modifier.isStatic(method.getModifiers())
+                && method.getReturnType() == boolean.class
+                && hasParameterTypes(method, String.class, MediaMetadata.class)
+                && "resolveLyricSupport".equals(method.getName());
+    }
+
+    /**
      * Legacy {@code OplusMediaRusUpdateManager.getRusWhiteList()} on ColorOS 16.0.9.x style
      * builds. The exact name is required so a future sibling zero-arg {@code List} getter
      * cannot make optional resolution ambiguous (which would abort all SystemUI hooks).
@@ -508,6 +530,8 @@ public final class SystemUiDexKitAdapter {
         /** Present on ColorOS 16.0.10.x style builds; {@code null} on older builds. */
         final Method mediaRusConfigWhiteListGetter;
         final Method getLyricEntrance;
+        /** Present where the RUS lyricEnable gate exists; {@code null} on older builds. */
+        final Method resolveLyricSupport;
         final Method updatePkgActionsRule;
         final Method createActionsFromState;
         final Method loadLyricInBg;
@@ -521,6 +545,7 @@ public final class SystemUiDexKitAdapter {
                 Method getRusWhiteList,
                 Method mediaRusConfigWhiteListGetter,
                 Method getLyricEntrance,
+                Method resolveLyricSupport,
                 Method updatePkgActionsRule,
                 Method createActionsFromState,
                 Method loadLyricInBg,
@@ -532,6 +557,7 @@ public final class SystemUiDexKitAdapter {
             this.getRusWhiteList = getRusWhiteList;
             this.mediaRusConfigWhiteListGetter = mediaRusConfigWhiteListGetter;
             this.getLyricEntrance = getLyricEntrance;
+            this.resolveLyricSupport = resolveLyricSupport;
             this.updatePkgActionsRule = updatePkgActionsRule;
             this.createActionsFromState = createActionsFromState;
             this.loadLyricInBg = loadLyricInBg;

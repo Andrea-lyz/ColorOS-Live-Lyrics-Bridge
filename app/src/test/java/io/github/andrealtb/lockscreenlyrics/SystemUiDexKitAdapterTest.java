@@ -6,6 +6,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import android.content.Context;
+import android.media.MediaMetadata;
 
 import org.junit.Test;
 import org.luckypray.dexkit.query.matchers.ClassMatcher;
@@ -72,6 +73,14 @@ public class SystemUiDexKitAdapterTest {
     private static final class SelectorShapes {
         public int getLyricEnable(String packageName) {
             return 0;
+        }
+
+        public boolean resolveLyricSupport(String packageName, MediaMetadata metadata) {
+            return true;
+        }
+
+        public boolean supportOplusActionConfig(String packageName) {
+            return false;
         }
 
         public int getLyricEntrance(String packageName) {
@@ -166,6 +175,16 @@ public class SystemUiDexKitAdapterTest {
         Method enable = method(SelectorShapes.class, "getLyricEnable", String.class);
         assertTrue(SystemUiDexKitAdapter.isLyricEntranceLookupShape(entrance));
         assertFalse(SystemUiDexKitAdapter.isLyricEntranceLookupShape(enable));
+    }
+
+    @Test
+    public void lyricSupportGateShapeSelectsOnlyTheMetadataGate() throws Exception {
+        assertTrue(SystemUiDexKitAdapter.isLyricSupportGateShape(
+                method(SelectorShapes.class, "resolveLyricSupport", String.class, MediaMetadata.class)));
+        assertFalse(SystemUiDexKitAdapter.isLyricSupportGateShape(
+                method(SelectorShapes.class, "supportOplusActionConfig", String.class)));
+        assertFalse(SystemUiDexKitAdapter.isLyricSupportGateShape(
+                method(SelectorShapes.class, "getLyricEnable", String.class)));
     }
 
     @Test

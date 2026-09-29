@@ -170,6 +170,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             "oplus-word-recycler-adapter-notify-changed";
     private static final String HOOK_ID_RUS_GET_WHITE_LIST = "oplus-media-rus-get-white-list";
     private static final String HOOK_ID_GET_LYRIC_ENTRANCE = "oplus-media-get-lyric-entrance";
+    private static final String HOOK_ID_RESOLVE_LYRIC_SUPPORT = "oplus-media-resolve-lyric-support";
     private static final String HOOK_ID_UPDATE_PKG_ACTIONS_RULE = "oplus-media-update-pkg-actions-rule";
     private static final String HOOK_ID_TRANSLATION_TOGGLE_ACTION =
             "oplus-media-translation-toggle-action";
@@ -341,6 +342,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     private volatile Method systemUiMetadataRefreshMethod;
     private volatile boolean systemUiMetadataRefreshMethodUnavailableLogged;
     private volatile boolean oplusLyricEntranceOverrideLogged;
+    private volatile boolean oplusLyricSupportGateLiftLogged;
     private final KuWoSystemUiRuntime kuWoRuntime = new KuWoSystemUiRuntime();
     private volatile boolean oplusPluginMediaModelHookInstalled;
     private volatile OplusPluginDexKitAdapter.Targets oplusPluginKuWoTargets;
@@ -1276,6 +1278,14 @@ public final class LockscreenLyricsModule extends XposedModule {
                         .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                         .intercept(this::onOplusMediaGetLyricEntrance);
 
+                Method resolveLyricSupport = targets.resolveLyricSupport;
+                if (resolveLyricSupport != null) {
+                    hook(resolveLyricSupport)
+                            .setId(HOOK_ID_RESOLVE_LYRIC_SUPPORT)
+                            .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                            .intercept(this::onOplusMediaResolveLyricSupport);
+                }
+
                 Method updatePkgActionsRule = targets.updatePkgActionsRule;
                 updatePkgActionsRule.setAccessible(true);
                 hook(updatePkgActionsRule)
@@ -1285,7 +1295,8 @@ public final class LockscreenLyricsModule extends XposedModule {
                 oplusUpdatePkgActionsRuleMethod = updatePkgActionsRule;
 
                 oplusMediaPolicyHooksInstalled = true;
-                infoAlways(BridgeDebugArea.BOOTSTRAP, BridgeEvents.HOOK_INSTALLED, "Hooked OPlus media policy bypass");
+                infoAlways(BridgeDebugArea.BOOTSTRAP, BridgeEvents.HOOK_INSTALLED, "Hooked OPlus media policy bypass"
+                        + ", lyricSupportGate=" + (resolveLyricSupport != null));
             } catch (Throwable t) {
                 error("Failed to hook OPlus media policy bypass", t);
             }
@@ -1321,6 +1332,30 @@ public final class LockscreenLyricsModule extends XposedModule {
             }
         }
         return overrideResult;
+    }
+
+    /**
+     * Lifts the RUS lyricEnable gate for module-managed players only. lyricEnable 1 demands the
+     * player's own {@code oplus.media.config=1} metadata (built in for com.kugou.android.lite and
+     * com.gaana); these players get their lyrics from a Provider instead of that handshake. A
+     * vendor {@code true} is never changed.
+     */
+    private Object onOplusMediaResolveLyricSupport(XposedInterface.Chain chain) throws Throwable {
+        Object result = chain.proceed();
+        if (!Boolean.FALSE.equals(result)) {
+            return result;
+        }
+        Object packageNameArg = chain.getArg(0);
+        String packageName = packageNameArg instanceof String ? (String) packageNameArg : "";
+        if (!isModuleManagedPlayerPackage(packageName)) {
+            return result;
+        }
+        if (!oplusLyricSupportGateLiftLogged) {
+            oplusLyricSupportGateLiftLogged = true;
+            info(BridgeDebugArea.MEDIA, BridgeEvents.DETAIL, "OPlus lyric support gate lifted: package="
+                    + packageName);
+        }
+        return Boolean.TRUE;
     }
 
     private Object onOplusMediaUpdatePkgActionsRule(XposedInterface.Chain chain) throws Throwable {

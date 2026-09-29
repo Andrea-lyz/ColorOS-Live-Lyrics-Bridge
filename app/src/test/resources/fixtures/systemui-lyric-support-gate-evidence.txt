@@ -1,0 +1,10 @@
+apkPackage=com.android.systemui
+c17=SystemUI 17.99.02 versionCode=179902 sha256=DA83AE63B6CFC43A4CE57F21EE7A54444E14DADA85B24AD36D2FE74181F0A927
+c16New=SystemUI 16.99.12 (New) versionCode=169912 sha256=6616C58A19708BB7255F7DFF83D6A646961CDC441B2AFE70196492B1D9457AD4
+c16Old=SystemUI 16.99.12 java_src: no resolveLyricSupport and no getLyricEnable
+source=jadx 1.5.6 (17.99.02); dexdump -d classes3.dex (16.99.12 New)
+gate=public boolean MediaActionPrioritySelectorImpl.resolveLyricSupport(String, MediaMetadata): getLyricEnable(pkg) != 1 -> true; otherwise metadata.getString("oplus.media.config") == "1" (same bytecode in both builds)
+callers=OplusMediaDataManagerExImpl$onMetaDataChanged$1$2 and OplusMediaDataManagerExImpl.onMediaDataLoaded (both builds); getLyricEnable has no other caller in 17.99.02 or SystemUIPlugin 17.000.002
+result=MediaDataEx.lyricSupport; 17.99.02 MediaLiveAlertController writes isLyricSupported = lyricSupport && (displayPolicy & 16) != 0
+builtInLyricEnable1=com.kugou.android.lite in both builds; com.gaana in 17.99.02 (assets/app_systemui_oplus_media_controller_config.xml)
+effect=Bridge hooks resolveLyricSupport by exact name and turns false into true only for PlayerSystemUiPolicy.isHistoryPackage players
