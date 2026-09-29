@@ -568,10 +568,15 @@ public final class LockscreenLyricsModule extends XposedModule {
             new WeakHashMap<>();
     private static final LyricsRecyclerFieldAccessor LYRICS_RECYCLER_FIELD_ACCESSOR =
             new LyricsRecyclerFieldAccessor();
-    // ColorOS 17 has no readable index field (n); the row each recycler was last sent through its
-    // immersive entry stands in for it. Weak keys: a detached recycler never outlives SystemUI.
+    // ColorOS 17 has no readable index field (n). Its official row field is resolved by DexKit
+    // semantics on the first attach (immersiveCurrentIndexField); until then, or when it cannot be
+    // resolved, the row each recycler was last sent through its immersive entry stands in for it.
+    // Weak keys: a detached recycler never outlives SystemUI.
     private static final WeakHashMap<Object, ImmersiveEntryIndex> IMMERSIVE_ENTRY_INDEXES =
             new WeakHashMap<>();
+    // The vendor applies a new list only after its switch fade and an asynchronous diff, so the
+    // row sent through the entry can lead the displayed one; this field is the displayed row.
+    private static volatile Field immersiveCurrentIndexField;
     private static final LyricsRecyclerMatch NO_LYRICS_RECYCLER_MATCH =
             new LyricsRecyclerMatch(null, null);
     private static final ThreadLocal<Rect> VIEW_VISIBLE_RECT =
@@ -6904,6 +6909,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         synchronized (officialLyricsRecyclerCompatibilityLock) {
             officialLyricsRecyclerBindings.clear();
             unavailableOfficialLyricsRecyclerBindings.clear();
+            immersiveCurrentIndexField = null;
         }
         for (XposedInterface.HookHandle handle : staleHandles) {
             try {
@@ -7554,17 +7560,23 @@ public final class LockscreenLyricsModule extends XposedModule {
             error("Failed while reading LyricsRecyclerView immersive entry", t);
         }
         Object result = args != null ? chain.proceed(args) : chain.proceed();
-        if (targetIndex >= 0) {
-            rememberLyricsRecyclerTargetIndex(targetIndex);
+        // Like the ColorOS 16 path, follow the row the vendor displays after the call: a new list
+        // is applied only after its switch fade and diff, and a switch in progress ignores rows.
+        Integer appliedIndex = readImmersiveCurrentIndexField(recyclerView);
+        int observedTargetIndex = appliedIndex != null && appliedIndex >= 0
+                ? appliedIndex
+                : targetIndex;
+        if (observedTargetIndex >= 0) {
+            rememberLyricsRecyclerTargetIndex(observedTargetIndex);
         }
         maybeLogLyricsRecyclerSetCurrentGeometry(
-                targetIndex,
+                observedTargetIndex,
                 beforeGeometry,
-                captureLyricsRecyclerGeometry(recyclerView, targetIndex));
+                captureLyricsRecyclerGeometry(recyclerView, observedTargetIndex));
         scheduleLyricsRecyclerOwnershipSnapshots(
                 recyclerView,
                 "official-current-immersive",
-                targetIndex);
+                observedTargetIndex);
         return result;
     }
 
@@ -8791,7 +8803,12 @@ public final class LockscreenLyricsModule extends XposedModule {
             if (resolved == null) {
                 source = "DexKit semantics";
                 try {
-                    resolved = OfficialLyricsRecyclerDexKitResolver.resolve(recyclerView);
+                    OfficialLyricsRecyclerDexKitResolver.Resolution resolution =
+                            OfficialLyricsRecyclerDexKitResolver.resolve(recyclerView);
+                    if (resolution != null) {
+                        resolved = resolution.layout;
+                        publishImmersiveCurrentIndexField(recyclerClass, resolution.currentIndex);
+                    }
                 } catch (Throwable t) {
                     error("Failed to resolve LyricsRecyclerView fields via DexKit", t);
                 }
@@ -8805,6 +8822,39 @@ public final class LockscreenLyricsModule extends XposedModule {
             info(BridgeDebugArea.AOD, BridgeEvents.SURFACE_STATE_CHANGED, "Resolved LyricsRecyclerView fields via " + source
                     + ", layout=" + resolved.layoutName);
             return resolved;
+        }
+    }
+
+    private void publishImmersiveCurrentIndexField(Class<?> recyclerClass, Field field) {
+        if (recyclerClass == null
+                || field == null
+                || field.getType() != int.class
+                || !field.getDeclaringClass().isAssignableFrom(recyclerClass)) {
+            return;
+        }
+        try {
+            field.setAccessible(true);
+        } catch (Throwable t) {
+            return;
+        }
+        immersiveCurrentIndexField = field;
+        infoAlways(BridgeDebugArea.RENDERER, BridgeEvents.RENDER_STATE_CHANGED,
+                "Resolved official lyric current row field via DexKit semantics, field="
+                        + field.getName());
+    }
+
+    /** ColorOS 17 displayed official row, or null before it is resolved for this recycler. */
+    private static Integer readImmersiveCurrentIndexField(Object recycler) {
+        Field field = immersiveCurrentIndexField;
+        if (field == null
+                || recycler == null
+                || !field.getDeclaringClass().isInstance(recycler)) {
+            return null;
+        }
+        try {
+            return field.getInt(recycler);
+        } catch (Throwable ignored) {
+            return null;
         }
     }
 
@@ -10155,6 +10205,10 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
         if (recycler == null) {
             return -1;
+        }
+        Integer immersiveIndex = readImmersiveCurrentIndexField(recycler);
+        if (immersiveIndex != null) {
+            return immersiveIndex;
         }
         synchronized (IMMERSIVE_ENTRY_INDEXES) {
             ImmersiveEntryIndex entry = IMMERSIVE_ENTRY_INDEXES.get(recycler);

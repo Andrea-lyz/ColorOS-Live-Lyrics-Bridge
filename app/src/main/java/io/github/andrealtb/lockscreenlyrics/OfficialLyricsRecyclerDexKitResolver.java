@@ -15,6 +15,8 @@ import org.luckypray.dexkit.result.MethodData;
 import org.luckypray.dexkit.result.UsingFieldData;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -36,8 +38,19 @@ final class OfficialLyricsRecyclerDexKitResolver {
 
     private OfficialLyricsRecyclerDexKitResolver() {}
 
+    /** Layout binding and, on builds with the immersive entry, the official current row field. */
+    static final class Resolution {
+        final OfficialLyricsRecyclerCompatibility.Binding layout;
+        final Field currentIndex;
+
+        Resolution(OfficialLyricsRecyclerCompatibility.Binding layout, Field currentIndex) {
+            this.layout = layout;
+            this.currentIndex = currentIndex;
+        }
+    }
+
     @SuppressLint({"DuplicateCreateDexKit", "PrivateApi"})
-    static OfficialLyricsRecyclerCompatibility.Binding resolve(View recycler)
+    static Resolution resolve(View recycler)
             throws ReflectiveOperationException {
         Class<?> recyclerClass = recycler == null ? null : recycler.getClass();
         if (recyclerClass == null || recyclerClass.getClassLoader() == null) {
@@ -50,15 +63,25 @@ final class OfficialLyricsRecyclerDexKitResolver {
             if (lyricsRecycler == null) {
                 return null;
             }
+            Method immersiveEntry = uniqueImmersiveEntry(recyclerClass);
+            Method rowStyle = uniqueRowStyleMethod(recyclerClass);
 
             List<FieldData> spacingCandidates = new ArrayList<>();
             List<FieldData> durationCandidates = new ArrayList<>();
             List<FieldData> scaleCandidates = new ArrayList<>();
+            List<FieldData> indexCandidates = new ArrayList<>();
             for (FieldData field : lyricsRecycler.getFields()) {
                 switch (field.getTypeName()) {
                     case "int":
                         if (isLineSpacingField(field)) {
                             spacingCandidates.add(field);
+                        }
+                        if (isImmersiveCurrentIndexField(
+                                field,
+                                immersiveEntry,
+                                rowStyle,
+                                recyclerClass.getName())) {
+                            indexCandidates.add(field);
                         }
                         break;
                     case "long":
@@ -78,7 +101,7 @@ final class OfficialLyricsRecyclerDexKitResolver {
 
             spacingCandidates = narrowByResourceValue(
                     recycler,
-                    spacingCandidates,
+                    preferFinalFields(spacingCandidates),
                     "dimen",
                     LINE_SPACING_RESOURCE);
             durationCandidates = narrowByResourceValue(
@@ -87,25 +110,136 @@ final class OfficialLyricsRecyclerDexKitResolver {
                     "integer",
                     SCROLL_DURATION_RESOURCE);
 
+            FieldData index = unique(indexCandidates);
+            Field indexField = index == null
+                    ? null
+                    : index.getFieldInstance(recyclerClass.getClassLoader());
+
             FieldData spacing = unique(spacingCandidates);
             FieldData duration = unique(durationCandidates);
             FieldData scale = unique(scaleCandidates);
             if (spacing == null || duration == null || scale == null) {
-                return null;
+                return new Resolution(null, indexField);
             }
 
             Field spacingField = spacing.getFieldInstance(recyclerClass.getClassLoader());
             Field durationField = duration.getFieldInstance(recyclerClass.getClassLoader());
             Field scaleField = scale.getFieldInstance(recyclerClass.getClassLoader());
-            return OfficialLyricsRecyclerCompatibility.fromResolvedFields(
-                    recyclerClass,
-                    spacingField,
-                    durationField,
-                    scaleField,
-                    "dexkit:" + spacing.getName()
-                            + "/" + duration.getName()
-                            + "/" + scale.getName());
+            return new Resolution(
+                    OfficialLyricsRecyclerCompatibility.fromResolvedFields(
+                            recyclerClass,
+                            spacingField,
+                            durationField,
+                            scaleField,
+                            "dexkit:" + spacing.getName()
+                                    + "/" + duration.getName()
+                                    + "/" + scale.getName()),
+                    indexField);
         }
+    }
+
+    private static Method uniqueImmersiveEntry(Class<?> recyclerClass) {
+        Method match = null;
+        for (Method method : recyclerClass.getDeclaredMethods()) {
+            if (OfficialImmersiveLyricEntryPolicy.matches(method, recyclerClass)) {
+                if (match != null) {
+                    return null;
+                }
+                match = method;
+            }
+        }
+        return match;
+    }
+
+    private static Method uniqueRowStyleMethod(Class<?> recyclerClass) {
+        Method match = null;
+        for (Method method : recyclerClass.getDeclaredMethods()) {
+            if (OfficialLyricRowStyleMethodPolicy.matches(method, recyclerClass)) {
+                if (match != null) {
+                    return null;
+                }
+                match = method;
+            }
+        }
+        return match;
+    }
+
+    /**
+     * Line spacing is a final layout attribute. On ColorOS 17 the same bind method also reads
+     * the mutable current row and transition generation, whose values can equal the spacing in
+     * pixels, so mutable candidates are dropped whenever a final one exists.
+     */
+    private static List<FieldData> preferFinalFields(List<FieldData> candidates) {
+        if (candidates.size() <= 1) {
+            return candidates;
+        }
+        ArrayList<FieldData> finals = new ArrayList<>();
+        for (FieldData candidate : candidates) {
+            if (Modifier.isFinal(candidate.getModifiers())) {
+                finals.add(candidate);
+            }
+        }
+        return finals.isEmpty() ? candidates : finals;
+    }
+
+    /**
+     * ColorOS 17 keeps the official current row in a mutable int that its immersive entry
+     * writes and that the recycler's row restyle method (the one calling the row style helper)
+     * compares with each adapter position. The entry also writes transition generation counters,
+     * which that restyle method never reads, so the intersection needs no obfuscated name.
+     */
+    private static boolean isImmersiveCurrentIndexField(
+            FieldData field,
+            Method immersiveEntry,
+            Method rowStyle,
+            String recyclerClassName) {
+        if (immersiveEntry == null
+                || rowStyle == null
+                || Modifier.isStatic(field.getModifiers())
+                || Modifier.isFinal(field.getModifiers())) {
+            return false;
+        }
+        boolean writtenByEntry = false;
+        for (MethodData writer : field.getWriters()) {
+            if (isSameMethod(writer, immersiveEntry)) {
+                writtenByEntry = true;
+                break;
+            }
+        }
+        if (!writtenByEntry) {
+            return false;
+        }
+        for (MethodData reader : field.getReaders()) {
+            if (!recyclerClassName.equals(reader.getClassName())) {
+                continue;
+            }
+            for (MethodData invoked : reader.getInvokes()) {
+                if (isSameMethod(invoked, rowStyle)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean isSameMethod(MethodData method, Method target) {
+        if (method == null
+                || target == null
+                || !target.getDeclaringClass().getName().equals(method.getClassName())
+                || !target.getName().equals(method.getName())) {
+            return false;
+        }
+        Class<?>[] parameterTypes = target.getParameterTypes();
+        List<String> parameterNames = method.getParamTypeNames();
+        if (parameterNames.size() != parameterTypes.length) {
+            return false;
+        }
+        for (int i = 0; i < parameterTypes.length; i++) {
+            if (!parameterTypes[i].getTypeName().equals(parameterNames.get(i))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static ClassData findLyricsRecyclerClass(DexKitBridge bridge, String className) {

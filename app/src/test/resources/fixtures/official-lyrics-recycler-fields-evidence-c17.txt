@@ -1,0 +1,15 @@
+apk=SystemUIPlugin_17.000.002.apk
+apkPackage=com.oplus.systemui.plugins
+apkVersionCode=17000002
+apkSha256=2CDD17E165FCFD2E257BF863C70D85F3978534381F7019038F1A5FAD912667EB
+source=jadx 1.5.6 --show-bad-code sources/com/oplus/systemui/plugins/shared/template/component/media/view/
+spacing=public final int j; LyricsRecyclerView(Context, AttributeSet) j = getDimensionPixelSize(4, 0); n.onBindViewHolder bottomMargin = i < getItemCount() - 1 ? this.a.j : 0
+duration=public final long k; getInt(8, 300); the only long field
+inactiveScale=public final float r; getFloat(7, 1.0f); g(m, int) setScaleX/setScaleY(z ? 1.0f : this.r)
+currentIndex=public int c; constructor c = -1; written by o(h, boolean) same-list path "this.c = i2" and by f.run() after submitList commits; read by g(m, int) "i == this.c", which calls h(AppCompatTextView, boolean)
+transitionGeneration=public int u; written by o(h, boolean) "this.u++"; read by n.onBindViewHolder and the notifyLyricTransition runnable, never by g(m, int)
+switchGeneration=public int v; written by o(h, boolean), onDetachedFromWindow and setAodModeStyle; read by f(int, LyricsRecyclerView, IntRef, Runnable) and j(int)
+colors=public final int d (getColor(0, -1)), public final int e (getColor(5, -1)); also read by n.onBindViewHolder
+bindReadsInt=n.onBindViewHolder reads j, c, u, d, e: a spacing candidate set that includes the mutable c and u, whose values can equal the spacing in pixels
+resources=media_card_lyrics_recycler_view_line_spacing 6dp (ColorOS 16 user: 20dp); lyrics_recycler_view_scroll_duration 300; media_card_lyrics_recycler_view_other_line_text_scale_ratio 0.73
+switchFade=o(h, boolean) new list: LyricsSwitchPhase FADING_OUT (e(0f) 200ms), submitList, then c = position in the commit callback, then FADING_IN; same list during a switch phase returns without changing c
