@@ -4,6 +4,9 @@ on:
   push:
     tags:
       - "v*"
+      # Hyphenated tags such as v4.4.0-C17-Preview belong to preview.yml; the contract only
+      # accepts v<major>.<minor>.<patch> as a release tag.
+      - "!v*-*"
   workflow_dispatch:
     inputs:
       mode:

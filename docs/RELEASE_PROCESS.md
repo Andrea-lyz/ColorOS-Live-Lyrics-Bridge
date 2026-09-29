@@ -186,3 +186,21 @@ Provider ZIP 只能包含 14 个顶层 APK，不含目录、debug/unsigned APK �
 7. 将 run、commit、tag、哈希和设备结论写入 4.3 发布台账。
 
 只有这些门禁全部关闭，才能将 v4.3.0 标记为正式完成。
+
+## 12. Bridge 预览版（非主线）
+
+预览版只用于让特定系统的用户提前测试 Bridge，不属于正式发布，也不替代第 5、6 节的 RC 与
+真机门禁。只有用户明确要求时才创建。
+
+1. 预览 tag 格式为 `<契约 releaseTag>-<标签>-Preview`，例如 `v4.4.0-C17-Preview`。
+   tag 可以打在功能分支上。
+2. 在该 commit 上提交 `.github/release-notes/<版本号去掉 v>.md`，写明预览性质、适用系统、
+   验证状态和已知限制。
+3. 推送 tag 后由 `preview.yml` 处理，`release.yml` 忽略带连字符的 tag。
+4. `preview.yml` 只构建正式签名的 Bridge：
+   - 运行单测、release lint；
+   - versionName 取 tag，versionCode 沿用契约，便于与正式版互相覆盖安装；
+   - 校验包名、版本、证书、zipalign 与 DEX 禁用字符串。
+5. `preview.yml` 创建 GitHub pre-release，不标记 latest。资产只有 Bridge APK 与
+   `SHA256SUMS`。
+6. 预览版不构建 Provider，不创建 LSP tag，不上传 LSP mirror，也不修改契约版本。
