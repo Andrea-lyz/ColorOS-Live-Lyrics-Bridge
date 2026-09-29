@@ -1,0 +1,8 @@
+apk=SystemUIPlugin_17.000.002.apk
+apkPackage=com.oplus.systemui.plugins
+apkVersionCode=17000002
+apkSha256=2CDD17E165FCFD2E257BF863C70D85F3978534381F7019038F1A5FAD912667EB
+source=jadx 1.5.6 sources/com/oplus/systemui/plugins/shared/template/section/media/s1.java
+bind=public final void H(OplusLottieAnimationView view, o action, boolean play): view.setVisibility(icon present ? 0 : 8); I(view, action.b, play); view.setContentDescription(action.g)
+coloros16=SystemUIPlugin 16.001.002 user f7/l5.y(OplusLottieAnimationView, m6.o, boolean): z(view, action.b, play, true); view.setContentDescription(action.h); no setVisibility in the same pass
+effect=on ColorOS 17 the Bridge visibility redirect runs while the slot still carries the previous translation label; a redirected slot that is rebound to another action gets its requested VISIBLE back

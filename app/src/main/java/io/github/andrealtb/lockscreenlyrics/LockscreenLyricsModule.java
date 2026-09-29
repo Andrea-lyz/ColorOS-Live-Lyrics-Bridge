@@ -543,6 +543,13 @@ public final class LockscreenLyricsModule extends XposedModule {
     private final ArrayList<WeakReference<View>> lyricRootViews = new ArrayList<>();
     private final Object translationActionViewsLock = new Object();
     private final WeakHashMap<View, Boolean> translationActionViews = new WeakHashMap<>();
+    /**
+     * Tracked action views whose VISIBLE request was redirected to INVISIBLE. The ColorOS 17
+     * plugin binds a button's visibility before its icon and label (section/media/s1.H), so the
+     * redirect still sees the previous translation label on a slot that is being rebound to
+     * another action. Guarded by {@link #translationActionViewsLock}.
+     */
+    private final WeakHashMap<View, Boolean> translationActionRedirectedViews = new WeakHashMap<>();
     private final WeakHashMap<ImageView, Boolean> translationActionPresentationStates =
             new WeakHashMap<>();
     private final WeakHashMap<ImageView, Boolean> translationActionPresentationInFlight =
@@ -4728,6 +4735,13 @@ public final class LockscreenLyricsModule extends XposedModule {
                     + ", description=" + descriptionArg);
             rememberTranslationActionView(view, false);
         } else if (isRememberedTranslationActionView(view)
+                && isRedirectedTranslationActionView(view)) {
+            translationButtonDebug("contentDescription changed on redirected action, rechecking after bind"
+                    + ", view=" + describeViewForLog(view)
+                    + ", description=" + descriptionArg);
+            // The icon is already rebound when the label arrives; re-check once this bind returns.
+            mainHandler.post(() -> forgetTranslationActionViewIfRebound(view));
+        } else if (isRememberedTranslationActionView(view)
                 && !isIconMatchedTranslationActionView(view)) {
             translationButtonDebug("contentDescription changed on tracked action, scheduling recheck"
                     + ", view=" + describeViewForLog(view)
@@ -4771,8 +4785,17 @@ public final class LockscreenLyricsModule extends XposedModule {
                     + ", state=" + describeTranslationButtonState()
                     + ", view=" + describeViewForLog(view));
             result = chain.proceed(args);
+            synchronized (translationActionViewsLock) {
+                translationActionRedirectedViews.put(view, Boolean.TRUE);
+            }
         } else {
             result = chain.proceed();
+            // Any other visibility request, vendor or Bridge, supersedes a pending restore.
+            synchronized (translationActionViewsLock) {
+                if (!translationActionRedirectedViews.isEmpty()) {
+                    translationActionRedirectedViews.remove(view);
+                }
+            }
         }
         if (lyricsRecyclerView) {
             mainHandler.post(this::refreshTranslationActionViewVisibility);
@@ -4924,6 +4947,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     private void clearTrackedTranslationActionViews() {
         synchronized (translationActionViewsLock) {
             translationActionViews.clear();
+            translationActionRedirectedViews.clear();
             translationActionTrackingActive = false;
         }
     }
@@ -4943,6 +4967,30 @@ public final class LockscreenLyricsModule extends XposedModule {
                 + describeViewForLog(view)
                 + ", description=" + view.getContentDescription());
         forgetTranslationActionView(view);
+        restoreRedirectedTranslationActionVisibility(view);
+    }
+
+    /**
+     * Gives a slot rebound to another action the VISIBLE state its bind asked for before the
+     * redirect. The view is already forgotten, so this write is not redirected again.
+     */
+    private void restoreRedirectedTranslationActionVisibility(View view) {
+        boolean redirected;
+        synchronized (translationActionViewsLock) {
+            redirected = translationActionRedirectedViews.remove(view) != null;
+        }
+        if (!redirected || view.getVisibility() != View.INVISIBLE) {
+            return;
+        }
+        view.setVisibility(View.VISIBLE);
+        translationButtonDebug("restored redirected action visibility after rebound, view="
+                + describeViewForLog(view));
+    }
+
+    private boolean isRedirectedTranslationActionView(View view) {
+        synchronized (translationActionViewsLock) {
+            return translationActionRedirectedViews.containsKey(view);
+        }
     }
 
     private boolean isRememberedTranslationActionView(View view) {
