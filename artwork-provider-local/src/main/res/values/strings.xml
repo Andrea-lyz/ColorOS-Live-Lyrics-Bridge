@@ -1,0 +1,14 @@
+<resources>
+    <string name="app_name">动态封面本地测试插件</string>
+    <string name="description">离线协议测试：导入一段方形 MP4，向所有测试查询返回这段视频。此插件不匹配歌曲、不联网，不应作为正式封面来源。</string>
+    <string name="import_video">导入方形 MP4（≤1080px、20MiB、120秒）</string>
+    <string name="allow_bridge">允许当前已安装的 Bridge 读取测试视频</string>
+    <string name="revoke_bridge">撤销 Bridge 授权</string>
+    <string name="importing">正在复制和校验…</string>
+    <string name="ready">本地视频已就绪</string>
+    <string name="failed">导入失败或格式不支持</string>
+    <string name="allowed">已认可当前 Bridge 的签名；签名改变后需重新授权</string>
+    <string name="missing_bridge">Bridge 未安装或签名无法验证</string>
+    <string name="revoked">Bridge 授权已撤销</string>
+    <string name="empty">尚未导入视频</string>
+</resources>

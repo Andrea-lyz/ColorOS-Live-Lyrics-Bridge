@@ -18,3 +18,5 @@ rootProject.name = "ColorOS-Live-Lyrics-Bridge"
 
 include(":app")
 include(":libxposed-api-stubs")
+include(":artwork-contract")
+include(":artwork-provider-local")

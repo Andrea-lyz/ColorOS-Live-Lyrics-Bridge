@@ -1,0 +1,14 @@
+<resources>
+    <string name="app_name">Local Artwork Test Provider</string>
+    <string name="description">Offline protocol fixture: import one square MP4 and return it for every test query. This provider does not match songs or use the network and is not a production artwork source.</string>
+    <string name="import_video">Import square MP4 (≤1080px, 20MiB, 120 seconds)</string>
+    <string name="allow_bridge">Allow installed Bridge to read the test video</string>
+    <string name="revoke_bridge">Revoke Bridge access</string>
+    <string name="importing">Copying and verifying…</string>
+    <string name="ready">Local video is ready</string>
+    <string name="failed">Import failed or format unsupported</string>
+    <string name="allowed">Current Bridge signing identity accepted; authorize again if it changes</string>
+    <string name="missing_bridge">Bridge is missing or its signature cannot be verified</string>
+    <string name="revoked">Bridge access revoked</string>
+    <string name="empty">No video imported yet</string>
+</resources>
