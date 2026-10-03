@@ -2,7 +2,7 @@
 
 ## 唯一数据边界
 
-Provider 4.0 与 Bridge 不建立 Gradle、广播、Binder、ContentProvider 或文件中继关系。
+歌词 Provider 4.0 与 Bridge 不建立 Gradle、广播、Binder、ContentProvider 或文件中继关系。
 两者唯一的数据交界是目标播放器自己的：
 
 ```text
@@ -50,3 +50,13 @@ Bridge 可以在 `PlayerSystemUiPolicy` 或具名 `players/<player>/` policy 中
 3. 日志中只能看到 native `lyricInfo` 消费，不得出现第二份 Bridge lyric 提交。
 4. 静态检查 Bridge APK/DEX 不含旧直达 action、source 前缀、sender 字段或 Provider
    applicationId。
+
+## 独立封面资源插件
+
+Artwork Provider 是独立的普通 Android 资源 APK，与上述播放器歌词 Provider 不同。
+它可以通过公开、版本化的 [封面资源 v1 协议](../artwork-contract/README.md) 提供只读视频 FD，
+由用户选择具体组件和签名。该协议不承载歌词、session token、播放器 Hook 实现或歌词 Provider source 映射。
+Bridge 不因此增加播放器 scope、INTERNET 权限或恢复旧私有歌词 transport。
+
+SystemUI 动态封面与联网资源插件目前仅为 Debug 联调功能，正式展示配置尚未实现；实际状态
+见 [实施记录](DYNAMIC-ARTWORK-IMPLEMENTATION.zh-CN.md)。

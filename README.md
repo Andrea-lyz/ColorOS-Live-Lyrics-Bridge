@@ -166,6 +166,8 @@ If your player already has a full lyric timeline, the preferred integration is t
 - [Provider adaptation guide](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Providers/blob/4.1/docs/4.0/PROVIDER-ADAPTATION-GUIDE.md)
 - [4.0 migration guide](docs/4.0/MIGRATION-3.8-TO-4.0.md)
 - [Bridge and LyricProvider responsibilities (Chinese)](docs/LYRIC_PROVIDER_BRIDGE.zh-CN.md)
+- [Dynamic artwork Provider and Bridge design (Chinese)](docs/DYNAMIC-ARTWORK-PROVIDER-PLAN.zh-CN.md)
+- [Dynamic artwork implementation status (Chinese; Debug-only SystemUI integration, verified on one C16 device)](docs/DYNAMIC-ARTWORK-IMPLEMENTATION.zh-CN.md)
 
 ## Building locally
 
