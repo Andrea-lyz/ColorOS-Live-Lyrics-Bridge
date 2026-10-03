@@ -1,0 +1,18 @@
+<resources>
+    <string name="app_name">AM Artwork Provider (Test)</string>
+    <string name="description">Independent online artwork source. No Apple account required. When enabled, song, artist, album and lookup URLs are sent to Apple. Only matched, validated square videos are supplied. Disabled by default; downloads use unmetered networks by default. Ambiguous matches and source changes keep the original cover.</string>
+    <string name="enable">Enable AM artwork source</string>
+    <string name="metered">Allow metered downloads</string>
+    <string name="debug">Enable redacted diagnostics</string>
+    <string name="country">Catalog market (two letters, e.g. us or cn)</string>
+    <string name="country_invalid">Enter a two-letter market code</string>
+    <string name="save">Save source settings</string>
+    <string name="saved">Saved. Re-enable the Bridge integration test to apply market or network changes.</string>
+    <string name="allow_bridge">Authorize the current Bridge signature for preview</string>
+    <string name="allowed">Current Bridge authorized. Platform-signed SystemUI is checked independently by UID.</string>
+    <string name="bridge_missing">Bridge is not installed</string>
+    <string name="revoke">Disable source and revoke preview access</string>
+    <string name="revoked">Source disabled. Also disable the Bridge test to remove any currently playing video.</string>
+    <string name="clear">Clear unused cache</string>
+    <string name="cleared">Unused cache cleared; leased videos remain until released</string>
+</resources>

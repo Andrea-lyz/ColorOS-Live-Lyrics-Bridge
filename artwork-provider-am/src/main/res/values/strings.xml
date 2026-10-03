@@ -1,0 +1,18 @@
+<resources>
+    <string name="app_name">AM 动态封面插件（测试）</string>
+    <string name="description">独立联网封面来源，不需要 Apple 账号。启用后会向 Apple 发送歌曲名、艺人、专辑和查询 URL；仅提供已匹配、完整验证的方形视频。默认关闭，默认仅非计费网络下载。公开页面结构变化或版本无法区分时保留原封面。</string>
+    <string name="enable">启用 AM 封面来源</string>
+    <string name="metered">允许计费网络下载</string>
+    <string name="debug">开启脱敏诊断日志</string>
+    <string name="country">查询市场（us / cn 等两字母代码）</string>
+    <string name="country_invalid">请输入两字母市场代码</string>
+    <string name="save">保存来源设置</string>
+    <string name="saved">已保存。返回 Bridge 重新启用联调以应用市场或网络变化。</string>
+    <string name="allow_bridge">授权当前 Bridge 签名进行预览</string>
+    <string name="allowed">已授权当前 Bridge。平台签名 SystemUI 使用独立 UID 校验。</string>
+    <string name="bridge_missing">找不到当前 Bridge</string>
+    <string name="revoke">关闭来源并撤销预览授权</string>
+    <string name="revoked">来源已关闭；请同时在 Bridge 关闭锁屏联调以撤下当前视频。</string>
+    <string name="clear">清除未使用的缓存</string>
+    <string name="cleared">已清除；当前租约中的视频会保留至释放</string>
+</resources>

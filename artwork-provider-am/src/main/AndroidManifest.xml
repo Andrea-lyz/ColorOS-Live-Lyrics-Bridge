@@ -1,0 +1,24 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <queries>
+        <package android:name="io.github.andrealtb.lockscreenlyrics" />
+        <package android:name="com.android.systemui" />
+    </queries>
+    <application android:allowBackup="false" android:fullBackupContent="false" android:dataExtractionRules="@xml/data_extraction_rules"
+        android:usesCleartextTraffic="false" android:icon="@android:drawable/ic_media_play"
+        android:label="@string/app_name" android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <activity android:name=".AmArtworkActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <service android:name=".AmArtworkService" android:exported="true">
+            <intent-filter><action android:name="io.github.andrealtb.artwork.action.BIND_PROVIDER" /></intent-filter>
+            <meta-data android:name="io.github.andrealtb.artwork.PROTOCOL_MAJOR" android:value="1" />
+            <meta-data android:name="io.github.andrealtb.artwork.SETTINGS_ACTIVITY"
+                android:value="io.github.andrealtb.artwork.am.AmArtworkActivity" />
+        </service>
+    </application>
+</manifest>
