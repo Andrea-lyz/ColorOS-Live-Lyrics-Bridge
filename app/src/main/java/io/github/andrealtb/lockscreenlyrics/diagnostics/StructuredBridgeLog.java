@@ -110,6 +110,16 @@ public final class StructuredBridgeLog {
         emit(Log.WARN, "WARN", area, event, message, null, true);
     }
 
+    /** For caller-deduplicated, bounded state transitions; retains gates, redaction and sinks. */
+    public static void debugTransition(BridgeDebugArea area, String event, Supplier<String> message) {
+        if (!isAreaEnabled(area) || message == null) return;
+        try {
+            emit(Log.DEBUG, "DEBUG", area, event, message.get(), null, false, false);
+        } catch (Throwable ignored) {
+            // Diagnostic suppliers must never affect the observed operation.
+        }
+    }
+
     public static void error(String message, Throwable throwable) {
         LegacyLogEventMap.Mapping mapping = LegacyLogEventMap.classify(message);
         emit(Log.ERROR, "ERROR", mapping.area, BridgeEvents.FAILURE, message, throwable, true);
@@ -137,6 +147,18 @@ public final class StructuredBridgeLog {
             String message,
             Throwable throwable,
             boolean alwaysOn) {
+        emit(androidLevel, levelName, area, event, message, throwable, alwaysOn, true);
+    }
+
+    private static void emit(
+            int androidLevel,
+            String levelName,
+            BridgeDebugArea area,
+            String event,
+            String message,
+            Throwable throwable,
+            boolean alwaysOn,
+            boolean throttle) {
         BridgeDebugArea safeArea = area == null ? BridgeDebugArea.BOOTSTRAP : area;
         String safeEvent = event == null || event.isEmpty() ? BridgeEvents.DETAIL : event;
         if (!alwaysOn && androidLevel < Log.WARN && !isAreaEnabled(safeArea)) {
@@ -144,10 +166,10 @@ public final class StructuredBridgeLog {
         }
         String throttleKey = safeArea.key + "|" + safeEvent + "|" + processName;
         long now = System.currentTimeMillis();
-        if (androidLevel < Log.WARN && !THROTTLER.shouldLog(throttleKey, now)) {
+        if (throttle && androidLevel < Log.WARN && !THROTTLER.shouldLog(throttleKey, now)) {
             return;
         }
-        int suppressed = androidLevel < Log.WARN ? THROTTLER.takeSuppressed(throttleKey) : 0;
+        int suppressed = throttle && androidLevel < Log.WARN ? THROTTLER.takeSuppressed(throttleKey) : 0;
         String formatted = SensitiveFieldRedactor.redact(BridgeLogFormatter.format(
                 levelName,
                 COMPONENT,

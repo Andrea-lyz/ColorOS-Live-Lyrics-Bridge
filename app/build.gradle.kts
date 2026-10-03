@@ -88,6 +88,7 @@ android {
 }
 
 dependencies {
+    implementation(project(":artwork-contract"))
     compileOnly(project(":libxposed-api-stubs"))
     implementation("androidx.appcompat:appcompat:1.7.1")
     implementation("com.google.android.material:material:1.11.0")

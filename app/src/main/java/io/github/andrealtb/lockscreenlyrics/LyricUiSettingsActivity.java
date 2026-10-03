@@ -570,6 +570,14 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
                 getString(R.string.link_debug_logging_sub),
                 () -> startActivity(new Intent(this, BridgeDebugSettingsActivity.class))));
         addCardDivider(compatibility);
+        if (BuildConfig.DEBUG) {
+            compatibility.addView(linkRow(
+                    R.drawable.ic_sec_motion,
+                    getString(R.string.artwork_title),
+                    getString(R.string.artwork_link_sub),
+                    () -> startActivity(new Intent(this, DynamicArtworkSettingsActivity.class))));
+            addCardDivider(compatibility);
+        }
         lineTimedProgress = toggle(getString(R.string.setting_line_progress), false);
         translationProgress = toggle(getString(R.string.setting_translation_progress), false);
         charLift = toggle(

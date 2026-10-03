@@ -83,6 +83,9 @@ import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
 import io.github.andrealtb.lockscreenlyrics.bootstrap.SystemUiRuntimeBootstrap;
+import io.github.andrealtb.lockscreenlyrics.systemui.artwork.DynamicArtworkRuntime;
+import io.github.andrealtb.lockscreenlyrics.systemui.artwork.ArtworkTrace;
+import io.github.andrealtb.lockscreenlyrics.systemui.artwork.ArtworkImmersiveTestConfig;
 import io.github.andrealtb.lockscreenlyrics.diagnostics.BridgeDebugApplyPolicy;
 import io.github.andrealtb.lockscreenlyrics.diagnostics.BridgeDebugArea;
 import io.github.andrealtb.lockscreenlyrics.diagnostics.BridgeDebugConfig;
@@ -811,6 +814,28 @@ public final class LockscreenLyricsModule extends XposedModule {
     private volatile String lastPlaybackControllerDiscoveryPackage = "";
     private WeakReference<Object> oplusMediaDataManager = new WeakReference<>(null);
     private volatile Method oplusPlaybackStateRefreshMethod;
+    private final DynamicArtworkRuntime dynamicArtworkRuntime = new DynamicArtworkRuntime(
+            (target, id, after) -> {
+                XposedInterface.HookHandle handle = hook(target)
+                        .setId(id)
+                        .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                        .intercept(chain -> {
+                            Object receiver = chain.getThisObject();
+                            Object[] arguments = chain.getArgs().toArray();
+                            try { after.before(receiver, arguments); }
+                            catch (Throwable ignored) { ArtworkTrace.observerFailure(id, ignored); }
+                            Object result = chain.proceed();
+                            try {
+                                after.observe(receiver, arguments, result);
+                            } catch (Throwable ignored) {
+                                // Artwork observation always preserves the original call's result.
+                                ArtworkTrace.observerFailure(id, ignored);
+                            }
+                            return result;
+                        });
+                if (handle == null) throw new IllegalStateException("artwork_hook_unavailable");
+                return handle::unhook;
+            }, mainHandler, LockscreenLyricsModule::currentApplicationContext);
     private final SystemUiRuntimeBootstrap systemUiRuntimeBootstrap =
             new SystemUiRuntimeBootstrap(
                     new SystemUiRuntimeBootstrap.Host() {
@@ -955,6 +980,8 @@ public final class LockscreenLyricsModule extends XposedModule {
     public void onPackageReady(PackageReadyParam param) {
         String packageName = param.getPackageName();
         if (SYSTEMUI_PACKAGE.equals(packageName)) {
+            dynamicArtworkRuntime.initializeSystemUi(param.getClassLoader());
+            tryInstallPluginClassLoaderConstructorHook(param.getClassLoader());
             systemUiRuntimeBootstrap.initialize(param.getClassLoader());
         }
     }
@@ -6975,6 +7002,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (!OplusPluginClassLoaderPolicy.isReady(pluginLoader)) {
             return;
         }
+        dynamicArtworkRuntime.onPluginClassLoader(pluginLoader);
         synchronized (pluginHookGenerationLock) {
             if (readyPluginClassLoader.get() == pluginLoader) {
                 return;
@@ -10571,6 +10599,9 @@ public final class LockscreenLyricsModule extends XposedModule {
                     } else if (LyricUiSettings.ACTION_DEBUG_SETTINGS_CHANGED.equals(
                             intent.getAction())) {
                         handleBridgeDebugSettingsChanged(receiverContext, intent);
+                    } else if (ArtworkImmersiveTestConfig.ACTION.equals(intent.getAction())) {
+                        try { dynamicArtworkRuntime.applyImmersiveTest(ArtworkImmersiveTestConfig.read(intent)); }
+                        catch (RuntimeException error) { ArtworkTrace.observerFailure("immersive-test-config", error); }
                     } else if (LyricUiSettings.ACTION_RESTART_SYSTEM_UI.equals(
                             intent.getAction())) {
                         handleSystemUiRestartRequest(intent);
@@ -10584,6 +10615,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 filter.addAction(LyricUiSettings.ACTION_REQUEST_MODULE_STATUS);
                 filter.addAction(LyricUiSettings.ACTION_CONTENT_CLEANUP_CHANGED);
                 filter.addAction(LyricUiSettings.ACTION_DEBUG_SETTINGS_CHANGED);
+                filter.addAction(ArtworkImmersiveTestConfig.ACTION);
                 filter.addAction(LyricUiSettings.ACTION_RESTART_SYSTEM_UI);
                 if (Build.VERSION.SDK_INT >= 33) {
                     appContext.registerReceiver(
@@ -12630,6 +12662,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 logProcessName,
                 this::writeLogcat,
                 this::writeFrameworkLog);
+        dynamicArtworkRuntime.onDiagnosticsChanged();
     }
 
     private void loadBridgeDebugSettings(Context context) {

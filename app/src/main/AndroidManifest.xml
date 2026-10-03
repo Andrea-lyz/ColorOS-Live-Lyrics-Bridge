@@ -4,6 +4,13 @@
         android:protectionLevel="signature" />
 
     <uses-permission android:name="io.github.andrealtb.lockscreenlyrics.permission.CHANGE_LYRIC_UI_SETTINGS" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <queries>
+        <intent>
+            <action android:name="io.github.andrealtb.artwork.action.BIND_PROVIDER" />
+        </intent>
+    </queries>
 
     <application
         android:allowBackup="false"
@@ -65,6 +72,13 @@
             android:exported="false"
             android:importantForAutofill="no"
             android:label="@string/debug_settings_title"
+            android:theme="@style/Theme.LockscreenLyrics"
+            android:parentActivityName=".LyricUiSettingsActivity" />
+        <activity
+            android:name=".DynamicArtworkSettingsActivity"
+            android:exported="false"
+            android:importantForAutofill="no"
+            android:label="@string/artwork_title"
             android:theme="@style/Theme.LockscreenLyrics"
             android:parentActivityName=".LyricUiSettingsActivity" />
         <receiver

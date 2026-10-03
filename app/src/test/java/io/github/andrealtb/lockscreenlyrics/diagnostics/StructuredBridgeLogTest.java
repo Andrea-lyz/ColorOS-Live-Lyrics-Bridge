@@ -158,6 +158,31 @@ public final class StructuredBridgeLogTest {
         assertFalse(track.contains("private-media-id"));
     }
 
+    @Test
+    public void boundedTransitionsBypassSharedEventThrottleButOrdinaryLogsDoNot() {
+        RecordingSink sink = new RecordingSink();
+        StructuredBridgeLog.configure(BridgeDebugConfig.enabledAll(1), "systemui", sink, null);
+        StructuredBridgeLog.debugTransition(BridgeDebugArea.MEDIA, "ARTWORK_SESSION_BOUND", () -> "ownerId=1 epoch=1");
+        StructuredBridgeLog.debugTransition(BridgeDebugArea.MEDIA, "ARTWORK_SESSION_BOUND", () -> "ownerId=2 epoch=1");
+        assertEquals(2, sink.messages.size());
+        StructuredBridgeLog.debug(BridgeDebugArea.MEDIA, "ORDINARY", () -> "first");
+        StructuredBridgeLog.debug(BridgeDebugArea.MEDIA, "ORDINARY", () -> "second");
+        assertEquals(3, sink.messages.size());
+    }
+
+    @Test
+    public void transitionStillGatesRedactsAndContainsSupplierFailure() {
+        RecordingSink sink = new RecordingSink();
+        StructuredBridgeLog.configure(BridgeDebugConfig.disabled(), "systemui", sink, null);
+        StructuredBridgeLog.debugTransition(BridgeDebugArea.MEDIA, "ARTWORK_TEST", () -> { throw new AssertionError("evaluated"); });
+        assertTrue(sink.messages.isEmpty());
+        StructuredBridgeLog.configure(BridgeDebugConfig.enabledAll(1), "systemui", sink, null);
+        StructuredBridgeLog.debugTransition(BridgeDebugArea.MEDIA, "ARTWORK_TEST", () -> "token=secret1234567890123456");
+        assertFalse(sink.messages.get(0).contains("secret1234567890123456"));
+        StructuredBridgeLog.debugTransition(BridgeDebugArea.MEDIA, "ARTWORK_TEST", () -> { throw new IllegalStateException("private"); });
+        assertEquals(1, sink.messages.size());
+    }
+
     private static final class RecordingSink implements BridgeLogSink {
         final List<String> messages = new ArrayList<>();
 
