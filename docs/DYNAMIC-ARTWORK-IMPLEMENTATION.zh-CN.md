@@ -4,6 +4,13 @@
 从 `feat/coloros17-adaptation` 的 `df7cf393d3a9ed928f4a409911179d989ccf2054` 建立。
 依据：[完整方案](DYNAMIC-ARTWORK-PROVIDER-PLAN.zh-CN.md)。
 
+2026-10-04 发布：动态封面 Provider 迁入 Providers 仓库（`artwork-provider-am`，v1.0.0 / versionCode 4，
+含 `artwork-contract` 镜像与逐文件哈希校验），Bridge 侧删除该模块、保留协议契约；预览版
+[v4.4.0-C16-Artwork](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/releases/tag/v4.4.0-C16-Artwork)
+由 `preview.yml` 构建并发布，资产为 Bridge APK、动态封面 Provider APK 与 SHA256SUMS，两者均为正式签名。
+Bridge 提交 `7bd2401`，Providers 提交 `bcde41f`；Bridge APK `68d81bd7…`、Provider APK `8b43e54d…`（SHA-256）。
+已知限制与用法见发布说明。
+
 2026-10-04 AM fix24：缓存上限由固定 256 MiB 改为可配置（默认 512 MB，预设到 8 GB，可自定义 64–8000 MB），
 主页缓存卡片新增“缓存上限”行；用量条与用量文本改读设置值。降低上限时立即按最久未使用清理。用户已设备确认。
 见 [fix24 说明](DYNAMIC-ARTWORK-AM-FIX24-TEST.zh-CN.md)。
