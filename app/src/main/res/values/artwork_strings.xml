@@ -1,5 +1,5 @@
 <resources>
-    <string name="artwork_live_preview">预览 AM 查询结果</string>
+    <string name="artwork_live_preview">预览动态封面 Provider 查询结果</string>
     <string name="artwork_query_title">歌曲名（保留版本后缀）</string>
     <string name="artwork_query_artist">艺人</string>
     <string name="artwork_query_album">专辑名（建议填写）</string>
@@ -53,7 +53,7 @@
     <string name="artwork_settings_provider_settings">插件设置</string>
     <string name="artwork_settings_signer">签名 %1$s…</string>
     <string name="artwork_settings_no_providers">未找到支持动态封面协议 v1 的插件</string>
-    <string name="artwork_settings_source_hint">首次使用请先在插件设置中启用来源。本地音乐的专辑信息与 Apple Music 不一致时，可在 AM 插件中手动绑定专辑。</string>
+    <string name="artwork_settings_source_hint">首次使用请先在插件设置中启用来源。本地音乐的专辑信息与 Apple Music 不一致时，可在动态封面 Provider 中手动绑定专辑。</string>
     <string name="artwork_settings_section_screen">屏幕</string>
     <string name="artwork_settings_keep_awake">动态封面播放时保持屏幕常亮</string>
     <string name="artwork_settings_keep_awake_hint">仅在大封面上动态封面实际播放时保持亮屏；暂停、按电源键进入息屏/AOD、解锁或回到歌词小封面时释放，之后按系统超时正常熄屏。与“歌词显示时保持屏幕点亮”各自独立，任一满足即保持亮屏。</string>
@@ -82,8 +82,8 @@
     <string name="artwork_status_unmatched">未匹配到当前歌曲</string>
     <string name="artwork_status_motion_unsupported">当前专辑的动态封面格式暂不支持</string>
     <string name="artwork_status_source_unreadable">无法解析当前专辑的 Apple Music 页面</string>
-    <string name="artwork_status_source_unreadable_detail">稍后会自动重试；也可在 AM 插件中把本地专辑手动绑定到同一专辑的其他版本。</string>
-    <string name="artwork_status_unmatched_detail">本地专辑信息与 Apple Music 不一致时，可在 AM 插件中手动绑定专辑。</string>
+    <string name="artwork_status_source_unreadable_detail">稍后会自动重试；也可在动态封面 Provider 中把本地专辑手动绑定到同一专辑的其他版本。</string>
+    <string name="artwork_status_unmatched_detail">本地专辑信息与 Apple Music 不一致时，可在动态封面 Provider 中手动绑定专辑。</string>
     <string name="artwork_status_source_disabled">插件来源未启用</string>
     <string name="artwork_status_source_disabled_detail">请打开“插件设置”启用来源。</string>
     <string name="artwork_status_network">网络暂不可用</string>

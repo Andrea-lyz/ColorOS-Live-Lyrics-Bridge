@@ -1,4 +1,7 @@
-# AM Artwork Provider — local integration candidate
+# 动态封面 Provider（Dynamic Artwork Provider）— local integration candidate
+
+原名 AM Artwork Provider；fix23 起应用名为“动态封面 Provider”，包名 `io.github.andrealtb.artwork.am` 与组件名不变。
+界面默认英文，中文系统显示中文。见 [fix23](../docs/DYNAMIC-ARTWORK-AM-FIX23-TEST.zh-CN.md)。
 
 普通 Android APK（API 30+），不是 Xposed 模块，不注入 Apple Music 或 SystemUI。
 通过 `artwork-contract` v1 返回 `localTestOnly=false` 和完整本地 MP4 的只读 FD。
@@ -28,7 +31,8 @@ fix17 让工作线程与 detached 计数成为进程级，服务随解绑销毁�
 
 来源默认关闭、默认非计费网络；启用及设置由插件 Activity 管理。
 缓存命中可离线使用（来源仍须启用）；成功/确定无动画 TTL 24h，临时故障按短退避。
-文件缓存 256MiB LRU、查询索引最多 128；活跃租约 pin 文件，关闭/取消/死亡释放。
+文件缓存默认 512MB LRU（可在主页“缓存上限”改为 64MB–8GB，见 [fix24](../docs/DYNAMIC-ARTWORK-AM-FIX24-TEST.zh-CN.md)）、
+查询索引最多 128；活跃租约 pin 文件，关闭/取消/死亡释放。
 所有事务验证实际 UID；Bridge App 必须先在插件授权当前签名，平台签名 SystemUI 单独校验。
 来源设置和签名不备份，诊断默认关闭且不记录曲名、歌词、完整 URL、token、原始 media ID。
 

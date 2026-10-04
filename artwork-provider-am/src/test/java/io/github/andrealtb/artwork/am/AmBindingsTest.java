@@ -95,13 +95,29 @@ public class AmBindingsTest {
     @Test public void albumSearchOffersEveryAlbumWithItsEditionDetails() throws Exception {
         var hits = AmPage.albumHits("{\"results\":[{\"wrapperType\":\"collection\",\"collectionType\":\"Album\",\"collectionId\":10,"
                 + "\"collectionName\":\"1989 (Deluxe Edition)\",\"artistName\":\"Taylor Swift\",\"releaseDate\":\"2014-10-27T07:00:00Z\","
-                + "\"trackCount\":19,\"collectionExplicitness\":\"notExplicit\"},"
+                + "\"trackCount\":19,\"collectionExplicitness\":\"notExplicit\","
+                + "\"artworkUrl100\":\"https://is1-ssl.mzstatic.com/image/thumb/Music/v4/ab/source/100x100bb.jpg\"},"
                 + "{\"wrapperType\":\"collection\",\"collectionType\":\"Compilation\",\"collectionId\":11,\"collectionName\":\"x\",\"artistName\":\"y\"},"
                 + "{\"wrapperType\":\"track\",\"kind\":\"song\",\"trackId\":1}]}");
         assertEquals(1, hits.size());
-        assertEquals(new AmPage.AlbumHit("10", "1989 (Deluxe Edition)", "Taylor Swift", "2014-10-27", 19, false), hits.get(0));
+        assertEquals(new AmPage.AlbumHit("10", "1989 (Deluxe Edition)", "Taylor Swift", "2014-10-27", 19, false,
+                "https://is1-ssl.mzstatic.com/image/thumb/Music/v4/ab/source/300x300bb.jpg"), hits.get(0));
         try { AmPage.albumHits("{\"results\":[{\"wrapperType\":\"collection\",\"collectionType\":\"Album\",\"collectionId\":\"1x\"}]}"); fail(); }
         catch (AmFailure expected) { assertEquals("catalog_schema_changed", expected.reason); }
+    }
+
+    @Test public void searchArtComesOnlyFromApplesImageHosts() {
+        assertEquals("https://is3-ssl.mzstatic.com/image/thumb/x/source/300x300bb.jpg",
+                AmPage.artworkUrl("https://is3-ssl.mzstatic.com/image/thumb/x/source/100x100bb.jpg", 300));
+        assertEquals("https://is3-ssl.mzstatic.com/image/thumb/x/cover.jpg",
+                AmPage.artworkUrl("https://is3-ssl.mzstatic.com/image/thumb/x/cover.jpg", 300));
+        assertEquals("", AmPage.artworkUrl("http://is3-ssl.mzstatic.com/image/thumb/x/source/100x100bb.jpg", 300));
+        assertEquals("", AmPage.artworkUrl("https://evil.example/is3-ssl.mzstatic.com/100x100bb.jpg", 300));
+        assertEquals("", AmPage.artworkUrl("https://is3-ssl.mzstatic.com.evil.example/x/100x100bb.jpg", 300));
+        assertEquals("", AmPage.artworkUrl("https://is3-ssl.mzstatic.com:8443/x/100x100bb.jpg", 300));
+        assertEquals("", AmPage.artworkUrl("https://is3-ssl.mzstatic.com/x/100x100bb.jpg?track=1", 300));
+        assertEquals("", AmPage.artworkUrl("not a url", 300));
+        assertEquals("", AmPage.artworkUrl("", 300));
     }
 
     @Test public void leadCreditKeepsTheNameAsWritten() {

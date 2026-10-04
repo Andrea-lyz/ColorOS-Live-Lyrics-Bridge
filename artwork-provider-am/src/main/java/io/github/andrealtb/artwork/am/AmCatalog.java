@@ -45,6 +45,10 @@ final class AmCatalog {
     static URI albumSearchUri(String term, String country) {
         return URI.create("https://itunes.apple.com/search?term=" + encode(term) + "&media=music&entity=album&country=" + country + "&limit=25");
     }
+    /** Display details (title, art) of an album pasted as a link; never used for matching. */
+    static URI albumLookupUri(String country, String id) {
+        return URI.create("https://itunes.apple.com/lookup?id=" + encode(id) + "&country=" + encode(country));
+    }
     static URI pageUri(String country, String id) { return URI.create("https://music.apple.com/" + country + "/album/-/" + id); }
     private AmPage.Album verify(AmPage.Album album, ArtworkQuery query, String song, String stage) throws AmFailure {
         diagnostic.accept(album.skippedTracks() > 0 ? stage + " skippedTracks=" + album.skippedTracks() : stage, album.tracks());

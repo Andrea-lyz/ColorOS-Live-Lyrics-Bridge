@@ -1,0 +1,19 @@
+<resources>
+    <color name="am_bg">#FF0C0C10</color>
+    <color name="am_card">#FF1A1A20</color>
+    <color name="am_card_stroke">#14FFFFFF</color>
+    <color name="am_field">#FF26262E</color>
+    <color name="am_divider">#14FFFFFF</color>
+    <color name="am_ripple">#297D7AFF</color>
+    <color name="am_text">#FFF2F1F7</color>
+    <color name="am_text_secondary">#FFA6A5B0</color>
+    <color name="am_text_tertiary">#FF71707B</color>
+    <color name="am_accent">#FFFF5A8A</color>
+    <color name="am_good">#FF3DD36B</color>
+    <color name="am_warn">#FFFFB340</color>
+    <color name="am_bad">#FFFF6961</color>
+    <color name="am_info">#FF5E9BFF</color>
+    <color name="am_violet">#FF8583FF</color>
+    <color name="am_purple">#FFCF7CFF</color>
+    <color name="am_muted">#FF8E8E99</color>
+</resources>

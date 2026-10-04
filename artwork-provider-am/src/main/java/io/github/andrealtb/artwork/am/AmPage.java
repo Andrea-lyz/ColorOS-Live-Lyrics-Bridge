@@ -13,8 +13,14 @@ final class AmPage {
     record Album(String id, List<AmIdentity.Track> tracks, URI master, int skippedTracks) {
         Album(String id, List<AmIdentity.Track> tracks, URI master) { this(id, tracks, master, 0); }
     }
-    /** One album search result offered on the binding page; nothing here is trusted for matching. */
-    record AlbumHit(String id, String title, String artist, String releaseDay, int trackCount, boolean explicit) {}
+    /**
+     * One album search result offered on the binding page; nothing here is trusted for matching.
+     * {@code artwork} is an Apple image CDN address for the page's thumbnail, or empty.
+     */
+    record AlbumHit(String id, String title, String artist, String releaseDay, int trackCount, boolean explicit, String artwork) {}
+    static final int ARTWORK_PX = 300;
+    private static final Pattern ARTWORK_HOST = Pattern.compile("is[0-9]{1,2}-ssl\\.mzstatic\\.com");
+    private static final Pattern ARTWORK_SIZE = Pattern.compile("/[0-9]{2,4}x[0-9]{2,4}bb\\.(jpg|png|webp)$");
     private static final Pattern SERVER_DATA = Pattern.compile("<script\\b(?=[^>]*\\bid=[\"']serialized-server-data[\"'])[^>]*>(.*?)</script>", Pattern.DOTALL);
 
     static List<AmIdentity.Track> itunes(String json) throws AmFailure {
@@ -154,10 +160,24 @@ final class AmPage {
                 if (!"collection".equals(item.optString("wrapperType")) || !"Album".equals(item.optString("collectionType"))) continue;
                 AmEdition.Info info = edition(item);
                 hits.add(new AlbumHit(id(item, "collectionId"), item.getString("collectionName"), item.getString("artistName"),
-                        info.releaseDay(), info.trackCount(), "explicit".equals(info.rating())));
+                        info.releaseDay(), info.trackCount(), "explicit".equals(info.rating()),
+                        artworkUrl(item.optString("artworkUrl100"), ARTWORK_PX)));
             }
             return hits;
         } catch (Exception error) { throw new AmFailure(Status.RETRY_LATER, "catalog_schema_changed", 300_000); }
+    }
+    /** Album art on Apple's image CDN, asked for at {@code px}; any other address is dropped. */
+    static String artworkUrl(String raw, int px) {
+        if (raw == null || raw.isEmpty() || raw.length() > 512) return "";
+        try {
+            if (!artworkHost(URI.create(raw))) return "";
+        } catch (IllegalArgumentException error) { return ""; }
+        return ARTWORK_SIZE.matcher(raw).replaceFirst("/" + px + "x" + px + "bb.jpg");
+    }
+    static boolean artworkHost(URI uri) {
+        return "https".equalsIgnoreCase(uri.getScheme()) && uri.getPort() == -1 && uri.getRawUserInfo() == null
+                && uri.getRawQuery() == null && uri.getRawFragment() == null && uri.getHost() != null
+                && ARTWORK_HOST.matcher(uri.getHost()).matches();
     }
     private static AmEdition.Info edition(JSONObject item) {
         // Album-level rating is essential: individual non-explicit tracks can exist on an Explicit album.

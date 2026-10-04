@@ -7,8 +7,17 @@ import android.net.NetworkCapabilities;
 import java.util.Locale;
 
 final class AmSettings {
+    /** Cache budget in megabytes, the unit the settings page shows, so labels and usage agree. */
+    static final int MIN_CACHE_LIMIT_MB = 64;
+    static final int MAX_CACHE_LIMIT_MB = 8000;
+    static final int DEFAULT_CACHE_LIMIT_MB = 512;
     static SharedPreferences prefs(Context context) { return context.getSharedPreferences("am_artwork", Context.MODE_PRIVATE); }
     static boolean enabled(Context context) { return prefs(context).getBoolean("enabled", false); }
+    static int cacheLimitMb(Context context) {
+        int value = prefs(context).getInt("cacheLimitMb", DEFAULT_CACHE_LIMIT_MB);
+        return Math.min(MAX_CACHE_LIMIT_MB, Math.max(MIN_CACHE_LIMIT_MB, value));
+    }
+    static long cacheLimitBytes(Context context) { return cacheLimitMb(context) * 1_000_000L; }
     static String country(Context context) {
         String value = prefs(context).getString("country", "us");
         return value != null && value.matches("[a-zA-Z]{2}") ? value.toLowerCase(Locale.ROOT) : "us";

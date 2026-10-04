@@ -1,0 +1,22 @@
+<resources>
+    <style name="Theme.ArtworkProvider" parent="android:Theme.Material.NoActionBar">
+        <item name="android:colorAccent">@color/am_accent</item>
+        <item name="android:colorPrimary">@color/am_accent</item>
+        <item name="android:colorControlActivated">@color/am_accent</item>
+        <item name="android:windowBackground">@color/am_bg</item>
+        <item name="android:textColorPrimary">@color/am_text</item>
+        <item name="android:textColorSecondary">@color/am_text_secondary</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:enforceStatusBarContrast">false</item>
+        <item name="android:enforceNavigationBarContrast">false</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <item name="android:alertDialogTheme">@style/Theme.ArtworkProvider.Dialog</item>
+    </style>
+    <style name="Theme.ArtworkProvider.Dialog" parent="android:Theme.Material.Dialog.Alert">
+        <item name="android:colorAccent">@color/am_accent</item>
+        <item name="android:colorControlActivated">@color/am_accent</item>
+    </style>
+</resources>

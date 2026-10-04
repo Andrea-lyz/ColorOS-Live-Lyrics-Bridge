@@ -21,14 +21,21 @@ import io.github.andrealtb.artwork.contract.ArtworkResult;
  */
 final class AmCache {
     record Hit(File file, ArtworkResult failure) {}
+    /** Unpinned videos beyond the budget are evicted, least recently used first. */
+    static final long DEFAULT_BUDGET_BYTES = AmSettings.DEFAULT_CACHE_LIMIT_MB * 1_000_000L;
     private static AmCache instance;
     private final File root;
+    private volatile long budgetBytes = DEFAULT_BUDGET_BYTES;
     private final Object pinLock = new Object();
     private final Map<String, Integer> pins = new HashMap<>();
     static synchronized AmCache get(Context context) {
         if (instance == null) instance = new AmCache(new File(context.getCacheDir(), "am-artwork-v1"));
+        instance.setBudget(AmSettings.cacheLimitBytes(context));
         return instance;
     }
+    long budgetBytes() { return budgetBytes; }
+    /** The preference is clamped on read, so a non-positive value never means "evict everything". */
+    void setBudget(long bytes) { if (bytes > 0) budgetBytes = bytes; }
     AmCache(File root) { this.root = root; if (!root.isDirectory() && !root.mkdirs()) throw new IllegalStateException("cache_unavailable"); }
     static String hash(String value) { return digest(value.getBytes(StandardCharsets.UTF_8)); }
     static String digest(byte[] value) {
@@ -213,6 +220,17 @@ final class AmCache {
             if (!pinned(file.getName()) && (file.getName().endsWith(".mp4") || file.getName().endsWith(".json"))) file.delete();
         }
     }
+    /** Cached motion covers for the settings page, most recently used first. */
+    java.util.List<File> videos() {
+        File[] files = root.listFiles((folder, name) -> name.matches("[a-f0-9]{64}\\.mp4"));
+        if (files == null) return java.util.List.of();
+        // Snapshot the times: a concurrent lookup touching a file must not change the order mid-sort.
+        Map<File, Long> used = new HashMap<>();
+        for (File file : files) used.put(file, file.lastModified());
+        java.util.List<File> videos = new java.util.ArrayList<>(used.keySet());
+        videos.sort(Comparator.comparingLong((File file) -> used.get(file)).reversed());
+        return videos;
+    }
     void cleanup() {
         File[] files = root.listFiles();
         if (files == null) return;
@@ -222,7 +240,7 @@ final class AmCache {
         for (File file : files) { if (file.getName().endsWith(".mp4")) bytes += file.length(); if (file.getName().endsWith(".json")) maps++; }
         for (File file : files) {
             String name = file.getName();
-            if (name.endsWith(".mp4") && bytes > 256L * 1024 * 1024 && !pinned(name)) {
+            if (name.endsWith(".mp4") && bytes > budgetBytes && !pinned(name)) {
                 long size = file.length(); if (file.delete()) bytes -= size;
             } else if (name.endsWith(".json") && maps > 128) { if (file.delete()) maps--; }
             else if (name.endsWith(".part") && System.currentTimeMillis() - file.lastModified() > 3_600_000) file.delete();

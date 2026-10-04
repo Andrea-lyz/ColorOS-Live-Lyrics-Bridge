@@ -1,5 +1,5 @@
 <resources>
-    <string name="artwork_live_preview">Preview AM query result</string>
+    <string name="artwork_live_preview">Preview Dynamic Artwork Provider result</string>
     <string name="artwork_query_title">Song title (keep edition suffixes)</string>
     <string name="artwork_query_artist">Artist</string>
     <string name="artwork_query_album">Album (recommended)</string>
@@ -53,7 +53,7 @@
     <string name="artwork_settings_provider_settings">Provider settings</string>
     <string name="artwork_settings_signer">Signer %1$s…</string>
     <string name="artwork_settings_no_providers">No artwork protocol v1 provider found</string>
-    <string name="artwork_settings_source_hint">Enable the source in the provider settings first. If local album tags differ from Apple Music, bind the album manually in the AM provider.</string>
+    <string name="artwork_settings_source_hint">Enable the source in the provider settings first. If local album tags differ from Apple Music, bind the album manually in Dynamic Artwork Provider.</string>
     <string name="artwork_settings_section_screen">Screen</string>
     <string name="artwork_settings_keep_awake">Keep the screen on while the motion cover plays</string>
     <string name="artwork_settings_keep_awake_hint">Keeps the screen on only while a motion cover is actually playing on the large cover. Pausing, pressing the power button to go to sleep or AOD, unlocking, or returning to the small lyric cover releases it, and the normal screen timeout applies again. Independent of “Keep screen on while lyrics are shown”: the screen stays on while either applies.</string>
@@ -82,8 +82,8 @@
     <string name="artwork_status_unmatched">The current song was not matched</string>
     <string name="artwork_status_motion_unsupported">This album\'s motion cover format is not supported yet</string>
     <string name="artwork_status_source_unreadable">The album\'s Apple Music page could not be read</string>
-    <string name="artwork_status_source_unreadable_detail">Retries automatically later. You can also bind the local album to another edition of the same album in the AM provider.</string>
-    <string name="artwork_status_unmatched_detail">If local album tags differ from Apple Music, bind the album manually in the AM provider.</string>
+    <string name="artwork_status_source_unreadable_detail">Retries automatically later. You can also bind the local album to another edition of the same album in Dynamic Artwork Provider.</string>
+    <string name="artwork_status_unmatched_detail">If local album tags differ from Apple Music, bind the album manually in Dynamic Artwork Provider.</string>
     <string name="artwork_status_source_disabled">The provider source is disabled</string>
     <string name="artwork_status_source_disabled_detail">Open Provider settings to enable the source.</string>
     <string name="artwork_status_network">Network unavailable</string>

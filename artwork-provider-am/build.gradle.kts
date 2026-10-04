@@ -6,8 +6,8 @@ android {
         applicationId = "io.github.andrealtb.artwork.am"
         minSdk = 30
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0-am-test"
+        versionCode = 3
+        versionName = "0.2.1"
     }
     buildTypes { release { isMinifyEnabled = false } }
     compileOptions {

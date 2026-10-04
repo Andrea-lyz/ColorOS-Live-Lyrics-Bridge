@@ -5,11 +5,32 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import static org.junit.Assert.*;
 import java.nio.file.Files;
+import java.io.File;
+import io.github.andrealtb.artwork.contract.ArtworkAsset;
 import io.github.andrealtb.artwork.contract.ArtworkResult;
 import io.github.andrealtb.artwork.contract.ArtworkResult.Status;
 
 public class AmCacheTest {
     @Rule public TemporaryFolder temporary = new TemporaryFolder();
+    private File video(AmCache cache, int resolution) throws Exception {
+        File temp = cache.temporary(); Files.write(temp.toPath(), ("fixture-" + resolution).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        File file = cache.commit(temp);
+        var asset = new ArtworkAsset("asset", "version", "video/avc", resolution, resolution, 15000, file.length(), 60000);
+        cache.rememberVideo("us", "album", file, asset); cache.unpin(file); return file;
+    }
+    @Test public void cacheLimitTrimsLeastRecentlyUsedVideosAndKeepsPinnedOnes() throws Exception {
+        var cache = new AmCache(temporary.newFolder());
+        File oldest = video(cache, 360), newest = video(cache, 408);
+        oldest.setLastModified(1_000_000L); newest.setLastModified(2_000_000L);
+        cache.setBudget(oldest.length()); cache.cleanup();
+        assertFalse("the least recently used video goes first", oldest.exists());
+        assertTrue(newest.exists());
+        cache.unpin(newest);
+        cache.setBudget(1); cache.cleanup();
+        assertFalse("a lowered limit trims the cache right away", newest.exists());
+        assertTrue(cache.budgetBytes() > 0);
+        cache.setBudget(0); assertEquals("a non-positive budget never means evict everything", 1, cache.budgetBytes());
+    }
     @Test public void immutableContentAndPinsSurviveClearUntilLastLeaseReleased() throws Exception {
         var cache = new AmCache(temporary.newFolder());
         var temp = cache.temporary(); Files.write(temp.toPath(), new byte[] {1, 2, 3});

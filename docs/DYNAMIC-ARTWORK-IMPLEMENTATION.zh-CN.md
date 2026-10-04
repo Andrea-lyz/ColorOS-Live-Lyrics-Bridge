@@ -4,6 +4,14 @@
 从 `feat/coloros17-adaptation` 的 `df7cf393d3a9ed928f4a409911179d989ccf2054` 建立。
 依据：[完整方案](DYNAMIC-ARTWORK-PROVIDER-PLAN.zh-CN.md)。
 
+2026-10-04 AM fix24：缓存上限由固定 256 MiB 改为可配置（默认 512 MB，预设到 8 GB，可自定义 64–8000 MB），
+主页缓存卡片新增“缓存上限”行；用量条与用量文本改读设置值。降低上限时立即按最久未使用清理。用户已设备确认。
+见 [fix24 说明](DYNAMIC-ARTWORK-AM-FIX24-TEST.zh-CN.md)。
+
+2026-10-04 fix23（界面）：AM 插件更名为“动态封面 Provider”（包名与组件不变），资源默认英文、中文系统显示中文；
+主页与绑定页重做（动态封面预览、匹配环形图、缓存缩略图、状态卡片），新增自适应图标。
+搜索结果封面仅在用户搜索时从 Apple 图片 CDN 加载，锁屏下载链路不变。用户已设备确认。见 [fix23 说明](DYNAMIC-ARTWORK-AM-FIX23-TEST.zh-CN.md)。
+
 2026-10-04 AM fix22：失败专辑为两碟的《The Life of a Showgirl: The Encore》，Apple 按碟分为 `track-list - <ID> - 1/2`
 两个分区，解析器只认单碟分区。改为合并所有碟分区，并加入该页字段精简快照测试。用户已设备确认。见 [fix22 说明](DYNAMIC-ARTWORK-AM-FIX22-TEST.zh-CN.md)。
 
