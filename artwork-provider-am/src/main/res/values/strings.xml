@@ -49,4 +49,7 @@
     <string name="outcome_bound">已绑定</string>
     <string name="outcome_no_motion">无动态封面</string>
     <string name="outcome_unmatched">未匹配</string>
+    <string name="outcome_failed">获取失败</string>
+    <string name="binding_motion_unrecognized">该专辑的动态封面格式暂不支持，未绑定</string>
+    <string name="binding_page_unreadable">无法解析该专辑的 Apple Music 页面，请换一个版本或稍后重试</string>
 </resources>

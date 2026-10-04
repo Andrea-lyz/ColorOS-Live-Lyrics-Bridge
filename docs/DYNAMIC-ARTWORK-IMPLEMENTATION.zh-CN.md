@@ -4,6 +4,13 @@
 从 `feat/coloros17-adaptation` 的 `df7cf393d3a9ed928f4a409911179d989ccf2054` 建立。
 依据：[完整方案](DYNAMIC-ARTWORK-PROVIDER-PLAN.zh-CN.md)。
 
+2026-10-04 AM fix22：失败专辑为两碟的《The Life of a Showgirl: The Encore》，Apple 按碟分为 `track-list - <ID> - 1/2`
+两个分区，解析器只认单碟分区。改为合并所有碟分区，并加入该页字段精简快照测试。用户已设备确认。见 [fix22 说明](DYNAMIC-ARTWORK-AM-FIX22-TEST.zh-CN.md)。
+
+2026-10-04 fix21（AM + Bridge 设置页）：040311 日志中通用 Provider（Spotify）请求正常到达插件，但个别专辑页解析失败
+（`web_schema_changed`）且未记录到最近专辑。解析改为分步骤记录失败点、单个异常曲目只跳过、未知动态封面资源单独分类；
+最近专辑记录所有请求；设置页区分页面无法解析。见 [fix21 说明](DYNAMIC-ARTWORK-AM-FIX21-TEST.zh-CN.md)。
+
 2026-10-04 fix20（Bridge）：033854 日志确认 fix19 大部分正常；两处都关闭期间切歌，淡入开始未被记录且重建时清空记录，
 重新开启后大封面一直停在 `native_transition`。改为始终记录过渡开始/重置、重建不清空；“锁屏小卡片”改为“歌词小封面”。
 035838 日志与用户确认：关闭期间切歌后重新开启，大封面与歌词小封面均恢复播放。见 [fix20 说明](DYNAMIC-ARTWORK-AM-FIX20-TEST.zh-CN.md)。

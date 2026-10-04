@@ -236,6 +236,7 @@ final class AmResolver {
     /** Caches what the failure says about the source, then prefers a smaller cached video to the static cover. */
     private Resolved failed(AmFailure failure, ArtworkQuery query, String country, String albumId, String key,
             String networkEpoch, long pausesAtStart, AmNetwork.Task task) throws AmFailure {
+        if (failure.detail != null) AmSettings.trace(context, "ARTWORK_AM_FAILURE_DETAIL", failure.reason + " step=" + failure.detail);
         task.check();
         boolean transport = AmConnectivity.transport(failure.reason);
         // Timeouts measured across a stopped process say nothing about the network.

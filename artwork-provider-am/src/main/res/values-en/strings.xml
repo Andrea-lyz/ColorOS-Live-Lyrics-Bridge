@@ -49,4 +49,7 @@
     <string name="outcome_bound">Bound</string>
     <string name="outcome_no_motion">No motion cover</string>
     <string name="outcome_unmatched">Not matched</string>
+    <string name="outcome_failed">Fetch failed</string>
+    <string name="binding_motion_unrecognized">This album\'s motion cover format is not supported yet. Not bound.</string>
+    <string name="binding_page_unreadable">This album\'s Apple Music page could not be read. Try another edition or retry later.</string>
 </resources>

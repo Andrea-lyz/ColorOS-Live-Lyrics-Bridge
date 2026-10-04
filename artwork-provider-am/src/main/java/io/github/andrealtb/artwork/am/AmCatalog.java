@@ -47,7 +47,7 @@ final class AmCatalog {
     }
     static URI pageUri(String country, String id) { return URI.create("https://music.apple.com/" + country + "/album/-/" + id); }
     private AmPage.Album verify(AmPage.Album album, ArtworkQuery query, String song, String stage) throws AmFailure {
-        diagnostic.accept(stage, album.tracks());
+        diagnostic.accept(album.skippedTracks() > 0 ? stage + " skippedTracks=" + album.skippedTracks() : stage, album.tracks());
         AmIdentity.unique(album.tracks(), query, song, album.id());
         return album;
     }

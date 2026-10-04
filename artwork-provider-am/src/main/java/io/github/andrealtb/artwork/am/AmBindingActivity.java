@@ -169,6 +169,7 @@ public final class AmBindingActivity extends Activity {
                 case BOUND -> R.string.outcome_bound;
                 case NO_MOTION -> R.string.outcome_no_motion;
                 case UNMATCHED -> R.string.outcome_unmatched;
+                case FAILED -> R.string.outcome_failed;
             });
             button(recent, label).setOnClickListener(view -> {
                 album.setText(entry.album());
@@ -189,6 +190,8 @@ public final class AmBindingActivity extends Activity {
         return switch (failure.reason) {
             case "network_policy" -> getString(R.string.binding_network);
             case "confirmed_album_no_motion", "no_square_motion_asset" -> getString(R.string.binding_no_motion);
+            case "motion_asset_unrecognized" -> getString(R.string.binding_motion_unrecognized);
+            case "web_schema_changed" -> getString(R.string.binding_page_unreadable);
             case "song_link" -> getString(R.string.binding_song_link);
             case "invalid_apple_link" -> getString(R.string.binding_bad_link);
             case "cancelled" -> "";

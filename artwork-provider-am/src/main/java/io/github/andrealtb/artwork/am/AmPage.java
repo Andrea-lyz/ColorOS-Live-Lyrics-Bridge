@@ -10,7 +10,9 @@ import org.json.JSONObject;
 import io.github.andrealtb.artwork.contract.ArtworkResult.Status;
 
 final class AmPage {
-    record Album(String id, List<AmIdentity.Track> tracks, URI master) {}
+    record Album(String id, List<AmIdentity.Track> tracks, URI master, int skippedTracks) {
+        Album(String id, List<AmIdentity.Track> tracks, URI master) { this(id, tracks, master, 0); }
+    }
     /** One album search result offered on the binding page; nothing here is trusted for matching. */
     record AlbumHit(String id, String title, String artist, String releaseDay, int trackCount, boolean explicit) {}
     private static final Pattern SERVER_DATA = Pattern.compile("<script\\b(?=[^>]*\\bid=[\"']serialized-server-data[\"'])[^>]*>(.*?)</script>", Pattern.DOTALL);
@@ -30,48 +32,90 @@ final class AmPage {
         } catch (Exception error) { throw new AmFailure(Status.RETRY_LATER, "catalog_schema_changed", 300_000); }
     }
 
+    /**
+     * Header and track sections must belong to the expected album; a single odd track item is
+     * skipped rather than discarding the whole page (it can only make that track unmatched, never
+     * attach a foreign track). Failures name the parsing step, never page content.
+     */
     static Album album(String html, String expectedId) throws AmFailure {
+        String step = "server_data";
         try {
             Matcher matcher = SERVER_DATA.matcher(html);
             if (!matcher.find()) throw new IllegalArgumentException();
+            step = "sections";
             JSONArray sections = new JSONObject(matcher.group(1)).getJSONArray("data").getJSONObject(0)
                     .getJSONObject("data").getJSONArray("sections");
             JSONObject header = null;
-            JSONArray trackItems = null;
+            // Multi-disc albums list each disc in its own section ("track-list - <id> - 1", "... - 2").
+            List<JSONObject> trackItems = new ArrayList<>();
+            boolean trackList = false;
             for (int i = 0; i < sections.length(); i++) {
                 JSONObject section = sections.getJSONObject(i);
                 String sectionId = section.optString("id");
                 if (sectionId.equals("album-detail-header-section - " + expectedId)) header = section.getJSONArray("items").getJSONObject(0);
-                if (sectionId.equals("track-list - " + expectedId)) trackItems = section.getJSONArray("items");
+                if (trackListSection(sectionId, expectedId)) {
+                    trackList = true;
+                    JSONArray items = section.getJSONArray("items");
+                    for (int item = 0; item < items.length(); item++) {
+                        JSONObject value = items.optJSONObject(item);
+                        if (value != null) trackItems.add(value);
+                    }
+                }
             }
-            if (header == null || trackItems == null || trackItems.length() > 250) throw new IllegalArgumentException();
+            step = header == null ? "header_missing" : !trackList ? "track_list_missing" : "track_list_size";
+            if (header == null || !trackList || trackItems.size() > 250) throw new IllegalArgumentException();
+            step = "header";
             JSONObject descriptor = header.getJSONObject("contentDescriptor");
             if (!"album".equals(descriptor.getString("kind"))
                     || !expectedId.equals(id(descriptor.getJSONObject("identifiers"), "storeAdamID"))) throw new IllegalArgumentException();
             String albumName = header.getString("title");
+            step = "tracks";
             List<AmIdentity.Track> tracks = new ArrayList<>();
-            for (int i = 0; i < trackItems.length(); i++) {
-                JSONObject item = trackItems.getJSONObject(i), content = item.getJSONObject("contentDescriptor");
-                if (!"song".equals(content.optString("kind"))) continue;
-                String songId = id(content.getJSONObject("identifiers"), "storeAdamID");
-                AmIdentity.AppleLink link = AmIdentity.link(content.getString("url"));
-                if (!expectedId.equals(link.albumId()) || !songId.equals(link.songId())) throw new IllegalArgumentException();
-                tracks.add(new AmIdentity.Track(songId, expectedId, item.getString("title"), item.getString("artistName"),
-                        albumName, item.getLong("duration")));
+            int skipped = 0;
+            for (JSONObject item : trackItems) {
+                JSONObject content = item.optJSONObject("contentDescriptor");
+                if (content == null || !"song".equals(content.optString("kind"))) continue;
+                try {
+                    String songId = id(content.getJSONObject("identifiers"), "storeAdamID");
+                    AmIdentity.AppleLink link = AmIdentity.link(content.getString("url"));
+                    if (!expectedId.equals(link.albumId()) || !songId.equals(link.songId())) throw new IllegalArgumentException();
+                    tracks.add(new AmIdentity.Track(songId, expectedId, item.getString("title"), item.getString("artistName"),
+                            albumName, item.getLong("duration")));
+                } catch (Exception odd) { skipped++; }
             }
+            step = "no_tracks";
             if (tracks.isEmpty()) throw new IllegalArgumentException();
-            URI master = null;
-            if (header.has("videoArtwork") && !header.isNull("videoArtwork")) {
-                JSONObject dictionary = header.getJSONObject("videoArtwork").getJSONObject("dictionary");
-                for (String key : List.of("motionDetailSquare", "motionSquareVideo1x1", "motionDetailRaw")) {
-                    JSONObject video = dictionary.optJSONObject(key);
-                    if (video != null) { master = AmHls.mediaUri(URI.create(video.getString("video"))); break; }
-                }
-                if (master == null) throw new AmFailure(Status.UNSUPPORTED, "no_square_motion_asset");
-            }
-            return new Album(expectedId, List.copyOf(tracks), master);
+            return new Album(expectedId, List.copyOf(tracks), motion(header), skipped);
         } catch (AmFailure failure) { throw failure; }
-        catch (Exception error) { throw new AmFailure(Status.RETRY_LATER, "web_schema_changed", 300_000); }
+        catch (Exception error) {
+            throw new AmFailure(Status.RETRY_LATER, "web_schema_changed", 300_000, step + "/" + error.getClass().getSimpleName());
+        }
+    }
+
+    static boolean trackListSection(String sectionId, String albumId) {
+        String single = "track-list - " + albumId;
+        return sectionId.equals(single)
+                || sectionId.startsWith(single + " - ") && sectionId.substring(single.length() + 3).matches("[0-9]{1,3}");
+    }
+
+    /** The square motion video, or null when the album has none; an unrecognized asset is not a page failure. */
+    private static URI motion(JSONObject header) throws AmFailure {
+        if (!header.has("videoArtwork") || header.isNull("videoArtwork")) return null;
+        String step = "video_dictionary";
+        try {
+            JSONObject dictionary = header.getJSONObject("videoArtwork").getJSONObject("dictionary");
+            for (String key : List.of("motionDetailSquare", "motionSquareVideo1x1", "motionDetailRaw")) {
+                JSONObject video = dictionary.optJSONObject(key);
+                if (video == null) continue;
+                step = "video_url";
+                URI uri = URI.create(video.getString("video"));
+                step = "video_host=" + (uri.getHost() == null ? "none" : uri.getHost());
+                return AmHls.mediaUri(uri);
+            }
+        } catch (Exception error) {
+            throw new AmFailure(Status.UNSUPPORTED, "motion_asset_unrecognized", 0, step);
+        }
+        throw new AmFailure(Status.UNSUPPORTED, "no_square_motion_asset");
     }
     private static String id(JSONObject object, String name) throws Exception {
         String id = object.get(name).toString();

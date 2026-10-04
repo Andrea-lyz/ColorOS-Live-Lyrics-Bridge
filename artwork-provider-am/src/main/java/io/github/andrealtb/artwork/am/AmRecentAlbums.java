@@ -13,7 +13,7 @@ import io.github.andrealtb.artwork.contract.ArtworkResult.Status;
  * logged, so the binding page can offer the exact name the player reports.
  */
 final class AmRecentAlbums {
-    enum Outcome { MATCHED, BOUND, NO_MOTION, UNMATCHED }
+    enum Outcome { MATCHED, BOUND, NO_MOTION, UNMATCHED, FAILED }
     record Entry(String album, String artist, Outcome outcome) {
         boolean sameAlbum(Entry other) {
             return AmIdentity.normalize(album).equals(AmIdentity.normalize(other.album))
@@ -27,15 +27,19 @@ final class AmRecentAlbums {
 
     private AmRecentAlbums() {}
 
-    /** Only answers about the album itself; transport failures and cancellations say nothing about it. */
+    /**
+     * Every requested album is listed so it can be bound, whatever went wrong; only a cancelled
+     * request, which says nothing about the album, is left out.
+     */
     static Outcome outcome(AmFailure failure) {
+        if (failure.status == Status.ERROR && failure.reason.equals("cancelled")) return null;
         return switch (failure.status) {
             case NO_MOTION -> Outcome.NO_MOTION;
-            case UNSUPPORTED -> failure.reason.equals("no_square_motion_asset") ? Outcome.NO_MOTION : null;
+            case UNSUPPORTED -> failure.reason.equals("no_square_motion_asset") ? Outcome.NO_MOTION : Outcome.FAILED;
             case NO_MATCH, AMBIGUOUS -> Outcome.UNMATCHED;
             case RETRY_LATER -> failure.reason.equals("catalog_match_unconfirmed")
-                    || failure.reason.equals("catalog_album_unconfirmed") ? Outcome.UNMATCHED : null;
-            default -> null;
+                    || failure.reason.equals("catalog_album_unconfirmed") ? Outcome.UNMATCHED : Outcome.FAILED;
+            default -> Outcome.FAILED;
         };
     }
 
