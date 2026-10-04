@@ -21,7 +21,10 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
     private final ArtworkProviderClient client;
     private final ArtworkDrawableTransition transition;
     private final ArtworkTrace trace = new ArtworkTrace("immersive_test");
-    private ArtworkImmersiveTestConfig config;
+    private ArtworkPlaybackConfig config;
+    /** Last display outcome for the settings page: status codes only, never song text. */
+    private String outcome = "waiting";
+    private long outcomeAt = android.os.SystemClock.elapsedRealtime();
     private Candidate current;
     private ArtworkRequestStamp attempted;
     private ImageView attemptedImage;
@@ -80,7 +83,7 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
     };
 
     public ArtworkImmersivePlayback(Context context, ArtworkDrawableTransition transition,
-            ArtworkImmersiveTestConfig config, Runnable refreshDisplay) {
+            ArtworkPlaybackConfig config, Runnable refreshDisplay) {
         Context application = context.getApplicationContext();
         this.context = application == null ? context : application;
         this.transition = transition;
@@ -297,6 +300,7 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
                     main.removeCallbacks(resolveStall);
                     awaitingNetwork = ArtworkNetworkRecovery.transport(reason);
                     trace.state("ARTWORK_PROVIDER_RESULT", () -> "status=" + status + " reason=" + reason + " retryAfterMs=" + retryAfterMs);
+                    outcome(status.name().toLowerCase(java.util.Locale.ROOT) + ":" + reason);
                     if (!config.localFixture()) retryDelay = switch (status) {
                         case RETRY_LATER -> Math.max(1000, retryAfterMs);
                         case NETWORK_BLOCKED -> 30_000;
@@ -384,6 +388,7 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
                     + " state=" + reason + " clientEpoch=" + epoch);
             if (reason.equals("stale_render") && surfaceHoldSince >= 0) { attempted = null; attemptedImage = null; }
             if (!reason.equals("preparing") && !reason.equals("waiting_first_frame") && !reason.equals("playing")) failure(reason);
+            if (reason.equals("playing")) outcome("played");
             keepAwake.update();
         }, mount.fitXY());
         mount.show(true);
@@ -539,7 +544,31 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
                 : Build.VERSION.SDK_INT >= 33 && candidate.cardEffects() != null && candidate.cardEffects().settled(candidate.image());
     }
 
+    /**
+     * Live display state first, then the last outcome: "playing" only while frames are on screen,
+     * "resolving" while a request is out, otherwise e.g. "no_motion:confirmed_album_no_motion".
+     */
+    public String status() {
+        if (closed) return "off";
+        if (renderer != null && renderer.isShowing()) return "playing";
+        if (resolvingResource) return "resolving";
+        return outcome;
+    }
+
+    public long statusAgeMs() {
+        return android.os.SystemClock.elapsedRealtime() - outcomeAt;
+    }
+
+    private void outcome(String value) {
+        // A provider answer is followed by its generic failure state; keep the detailed form.
+        if (value.equals(outcome) || outcome.startsWith(value + ":")) return;
+        outcome = value;
+        outcomeAt = android.os.SystemClock.elapsedRealtime();
+    }
+
     private void failure(String reason) {
+        // Superseded requests and renders are ordinary churn, not an outcome worth reporting.
+        if (!reason.equals("stale_render") && !reason.equals("asset_gate_changed")) outcome(reason);
         if (!config.localFixture() && (reason.equals("request_timeout") || reason.equals("bind_failed") || reason.equals("connection_lost"))) retryDelay = 30_000;
         retryAt = retryDelay == Long.MAX_VALUE ? Long.MAX_VALUE : android.os.SystemClock.elapsedRealtime() + retryDelay;
         trace.state("ARTWORK_TEST_FALLBACK", () -> "reason=" + reason);

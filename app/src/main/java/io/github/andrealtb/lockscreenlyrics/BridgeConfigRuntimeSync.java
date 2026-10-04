@@ -7,6 +7,7 @@ import android.content.SharedPreferences;
 import java.util.ArrayList;
 
 import io.github.andrealtb.lockscreenlyrics.diagnostics.BridgeDebugConfig;
+import io.github.andrealtb.lockscreenlyrics.systemui.artwork.ArtworkDisplaySettings;
 
 /** Replays restored app-side settings into the live SystemUI configuration domains. */
 final class BridgeConfigRuntimeSync {
@@ -25,6 +26,20 @@ final class BridgeConfigRuntimeSync {
         sendPlayerTranslation(context, main, config, revision);
         sendCleanup(context, main);
         sendDebug(context, revision);
+        sendArtwork(context, revision);
+    }
+
+    private static void sendArtwork(Context context, long revision) {
+        SharedPreferences preferences = ArtworkSettingsRepository.preferences(context);
+        ArtworkDisplaySettings settings = ArtworkDisplaySettings.load(preferences).withRevision(revision);
+        settings.save(preferences);
+        sendArtwork(context, settings);
+    }
+
+    /** Own action and domain; SystemUI keeps its copy so the display survives a SystemUI restart. */
+    static void sendArtwork(Context context, ArtworkDisplaySettings settings) {
+        context.sendBroadcast(settings.putExtras(
+                new Intent(ArtworkDisplaySettings.ACTION_CHANGED).setPackage(SYSTEM_UI_PACKAGE)));
     }
 
     private static void sendStyle(Context context, LyricUiConfig config, long revision) {

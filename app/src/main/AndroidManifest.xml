@@ -75,6 +75,13 @@
             android:theme="@style/Theme.LockscreenLyrics"
             android:parentActivityName=".LyricUiSettingsActivity" />
         <activity
+            android:name=".ArtworkSettingsActivity"
+            android:exported="false"
+            android:importantForAutofill="no"
+            android:label="@string/artwork_settings_title"
+            android:theme="@style/Theme.LockscreenLyrics"
+            android:parentActivityName=".LyricUiSettingsActivity" />
+        <activity
             android:name=".DynamicArtworkSettingsActivity"
             android:exported="false"
             android:importantForAutofill="no"

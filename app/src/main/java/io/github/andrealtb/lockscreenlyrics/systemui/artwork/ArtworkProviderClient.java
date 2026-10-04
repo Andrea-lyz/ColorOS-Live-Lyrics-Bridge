@@ -264,11 +264,19 @@ public final class ArtworkProviderClient implements AutoCloseable {
             IPC.execute(() -> {
                 if (!request.active.get()) return;
                 try { work.run(); }
-                catch (Exception error) { main.post(() -> fail(request, "provider_or_asset_failed")); }
+                catch (Exception error) { main.post(() -> fail(request, failureReason(error))); }
             });
         } catch (RejectedExecutionException error) {
             main.post(() -> fail(request, "ipc_budget_exhausted"));
         }
+    }
+
+    /** Identity and mode rejections are named so settings can explain them; everything else stays generic. */
+    static String failureReason(Exception error) {
+        String message = error instanceof SecurityException ? error.getMessage() : null;
+        return "provider_mode_mismatch".equals(message) || "provider_identity_changed".equals(message)
+                || "provider_unavailable".equals(message) || "artwork_caller_denied".equals(message)
+                ? message : "provider_or_asset_failed";
     }
 
     private static void requireMain() {

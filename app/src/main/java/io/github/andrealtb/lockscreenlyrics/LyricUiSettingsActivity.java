@@ -120,6 +120,7 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
     private TextView customPresetLabel;
     private TextView presetDescription;
     private TextView visualLayersSummary;
+    private TextView artworkSummary;
     private MaterialSwitch blurEnabled;
     private Slider blurRadius;
     private View blurRadiusRow;
@@ -238,6 +239,7 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        updateArtworkSummary();
         if (!resumedOnce) {
             resumedOnce = true;
             return;
@@ -448,7 +450,7 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
                 () -> startActivity(new Intent(
                         this,
                         LyricVisualLayersSettingsActivity.class)),
-                true));
+                view -> visualLayersSummary = view));
         addCardDivider(colorCard);
         scaleEnabled = toggle(getString(R.string.setting_scroll_scale), false);
         colorCard.addView(scaleEnabled);
@@ -538,6 +540,15 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
         refreshRate = refreshDropdownButton();
         motion.addView(refreshLimitRow(refreshRate), matchWrap());
         content.addView(motion, marginBottom(dp(12)));
+
+        LinearLayout artwork = card();
+        artwork.addView(linkRow(
+                R.drawable.ic_sec_artwork,
+                getString(R.string.artwork_settings_title),
+                getString(R.string.artwork_settings_link_sub_off),
+                () -> startActivity(new Intent(this, ArtworkSettingsActivity.class)),
+                view -> artworkSummary = view));
+        content.addView(artwork, marginBottom(dp(12)));
 
         LinearLayout compatibility = card();
         compatibility.addView(section(
@@ -2967,7 +2978,7 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
     }
 
     private View linkRow(int iconRes, String title, String subtitle, Runnable onClick) {
-        return linkRow(iconRes, title, subtitle, onClick, false);
+        return linkRow(iconRes, title, subtitle, onClick, null);
     }
 
     private View linkRow(
@@ -2975,7 +2986,7 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
             String title,
             String subtitle,
             Runnable onClick,
-            boolean captureVisualLayersSummary) {
+            java.util.function.Consumer<TextView> subtitleSink) {
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(dp(17), dp(10), dp(13), dp(10));
@@ -3011,8 +3022,8 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
             TextView subtitleView = text(subtitle, 9.5f, 0xFF8A919C);
             subtitleView.setPadding(0, dp(2), 0, 0);
             column.addView(subtitleView, matchWrap());
-            if (captureVisualLayersSummary) {
-                visualLayersSummary = subtitleView;
+            if (subtitleSink != null) {
+                subtitleSink.accept(subtitleView);
             }
         }
         row.addView(column, new LinearLayout.LayoutParams(
@@ -3028,6 +3039,21 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
         row.addView(chevron, chevronParams);
         row.setOnClickListener(view -> onClick.run());
         return row;
+    }
+
+    private void updateArtworkSummary() {
+        if (artworkSummary == null) return;
+        io.github.andrealtb.lockscreenlyrics.systemui.artwork.ArtworkDisplaySettings artwork =
+                ArtworkSettingsRepository.load(this);
+        if (!artwork.enabled()) {
+            artworkSummary.setText(R.string.artwork_settings_link_sub_off);
+            return;
+        }
+        ArtworkSettingsRepository.Selection selection = ArtworkSettingsRepository.check(this, artwork);
+        artworkSummary.setText(artwork.active()
+                && selection.state() == ArtworkSettingsRepository.ProviderState.READY
+                ? getString(R.string.artwork_settings_link_sub_on, selection.provider().label())
+                : getString(R.string.artwork_settings_link_sub_problem));
     }
 
     private String visualLayersSummaryText(LyricUiConfig config) {

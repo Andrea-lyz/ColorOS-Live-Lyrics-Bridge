@@ -214,6 +214,7 @@
 • Global/per-player translation defaults and buttons
 • Opening cleanup, learned rules, and per-track corrections
 • Debug master/area switches and revision
+• Dynamic artwork switches, surfaces, keep-awake option and provider choice (re-verified after restore)
 • Settings language and other Bridge preferences</string>
     <string name="config_backup_actions_title">Backup actions</string>
     <string name="config_backup_copy">Copy complete Bridge backup</string>
@@ -225,13 +226,13 @@
     <string name="config_backup_clipboard_unavailable">Clipboard is unavailable</string>
     <string name="config_backup_clipboard_empty">The clipboard does not contain restorable text</string>
     <string name="config_backup_restore_confirm_title">Restore Bridge configuration?</string>
-    <string name="config_backup_restore_confirm_message">The current main, player translation, opening-cleanup, and debug settings will be replaced and immediately synchronized to SystemUI.</string>
+    <string name="config_backup_restore_confirm_message">The current main, player translation, opening-cleanup, debug, and dynamic artwork settings will be replaced and immediately synchronized to SystemUI.</string>
     <string name="config_backup_restore_confirm">Restore</string>
     <string name="config_backup_restored">Bridge configuration restored and synchronized</string>
     <string name="config_backup_restored_restart">Bridge configuration was restored, but live synchronization was incomplete; restart SystemUI</string>
     <string name="config_backup_restore_failed">Restore failed: %1$s</string>
     <string name="config_backup_reset_confirm_title">Reset every Bridge setting?</string>
-    <string name="config_backup_reset_confirm_message">This clears main, player translation, opening-cleanup, debug, and language preferences. It cannot be undone; copy a complete backup first.</string>
+    <string name="config_backup_reset_confirm_message">This clears main, player translation, opening-cleanup, debug, dynamic artwork, and language preferences. It cannot be undone; copy a complete backup first.</string>
     <string name="config_backup_reset_confirm">Reset everything</string>
     <string name="config_backup_reset_done">Every Bridge setting was reset and synchronized</string>
     <string name="config_backup_reset_restart">Bridge configuration was reset, but live synchronization was incomplete; restart SystemUI</string>

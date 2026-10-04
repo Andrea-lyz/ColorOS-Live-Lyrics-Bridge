@@ -10,10 +10,17 @@ import java.util.Map;
 import java.util.Set;
 
 import io.github.andrealtb.lockscreenlyrics.diagnostics.BridgeDebugConfig;
+import io.github.andrealtb.lockscreenlyrics.systemui.artwork.ArtworkDisplaySettings;
 
 /** Reads, validates, restores and clears every Bridge-owned preference namespace. */
 final class BridgeConfigBackupRepository {
     private static final String[] PREFERENCE_NAMES = {
+            LyricUiSettings.PREFERENCES_NAME,
+            BridgeDebugConfig.PREFS_NAME,
+            ArtworkDisplaySettings.PREFERENCES
+    };
+    /** Required in every backup; the dynamic artwork domain is newer and optional. */
+    private static final String[] REQUIRED_NAMES = {
             LyricUiSettings.PREFERENCES_NAME,
             BridgeDebugConfig.PREFS_NAME
     };
@@ -22,13 +29,17 @@ final class BridgeConfigBackupRepository {
     }
 
     static String exportAll(Context context) {
-        return BridgeConfigBackupCodec.encode(snapshot(context));
+        Map<String, Map<String, ?>> namespaces = snapshot(context);
+        // Untouched artwork settings stay out, so such a backup still restores on older builds.
+        if (namespaces.get(ArtworkDisplaySettings.PREFERENCES).isEmpty()) {
+            namespaces.remove(ArtworkDisplaySettings.PREFERENCES);
+        }
+        return BridgeConfigBackupCodec.encode(namespaces);
     }
 
     static void restoreAll(Context context, String encoded) {
         BridgeConfigBackupCodec.Backup backup = BridgeConfigBackupCodec.decode(encoded);
-        Set<String> expected = new LinkedHashSet<>(Arrays.asList(PREFERENCE_NAMES));
-        if (!expected.equals(backup.namespaceNames())) {
+        if (!acceptsNamespaces(backup.namespaceNames())) {
             throw new IllegalArgumentException("Backup does not contain every Bridge config domain");
         }
         Map<String, Map<String, ?>> previous = snapshot(context);
@@ -42,6 +53,14 @@ final class BridgeConfigBackupRepository {
             for (String name : PREFERENCE_NAMES) write(context, name, previous.get(name));
             throw error;
         }
+        // A restored provider reference is only a reference: verify it again before it can run.
+        ArtworkSettingsRepository.revalidate(context);
+    }
+
+    /** Every required domain, nothing unknown; older backups without the artwork domain still restore. */
+    static boolean acceptsNamespaces(Set<String> names) {
+        return names.containsAll(Arrays.asList(REQUIRED_NAMES))
+                && new LinkedHashSet<>(Arrays.asList(PREFERENCE_NAMES)).containsAll(names);
     }
 
     static void clearAll(Context context) {

@@ -17,18 +17,16 @@ import io.github.andrealtb.artwork.contract.ArtworkQuery;
 import io.github.andrealtb.lockscreenlyrics.systemui.artwork.ArtworkProviderClient;
 import io.github.andrealtb.lockscreenlyrics.systemui.artwork.ArtworkProviderDirectory;
 import io.github.andrealtb.lockscreenlyrics.systemui.artwork.ArtworkRequestStamp;
-import io.github.andrealtb.lockscreenlyrics.systemui.artwork.ArtworkImmersiveTestConfig;
+import io.github.andrealtb.lockscreenlyrics.systemui.artwork.ArtworkPlaybackConfig;
 import io.github.andrealtb.lockscreenlyrics.systemui.artwork.DynamicArtworkRenderer;
 
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** Debug fixture preview and ephemeral single-slot SystemUI test. */
+/** Debug-only: in-app provider preview and the ephemeral fixed-video SystemUI test. Saved settings live elsewhere. */
 public final class DynamicArtworkSettingsActivity extends SettingsBaseActivity {
     private static final String PREFERENCES = "dynamic_artwork";
-    /** Survives clearing the provider selection; sent with every test enable and on each change. */
-    private static final String KEEP_AWAKE = "keep_awake";
     private final ExecutorService discovery = Executors.newSingleThreadExecutor();
     private ArtworkProviderClient client;
     private DynamicArtworkRenderer renderer;
@@ -68,23 +66,6 @@ public final class DynamicArtworkSettingsActivity extends SettingsBaseActivity {
         Button enableImmersive = button(getString(R.string.artwork_immersive_test_enable));
         enableImmersive.setOnClickListener(view -> sendImmersiveTest(true));
         settings.addView(enableImmersive, matchWrap());
-        Button enableLive = button(getString(R.string.artwork_live_test_enable));
-        enableLive.setOnClickListener(view -> new AlertDialog.Builder(this)
-                .setMessage(R.string.artwork_live_disclosure)
-                .setPositiveButton(R.string.artwork_live_test_enable, (dialog, which) -> sendImmersiveTest(true, false))
-                .setNegativeButton(R.string.dialog_cancel, null).show());
-        settings.addView(enableLive, matchWrap());
-        com.google.android.material.materialswitch.MaterialSwitch keepAwake = toggle(getString(R.string.artwork_keep_awake),
-                getSharedPreferences(PREFERENCES, MODE_PRIVATE).getBoolean(KEEP_AWAKE, false));
-        keepAwake.setOnCheckedChangeListener((view, checked) -> {
-            getSharedPreferences(PREFERENCES, MODE_PRIVATE).edit().putBoolean(KEEP_AWAKE, checked).apply();
-            if (BuildConfig.DEBUG) sendBroadcast(new Intent(ArtworkImmersiveTestConfig.ACTION_KEEP_AWAKE)
-                    .setPackage("com.android.systemui").putExtra("keepAwake", checked));
-        });
-        settings.addView(keepAwake, matchWrap());
-        TextView keepAwakeHint = text(getString(R.string.artwork_keep_awake_hint), 12, settingsTextColor());
-        keepAwakeHint.setPadding(dp(17), 0, dp(13), dp(10));
-        settings.addView(keepAwakeHint, matchWrap());
         Button disableImmersive = button(getString(R.string.artwork_immersive_test_disable));
         disableImmersive.setOnClickListener(view -> sendImmersiveTest(false));
         settings.addView(disableImmersive, matchWrap());
@@ -94,8 +75,7 @@ public final class DynamicArtworkSettingsActivity extends SettingsBaseActivity {
             ++discoveryEpoch;
             stop();
             selected = null;
-            getSharedPreferences(PREFERENCES, MODE_PRIVATE).edit().remove("component").remove("signer")
-                    .remove("protocolMajor").remove("enabled").apply();
+            getSharedPreferences(PREFERENCES, MODE_PRIVATE).edit().clear().apply();
             selection.setText(R.string.artwork_none);
             preview.setEnabled(false);
         });
@@ -250,20 +230,16 @@ public final class DynamicArtworkSettingsActivity extends SettingsBaseActivity {
         status.setText(R.string.artwork_stopped);
     }
 
+    /** Fixed-video lock-screen test; it overrides the saved settings until switched off. */
     private void sendImmersiveTest(boolean enabled) {
-        sendImmersiveTest(enabled, true);
-    }
-
-    private void sendImmersiveTest(boolean enabled, boolean localFixture) {
         if (!BuildConfig.DEBUG) return;
         if (enabled && selected == null) { status.setText(R.string.artwork_none); return; }
-        Intent intent = new Intent(ArtworkImmersiveTestConfig.ACTION).setPackage("com.android.systemui")
-                .putExtra("enabled", enabled).putExtra("revision", System.currentTimeMillis()).putExtra("localFixture", localFixture)
-                .putExtra("keepAwake", getSharedPreferences(PREFERENCES, MODE_PRIVATE).getBoolean(KEEP_AWAKE, false));
+        Intent intent = new Intent(ArtworkPlaybackConfig.ACTION_TEST).setPackage("com.android.systemui")
+                .putExtra("enabled", enabled).putExtra("revision", System.currentTimeMillis()).putExtra("localFixture", true);
         if (enabled) intent.putExtra("component", selected.component().flattenToString())
                 .putExtra("signer", selected.signingIdentity());
         sendBroadcast(intent);
-        status.setText(enabled ? (localFixture ? R.string.artwork_immersive_test_sent : R.string.artwork_live_test_sent) : R.string.artwork_immersive_test_disabled);
+        status.setText(enabled ? R.string.artwork_immersive_test_sent : R.string.artwork_immersive_test_disabled);
     }
 
     private EditText queryInput(LinearLayout parent, int hint) {

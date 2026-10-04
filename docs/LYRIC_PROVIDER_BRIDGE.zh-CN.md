@@ -58,5 +58,5 @@ Artwork Provider 是独立的普通 Android 资源 APK，与上述播放器歌�
 由用户选择具体组件和签名。该协议不承载歌词、session token、播放器 Hook 实现或歌词 Provider source 映射。
 Bridge 不因此增加播放器 scope、INTERNET 权限或恢复旧私有歌词 transport。
 
-SystemUI 动态封面与联网资源插件目前仅为 Debug 联调功能，正式展示配置尚未实现；实际状态
+SystemUI 动态封面由 Bridge 设置中的“动态封面”页控制（默认关闭），目前仍在开发分支、尚未发布；实际状态
 见 [实施记录](DYNAMIC-ARTWORK-IMPLEMENTATION.zh-CN.md)。

@@ -34,6 +34,8 @@ public final class BridgeConfigBackupContractTest {
 
         assertTrue(repository.contains("LyricUiSettings.PREFERENCES_NAME"));
         assertTrue(repository.contains("BridgeDebugConfig.PREFS_NAME"));
+        assertTrue(repository.contains("ArtworkDisplaySettings.PREFERENCES"));
+        assertTrue(repository.contains("ArtworkSettingsRepository.revalidate(context)"));
         assertTrue(repository.contains("restoreAll"));
         assertTrue(repository.contains("clearAll"));
         assertTrue(repository.contains("previous = snapshot(context)"));
@@ -49,6 +51,7 @@ public final class BridgeConfigBackupContractTest {
         assertTrue(sync.contains("ACTION_PLAYER_TRANSLATION_SETTINGS_CHANGED"));
         assertTrue(sync.contains("ACTION_CONTENT_CLEANUP_CHANGED"));
         assertTrue(sync.contains("ACTION_DEBUG_SETTINGS_CHANGED"));
+        assertTrue(sync.contains("ArtworkDisplaySettings.ACTION_CHANGED"));
         assertTrue(sync.contains("SOURCE_CONFIG_BACKUP"));
     }
 

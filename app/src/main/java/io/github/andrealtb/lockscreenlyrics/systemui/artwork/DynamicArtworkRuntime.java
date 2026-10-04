@@ -56,8 +56,16 @@ public final class DynamicArtworkRuntime {
     private volatile WeakReference<Object> source = new WeakReference<>(null);
     private volatile ArtworkSeedlingAccess seedling;
     private volatile WeakReference<ClassLoader> pluginLoader = new WeakReference<>(null);
-    private volatile boolean enabled;
-    private volatile boolean testEnabled;
+    /** A playback is running, from the saved settings or a debug test. */
+    private volatile boolean displayEnabled;
+    /** Saved settings as SystemUI last received them; a debug test overrides them while enabled. */
+    private ArtworkDisplaySettings settings = ArtworkDisplaySettings.defaults();
+    private ArtworkPlaybackConfig testConfig;
+    private ArtworkPlaybackConfig active = ArtworkPlaybackConfig.DISABLED;
+    private String activeSource = "off";
+    private final String settingsPermission;
+    private boolean settingsStarted;
+    private int settingsAttempts;
     private final java.util.function.Supplier<Context> context;
     private ArtworkDrawableTransition transition;
     private ArtworkImmersivePlayback playback;
@@ -66,46 +74,138 @@ public final class DynamicArtworkRuntime {
     private final AtomicBoolean displayPosted = new AtomicBoolean();
     private boolean systemInstalled;
 
-    public DynamicArtworkRuntime(HookInstaller hooks, Handler main, java.util.function.Supplier<Context> context) {
+    public DynamicArtworkRuntime(HookInstaller hooks, Handler main, java.util.function.Supplier<Context> context,
+            String settingsPermission) {
         this.hooks = hooks;
         this.main = main;
         this.context = context;
+        this.settingsPermission = settingsPermission;
         registry = new ArtworkSessionRegistry(main, context);
         main.post(() -> registry.setSourceReader(this::readCurrentSource));
     }
 
-    public void applyImmersiveTest(ArtworkImmersiveTestConfig config) {
+    /** Debug fixture test: overrides the saved settings until it is switched off. */
+    public void applyImmersiveTest(ArtworkPlaybackConfig config) {
         main.post(() -> {
-            if (playback != null) { playback.close(); playback = null; }
-            testEnabled = false;
-            if (transition != null) transition.clear();
-            try {
-                if (config.enabled()) {
-                    Context application = context.get();
-                    if (application == null) throw new IllegalStateException("context_missing");
-                    if (transition == null) installTransitionObservation();
-                    playback = new ArtworkImmersivePlayback(application, transition, config, this::updateDisplay);
-                    testEnabled = true;
-                }
-                trace.state("ARTWORK_TEST_CONFIG", () -> "enabled=" + testEnabled + " revision=" + config.revision()
-                        + " mode=" + (config.localFixture() ? "local_fixture" : "live_query") + " keepAwake=" + config.keepAwake()
-                        + " persistentEnabled=false");
-            } catch (Exception error) {
-                trace.state("ARTWORK_TEST_FALLBACK", () -> "reason=test_setup_failed errorType=" + ArtworkTrace.errorType(error));
-            }
-            refreshHosts();
-            if (observing()) refreshSource();
-            else suspendObservations();
+            testConfig = config.enabled() ? config : null;
+            activate();
         });
     }
 
-    /** Applies to the running test only; the next test enable carries the saved choice itself. */
-    public void applyKeepAwake(boolean keepAwake) {
-        main.post(() -> {
-            if (playback != null) playback.setKeepAwake(keepAwake);
-            boolean running = playback != null;
-            trace.state("ARTWORK_KEEP_AWAKE_CONFIG", () -> "enabled=" + keepAwake + " testRunning=" + running);
-        });
+    /** Starts or changes the playback for the effective config; presentation-only changes keep the decoder. */
+    private void activate() {
+        ArtworkPlaybackConfig next = testConfig != null ? testConfig : settings.playback();
+        String source = testConfig != null ? "debug_test" : next.enabled() ? "settings" : "off";
+        if (next.equals(active) && source.equals(activeSource)) return;
+        if (playback != null && next.sameSession(active)) {
+            active = next;
+            activeSource = source;
+            playback.setKeepAwake(next.keepAwake());
+            traceConfig("decoderKept=true");
+            updateDisplay();
+            return;
+        }
+        if (playback != null) { playback.close(); playback = null; }
+        displayEnabled = false;
+        active = next;
+        activeSource = source;
+        // Transition knowledge outlives a playback: clearing it forgets starts the native cover will not repeat.
+        try {
+            if (next.enabled()) {
+                Context application = context.get();
+                if (application == null) throw new IllegalStateException("context_missing");
+                if (transition == null) installTransitionObservation();
+                playback = new ArtworkImmersivePlayback(application, transition, next, this::updateDisplay);
+                displayEnabled = true;
+            }
+            traceConfig("decoderKept=false");
+        } catch (Exception error) {
+            active = ArtworkPlaybackConfig.DISABLED;
+            activeSource = "off";
+            trace.state("ARTWORK_TEST_FALLBACK", () -> "reason=test_setup_failed errorType=" + ArtworkTrace.errorType(error));
+        }
+        refreshHosts();
+        if (observing()) refreshSource();
+        else suspendObservations();
+    }
+
+    private void traceConfig(String detail) {
+        ArtworkPlaybackConfig config = active;
+        String source = activeSource;
+        trace.state("ARTWORK_DISPLAY_CONFIG", () -> "source=" + source + " enabled=" + displayEnabled
+                + " revision=" + config.revision() + " mode=" + (config.localFixture() ? "local_fixture" : "live_query")
+                + " card=" + config.cardEnabled() + " largeCover=" + config.immersiveEnabled()
+                + " keepAwake=" + config.keepAwake() + " " + detail);
+    }
+
+    /**
+     * The saved settings channel belongs to the artwork runtime itself, so the display neither waits
+     * for nor depends on the lyric bootstrap. Retries until SystemUI has an application context.
+     * Exported but protected by the Bridge signature permission, like the lyric settings receiver.
+     */
+    @android.annotation.SuppressLint("UnspecifiedRegisterReceiverFlag")
+    private void startSettings() {
+        if (settingsStarted) return;
+        Context application = context.get();
+        if (application == null) {
+            if (++settingsAttempts <= 60) main.postDelayed(this::startSettings, 1_000);
+            return;
+        }
+        settingsStarted = true;
+        try {
+            settings = ArtworkDisplaySettings.load(application.getSharedPreferences(ArtworkDisplaySettings.PREFERENCES, Context.MODE_PRIVATE));
+            log("ARTWORK_SETTINGS_LOADED", "revision=" + settings.revision() + " active=" + settings.active());
+        } catch (RuntimeException error) {
+            log("ARTWORK_SETTINGS_LOADED", "failed=true errorType=" + ArtworkTrace.errorType(error));
+        }
+        activate();
+        android.content.BroadcastReceiver receiver = new android.content.BroadcastReceiver() {
+            @Override public void onReceive(Context receiverContext, android.content.Intent intent) {
+                if (intent == null) return;
+                String action = intent.getAction();
+                try {
+                    if (ArtworkDisplaySettings.ACTION_CHANGED.equals(action)) receiveSettings(application, intent);
+                    else if (ArtworkDisplaySettings.ACTION_REQUEST_STATUS.equals(action)) replyStatus(intent);
+                    else if (ArtworkPlaybackConfig.ACTION_TEST.equals(action)) applyImmersiveTest(ArtworkPlaybackConfig.readTest(intent));
+                } catch (RuntimeException error) {
+                    ArtworkTrace.observerFailure("artwork-settings", error);
+                }
+            }
+        };
+        android.content.IntentFilter filter = new android.content.IntentFilter(ArtworkDisplaySettings.ACTION_CHANGED);
+        filter.addAction(ArtworkDisplaySettings.ACTION_REQUEST_STATUS);
+        filter.addAction(ArtworkPlaybackConfig.ACTION_TEST);
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 33) {
+                application.registerReceiver(receiver, filter, settingsPermission, main, Context.RECEIVER_EXPORTED);
+            } else {
+                application.registerReceiver(receiver, filter, settingsPermission, main);
+            }
+        } catch (RuntimeException error) {
+            log("ARTWORK_SETTINGS_CHANNEL", "registered=false errorType=" + ArtworkTrace.errorType(error));
+        }
+    }
+
+    private void receiveSettings(Context application, android.content.Intent intent) {
+        ArtworkDisplaySettings next = ArtworkDisplaySettings.fromIntent(intent);
+        try { next.persist(application.getSharedPreferences(ArtworkDisplaySettings.PREFERENCES, Context.MODE_PRIVATE)); }
+        catch (RuntimeException error) { log("ARTWORK_SETTINGS_SAVED", "failed=true errorType=" + ArtworkTrace.errorType(error)); }
+        settings = next;
+        activate();
+    }
+
+    @SuppressWarnings("deprecation")
+    private void replyStatus(android.content.Intent intent) {
+        android.os.ResultReceiver receiver = intent.getParcelableExtra(ArtworkDisplaySettings.EXTRA_RESULT_RECEIVER);
+        if (receiver == null) return;
+        android.os.Bundle result = new android.os.Bundle();
+        result.putLong(ArtworkDisplaySettings.STATUS_REVISION, settings.revision());
+        result.putString(ArtworkDisplaySettings.STATUS_SOURCE, activeSource);
+        result.putBoolean(ArtworkDisplaySettings.STATUS_ACTIVE, displayEnabled);
+        result.putBoolean(ArtworkDisplaySettings.STATUS_HOOKS, systemInstalled);
+        result.putString(ArtworkDisplaySettings.STATUS_STATE, playback == null ? "off" : playback.status());
+        result.putLong(ArtworkDisplaySettings.STATUS_AGE_MS, playback == null ? -1 : playback.statusAgeMs());
+        receiver.send(0, result);
     }
 
     private void installTransitionObservation() throws Exception {
@@ -127,7 +227,7 @@ public final class DynamicArtworkRuntime {
                         return false;
                     }
                     @Override public void before(Object receiver, Object[] args) {
-                        if (!testEnabled || android.os.Looper.myLooper() != main.getLooper()) return;
+                        if (!displayEnabled || android.os.Looper.myLooper() != main.getLooper()) return;
                         if (method.getName().equals("draw") && owned(receiver)) {
                             for (Host host : hosts) {
                                 ImageView image = host.image.get();
@@ -144,8 +244,12 @@ public final class DynamicArtworkRuntime {
                         }
                     }
                     @Override public void observe(Object receiver, Object[] args, Object result) {
-                        if (!testEnabled || android.os.Looper.myLooper() != main.getLooper()) return;
+                        if (android.os.Looper.myLooper() != main.getLooper()) return;
                         String stage = method.getName();
+                        // Starts and resets are rare and recorded even while the display is off. Device log
+                        // 033854: a song changed while both surfaces were off, its crossfade start went
+                        // unrecorded, and the large cover then stayed static for that drawable for good.
+                        if (!displayEnabled && (stage.equals("draw") || stage.equals("invalidateSelf"))) return;
                         if (stage.equals("invalidateSelf")) {
                             reader.invalidate((android.graphics.drawable.Drawable) receiver);
                             return;
@@ -182,7 +286,9 @@ public final class DynamicArtworkRuntime {
         List<ArtworkImmersivePlayback.Candidate> candidates = new ArrayList<>();
         for (Host host : hosts) {
             ImageView image = host.image.get();
-            if (host.attached && host.epoch == pluginEpoch.get() && image != null && !host.model.splitModel
+            boolean surfaceEnabled = host.surface == ArtworkPlaybackPolicy.Surface.IMMERSIVE
+                    ? active.immersiveEnabled() : active.cardEnabled();
+            if (surfaceEnabled && host.attached && host.epoch == pluginEpoch.get() && image != null && !host.model.splitModel
                     && host.displayBinding != null && (host.surface == ArtworkPlaybackPolicy.Surface.IMMERSIVE
                         ? shapeObservationReady : cardEffects != null)) {
                 candidates.add(new ArtworkImmersivePlayback.Candidate(image, host.displayBinding, host.surface, cardEffects));
@@ -194,18 +300,9 @@ public final class DynamicArtworkRuntime {
         playback.observe(candidates);
     }
 
-    /** Later called by the protected artwork settings channel. Default is false. */
-    public void setEnabled(boolean enabled) {
-        main.post(() -> {
-            this.enabled = enabled;
-            if (!observing()) { pendingSource.set(null); suspendObservations(); }
-            else { refreshSource(); refreshHosts(); }
-        });
-    }
-
     public void onDiagnosticsChanged() {
         main.post(() -> {
-            trace.state("ARTWORK_RUNTIME_STATE", () -> "observing=" + observing() + " productEnabled=" + enabled
+            trace.state("ARTWORK_RUNTIME_STATE", () -> "observing=" + observing() + " displaySource=" + activeSource
                     + " sourceInstalled=" + systemInstalled + " sourceAlive=" + (source.get() != null)
                     + " pluginEpoch=" + pluginEpoch.get() + " hostCount=" + hosts.size() + " flowHookCount=" + flowHandles.size());
             if (!observing()) { pendingSource.set(null); suspendObservations(); }
@@ -215,10 +312,11 @@ public final class DynamicArtworkRuntime {
 
     private boolean observing() {
         // With product enablement off, MEDIA debug permits read-only binding diagnostics only.
-        return enabled || testEnabled || StructuredBridgeLog.isAreaEnabled(BridgeDebugArea.MEDIA);
+        return displayEnabled || StructuredBridgeLog.isAreaEnabled(BridgeDebugArea.MEDIA);
     }
 
     public synchronized void initializeSystemUi(ClassLoader loader) {
+        main.post(this::startSettings);
         if (systemInstalled) return;
         List<Runnable> installed = new ArrayList<>();
         try {
@@ -313,11 +411,11 @@ public final class DynamicArtworkRuntime {
             for (Method method : new Method[]{access.bitmapSetter, access.angleSetter}) {
                 installed.add(hooks.install(method, "artwork-card-effect-" + method.getName(), new AfterCall() {
                     @Override public void before(Object receiver, Object[] args) {
-                        if (!testEnabled || playback == null || android.os.Looper.myLooper() != main.getLooper()) return;
+                        if (!displayEnabled || playback == null || android.os.Looper.myLooper() != main.getLooper()) return;
                         if (receiver instanceof ImageView image) playback.invalidate(image);
                     }
                     @Override public void observe(Object receiver, Object[] args, Object result) {
-                        if (!testEnabled || android.os.Looper.myLooper() != main.getLooper()) return;
+                        if (!displayEnabled || android.os.Looper.myLooper() != main.getLooper()) return;
                         for (Host host : hosts) if (host.attached && host.surface == ArtworkPlaybackPolicy.Surface.LOCKSCREEN_CARD
                                 && host.image.get() == receiver) {
                             trace.state("ARTWORK_TEST_CARD_EFFECT", () -> "stage=" + method.getName()
@@ -647,11 +745,11 @@ public final class DynamicArtworkRuntime {
             if (!attached || epoch != pluginEpoch.get()) return;
             if (ArtworkTrace.enabled()) probe.start();
             else probe.close();
-            if (!testEnabled && displayTree != null) {
+            if (!displayEnabled && displayTree != null) {
                 if (displayTree.isAlive()) displayTree.removeOnPreDrawListener(displayLayout);
                 displayTree = null;
             }
-            if (testEnabled && displayTree == null) {
+            if (displayEnabled && displayTree == null) {
                 ImageView nativeImage = image.get();
                 if (nativeImage != null) {
                     displayTree = nativeImage.getViewTreeObserver();

@@ -6,6 +6,25 @@ import java.util.List;
 import static org.junit.Assert.*;
 
 public class ArtworkTransitionRegistryTest {
+    @Test public void startRecordedWhileTheDisplayWasOffCompletesWhenTheSurfaceReturns() {
+        // Device log 033854: the display was off when the song's crossfade started; once surfaces came
+        // back, the remembered start must let the next owned draw complete instead of staying static.
+        var registry = new ArtworkTransitionRegistry();
+        Object cover = new Object();
+        registry.beginDraw(cover);
+        registry.endDraw(cover);
+        registry.release(cover);
+        registry.start(cover);
+        assertFalse(registry.complete(cover));
+        registry.beginDraw(cover);
+        registry.endDraw(cover);
+        assertTrue(registry.complete(cover));
+        registry.release(cover);
+        assertFalse("a released claim cannot display until drawn again", registry.complete(cover));
+        registry.beginDraw(cover);
+        registry.endDraw(cover);
+        assertTrue(registry.complete(cover));
+    }
     @Test public void startBeforeHostAttachCanCompleteOnlyAfterTheExactOwnedDraw() {
         var registry = new ArtworkTransitionRegistry();
         Object first = new Object(), unrelated = new Object();
