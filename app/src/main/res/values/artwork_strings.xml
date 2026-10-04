@@ -19,6 +19,8 @@
     <string name="artwork_immersive_test_disable">关闭锁屏动画联调</string>
     <string name="artwork_immersive_test_sent">已发送测试开启请求，请锁屏查看小卡片或大封面；实际结果见日志</string>
     <string name="artwork_immersive_test_disabled">已发送测试关闭请求</string>
+    <string name="artwork_keep_awake">动态封面播放时保持屏幕常亮</string>
+    <string name="artwork_keep_awake_hint">仅在大封面上动态封面实际播放时保持亮屏；暂停、按电源键进入息屏/AOD、解锁或回到小卡片时释放，之后按系统超时正常熄屏。与“歌词显示时保持屏幕点亮”各自独立，任一满足即保持亮屏。切换后立即作用于正在运行的联调。</string>
     <string name="artwork_none">未选择有效插件</string>
     <string name="artwork_select">选择测试插件</string>
     <string name="artwork_provider_settings">打开插件设置</string>

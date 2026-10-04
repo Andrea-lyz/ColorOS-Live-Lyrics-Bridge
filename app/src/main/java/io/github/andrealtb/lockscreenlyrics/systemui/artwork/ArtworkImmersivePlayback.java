@@ -45,6 +45,7 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
     private long retryAt = Long.MAX_VALUE;
     private long retryDelay = Long.MAX_VALUE;
     private final ArtworkRetryWakeup wakeup;
+    private final ArtworkScreenAwake keepAwake;
     private final Runnable refreshDisplay;
     private final android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
     private final ArtworkNetworkRecovery networkRecovery = new ArtworkNetworkRecovery();
@@ -71,6 +72,7 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
         @Override public void onReceive(Context ctx, Intent intent) {
             screenBlocked = !Intent.ACTION_SCREEN_ON.equals(intent.getAction());
             if (!screenBlocked) return;
+            keepAwake.releaseNow(Intent.ACTION_USER_PRESENT.equals(intent.getAction()) ? "unlocked" : "screen_off");
             // Screen-off hides the layer and drops a finished player; an issued download keeps running.
             wakeup.cancel(); suspendVisual(); awaitingNetwork = false; networkRecoveryPending = false;
             if (!resolvingResource) { stop(); attempted = null; attemptedImage = null; }
@@ -85,10 +87,15 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
         this.config = config;
         this.refreshDisplay = refreshDisplay;
         android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
-        wakeup = new ArtworkRetryWakeup(new ArtworkRetryWakeup.Scheduler() {
+        ArtworkRetryWakeup.Scheduler scheduler = new ArtworkRetryWakeup.Scheduler() {
             @Override public void post(Runnable task, long delayMs) { handler.postDelayed(task, delayMs); }
             @Override public void remove(Runnable task) { handler.removeCallbacks(task); }
-        });
+        };
+        wakeup = new ArtworkRetryWakeup(scheduler);
+        keepAwake = new ArtworkScreenAwake(ArtworkScreenAwake.device(this.context,
+                failure -> trace.state("ARTWORK_KEEP_AWAKE", () -> failure)), scheduler,
+                this::keepAwakeState, state -> trace.state("ARTWORK_KEEP_AWAKE", () -> state));
+        keepAwake.setEnabled(config.keepAwake());
         client = new ArtworkProviderClient(this.context);
         IntentFilter filter = new IntentFilter(Intent.ACTION_SCREEN_OFF);
         filter.addAction(Intent.ACTION_SCREEN_ON);
@@ -109,6 +116,27 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
     }
 
     public void observe(List<Candidate> candidates) {
+        try { select(candidates); }
+        finally { keepAwake.update(); }
+    }
+
+    /** Debug keep-awake choice, changed without restarting the running test. */
+    public void setKeepAwake(boolean enabled) {
+        if (!closed) keepAwake.setEnabled(enabled);
+    }
+
+    /** {@link ArtworkScreenAwake#PLAYING} only while the motion cover is visibly playing on the large cover. */
+    private String keepAwakeState() {
+        if (closed) return "closed";
+        if (renderer == null || !renderer.isShowing()) return "no_video";
+        if (renderCandidate == null || renderCandidate.surface() != ArtworkPlaybackPolicy.Surface.IMMERSIVE) return "card_surface";
+        if (surfaceHoldSince >= 0) return "surface_switch";
+        if (current == null || current.image() != renderCandidate.image()) return "not_current";
+        String reason = eligibilityReason(current);
+        return reason.equals("eligible") ? ArtworkScreenAwake.PLAYING : reason;
+    }
+
+    private void select(List<Candidate> candidates) {
         if (closed) return;
         latestCandidates = List.copyOf(candidates);
         Candidate selected = null;
@@ -356,6 +384,7 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
                     + " state=" + reason + " clientEpoch=" + epoch);
             if (reason.equals("stale_render") && surfaceHoldSince >= 0) { attempted = null; attemptedImage = null; }
             if (!reason.equals("preparing") && !reason.equals("waiting_first_frame") && !reason.equals("playing")) failure(reason);
+            keepAwake.update();
         }, mount.fitXY());
         mount.show(true);
     }
@@ -441,6 +470,7 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
         playingForPx = 0;
         if (renderer != null) { renderer.close(); renderer = null; }
         if (mount != null) { mount.close(); mount = null; }
+        keepAwake.update();
     }
 
     /** Same size rule as the provider query: the larger host side, capped at the contract resolution. */
@@ -548,6 +578,7 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
         main.removeCallbacks(networkPulse);
         if (networkRegistered) try { connectivity.unregisterNetworkCallback(networkCallback); }
         catch (RuntimeException ignored) { /* service teardown */ }
+        keepAwake.close();
         wakeup.close();
         stop();
         context.unregisterReceiver(screen);

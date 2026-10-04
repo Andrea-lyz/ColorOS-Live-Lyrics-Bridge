@@ -59,6 +59,11 @@ public final class DynamicArtworkRenderer implements AutoCloseable, TextureView.
         return !closed && active != null && active.started && active.player != null;
     }
 
+    /** The first frame is on screen: false while preparing, between a handover and its next frame, and after stop. */
+    public boolean isShowing() {
+        return isPlaying() && session.visible;
+    }
+
     /** Replace a surface lease with a bounded same-song transition lease; the decoder keeps running. */
     public boolean retain(ArtworkRenderGuard guard) {
         requireMain();

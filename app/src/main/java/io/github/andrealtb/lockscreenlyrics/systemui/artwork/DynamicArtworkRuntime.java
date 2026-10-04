@@ -88,13 +88,23 @@ public final class DynamicArtworkRuntime {
                     testEnabled = true;
                 }
                 trace.state("ARTWORK_TEST_CONFIG", () -> "enabled=" + testEnabled + " revision=" + config.revision()
-                        + " mode=" + (config.localFixture() ? "local_fixture" : "live_query") + " persistentEnabled=false");
+                        + " mode=" + (config.localFixture() ? "local_fixture" : "live_query") + " keepAwake=" + config.keepAwake()
+                        + " persistentEnabled=false");
             } catch (Exception error) {
                 trace.state("ARTWORK_TEST_FALLBACK", () -> "reason=test_setup_failed errorType=" + ArtworkTrace.errorType(error));
             }
             refreshHosts();
             if (observing()) refreshSource();
             else suspendObservations();
+        });
+    }
+
+    /** Applies to the running test only; the next test enable carries the saved choice itself. */
+    public void applyKeepAwake(boolean keepAwake) {
+        main.post(() -> {
+            if (playback != null) playback.setKeepAwake(keepAwake);
+            boolean running = playback != null;
+            trace.state("ARTWORK_KEEP_AWAKE_CONFIG", () -> "enabled=" + keepAwake + " testRunning=" + running);
         });
     }
 

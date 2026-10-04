@@ -19,6 +19,8 @@
     <string name="artwork_immersive_test_disable">Disable lockscreen artwork test</string>
     <string name="artwork_immersive_test_sent">Test enable request sent. Check the lockscreen card or large cover and logs.</string>
     <string name="artwork_immersive_test_disabled">Test disable request sent</string>
+    <string name="artwork_keep_awake">Keep the screen on while the motion cover plays</string>
+    <string name="artwork_keep_awake_hint">Keeps the screen on only while a motion cover is actually playing on the large cover. Pausing, pressing the power button to go to sleep or AOD, unlocking, or returning to the small card releases it, and the normal screen timeout applies again. Independent of “Keep screen on while lyrics are shown”: the screen stays on while either applies. Changes apply to a running test immediately.</string>
     <string name="artwork_none">No valid provider selected</string>
     <string name="artwork_select">Select test provider</string>
     <string name="artwork_provider_settings">Open provider settings</string>

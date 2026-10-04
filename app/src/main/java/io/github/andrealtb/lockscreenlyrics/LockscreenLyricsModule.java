@@ -10602,6 +10602,8 @@ public final class LockscreenLyricsModule extends XposedModule {
                     } else if (ArtworkImmersiveTestConfig.ACTION.equals(intent.getAction())) {
                         try { dynamicArtworkRuntime.applyImmersiveTest(ArtworkImmersiveTestConfig.read(intent)); }
                         catch (RuntimeException error) { ArtworkTrace.observerFailure("immersive-test-config", error); }
+                    } else if (ArtworkImmersiveTestConfig.ACTION_KEEP_AWAKE.equals(intent.getAction())) {
+                        dynamicArtworkRuntime.applyKeepAwake(ArtworkImmersiveTestConfig.readKeepAwake(intent));
                     } else if (LyricUiSettings.ACTION_RESTART_SYSTEM_UI.equals(
                             intent.getAction())) {
                         handleSystemUiRestartRequest(intent);
@@ -10616,6 +10618,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 filter.addAction(LyricUiSettings.ACTION_CONTENT_CLEANUP_CHANGED);
                 filter.addAction(LyricUiSettings.ACTION_DEBUG_SETTINGS_CHANGED);
                 filter.addAction(ArtworkImmersiveTestConfig.ACTION);
+                filter.addAction(ArtworkImmersiveTestConfig.ACTION_KEEP_AWAKE);
                 filter.addAction(LyricUiSettings.ACTION_RESTART_SYSTEM_UI);
                 if (Build.VERSION.SDK_INT >= 33) {
                     appContext.registerReceiver(

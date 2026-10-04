@@ -526,7 +526,9 @@ onPrepared 不等于首帧已经显示。监听 rendering-start 和 TextureView 
 
 一个 MediaPlayer 只有一个输出 Surface。首版进程内最多一处播放，优先有效沉浸页，再普通锁屏卡；
 多个可见卡片竞争时根据精确宿主选择，不为所有卡片各建解码器。
-不新增 WakeLock，不调用歌词 keep-awake，不通过假 PLAYING/position/speed 唤醒 SystemUI。
+不调用歌词 keep-awake，不通过假 PLAYING/position/speed 唤醒 SystemUI。默认不持有 WakeLock；
+2026-10-04 起按用户需求提供默认关闭的“动态封面播放时保持屏幕常亮”，仅在大封面视频实际播放时持有独立锁，
+暂停、息屏/AOD、解锁即释放，与歌词保活互不影响（见 [fix18](DYNAMIC-ARTWORK-AM-FIX18-TEST.zh-CN.md)）。
 播放速度不跟随歌曲倍速，视频是专辑循环资源，不按歌曲 position seek。
 
 ## 10. 设置、隐私与备份
