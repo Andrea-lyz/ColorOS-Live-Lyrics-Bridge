@@ -46,6 +46,20 @@ for ($index = 0; $index -lt $expectedScope.Count; $index++) {
 Assert-Contract ($contract.providerApkCount -eq 14) 'release must contain exactly 14 Provider APKs'
 Assert-Contract ($contract.totalApkCount -eq (1 + $contract.providerApkCount)) 'totalApkCount must equal Bridge plus Providers'
 Assert-Contract ($contract.totalReleaseAssetCount -eq ($contract.totalApkCount + 3)) 'asset count must include APKs, bundle, checksums, and manifest'
+
+$previewArtwork = $contract.previewArtworkProvider
+Assert-Contract ($null -ne $previewArtwork) 'preview artwork Provider section is missing'
+$artworkRepository = [string]$previewArtwork.repository
+Assert-Contract ($artworkRepository -match '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') 'preview artwork repository must be owner/name'
+Assert-Contract ([string]$previewArtwork.ref -match '^[0-9a-f]{40}$') 'preview artwork Provider ref must be a pinned commit SHA'
+Assert-Contract ([string]$previewArtwork.applicationId -eq 'io.github.andrealtb.artwork.am') 'preview artwork applicationId differs'
+Assert-Contract ([string]$previewArtwork.versionName -match '^\d+\.\d+\.\d+$') 'preview artwork versionName must be SemVer'
+Assert-Contract ([int]$previewArtwork.versionCode -ge 1) 'preview artwork versionCode must be positive'
+Assert-Contract ([string]$previewArtwork.asset -eq "ColorOS-Live-Lyrics-Dynamic-Artwork-Provider-v$($previewArtwork.versionName).apk") 'preview artwork asset name differs'
+Assert-Contract (-not [string]::IsNullOrWhiteSpace([string]$previewArtwork.module)) 'preview artwork module is missing'
+Assert-Contract (-not [string]::IsNullOrWhiteSpace([string]$previewArtwork.buildTask)) 'preview artwork build task is missing'
+Assert-Contract (-not [string]::IsNullOrWhiteSpace([string]$previewArtwork.mirrorTask)) 'preview artwork mirror task is missing'
+
 $forbiddenApkAscii = @($contract.forbiddenApkAscii)
 Assert-Contract ($forbiddenApkAscii.Count -ge 20) 'forbidden APK string set is incomplete'
 Assert-Contract (($forbiddenApkAscii | Select-Object -Unique).Count -eq $forbiddenApkAscii.Count) 'forbidden APK strings contain duplicates'
@@ -94,6 +108,15 @@ if (-not [string]::IsNullOrWhiteSpace($ProviderRepoRoot)) {
     Assert-Contract ($providerContract.sourceTag -eq $contract.providersSourceTag) 'Provider source tag differs'
     Assert-Contract (@($providerContract.providers).Count -eq $contract.providerApkCount) 'Provider count differs'
     Assert-Contract ($providerContract.bundleAsset -eq $contract.providerBundleAsset) 'Provider bundle asset differs'
+
+    $providerArtwork = @($providerContract.artworkProviders)
+    Assert-Contract ($providerArtwork.Count -eq 1) 'Provider matrix must declare exactly one artwork Provider'
+    Assert-Contract ([string]$providerArtwork[0].module -eq [string]$previewArtwork.module) 'artwork Provider module differs between contracts'
+    Assert-Contract ([string]$providerArtwork[0].applicationId -eq [string]$previewArtwork.applicationId) 'artwork Provider applicationId differs between contracts'
+    Assert-Contract ([string]$providerArtwork[0].versionName -eq [string]$previewArtwork.versionName) 'artwork Provider versionName differs between contracts'
+    Assert-Contract ([int]$providerArtwork[0].versionCode -eq [int]$previewArtwork.versionCode) 'artwork Provider versionCode differs between contracts'
+    Assert-Contract ([string]$providerArtwork[0].asset -eq [string]$previewArtwork.asset) 'artwork Provider asset differs between contracts'
+    Assert-Contract ([string]$providerArtwork[0].distribution -eq 'bridge-preview') 'artwork Provider distribution must stay bridge-preview'
 }
 
 Write-Output "Bridge release contract is valid: $($contract.releaseTag), versionCode=$($contract.versionCode), providers=$($contract.providerApkCount)."

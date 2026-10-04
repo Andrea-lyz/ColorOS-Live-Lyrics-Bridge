@@ -596,10 +596,14 @@ C16 adapter 内部继续按字段/方法能力拆分 profile，不假定同一�
 - 设置同步/备份：独立封面配置域及所选插件身份恢复验证。
 - diagnostics：artwork area/events、脱敏与节流。
 
-独立 Artwork Provider 的仓库/目录、applicationId、签名与发布方式在实施时确认并冻结；本次不创建项目。
+独立 Artwork Provider 的仓库/目录、applicationId、签名与发布方式已冻结（2026-10-04）：代码在
+Providers 仓库 `artwork-provider-am/`，applicationId 保持 `io.github.andrealtb.artwork.am`，
+版本从 1.0.0 起，使用与歌词 Provider 相同的发布签名；协议契约仍以本仓库 `artwork-contract/` 为准，
+Providers 侧保留镜像并由 `scripts/verify-artwork-contract.ps1` 逐文件校验。
 其代码包含 resolver、candidate matching、download、cache、asset lease、service 和自身设置/预览。
-它不加入当前播放器歌词矩阵作为一个“新播放器”，正式发布必须单独说明可选安装和签名。
-是否随套件提供可选下载资产在发版任务中决定，本设计不修改当前资产数量或版本契约。
+它不是当前播放器歌词矩阵的一员，正式发布必须单独说明可选安装和签名。
+当前只作为 Bridge 预览版的附加资产发布（`previewArtworkProvider`），v5 资产数量与版本契约不变；
+是否进入正式套件资产在后续发版任务中决定。
 
 ## 12. 日志与诊断
 

@@ -29,6 +29,8 @@ This is not a floating overlay. It passes a player's full lyric timeline to the 
 - Preserves the media card's original previous, play/pause, next, and other controls.
 - Handles rapid track changes, pause/resume, AOD transitions, repeated lines, and long CJK text more reliably.
 
+Optional dynamic artwork is developed on a separate branch and ships as a preview release (for example `v4.4.0-C16-Artwork`): with the optional [Dynamic Artwork Provider](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Providers/blob/main/artwork-provider-am/README.md) installed, the lock screen's small lyric cover and large cover can play the current song's square motion cover. It is not part of the v4.4.0 release and is documented in the preview release notes.
+
 ## Before you install
 
 This module is intended for devices that meet all of these requirements:
@@ -168,6 +170,7 @@ If your player already has a full lyric timeline, the preferred integration is t
 - [Bridge and LyricProvider responsibilities (Chinese)](docs/LYRIC_PROVIDER_BRIDGE.zh-CN.md)
 - [Dynamic artwork Provider and Bridge design (Chinese)](docs/DYNAMIC-ARTWORK-PROVIDER-PLAN.zh-CN.md)
 - [Dynamic artwork implementation status (Chinese; unreleased development branch, verified on one C16 device)](docs/DYNAMIC-ARTWORK-IMPLEMENTATION.zh-CN.md)
+- [Dynamic Artwork Provider source (lives in the Providers repository)](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Providers/blob/main/artwork-provider-am/README.md) and its [protocol contract](artwork-contract/README.md)
 
 ## Building locally
 

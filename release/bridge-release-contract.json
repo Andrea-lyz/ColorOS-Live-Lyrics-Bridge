@@ -21,6 +21,18 @@
   "providerApkCount": 14,
   "totalApkCount": 15,
   "totalReleaseAssetCount": 18,
+  "previewArtworkProvider": {
+    "repository": "Andrea-lyz/ColorOS-Live-Lyrics-Providers",
+    "ref": "bcde41f861c40e4e7be3d58ac991df64125e1272",
+    "module": "artwork-provider-am",
+    "buildTask": ":artwork-provider-am:assembleRelease",
+    "contractMirrorModule": "artwork-contract",
+    "mirrorTask": "verifyArtworkContract",
+    "applicationId": "io.github.andrealtb.artwork.am",
+    "versionName": "1.0.0",
+    "versionCode": 4,
+    "asset": "ColorOS-Live-Lyrics-Dynamic-Artwork-Provider-v1.0.0.apk"
+  },
   "forbiddenApkAscii": [
     "io.github.andrealtb.lockscreenlyrics.action.EXTERNAL_LYRIC_DIRECT_V4",
     "ExternalLyricIngress",

@@ -136,7 +136,7 @@ Lint 0 errors、47 warnings，Debug 构建通过；实际 getter、异步复核�
 | --- | --- |
 | `artwork-contract/` | 通用 AIDL、基础 DTO、Bundle 编码、当前签名集合和只读文件检查；不依赖 Bridge 业务或歌词 core |
 | `artwork-provider-local/` | 普通 Android 测试 APK，applicationId 为 `io.github.andrealtb.artwork.local` |
-| `artwork-provider-am/` | 独立联网测试 APK，applicationId 为 `io.github.andrealtb.artwork.am`；不抓 Web token，不进入宿主 |
+| 动态封面 Provider | 2026-10-04 迁至 Providers 仓库的 `artwork-provider-am/`（v1.0.0，applicationId 仍为 `io.github.andrealtb.artwork.am`）；协议契约仍以本仓库 `artwork-contract/` 为准，Provider 侧保留经校验的镜像 |
 | `app/.../systemui/artwork/ArtworkProviderDirectory` | 发现与显式组件/签名/声明版本校验 |
 | `app/.../systemui/artwork/ArtworkProviderClient` | 后台 IPC、请求期限、晚结果拒绝、FD 复核与死亡处理 |
 | `app/.../systemui/artwork/DynamicArtworkRenderer` | 本地 FD 播放、双重首帧门禁、进程内单播放器与释放 |

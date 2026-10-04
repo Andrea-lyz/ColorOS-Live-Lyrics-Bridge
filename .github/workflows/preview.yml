@@ -1,14 +1,17 @@
 name: Bridge Preview
 
-# Bridge-only preview for device testing. Pushing a tag such as v4.4.0-C17-Preview builds the
-# formally signed Bridge APK and publishes it as a GitHub pre-release that is never marked
-# latest. Providers are not built and the LSP mirror is never touched; formal releases stay on
-# release.yml, which ignores hyphenated tags.
+# Preview for device testing. Pushing a tag such as v4.4.0-C17-Preview builds the formally signed
+# Bridge APK and publishes it as a GitHub pre-release that is never marked latest. A tag ending
+# in -Artwork, for example v4.4.0-C16-Artwork, additionally builds the Dynamic Artwork Provider
+# from the pinned Providers commit in the release contract and ships it as a second asset. Lyric
+# Providers are not built and the LSP mirror is never touched; formal releases stay on release.yml,
+# which ignores hyphenated tags.
 
 on:
   push:
     tags:
       - "v*-Preview"
+      - "v*-Artwork"
 
 permissions:
   contents: write
@@ -40,8 +43,37 @@ jobs:
           if (-not (Test-Path -LiteralPath $notes -PathType Leaf)) {
               throw "Missing preview release notes: $notes"
           }
+          $contract = Get-Content -LiteralPath release/bridge-release-contract.json -Raw | ConvertFrom-Json
+          $artwork = $env:PREVIEW_TAG -like '*-Artwork'
+          if ($artwork) {
+              $artworkProvider = $contract.previewArtworkProvider
+              if ($null -eq $artworkProvider) {
+                  throw "Tag $($env:PREVIEW_TAG) needs contract.previewArtworkProvider"
+              }
+              "artwork_repository=$($artworkProvider.repository)" >> $env:GITHUB_OUTPUT
+              "artwork_ref=$($artworkProvider.ref)" >> $env:GITHUB_OUTPUT
+              "artwork_task=$($artworkProvider.buildTask)" >> $env:GITHUB_OUTPUT
+          }
           "tag=$($env:PREVIEW_TAG)" >> $env:GITHUB_OUTPUT
           "notes=$notes" >> $env:GITHUB_OUTPUT
+          "artwork=$($artwork.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+
+      - name: Checkout pinned artwork Provider source
+        if: steps.meta.outputs.artwork == 'true'
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ steps.meta.outputs.artwork_repository }}
+          ref: ${{ steps.meta.outputs.artwork_ref }}
+          path: provider-source
+
+      - name: Validate the artwork contract mirror and both contracts
+        if: steps.meta.outputs.artwork == 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./provider-source/scripts/verify-artwork-contract.ps1 -RepoRoot "$env:GITHUB_WORKSPACE/provider-source" -BridgeRepoRoot $env:GITHUB_WORKSPACE -Required
+          ./provider-source/scripts/validate-v5-release-contract.ps1 -RepoRoot "$env:GITHUB_WORKSPACE/provider-source"
+          ./scripts/validate-release-contract.ps1 -ProviderRepoRoot "$env:GITHUB_WORKSPACE/provider-source"
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5
@@ -81,6 +113,22 @@ jobs:
             :app:assembleRelease \
             -PreleaseTag="$PREVIEW_TAG"
 
+      - name: Build signed Dynamic Artwork Provider
+        if: steps.meta.outputs.artwork == 'true'
+        shell: bash
+        env:
+          RELEASE_STORE_FILE: ${{ runner.temp }}/release.jks
+          RELEASE_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          chmod +x ./provider-source/gradlew
+          ./provider-source/gradlew --no-daemon -p ./provider-source ${{ steps.meta.outputs.artwork_task }}
+          apk=$(find ./provider-source/artwork-provider-am/build/outputs/apk/release -maxdepth 1 -name '*.apk' | head -n 1)
+          test -n "$apk"
+          echo "ARTWORK_APK=$apk" >> "$GITHUB_ENV"
+
       - name: Remove release keystore
         if: always()
         shell: bash
@@ -109,7 +157,13 @@ jobs:
             -ApkPath app/build/outputs/apk/release/app-release.apk `
             -OutputDir ./preview-assets `
             -BuildToolsDir $env:BUILD_TOOLS `
-            -PreviewTag $env:PREVIEW_TAG
+            -PreviewTag $env:PREVIEW_TAG `
+            -ArtworkApkPath $env:ARTWORK_APK
+
+      - name: Remove the artwork Provider checkout
+        if: always()
+        shell: bash
+        run: rm -rf ./provider-source
 
       - name: Upload preview assets
         uses: actions/upload-artifact@v7
