@@ -70,10 +70,11 @@ final class AmIdentity {
         return a.equals(b) || credits(artist, title).equals(credits(otherArtist, otherTitle));
     }
     /** First credited name; album-level search only, before the track table is verified. */
-    static String primaryArtist(String artist) {
+    static String primaryArtist(String artist) { return normalize(leadCredit(artist)); }
+    /** The first credited name as written, for search terms shown to the user. */
+    static String leadCredit(String artist) {
         for (String part : CREDIT_SEPARATOR.split(Normalizer.normalize(artist == null ? "" : artist, Normalizer.Form.NFKC))) {
-            String name = normalize(part);
-            if (!name.isEmpty()) return name;
+            if (!normalize(part).isEmpty()) return part.trim();
         }
         return "";
     }

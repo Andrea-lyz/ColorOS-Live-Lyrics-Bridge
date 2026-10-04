@@ -4,6 +4,10 @@
 从 `feat/coloros17-adaptation` 的 `df7cf393d3a9ed928f4a409911179d989ccf2054` 建立。
 依据：[完整方案](DYNAMIC-ARTWORK-PROVIDER-PLAN.zh-CN.md)。
 
+2026-10-03 AM fix17：Bridge 每次请求都会解绑重绑，插件服务随之销毁，原先 `onDestroy` 中断工作线程使 fix6 的
+detached 下载实际未生效；工作线程与 detached 计数改为进程级。新增插件内手动绑定：把 Apple Music 专辑绑定到本地专辑名，
+命中时跳过曲目核对，不修改本地文件。见 [fix17 说明](DYNAMIC-ARTWORK-AM-FIX17-TEST.zh-CN.md)。
+
 2026-10-03 AM fix16：按用户提出的“以专辑为核心”原则，在同一专辑名与时长内，去掉客串段落后标题一致、
 双方主唱互相出现在对方署名中即视为同一曲目；版本词保留，无专辑名时不放宽。见 [fix16 说明](DYNAMIC-ARTWORK-AM-FIX16-TEST.zh-CN.md)。
 

@@ -40,17 +40,19 @@ final class AmCatalog {
         return verify(page(selected.albumId(), country), query, selected.songId(), "web_song_album");
     }
     private List<String> albumSearch(String artist, ArtworkQuery query, String country) throws AmFailure {
-        String albumsUri = "https://itunes.apple.com/search?term=" + encode(artist + " " + query.album)
-                + "&media=music&entity=album&country=" + country + "&limit=25";
-        return AmPage.albumIds(fetch.text(URI.create(albumsUri), 2 * 1024 * 1024), query.album, query.artist);
+        return AmPage.albumIds(fetch.text(albumSearchUri(artist + " " + query.album, country), 2 * 1024 * 1024), query.album, query.artist);
     }
+    static URI albumSearchUri(String term, String country) {
+        return URI.create("https://itunes.apple.com/search?term=" + encode(term) + "&media=music&entity=album&country=" + country + "&limit=25");
+    }
+    static URI pageUri(String country, String id) { return URI.create("https://music.apple.com/" + country + "/album/-/" + id); }
     private AmPage.Album verify(AmPage.Album album, ArtworkQuery query, String song, String stage) throws AmFailure {
         diagnostic.accept(stage, album.tracks());
         AmIdentity.unique(album.tracks(), query, song, album.id());
         return album;
     }
     private AmPage.Album page(String id, String country) throws AmFailure {
-        return AmPage.album(fetch.text(URI.create("https://music.apple.com/" + country + "/album/-/" + id), 3 * 1024 * 1024), id);
+        return AmPage.album(fetch.text(pageUri(country, id), 3 * 1024 * 1024), id);
     }
     private static String encode(String value) {
         try { return URLEncoder.encode(value, "UTF-8"); }

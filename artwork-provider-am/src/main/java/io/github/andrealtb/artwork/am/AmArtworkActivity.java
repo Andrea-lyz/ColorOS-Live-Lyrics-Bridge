@@ -54,6 +54,8 @@ public final class AmArtworkActivity extends Activity {
         });
         Button clear = new Button(this); clear.setText(R.string.clear); content.addView(clear);
         clear.setOnClickListener(view -> { AmCache.get(this).clear(); status.setText(R.string.cleared); });
+        Button binding = new Button(this); binding.setText(R.string.binding_open); content.addView(binding);
+        binding.setOnClickListener(view -> startActivity(new android.content.Intent(this, AmBindingActivity.class)));
         ScrollView scroll = new ScrollView(this); scroll.addView(content); setContentView(scroll);
     }
 }

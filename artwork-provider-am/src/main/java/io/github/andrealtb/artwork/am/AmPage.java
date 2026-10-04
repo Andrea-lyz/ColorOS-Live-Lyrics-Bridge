@@ -11,6 +11,8 @@ import io.github.andrealtb.artwork.contract.ArtworkResult.Status;
 
 final class AmPage {
     record Album(String id, List<AmIdentity.Track> tracks, URI master) {}
+    /** One album search result offered on the binding page; nothing here is trusted for matching. */
+    record AlbumHit(String id, String title, String artist, String releaseDay, int trackCount, boolean explicit) {}
     private static final Pattern SERVER_DATA = Pattern.compile("<script\\b(?=[^>]*\\bid=[\"']serialized-server-data[\"'])[^>]*>(.*?)</script>", Pattern.DOTALL);
 
     static List<AmIdentity.Track> itunes(String json) throws AmFailure {
@@ -96,6 +98,21 @@ final class AmPage {
             }
             String preferred = AmEdition.explicitCleanChoice(editions);
             return preferred == null ? List.copyOf(matches) : List.of(preferred);
+        } catch (Exception error) { throw new AmFailure(Status.RETRY_LATER, "catalog_schema_changed", 300_000); }
+    }
+    static List<AlbumHit> albumHits(String json) throws AmFailure {
+        try {
+            JSONArray results = new JSONObject(json).getJSONArray("results");
+            if (results.length() > 250) throw new IllegalArgumentException();
+            List<AlbumHit> hits = new ArrayList<>();
+            for (int i = 0; i < results.length(); i++) {
+                JSONObject item = results.getJSONObject(i);
+                if (!"collection".equals(item.optString("wrapperType")) || !"Album".equals(item.optString("collectionType"))) continue;
+                AmEdition.Info info = edition(item);
+                hits.add(new AlbumHit(id(item, "collectionId"), item.getString("collectionName"), item.getString("artistName"),
+                        info.releaseDay(), info.trackCount(), "explicit".equals(info.rating())));
+            }
+            return hits;
         } catch (Exception error) { throw new AmFailure(Status.RETRY_LATER, "catalog_schema_changed", 300_000); }
     }
     private static AmEdition.Info edition(JSONObject item) {

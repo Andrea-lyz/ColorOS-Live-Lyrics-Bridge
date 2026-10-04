@@ -14,6 +14,8 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity android:name=".AmBindingActivity" android:exported="false" android:label="@string/binding_title"
+            android:windowSoftInputMode="adjustResize" />
         <service android:name=".AmArtworkService" android:exported="true">
             <intent-filter><action android:name="io.github.andrealtb.artwork.action.BIND_PROVIDER" /></intent-filter>
             <meta-data android:name="io.github.andrealtb.artwork.PROTOCOL_MAJOR" android:value="1" />

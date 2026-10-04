@@ -22,6 +22,7 @@ fix6 在身份匹配成功后不再因客户端取消而中止下载：请求转
 fix7 把 detached 条件放宽为“请求已开始执行”（上限 1、工作线程 2），并收窄 AmCache 锁使文件 I/O 不再阻塞工作线程。见 [fix7](../docs/DYNAMIC-ARTWORK-AM-FIX7-TEST.zh-CN.md)。
 fix8 增加按阶段总时长上限（web_album 8 秒）与文本 gzip，使慢抓取快速失败并立即重试。见 [fix8](../docs/DYNAMIC-ARTWORK-AM-FIX8-TEST.zh-CN.md)。
 fix9 让视频档传输失败改为继续尝试下一个 variant（视频档 15 秒预算且不重试同一 URL），避免被单个慢档卡死。见 [fix9](../docs/DYNAMIC-ARTWORK-AM-FIX9-TEST.zh-CN.md)。
+fix17 让工作线程与 detached 计数成为进程级，服务随解绑销毁时已开始的下载继续完成；新增手动绑定页，把 Apple Music 专辑绑定到本地专辑名（可限定歌手），命中时跳过曲目核对。见 [fix17](../docs/DYNAMIC-ARTWORK-AM-FIX17-TEST.zh-CN.md)。
 
 来源默认关闭、默认非计费网络；启用及设置由插件 Activity 管理。
 缓存命中可离线使用（来源仍须启用）；成功/确定无动画 TTL 24h，临时故障按短退避。

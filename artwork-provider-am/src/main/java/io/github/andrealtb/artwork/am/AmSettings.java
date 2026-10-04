@@ -14,12 +14,16 @@ final class AmSettings {
         return value != null && value.matches("[a-zA-Z]{2}") ? value.toLowerCase(Locale.ROOT) : "us";
     }
     static boolean online(Context context) {
-        if (!enabled(context)) return false;
+        if (!enabled(context) || !connected(context)) return false;
+        ConnectivityManager manager = context.getSystemService(ConnectivityManager.class);
+        return !manager.isActiveNetworkMetered() || prefs(context).getBoolean("metered", false);
+    }
+    /** Lookups the user starts on the binding page: any validated network, whatever the download policy. */
+    static boolean connected(Context context) {
         ConnectivityManager manager = context.getSystemService(ConnectivityManager.class);
         if (manager == null) return false;
         NetworkCapabilities capabilities = manager.getNetworkCapabilities(manager.getActiveNetwork());
-        return capabilities != null && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-                && (!manager.isActiveNetworkMetered() || prefs(context).getBoolean("metered", false));
+        return capabilities != null && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
     }
     /** Process importance at a stall: separates a stuck call from a process the system stopped running. */
     static int importance() {

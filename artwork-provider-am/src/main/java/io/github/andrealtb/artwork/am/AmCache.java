@@ -75,6 +75,10 @@ final class AmCache {
         return hash("album-asset-v2\n" + country + "\n" + albumId + "\n" + query.displayWidthPx + "x" + query.displayHeightPx
                 + "\n" + query.maxWidth + "x" + query.maxHeight + "\n" + query.maxFileBytes);
     }
+    /** A user-bound album answers for the whole album at one size; changing the binding changes the key. */
+    static String boundKey(ArtworkQuery query, String country, String albumId) {
+        return hash("bound-v1\n" + albumAssetKey(query, country, albumId));
+    }
     AmPage.Album album(ArtworkQuery query, String country) {
         if (AmIdentity.normalize(query.album).isEmpty()) return null;
         File file = new File(root, albumKey(query, country) + ".json");

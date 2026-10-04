@@ -1,6 +1,7 @@
 package io.github.andrealtb.artwork.am;
 
 import android.app.Service;
+import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
 import android.os.IBinder;
@@ -20,12 +21,23 @@ import io.github.andrealtb.artwork.contract.*;
 public final class AmArtworkService extends Service {
     /** One finishing download may outlive its client so the work still reaches the cache. */
     private static final int MAX_DETACHED = 1;
+    /*
+     * Process-wide, not per service instance: the system destroys the service as soon as its last
+     * client unbinds, and stopping these workers there aborted every detached download. The detached
+     * budget is shared for the same reason, so a recreated service still finds its free lane.
+     * Two lanes so a finishing detached download cannot delay the song the client is waiting on.
+     */
+    private static final java.util.Set<Request> DETACHED = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private static final ThreadPoolExecutor WORKER = new ThreadPoolExecutor(2, 2, 0, TimeUnit.MILLISECONDS,
+            new ArrayBlockingQueue<>(8), runnable -> {
+                Thread thread = new Thread(runnable, "artwork-am-resolve");
+                thread.setDaemon(true);
+                return thread;
+            });
     private final RequestLeaseTable<Request> leases = new RequestLeaseTable<>();
-    private final java.util.Set<Request> detached = java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
-    // Two lanes so a finishing detached download cannot delay the song the client is waiting on.
-    private final ThreadPoolExecutor worker = new ThreadPoolExecutor(2, 2, 0, TimeUnit.MILLISECONDS,
-            new ArrayBlockingQueue<>(8), runnable -> new Thread(runnable, "artwork-am-resolve"));
     private final ScheduledExecutorService reaper = Executors.newSingleThreadScheduledExecutor();
+    /** Work that outlives this instance must not hold on to a destroyed service as its context. */
+    private Context app;
     private AmResolver resolver;
     private AmCache cache;
     private final IArtworkProvider.Stub binder = new IArtworkProvider.Stub() {
@@ -47,7 +59,7 @@ public final class AmArtworkService extends Service {
             try {
                 callback.asBinder().linkToDeath(request.death, 0);
                 if (!current(request)) { dispose(request); return; }
-                worker.execute(request.work);
+                WORKER.execute(request.work);
             } catch (RemoteException | RejectedExecutionException error) {
                 remove(request);
                 reply(callback, id, new ArtworkResult(ArtworkResult.Status.RETRY_LATER, null, 1000, "worker_budget"));
@@ -85,30 +97,32 @@ public final class AmArtworkService extends Service {
     };
     @Override public void onCreate() {
         super.onCreate();
-        cache = AmCache.get(this); resolver = new AmResolver(this);
-        AmPauseDetector.listen(gap -> AmSettings.trace(this, "ARTWORK_AM_PROCESS_PAUSED", "gapMs=" + gap));
+        app = getApplicationContext();
+        cache = AmCache.get(app); resolver = new AmResolver(app);
+        AmPauseDetector.listen(gap -> AmSettings.trace(app, "ARTWORK_AM_PROCESS_PAUSED", "gapMs=" + gap));
         reaper.scheduleWithFixedDelay(() -> {
             for (Request request : leases.reap(SystemClock.elapsedRealtime())) dispose(request);
-            if (!AmSettings.enabled(this)) for (Request request : leases.clear()) dispose(request);
+            if (!AmSettings.enabled(app)) for (Request request : leases.clear()) dispose(request);
             cache.cleanup();
         }, 2, 2, TimeUnit.SECONDS);
     }
     @Override public IBinder onBind(Intent intent) { return intent != null && ArtworkContract.ACTION_BIND.equals(intent.getAction()) ? binder : null; }
     @Override public void onDestroy() {
-        reaper.shutdownNow(); worker.shutdownNow();
+        // Workers keep running: a started request detaches here and still completes into the cache.
+        reaper.shutdownNow();
         for (Request request : leases.clear()) dispose(request);
         super.onDestroy();
     }
     private void perform(Request request) {
         if (!current(request)) return;
         request.started = true;
-        AmSettings.trace(this, "ARTWORK_AM_RESOLVE", "started");
+        AmSettings.trace(app, "ARTWORK_AM_RESOLVE", "started");
         AmPauseDetector.begin();
         try {
             AmResolver.Resolved result = resolver.resolve(request.query, request.task);
             synchronized (request) {
-                if (!current(request) || request.task.cancelled.get() || !AmSettings.enabled(this)) {
-                    AmSettings.trace(this, "ARTWORK_AM_DETACHED_RESULT", "ready_cached");
+                if (!current(request) || request.task.cancelled.get() || !AmSettings.enabled(app)) {
+                    AmSettings.trace(app, "ARTWORK_AM_DETACHED_RESULT", "ready_cached");
                     cache.unpin(result.file()); return;
                 }
                 request.file = result.file();
@@ -122,30 +136,30 @@ public final class AmArtworkService extends Service {
             }
         } catch (AmFailure failure) { fail(request, failure.result()); }
         catch (Exception error) { fail(request, ArtworkResult.failure(ArtworkResult.Status.ERROR, "resolver_failed")); }
-        finally { detached.remove(request); AmPauseDetector.end(); }
+        finally { DETACHED.remove(request); AmPauseDetector.end(); }
     }
     private boolean current(Request request) { return leases.get(request.uid, request.id, SystemClock.elapsedRealtime()) == request; }
     private void fail(Request request, ArtworkResult failure) {
         request.finished = true;
         if (current(request) && !request.task.cancelled.get()) reply(request.callback, request.id, failure);
-        else AmSettings.trace(this, "ARTWORK_AM_DETACHED_RESULT", failure.status.name().toLowerCase(java.util.Locale.ROOT) + "_" + failure.reason);
+        else AmSettings.trace(app, "ARTWORK_AM_DETACHED_RESULT", failure.status.name().toLowerCase(java.util.Locale.ROOT) + "_" + failure.reason);
         remove(request);
     }
     private void remove(Request request) { if (leases.removeIfSame(request.uid, request.id, request)) dispose(request); }
     private void dispose(Request request) {
         // Already resolving: the client no longer waits, but the asset still lands in cache.
         boolean keepDownloading = AmDownloadPolicy.keepDownloading(request.started, request.finished,
-                request.task.cancelled.get(), detached.size(), MAX_DETACHED) && detached.add(request);
-        if (!keepDownloading) { request.task.cancel(); worker.remove(request.work); }
+                request.task.cancelled.get(), DETACHED.size(), MAX_DETACHED) && DETACHED.add(request);
+        if (!keepDownloading) { request.task.cancel(); WORKER.remove(request.work); }
         synchronized (request) {
             try { request.callback.asBinder().unlinkToDeath(request.death, 0); }
             catch (java.util.NoSuchElementException ignored) { /* cancelled before link */ }
             if (request.file != null && !keepDownloading) { cache.unpin(request.file); request.file = null; }
         }
-        if (keepDownloading) AmSettings.trace(this, "ARTWORK_AM_DETACHED", "started_download_completes");
+        if (keepDownloading) AmSettings.trace(app, "ARTWORK_AM_DETACHED", "started_download_completes");
     }
     private void reply(IArtworkCallback callback, String id, ArtworkResult result) {
-        AmSettings.trace(this, "ARTWORK_AM_RESULT", result.status.name().toLowerCase(java.util.Locale.ROOT) + "_" + result.reason);
+        AmSettings.trace(app, "ARTWORK_AM_RESULT", result.status.name().toLowerCase(java.util.Locale.ROOT) + "_" + result.reason);
         try { callback.onResult(id, ArtworkBundleCodec.encodeResult(result)); }
         catch (RemoteException | RuntimeException ignored) { /* expiry/death reclaims pinned file */ }
     }
