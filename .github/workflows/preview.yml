@@ -1,11 +1,8 @@
 name: Bridge Preview
 
-# Preview for device testing. Pushing a tag such as v4.4.0-C17-Preview builds the formally signed
-# Bridge APK and publishes it as a GitHub pre-release that is never marked latest. A tag ending
-# in -Artwork, for example v4.4.0-C16-Artwork, additionally builds the Dynamic Artwork Provider
-# from the pinned Providers commit in the release contract and ships it as a second asset. Lyric
-# Providers are not built and the LSP mirror is never touched; formal releases stay on release.yml,
-# which ignores hyphenated tags.
+# Signed non-latest previews from feature tags. Artwork previews include the pinned artwork
+# Provider; contract-selected previews may also build the pinned Universal Provider.
+# Formal releases and their final RC/device gates remain on release.yml; no LSP mirror here.
 
 on:
   push:
@@ -44,7 +41,9 @@ jobs:
               throw "Missing preview release notes: $notes"
           }
           $contract = Get-Content -LiteralPath release/bridge-release-contract.json -Raw | ConvertFrom-Json
-          $artwork = $env:PREVIEW_TAG -like '*-Artwork'
+          $artwork = $env:PREVIEW_TAG -like '*-Artwork' -or $env:PREVIEW_TAG -like '*-Artwork-Preview'
+          $universal = @($contract.previewUniversalProvider.previewTags) -contains $env:PREVIEW_TAG
+          if ($universal -and -not $artwork) { throw 'Universal preview requires the pinned Providers checkout' }
           if ($artwork) {
               $artworkProvider = $contract.previewArtworkProvider
               if ($null -eq $artworkProvider) {
@@ -54,6 +53,16 @@ jobs:
               "artwork_ref=$($artworkProvider.ref)" >> $env:GITHUB_OUTPUT
               "artwork_task=$($artworkProvider.buildTask)" >> $env:GITHUB_OUTPUT
           }
+          if ($universal) {
+              $u = $contract.previewUniversalProvider
+              if ($u.repository -ne $artworkProvider.repository -or $u.ref -ne $artworkProvider.ref) {
+                  throw 'Preview Providers must use the same immutable checkout'
+              }
+              "universal_task=$($u.buildTask)" >> $env:GITHUB_OUTPUT
+              "universal_test_task=$($u.testTask)" >> $env:GITHUB_OUTPUT
+              "universal_module=$($u.module)" >> $env:GITHUB_OUTPUT
+          }
+          "universal=$($universal.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
           "tag=$($env:PREVIEW_TAG)" >> $env:GITHUB_OUTPUT
           "notes=$notes" >> $env:GITHUB_OUTPUT
           "artwork=$($artwork.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
@@ -129,6 +138,22 @@ jobs:
           test -n "$apk"
           echo "ARTWORK_APK=$apk" >> "$GITHUB_ENV"
 
+      - name: Test and build signed Universal Provider
+        if: steps.meta.outputs.universal == 'true'
+        shell: bash
+        env:
+          RELEASE_STORE_FILE: ${{ runner.temp }}/release.jks
+          RELEASE_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          UNIVERSAL_MODULE: ${{ steps.meta.outputs.universal_module }}
+        run: |
+          set -euo pipefail
+          ./provider-source/gradlew --no-daemon -p ./provider-source ${{ steps.meta.outputs.universal_test_task }} ${{ steps.meta.outputs.universal_task }}
+          mapfile -t apks < <(find "./provider-source/$UNIVERSAL_MODULE/build/outputs/apk/release" -maxdepth 1 -name '*.apk')
+          test "${#apks[@]}" -eq 1
+          echo "UNIVERSAL_APK=${apks[0]}" >> "$GITHUB_ENV"
+
       - name: Remove release keystore
         if: always()
         shell: bash
@@ -158,7 +183,8 @@ jobs:
             -OutputDir ./preview-assets `
             -BuildToolsDir $env:BUILD_TOOLS `
             -PreviewTag $env:PREVIEW_TAG `
-            -ArtworkApkPath $env:ARTWORK_APK
+            -ArtworkApkPath $env:ARTWORK_APK `
+            -UniversalApkPath $env:UNIVERSAL_APK
 
       - name: Remove the artwork Provider checkout
         if: always()

@@ -29,7 +29,7 @@ This is not a floating overlay. It passes a player's full lyric timeline to the 
 - Preserves the media card's original previous, play/pause, next, and other controls.
 - Handles rapid track changes, pause/resume, AOD transitions, repeated lines, and long CJK text more reliably.
 
-Optional dynamic artwork is developed on a separate branch and ships as a preview release (for example `v4.4.0-C16-Artwork`): with the optional [Dynamic Artwork Provider](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Providers/blob/main/artwork-provider-am/README.md) installed, the lock screen's small lyric cover and large cover can play the current song's square motion cover. It is not part of the v4.4.0 release and is documented in the preview release notes.
+Optional dynamic artwork is developed on a separate branch: use [v4.4.0-C16-Artwork](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/releases/tag/v4.4.0-C16-Artwork) for C16, or [v4.4.0-C17-Artwork-Preview](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/releases/tag/v4.4.0-C17-Artwork-Preview) for C17. With the optional [Dynamic Artwork Provider](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Providers/blob/main/artwork-provider-am/README.md), supported covers play square motion artwork. The C17 preview also adds synchronized mirrored backgrounds and artwork-based glow colors, and includes Universal Provider 1.1.1. Development APKs received basic C17 DSU testing; this is not full firmware-matrix acceptance. These features are not part of stable v4.4.0; see the preview notes for usage and limitations.
 
 ## Before you install
 

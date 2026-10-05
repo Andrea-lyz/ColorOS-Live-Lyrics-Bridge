@@ -201,13 +201,17 @@ Provider ZIP 只能包含 14 个顶层 APK，不含目录、debug/unsigned APK �
    - 运行单测、release lint；
    - versionName 取 tag，versionCode 沿用契约，便于与正式版互相覆盖安装；
    - 校验包名、版本、证书、zipalign 与 DEX 禁用字符串。
-4. tag 以 `-Artwork` 结尾时，额外附带动态封面 Provider：
+4. tag 以 `-Artwork` 或 `-Artwork-Preview` 结尾时，额外附带动态封面 Provider：
    - 按契约 `previewArtworkProvider.ref` 检出 Providers 仓库的固定 commit；
    - 先校验 `artwork-contract` 镜像、Providers 契约与两个契约的一致性，再执行
      `assembleArtworkProviderRelease`；
    - applicationId、versionCode/Name、资产名与证书都必须与契约一致。
-5. `preview.yml` 创建 GitHub pre-release，不标记 latest。资产为 Bridge APK、可选的动态封面
-   Provider APK，以及 `SHA256SUMS`。
-6. 预览版不构建歌词 Provider，不创建 LSP tag，不上传 LSP mirror，也不修改契约版本。
+5. 若 tag 列在 `previewUniversalProvider.previewTags` 中，还从同一固定 Provider commit 构建
+   通用播放器 Provider；执行该模块的 release 单测，并校验包名、独立版本、签名、scope 与 zipalign。
+   `v4.4.0-C17-Artwork-Preview` 因此交付三个 APK 和一个 `SHA256SUMS`，不会在发布后临时补附件。
+6. `preview.yml` 创建 GitHub pre-release，不标记 latest。不构建其余歌词 Provider 矩阵，
+   不创建 LSP tag，不上传 LSP mirror，也不修改正式契约版本。
 7. 每次需要新的动态封面预览时，先把 `previewArtworkProvider.ref` 更新为 Providers 仓库的
    固定 commit，再推 tag，保证构建可复现。
+8. 用户要求移除被替代的旧预览 Release 时，先保存旧发布信息和资产，待新预览发布并独立下载验证后
+   再删除旧 Release；不自动删除其 Git tag，也不移除未被点名的其他预览。

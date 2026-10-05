@@ -8,7 +8,8 @@ param(
     [string] $BuildToolsDir,
     [Parameter(Mandatory = $true)]
     [string] $PreviewTag,
-    [string] $ArtworkApkPath = ''
+    [string] $ArtworkApkPath = '',
+    [string] $UniversalApkPath = ''
 )
 
 # Verifies the formally signed APKs of one Bridge preview and stages them with SHA256SUMS. A
@@ -19,6 +20,7 @@ param(
 # Pass -ArtworkApkPath to also ship the Dynamic Artwork Provider of the same release; its
 # identity comes from contract.previewArtworkProvider and it must be signed by the same release
 # certificate. Without it the preview carries the Bridge alone.
+# Contract-selected tags additionally require -UniversalApkPath; all assets use the same certificate.
 
 $ErrorActionPreference = 'Stop'
 
@@ -97,6 +99,20 @@ function Read-ApkBadging {
     return $packageMatch
 }
 
+function Assert-ApkScope {
+    param([string] $Apk, [string[]] $Expected, [string] $Label)
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $archive = [System.IO.Compression.ZipFile]::OpenRead($Apk)
+    try {
+        $entry = $archive.GetEntry('META-INF/xposed/scope.list')
+        Assert-PreviewAsset ($null -ne $entry) "$Label scope metadata is missing"
+        $reader = [System.IO.StreamReader]::new($entry.Open())
+        try { $actual = @($reader.ReadToEnd() -split '\r?\n' | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
+        finally { $reader.Dispose() }
+        Assert-PreviewAsset (($actual -join "`n") -ceq ($Expected -join "`n")) "$Label scope differs from contract"
+    } finally { $archive.Dispose() }
+}
+
 function Assert-ApkSignedByRelease {
     param(
         [string] $Apksigner,
@@ -126,6 +142,16 @@ $resolvedOutputDir = Resolve-AbsolutePath $OutputDir
 $resolvedBuildTools = Resolve-AbsolutePath $BuildToolsDir
 Assert-PreviewAsset (Test-Path -LiteralPath $resolvedApk -PathType Leaf) "missing APK: $resolvedApk"
 $resolvedArtworkApk = ''
+$artworkRequired = $PreviewTag -like '*-Artwork' -or $PreviewTag -like '*-Artwork-Preview'
+Assert-PreviewAsset (-not $artworkRequired -or -not [string]::IsNullOrWhiteSpace($ArtworkApkPath)) 'artwork preview requires its Provider APK'
+$universalRequired = @($contract.previewUniversalProvider.previewTags) -contains $PreviewTag
+$hasUniversal = -not [string]::IsNullOrWhiteSpace($UniversalApkPath)
+Assert-PreviewAsset ($universalRequired -eq $hasUniversal) 'Universal APK presence differs from the preview contract'
+$resolvedUniversalApk = ''
+if ($hasUniversal) {
+    $resolvedUniversalApk = Resolve-AbsolutePath $UniversalApkPath
+    Assert-PreviewAsset (Test-Path -LiteralPath $resolvedUniversalApk -PathType Leaf) 'Universal APK is missing'
+}
 if (-not [string]::IsNullOrWhiteSpace($ArtworkApkPath)) {
     $resolvedArtworkApk = Resolve-AbsolutePath $ArtworkApkPath
     Assert-PreviewAsset (Test-Path -LiteralPath $resolvedArtworkApk -PathType Leaf) "missing artwork APK: $resolvedArtworkApk"
@@ -143,6 +169,7 @@ foreach ($tool in @($aapt2, $apksigner, $zipalign)) {
 }
 
 Assert-ApkContents -Apk $resolvedApk -Contract $contract -Label 'Bridge'
+Assert-ApkScope -Apk $resolvedApk -Expected @($contract.bridgeScopes) -Label 'Bridge'
 $packageMatch = Read-ApkBadging -Aapt2 $aapt2 -Apk $resolvedApk -Label 'Bridge'
 Assert-PreviewAsset ($packageMatch.Groups[1].Value -eq [string]$contract.bridgeApplicationId) 'Bridge applicationId differs from contract'
 Assert-PreviewAsset ($packageMatch.Groups[2].Value -eq [string]$contract.versionCode) 'Bridge versionCode differs from contract'
@@ -176,6 +203,23 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedArtworkApk)) {
     $expectedAssetCount = 3
 }
 
+if ($hasUniversal) {
+    $universal = $contract.previewUniversalProvider
+    Assert-ApkContents -Apk $resolvedUniversalApk -Contract $contract -Label 'Universal'
+    Assert-ApkScope -Apk $resolvedUniversalApk -Expected @($universal.scopes) -Label 'Universal'
+    $universalMatch = Read-ApkBadging -Aapt2 $aapt2 -Apk $resolvedUniversalApk -Label 'Universal'
+    Assert-PreviewAsset ($universalMatch.Groups[1].Value -ceq [string]$universal.applicationId) 'Universal applicationId differs'
+    Assert-PreviewAsset ($universalMatch.Groups[2].Value -ceq [string]$universal.versionCode) 'Universal versionCode differs'
+    Assert-PreviewAsset ($universalMatch.Groups[3].Value -ceq [string]$universal.versionName) 'Universal versionName differs'
+    Assert-ApkSignedByRelease -Apksigner $apksigner -Apk $resolvedUniversalApk -Contract $contract -Label 'Universal'
+    Invoke-Checked $zipalign @('-c', '-P', '16', '4', $resolvedUniversalApk) | Out-Null
+    $universalTarget = Join-Path $resolvedOutputDir ([string]$universal.asset)
+    Copy-Item -LiteralPath $resolvedUniversalApk -Destination $universalTarget
+    $universalHash = (Get-FileHash -LiteralPath $universalTarget -Algorithm SHA256).Hash.ToLowerInvariant()
+    $checksumLines += "$universalHash  $($universal.asset)"
+    $expectedAssetCount++
+}
+
 [System.IO.File]::WriteAllText(
     (Join-Path $resolvedOutputDir ([string]$contract.checksumsAsset)),
     (($checksumLines | Sort-Object) -join [Environment]::NewLine) + [Environment]::NewLine,
@@ -184,9 +228,10 @@ if (-not [string]::IsNullOrWhiteSpace($resolvedArtworkApk)) {
 
 $finalAssets = @(Get-ChildItem -LiteralPath $resolvedOutputDir -File)
 Assert-PreviewAsset ($finalAssets.Count -eq $expectedAssetCount) "expected $expectedAssetCount preview assets, found $($finalAssets.Count)"
-if ($expectedAssetCount -eq 3) {
+if ($hasUniversal) {
+    Write-Output "Preview assets verified: $($checksumLines.Count) signed APKs and checksums."
+} elseif ($expectedAssetCount -eq 3) {
     Write-Output "Preview assets verified: $assetName (sha256=$hash) and $($contract.previewArtworkProvider.asset) (sha256=$artworkHash)."
 } else {
     Write-Output "Preview asset verified: $assetName (sha256=$hash)."
 }
-

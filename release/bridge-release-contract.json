@@ -23,7 +23,7 @@
   "totalReleaseAssetCount": 18,
   "previewArtworkProvider": {
     "repository": "Andrea-lyz/ColorOS-Live-Lyrics-Providers",
-    "ref": "bcde41f861c40e4e7be3d58ac991df64125e1272",
+    "ref": "b2d07c34efc917d21b28fa246cb2a004269484d4",
     "module": "artwork-provider-am",
     "buildTask": ":artwork-provider-am:assembleRelease",
     "contractMirrorModule": "artwork-contract",
@@ -56,5 +56,22 @@
     "io.github.proify.lyricon.metrolistprovider",
     "BridgeArchitectureGuardTest",
     "Andrea-TB\\Desktop"
-  ]
+  ],
+  "previewUniversalProvider": {
+    "repository": "Andrea-lyz/ColorOS-Live-Lyrics-Providers",
+    "ref": "b2d07c34efc917d21b28fa246cb2a004269484d4",
+    "previewTags": [
+      "v4.4.0-C17-Artwork-Preview"
+    ],
+    "module": "universal-provider",
+    "buildTask": ":universal-provider:assembleRelease",
+    "testTask": ":universal-provider:testReleaseUnitTest",
+    "applicationId": "io.github.andrealtb.coloroslyrics.provider.universal",
+    "versionName": "1.1.1",
+    "versionCode": 3,
+    "scopes": [
+      "system"
+    ],
+    "asset": "ColorOS-Live-Lyrics-Provider-Universal-v1.1.1.apk"
+  }
 }

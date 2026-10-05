@@ -60,6 +60,22 @@ Assert-Contract (-not [string]::IsNullOrWhiteSpace([string]$previewArtwork.modul
 Assert-Contract (-not [string]::IsNullOrWhiteSpace([string]$previewArtwork.buildTask)) 'preview artwork build task is missing'
 Assert-Contract (-not [string]::IsNullOrWhiteSpace([string]$previewArtwork.mirrorTask)) 'preview artwork mirror task is missing'
 
+$previewUniversal = $contract.previewUniversalProvider
+if ($null -ne $previewUniversal) {
+    Assert-Contract ($previewUniversal.repository -eq $previewArtwork.repository -and $previewUniversal.ref -eq $previewArtwork.ref) 'preview Providers must share a pinned repository/commit'
+    Assert-Contract ($previewUniversal.module -eq 'universal-provider') 'preview Universal module differs'
+    Assert-Contract ($previewUniversal.buildTask -eq ':universal-provider:assembleRelease') 'preview Universal build task differs'
+    Assert-Contract ($previewUniversal.testTask -eq ':universal-provider:testReleaseUnitTest') 'preview Universal test task differs'
+    Assert-Contract ($previewUniversal.applicationId -eq 'io.github.andrealtb.coloroslyrics.provider.universal') 'preview Universal applicationId differs'
+    Assert-Contract ($previewUniversal.versionName -match '^\d+\.\d+\.\d+$' -and [int]$previewUniversal.versionCode -gt 0) 'preview Universal version is invalid'
+    Assert-Contract ($previewUniversal.asset -eq "ColorOS-Live-Lyrics-Provider-Universal-v$($previewUniversal.versionName).apk") 'preview Universal asset name differs'
+    Assert-Contract ((@($previewUniversal.scopes) -join ',') -eq 'system') 'preview Universal scope differs'
+    Assert-Contract (@($previewUniversal.previewTags).Count -gt 0) 'preview Universal tag list is empty'
+    foreach ($previewTag in @($previewUniversal.previewTags)) {
+        Assert-Contract ($previewTag -cmatch ('^' + [regex]::Escape($contract.releaseTag) + '-[A-Za-z0-9-]+-Artwork-Preview$')) 'Universal preview tag must be an artwork preview'
+    }
+}
+
 $forbiddenApkAscii = @($contract.forbiddenApkAscii)
 Assert-Contract ($forbiddenApkAscii.Count -ge 20) 'forbidden APK string set is incomplete'
 Assert-Contract (($forbiddenApkAscii | Select-Object -Unique).Count -eq $forbiddenApkAscii.Count) 'forbidden APK strings contain duplicates'
@@ -117,6 +133,14 @@ if (-not [string]::IsNullOrWhiteSpace($ProviderRepoRoot)) {
     Assert-Contract ([int]$providerArtwork[0].versionCode -eq [int]$previewArtwork.versionCode) 'artwork Provider versionCode differs between contracts'
     Assert-Contract ([string]$providerArtwork[0].asset -eq [string]$previewArtwork.asset) 'artwork Provider asset differs between contracts'
     Assert-Contract ([string]$providerArtwork[0].distribution -eq 'bridge-preview') 'artwork Provider distribution must stay bridge-preview'
+    if ($null -ne $previewUniversal) {
+        $providerUniversal = @($providerContract.providers | Where-Object { $_.module -eq $previewUniversal.module })
+        Assert-Contract ($providerUniversal.Count -eq 1) 'Provider matrix must contain exactly one Universal module'
+        foreach ($property in @('applicationId', 'versionName', 'versionCode')) {
+            Assert-Contract ([string]$providerUniversal[0].$property -ceq [string]$previewUniversal.$property) "Universal $property differs between contracts"
+        }
+        Assert-Contract ((@($providerUniversal[0].scopes) -join ',') -ceq (@($previewUniversal.scopes) -join ',')) 'Universal scope differs between contracts'
+    }
 }
 
 Write-Output "Bridge release contract is valid: $($contract.releaseTag), versionCode=$($contract.versionCode), providers=$($contract.providerApkCount)."
