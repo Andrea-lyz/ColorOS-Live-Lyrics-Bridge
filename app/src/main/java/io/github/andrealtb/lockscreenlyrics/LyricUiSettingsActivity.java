@@ -131,6 +131,7 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
     private Slider glowRadius;
     private final PaletteTarget primaryColor = new PaletteTarget("#FF9AA8");
     private final PaletteTarget glowColor = new PaletteTarget("#FF5D73");
+    private MaterialSwitch glowFollowsCover;
     private SegmentedControl motionMode;
     private MaterialSwitch passiveVerticalPan;
     private MaterialSwitch translationMarquee;
@@ -421,6 +422,15 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
                 SettingsColorPalette.GLOW,
                 glowColor,
                 "#FF5D73"));
+        if (C17GlowSupport.available(this)) {
+            glowFollowsCover = toggle(getString(R.string.setting_glow_follow_cover), false);
+            glowFollowsCover.setContentDescription(getString(R.string.setting_glow_follow_cover_hint));
+            glowFollowsCover.setOnClickListener(view -> {
+                updatePaletteSelections();
+                onDraftChanged();
+            });
+            colorCard.addView(glowFollowsCover);
+        }
         addCardDivider(colorCard);
         glowIntensity = materialSeek(0, 100);
         colorCard.addView(labeledMaterialSeek(
@@ -1785,6 +1795,7 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
                 .glowRadiusPercent(materialProgress(glowRadius))
                 .primaryColor(primaryColor.get())
                 .glowColor(glowColor.get())
+                .glowFollowsCover(glowFollowsCover == null ? draft.glowFollowsCover : glowFollowsCover.isChecked())
                 .motionMode(checkedIndex(motionMode))
                 .passiveVerticalPanEnabled(passiveVerticalPan.isChecked())
                 .translationMarqueeEnabled(translationMarquee.isChecked())
@@ -1821,6 +1832,7 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
         setSliderValueSafely(glowRadius, config.glowRadiusPercent);
         primaryColor.set(config.primaryColor);
         glowColor.set(config.glowColor);
+        if (glowFollowsCover != null) glowFollowsCover.setChecked(config.glowFollowsCover);
         updatePaletteSelections();
         checkIndex(motionMode, config.motionMode);
         checkIndex(fontWeight, config.fontWeight);
@@ -2661,6 +2673,7 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
             swatchButtons[index] = swatch;
             swatch.setOnClickListener(view -> {
                 target.set(color);
+                if (target == glowColor && glowFollowsCover != null) glowFollowsCover.setChecked(false);
                 onDraftChanged();
             });
         }
@@ -2682,6 +2695,7 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
                 customFallback,
                 color -> {
                     target.set(color);
+                    if (target == glowColor && glowFollowsCover != null) glowFollowsCover.setChecked(false);
                     onDraftChanged();
                 }));
         paletteRows.add(new PaletteRow(swatchButtons, custom, target, colors));
@@ -2698,9 +2712,10 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
             String value = LyricUiConfig.sanitizeColor(
                     row.target.get(),
                     "#FFFFFF").toUpperCase(Locale.ROOT);
-            boolean customSelected = true;
+            boolean followsCover = row.target == glowColor && glowFollowsCover != null && glowFollowsCover.isChecked();
+            boolean customSelected = !followsCover;
             for (int index = 0; index < row.swatches.length; index++) {
-                boolean selected = row.colors[index].equalsIgnoreCase(value);
+                boolean selected = !followsCover && row.colors[index].equalsIgnoreCase(value);
                 if (selected) customSelected = false;
                 setSwatchSelected(row.swatches[index], selected);
             }

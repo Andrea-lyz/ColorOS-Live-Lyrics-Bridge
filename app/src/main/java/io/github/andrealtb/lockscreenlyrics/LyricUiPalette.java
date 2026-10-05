@@ -54,4 +54,9 @@ final class LyricUiPalette {
     int translationBase(boolean activeLine) {
         return activeLine ? activeTranslation : inactiveTranslation;
     }
+
+    LyricUiPalette withGlowShadow(int color) {
+        return new LyricUiPalette(inactive, focusedInactive, active, played, activeTranslation,
+                inactiveTranslation, activeTranslationProgress, color, glowFill, activeFeatherColors);
+    }
 }

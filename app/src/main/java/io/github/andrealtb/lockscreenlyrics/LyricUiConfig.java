@@ -39,6 +39,7 @@ final class LyricUiConfig {
     final int glowRadiusPercent;
     final String primaryColor;
     final String glowColor;
+    final boolean glowFollowsCover;
     final int motionMode;
     final boolean passiveVerticalPanEnabled;
     final boolean translationMarqueeEnabled;
@@ -90,6 +91,7 @@ final class LyricUiConfig {
         glowRadiusPercent = clamp(builder.glowRadiusPercent, 10, 24);
         primaryColor = sanitizeColor(builder.primaryColor, "#FFFFFF");
         glowColor = sanitizeColor(builder.glowColor, "#FFD68A");
+        glowFollowsCover = builder.glowFollowsCover;
         motionMode = clamp(builder.motionMode, MOTION_STANDARD, MOTION_OFF);
         passiveVerticalPanEnabled = builder.passiveVerticalPanEnabled;
         translationMarqueeEnabled = builder.translationMarqueeEnabled;
@@ -144,6 +146,7 @@ final class LyricUiConfig {
                 .glowRadiusPercent(defaults.glowRadiusPercent)
                 .primaryColor(defaults.primaryColor)
                 .glowColor(defaults.glowColor)
+                .glowFollowsCover(defaults.glowFollowsCover)
                 .motionMode(defaults.motionMode)
                 .mainFontTenthsSp(defaults.mainFontTenthsSp)
                 .translationFontRatioPercent(defaults.translationFontRatioPercent)
@@ -213,7 +216,8 @@ final class LyricUiConfig {
                 && lineSpacingTenthsDp == other.lineSpacingTenthsDp
                 && wrappedLineSpacingTenthsDp == other.wrappedLineSpacingTenthsDp
                 && primaryColor.equals(other.primaryColor)
-                && glowColor.equals(other.glowColor);
+                && glowColor.equals(other.glowColor)
+                && glowFollowsCover == other.glowFollowsCover;
     }
 
     @Override
@@ -226,7 +230,7 @@ final class LyricUiConfig {
                 verticalFadeLengthTenthsDp, inactiveRowFadeEnabled, inactiveRowFadePercent,
                 blurEnabled, blurRadiusTenthsPx,
                 scaleEnabled, inactiveScalePercent, glowEnabled, glowIntensityPercent,
-                glowRadiusPercent, primaryColor, glowColor, motionMode,
+                glowRadiusPercent, primaryColor, glowColor, glowFollowsCover, motionMode,
                 passiveVerticalPanEnabled, translationMarqueeEnabled, maxRefreshRateHz,
                 defaultTranslationEnabled, lineTimedProgressEnabled,
                 translationProgressEnabled, charLiftEnabled, charLiftStrengthPercent,
@@ -256,6 +260,7 @@ final class LyricUiConfig {
         private int glowRadiusPercent = 18;
         private String primaryColor = "#FFFFFF";
         private String glowColor = "#FFD68A";
+        private boolean glowFollowsCover;
         private int motionMode = MOTION_STANDARD;
         private boolean passiveVerticalPanEnabled = true;
         private boolean translationMarqueeEnabled = true;
@@ -299,6 +304,7 @@ final class LyricUiConfig {
             glowRadiusPercent = source.glowRadiusPercent;
             primaryColor = source.primaryColor;
             glowColor = source.glowColor;
+            glowFollowsCover = source.glowFollowsCover;
             motionMode = source.motionMode;
             passiveVerticalPanEnabled = source.passiveVerticalPanEnabled;
             translationMarqueeEnabled = source.translationMarqueeEnabled;
@@ -359,6 +365,7 @@ final class LyricUiConfig {
         Builder glowRadiusPercent(int v) { glowRadiusPercent = v; return this; }
         Builder primaryColor(String v) { primaryColor = v; return this; }
         Builder glowColor(String v) { glowColor = v; return this; }
+        Builder glowFollowsCover(boolean v) { glowFollowsCover = v; return this; }
         Builder motionMode(int v) { motionMode = v; return this; }
         Builder passiveVerticalPanEnabled(boolean v) { passiveVerticalPanEnabled = v; return this; }
         Builder translationMarqueeEnabled(boolean v) { translationMarqueeEnabled = v; return this; }

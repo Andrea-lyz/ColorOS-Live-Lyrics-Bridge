@@ -21,6 +21,7 @@ public final class ArtworkModelAccess {
     private final Field artist;
     private final Class<?> immersiveCardClass;
     private final Field immersiveCard;
+    private final ArtworkPaletteAccess palette;
 
     public ArtworkModelAccess(Class<?> cardClass, Class<?> modelClass, Class<?> infoClass)
             throws ReflectiveOperationException {
@@ -42,17 +43,31 @@ public final class ArtworkModelAccess {
         packageName = labels.get("pkg");
         title = labels.get("songName");
         artist = labels.get("artist");
+        ArtworkPaletteAccess paletteAccess = null;
+        if (splitModel) try { paletteAccess = new ArtworkPaletteAccess(infoClass); }
+        catch (ReflectiveOperationException | RuntimeException ignored) { /* color is an independent capability */ }
+        palette = paletteAccess;
     }
 
     public ArtworkCardIdentity readCard(Object card) throws ReflectiveOperationException {
+        Object identity = readIdentity(card);
+        if (identity == null) return null;
+        return new ArtworkCardIdentity((String) playerId.get(identity), (String) packageName.get(identity),
+                (String) title.get(identity), (String) artist.get(identity));
+    }
+
+    public Integer readCoverColor(Object card) throws ReflectiveOperationException {
+        return palette == null ? null : palette.read(readIdentity(card));
+    }
+
+    public boolean supportsCoverColor() { return palette != null; }
+
+    private Object readIdentity(Object card) throws ReflectiveOperationException {
         if (card != null && card.getClass() == immersiveCardClass) card = immersiveCard.get(card);
         if (card == null || card.getClass() != cardClass) return null;
         Object model = cardModel.get(card);
         if (model == null || model.getClass() != modelClass) return null;
-        Object identity = info == null ? model : info.get(model);
-        if (identity == null) return null;
-        return new ArtworkCardIdentity((String) playerId.get(identity), (String) packageName.get(identity),
-                (String) title.get(identity), (String) artist.get(identity));
+        return info == null ? model : info.get(model);
     }
 
     public boolean isCard(Object value) {

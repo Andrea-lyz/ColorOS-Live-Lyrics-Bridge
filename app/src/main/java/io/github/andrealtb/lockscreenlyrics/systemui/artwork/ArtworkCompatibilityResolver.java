@@ -24,7 +24,7 @@ public final class ArtworkCompatibilityResolver {
     public record SurfaceTargets(Class<?> sectionClass, Field sectionViewModel,
             List<Constructor<?>> constructors, Method dispose, String imageResource,
             ArtworkPlaybackPolicy.Surface surface) {}
-    public record Targets(ArtworkModelAccess model, SurfaceTargets card, SurfaceTargets immersive) {}
+    public record Targets(ArtworkModelAccess model, SurfaceTargets card, SurfaceTargets immersive, ArtworkC17Access c17) {}
 
     private ArtworkCompatibilityResolver() {}
 
@@ -70,7 +70,17 @@ public final class ArtworkCompatibilityResolver {
                     // Independent capability: an immersive miss never enables a guessed host or drops the card.
                 }
             }
-            return new Targets(access, ordinary, immersive);
+            ArtworkC17Access c17 = null;
+            if (access.splitModel && immersive != null && android.os.Build.VERSION.SDK_INT >= 33) {
+                try {
+                    c17 = new ArtworkC17Access(immersive.sectionClass(), singleClass(dex, loader,
+                            "ImmersiveBackgroundController", "[updateAlbumArtView] animation is running, pending new drawable"),
+                            singleClass(dex, loader, "MediaFullScreenView"));
+                } catch (ReflectiveOperationException | RuntimeException ignored) {
+                    // Retain read-only model binding on an unreviewed controller shape.
+                }
+            }
+            return new Targets(access, ordinary, immersive, c17);
         }
     }
 

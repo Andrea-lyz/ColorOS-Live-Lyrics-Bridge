@@ -16,7 +16,13 @@ import java.util.List;
 /** One decoder shared by verified card/immersive hosts; explicit debug fixture or live-query integration. */
 public final class ArtworkImmersivePlayback implements AutoCloseable {
     public record Candidate(ImageView image, ArtworkSessionRegistry.Binding binding,
-            ArtworkPlaybackPolicy.Surface surface, ArtworkCardEffectAccess cardEffects) {}
+            ArtworkPlaybackPolicy.Surface surface, ArtworkCardEffectAccess cardEffects,
+            ArtworkC17Access.Bound c17, boolean background) {
+        public Candidate(ImageView image, ArtworkSessionRegistry.Binding binding,
+                ArtworkPlaybackPolicy.Surface surface, ArtworkCardEffectAccess cardEffects) {
+            this(image, binding, surface, cardEffects, null, false);
+        }
+    }
     private final Context context;
     private final ArtworkProviderClient client;
     private final ArtworkDrawableTransition transition;
@@ -133,6 +139,8 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
         if (closed) return "closed";
         if (renderer == null || !renderer.isShowing()) return "no_video";
         if (renderCandidate == null || renderCandidate.surface() != ArtworkPlaybackPolicy.Surface.IMMERSIVE) return "card_surface";
+        if (!ArtworkScreenAwake.coverSurface(true, renderCandidate.background(),
+                renderCandidate.c17() != null && renderCandidate.c17().coverMode())) return "lyric_background_or_unknown";
         if (surfaceHoldSince >= 0) return "surface_switch";
         if (current == null || current.image() != renderCandidate.image()) return "not_current";
         String reason = eligibilityReason(current);
@@ -351,6 +359,12 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
         }
     }
 
+    void invalidateC17(ArtworkC17Access.Bound host) {
+        if (current != null && current.c17() == host) invalidate(current.image());
+        else if (renderCandidate != null && renderCandidate.c17() == host) invalidate(renderCandidate.image());
+        else if (resolvingCandidate != null && resolvingCandidate.c17() == host) invalidate(resolvingCandidate.image());
+    }
+
     private boolean matches(Candidate request, long epoch) {
         return !closed && epoch == clientEpoch && current != null
                 && request.image() == current.image() && request.binding().stamp().equals(current.binding().stamp())
@@ -394,6 +408,13 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
         mount.show(true);
     }
     private ArtworkVideoMount createMount(Candidate request) throws Exception {
+        if (request.c17() != null) {
+            if (Build.VERSION.SDK_INT < 33) throw new ArtworkImmersiveMount.Unsupported("c17_shader_platform");
+            return new ArtworkC17Mount(request.image(), request.background(), () -> {
+                invalidate(request.image());
+                refreshDisplay.run();
+            });
+        }
         if (request.surface() == ArtworkPlaybackPolicy.Surface.IMMERSIVE) return new ArtworkImmersiveMount(request.image());
         if (Build.VERSION.SDK_INT < 33) throw new ArtworkImmersiveMount.Unsupported("card_shader_platform");
         return new ArtworkCardMount(request.image(), request.cardEffects());
@@ -512,13 +533,23 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
         if (keyguard == null || !keyguard.isKeyguardLocked()) return "keyguard_open";
         if (!image.isShown() || image.getWindowVisibility() != android.view.View.VISIBLE) return "hidden";
         if (image.getWidth() <= 0 || image.getHeight() <= 0) return "no_bounds";
-        if (image.getForeground() != null || image.getImageTintList() != null || image.getColorFilter() != null) return "image_effect";
-        if (!(candidate.surface() == ArtworkPlaybackPolicy.Surface.IMMERSIVE
+        if ((image.getForeground() != null && (candidate.c17() == null || candidate.background()))
+                || image.getImageTintList() != null || image.getColorFilter() != null) return "image_effect";
+        if (candidate.background() ? !image.isHardwareAccelerated() : !(candidate.surface() == ArtworkPlaybackPolicy.Surface.IMMERSIVE
                 ? image.getClipToOutline() : !image.getClipToOutline() && image.isHardwareAccelerated())) return "shape_profile";
         if (image.getImageAlpha() != 255 || image.getAlpha() != 1f || image.getScaleX() != 1f || image.getScaleY() != 1f
                 || image.getTranslationX() != 0f || image.getTranslationY() != 0f || image.getRotation() != 0f
                 || image.getRotationX() != 0f || image.getRotationY() != 0f) return "geometry_transition";
+        if (candidate.c17() != null && !c17AncestorsSettled(image)) return "geometry_transition";
         return transitionReady(candidate) ? "eligible" : "native_transition";
+    }
+
+    private static boolean c17AncestorsSettled(android.view.View view) {
+        for (android.view.ViewParent parent = view.getParent(); parent instanceof android.view.View ancestor; parent = ancestor.getParent()) {
+            if (ancestor.getAlpha() != 1f || ancestor.getScaleX() != 1f || ancestor.getScaleY() != 1f
+                    || ancestor.getRotation() != 0f || ancestor.getRotationX() != 0f || ancestor.getRotationY() != 0f) return false;
+        }
+        return true;
     }
     private void readNetwork() {
         if (closed || connectivity == null) return;
@@ -539,6 +570,7 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
     }
 
     private boolean transitionReady(Candidate candidate) {
+        if (candidate.c17() != null) return candidate.c17().ready(candidate.image(), candidate.background());
         return candidate.surface() == ArtworkPlaybackPolicy.Surface.IMMERSIVE
                 ? transition.complete(candidate.image().getDrawable())
                 : Build.VERSION.SDK_INT >= 33 && candidate.cardEffects() != null && candidate.cardEffects().settled(candidate.image());

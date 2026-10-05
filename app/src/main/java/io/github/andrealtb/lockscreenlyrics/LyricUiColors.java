@@ -66,6 +66,12 @@ final class LyricUiColors {
         return withAlpha(config.glowColor, alpha);
     }
 
+    static int glowShadow(LyricUiConfig config, Integer coverColor) {
+        int manual = glowShadow(config);
+        if (!config.glowFollowsCover || coverColor == null || (coverColor >>> 24) != 0xFF) return manual;
+        return (manual & 0xFF000000) | (coverColor & 0xFFFFFF);
+    }
+
     static int glowFill(LyricUiConfig config) {
         int alpha = config.glowEnabled
                 ? Math.round(GLOW_FILL_ALPHA * config.glowIntensityPercent / 100f)

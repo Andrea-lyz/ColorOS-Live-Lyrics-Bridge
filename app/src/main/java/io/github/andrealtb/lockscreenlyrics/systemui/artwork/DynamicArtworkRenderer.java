@@ -25,6 +25,7 @@ public final class DynamicArtworkRenderer implements AutoCloseable, TextureView.
         MEDIA = new Handler(thread.getLooper());
     }
     private final Handler main = new Handler(Looper.getMainLooper());
+    private final ArtworkFrameDispatch frames = new ArtworkFrameDispatch(task -> main.post(task));
     private TextureView view;
     private final Consumer<String> status;
     private boolean fitXY;
@@ -84,6 +85,7 @@ public final class DynamicArtworkRenderer implements AutoCloseable, TextureView.
         Session active = session;
         if (closed || active == null || next == null || next == view || pendingDetach != null) { guard.close(); return false; }
         if (!guard.permits() || active.player == null) { guard.close(); return false; }
+        frames.clear();
         active.guard.close();
         active.guard = guard;
         active.visible = false;
@@ -252,6 +254,7 @@ public final class DynamicArtworkRenderer implements AutoCloseable, TextureView.
 
     public void stop() {
         requireMain();
+        frames.clear();
         // A pending handover must still release the previous view, otherwise its layer is orphaned.
         Runnable pending = pendingDetach;
         pendingDetach = null;
@@ -287,9 +290,15 @@ public final class DynamicArtworkRenderer implements AutoCloseable, TextureView.
     }
 
     @Override public void onSurfaceTextureAvailable(SurfaceTexture texture, int width, int height) {
-        if (session == null) return;
-        if (session.player == null) prepare(session, texture);
-        else if (pendingDetach != null) attach(session, texture);
+        Session target = session;
+        TextureView source = view;
+        // getTextureLayer() can invoke this from draw too. Preparation's failure/status callbacks
+        // may remove the mount, so they must not run inside that framework stack.
+        main.post(() -> {
+            if (target == null || session != target || closed || view != source || source.getSurfaceTexture() != texture) return;
+            if (target.player == null) prepare(target, texture);
+            else if (pendingDetach != null && current(target)) attach(target, texture);
+        });
     }
 
     @Override public void onSurfaceTextureSizeChanged(SurfaceTexture texture, int width, int height) {
@@ -297,15 +306,34 @@ public final class DynamicArtworkRenderer implements AutoCloseable, TextureView.
     }
 
     @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture texture) {
-        stop();
+        Session target = session;
+        TextureView source = view;
+        if (target != null) { target.guard.close(); target.visible = false; }
+        frames.clear();
+        main.post(() -> {
+            if (target != null && session == target && view == source) stop();
+        });
         return true;
     }
 
     @Override public void onSurfaceTextureUpdated(SurfaceTexture texture) {
-        if (session != null && current(session) && session.rendering) {
-            session.updated = true;
-            firstFrame(session);
+        Session target = session;
+        TextureView source = view;
+        if (target == null || closed || owner != this || !target.active.get()) return;
+        // TextureView.draw -> applyUpdate -> this callback -> draw still uses mLayer afterward.
+        // Revoke immediately, but never call current()/status/mount.close() in this stack.
+        if (!target.guard.permits()) {
+            target.visible = false;
+            source.animate().cancel();
+            source.setAlpha(0f);
         }
+        frames.offer(() -> {
+            if (session != target || closed || view != source || source.getSurfaceTexture() != texture) return;
+            if (current(target) && target.rendering) {
+                target.updated = true;
+                firstFrame(target);
+            }
+        });
     }
 
     private static void requireMain() {

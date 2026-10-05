@@ -38,11 +38,11 @@
     <string name="artwork_settings_link_sub_off">Off · Replace lock-screen album art with motion video from a provider</string>
     <string name="artwork_settings_link_sub_on">On · %1$s</string>
     <string name="artwork_settings_link_sub_problem">On · Check the provider</string>
-    <string name="artwork_settings_desc">Replaces the static album art on the small lyric cover and the large cover with motion video from the provider you choose. Bridge itself does not go online or download video; matching and downloading happen in the provider.</string>
+    <string name="artwork_settings_desc">Plays motion artwork from your chosen provider on the small lock-screen cover, large cover, and supported full-screen background. Bridge itself does not go online or download video; matching and downloading happen in the provider.</string>
     <string name="artwork_settings_section_display">Display</string>
     <string name="artwork_settings_enable">Enable dynamic artwork</string>
-    <string name="artwork_settings_card">Small lyric cover</string>
-    <string name="artwork_settings_large_cover">Large cover</string>
+    <string name="artwork_settings_card">Small lock-screen cover</string>
+    <string name="artwork_settings_large_cover">Large cover and full-screen background</string>
     <string name="artwork_settings_section_source">Artwork source</string>
     <string name="artwork_settings_provider_none">No provider selected</string>
     <string name="artwork_settings_provider_state_none">Choose a provider that supports artwork protocol v1</string>
@@ -57,7 +57,7 @@
     <string name="artwork_settings_section_screen">Screen</string>
     <string name="artwork_settings_keep_awake">Keep the screen on while the motion cover plays</string>
     <string name="artwork_settings_keep_awake_hint">Keeps the screen on only while a motion cover is actually playing on the large cover. Pausing, pressing the power button to go to sleep or AOD, unlocking, or returning to the small lyric cover releases it, and the normal screen timeout applies again. Independent of “Keep screen on while lyrics are shown”: the screen stays on while either applies.</string>
-    <string name="artwork_settings_footer">Changes apply immediately, are stored in Bridge, come back after a SystemUI restart, and are part of the Bridge configuration backup. Motion video currently plays only on the verified ColorOS 16 lock-screen layout; everything else keeps the static cover.</string>
+    <string name="artwork_settings_footer">Changes apply immediately, are stored in Bridge, come back after a SystemUI restart, and are part of the Bridge configuration backup. ColorOS 17 support is being tested; unsupported layouts keep the official static cover.</string>
     <string name="artwork_settings_disclosure_title">Enable dynamic artwork?</string>
     <string name="artwork_settings_disclosure_message">The title, artist, album and duration of the playing song are sent to the selected provider, which matches and downloads the motion cover. Lyrics, accounts, device identifiers and the player\'s media IDs are never sent.</string>
     <string name="artwork_settings_disclosure_confirm">Enable</string>
@@ -70,7 +70,7 @@
     <string name="artwork_status_debug_test">Debug test running</string>
     <string name="artwork_status_debug_test_detail">The fixed-video lock-screen test temporarily overrides these settings. Stop it in “Dynamic artwork · Debug” to restore them.</string>
     <string name="artwork_status_disabled">Dynamic artwork is off</string>
-    <string name="artwork_status_no_surface">Both the small lyric cover and the large cover are off; no motion cover will show</string>
+    <string name="artwork_status_no_surface">The small lock-screen cover, large cover, and full-screen background are all off; no motion artwork will show</string>
     <string name="artwork_status_unsupported">Not supported by this SystemUI</string>
     <string name="artwork_status_unsupported_detail">No supported lock-screen media structure was found; the static cover stays.</string>
     <string name="artwork_status_playing">Motion cover playing</string>

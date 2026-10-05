@@ -41,7 +41,7 @@ public final class CharLiftRendererContractTest {
     }
 
     @Test
-    public void lineTimedLiftUsesTheLineProgressDisplayEnd() throws Exception {
+    public void lineTimedLiftUsesTheSameVisualFinishAsLineProgress() throws Exception {
         String module = module();
         int start = module.indexOf("private long resolveCharLiftLineRevealEnd(");
         assertTrue("resolveCharLiftLineRevealEnd is missing", start >= 0);
@@ -51,7 +51,7 @@ public final class CharLiftRendererContractTest {
                 body.contains("line.timingMode == LyricTimingMode.LINE_TIMED"));
         assertTrue(
                 "line-timed rows must end where their linear reveal ends",
-                body.contains("return resolveLineDisplayEndMillis(model, line);"));
+                body.contains("LineTimedRevealPolicy.revealEnd(line.timeMillis, resolveLineDisplayEndMillis(model, line))"));
         assertTrue(
                 "word-timed rows must retain their word-reveal anchor",
                 body.contains("WordLyricRenderSupport.wordRevealEndMillis("));

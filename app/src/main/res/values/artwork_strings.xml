@@ -38,11 +38,11 @@
     <string name="artwork_settings_link_sub_off">未开启 · 用插件提供的动态视频替换锁屏专辑封面</string>
     <string name="artwork_settings_link_sub_on">已开启 · %1$s</string>
     <string name="artwork_settings_link_sub_problem">已开启 · 需要检查插件</string>
-    <string name="artwork_settings_desc">在歌词小封面和大封面上，用所选插件提供的动态视频替换静态专辑封面。Bridge 本身不联网、不下载视频；匹配与下载都由插件完成。</string>
+    <string name="artwork_settings_desc">在锁屏小封面、大封面及支持的全屏背景上，播放所选插件提供的动态封面。Bridge 本身不联网、不下载视频；匹配与下载都由插件完成。</string>
     <string name="artwork_settings_section_display">显示</string>
     <string name="artwork_settings_enable">启用动态封面</string>
-    <string name="artwork_settings_card">歌词小封面</string>
-    <string name="artwork_settings_large_cover">大封面</string>
+    <string name="artwork_settings_card">锁屏小封面</string>
+    <string name="artwork_settings_large_cover">大封面与全屏背景</string>
     <string name="artwork_settings_section_source">封面来源</string>
     <string name="artwork_settings_provider_none">未选择插件</string>
     <string name="artwork_settings_provider_state_none">选择一个支持动态封面协议 v1 的插件</string>
@@ -57,7 +57,7 @@
     <string name="artwork_settings_section_screen">屏幕</string>
     <string name="artwork_settings_keep_awake">动态封面播放时保持屏幕常亮</string>
     <string name="artwork_settings_keep_awake_hint">仅在大封面上动态封面实际播放时保持亮屏；暂停、按电源键进入息屏/AOD、解锁或回到歌词小封面时释放，之后按系统超时正常熄屏。与“歌词显示时保持屏幕点亮”各自独立，任一满足即保持亮屏。</string>
-    <string name="artwork_settings_footer">设置即时生效并保存在 Bridge 中，SystemUI 重启后自动恢复，也包含在 Bridge 配置备份里。目前仅在已验证的 ColorOS 16 锁屏布局上播放，其他情况保持静态封面。</string>
+    <string name="artwork_settings_footer">设置即时生效并保存在 Bridge 中，SystemUI 重启后自动恢复，也包含在 Bridge 配置备份里。ColorOS 17 适配处于测试阶段；不支持的布局保持官方静态封面。</string>
     <string name="artwork_settings_disclosure_title">启用动态封面？</string>
     <string name="artwork_settings_disclosure_message">启用后，当前播放歌曲的歌名、歌手、专辑和时长会发送给所选插件，由插件匹配并下载动态封面。不会发送歌词、账号、设备标识或播放器的媒体 ID。</string>
     <string name="artwork_settings_disclosure_confirm">启用</string>
@@ -70,7 +70,7 @@
     <string name="artwork_status_debug_test">调试测试正在运行</string>
     <string name="artwork_status_debug_test_detail">锁屏固定视频测试会临时覆盖这里的设置；在“动态封面 · 调试”中关闭测试后恢复。</string>
     <string name="artwork_status_disabled">动态封面已关闭</string>
-    <string name="artwork_status_no_surface">歌词小封面和大封面都已关闭，不会显示动态封面</string>
+    <string name="artwork_status_no_surface">锁屏小封面、大封面与全屏背景都已关闭，不会显示动态封面</string>
     <string name="artwork_status_unsupported">当前 SystemUI 暂不支持</string>
     <string name="artwork_status_unsupported_detail">未识别到支持的锁屏媒体结构，保持静态封面。</string>
     <string name="artwork_status_playing">正在播放动态封面</string>

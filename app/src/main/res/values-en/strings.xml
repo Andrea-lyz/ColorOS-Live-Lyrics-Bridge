@@ -111,6 +111,8 @@
     <string name="setting_glow_radius">Glow radius</string>
     <string name="setting_primary_color">Primary lyric color</string>
     <string name="setting_glow_color">Glow color</string>
+    <string name="setting_glow_follow_cover">Follow album artwork</string>
+    <string name="setting_glow_follow_cover_hint">Use the current artwork’s media progress color for the glow; use the manual color when unavailable</string>
     <string name="setting_motion">Motion</string>
     <string name="motion_standard">Standard</string>
     <string name="motion_reduced">Reduced</string>

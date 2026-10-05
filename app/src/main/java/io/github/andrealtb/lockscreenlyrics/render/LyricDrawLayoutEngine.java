@@ -196,7 +196,7 @@ public final class LyricDrawLayoutEngine implements LyricLineBreakPolicy.WidthMe
         float bestScore = Float.MAX_VALUE;
         int bestSplit = -1;
         for (int index = start + 1; index < end - 1; index++) {
-            if (!Character.isWhitespace(text.charAt(index))) {
+            if (!LyricLineBreakPolicy.isLayoutSpace(text.charAt(index))) {
                 continue;
             }
             int leftEnd = lastNonSpace(text, start, index);
@@ -221,7 +221,7 @@ public final class LyricDrawLayoutEngine implements LyricLineBreakPolicy.WidthMe
     private static int firstNonSpace(String text, int start, int end) {
         int index = Math.max(0, start);
         int limit = Math.min(text.length(), end);
-        while (index < limit && Character.isWhitespace(text.charAt(index))) {
+        while (index < limit && LyricLineBreakPolicy.isLayoutSpace(text.charAt(index))) {
             index++;
         }
         return index;
@@ -230,7 +230,7 @@ public final class LyricDrawLayoutEngine implements LyricLineBreakPolicy.WidthMe
     private static int lastNonSpace(String text, int start, int end) {
         int index = Math.min(text.length(), end);
         int limit = Math.max(0, start);
-        while (index > limit && Character.isWhitespace(text.charAt(index - 1))) {
+        while (index > limit && LyricLineBreakPolicy.isLayoutSpace(text.charAt(index - 1))) {
             index--;
         }
         return index;

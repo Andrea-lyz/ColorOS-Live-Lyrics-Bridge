@@ -36,6 +36,7 @@ public final class LyricUiConfigContractTest {
             "glowRadiusPercent",
             "primaryColor",
             "glowColor",
+            "glowFollowsCover",
             "motionMode",
             "passiveVerticalPanEnabled",
             "translationMarqueeEnabled",
@@ -76,6 +77,7 @@ public final class LyricUiConfigContractTest {
                 .glowRadiusPercent(21)
                 .primaryColor("#123456")
                 .glowColor("#654321")
+                .glowFollowsCover(true)
                 .motionMode(LyricUiConfig.MOTION_REDUCED)
                 .passiveVerticalPanEnabled(false)
                 .translationMarqueeEnabled(false)

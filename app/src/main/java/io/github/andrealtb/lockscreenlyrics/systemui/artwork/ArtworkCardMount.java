@@ -27,27 +27,38 @@ public final class ArtworkCardMount implements ArtworkVideoMount {
         this.image = image;
         this.effects = effects;
         if (!(image.getParent() instanceof ViewGroup group)
-                || !group.getClass().getName().equals("com.oplus.systemui.plugins.shared.view.template.media.MediaPlayerCardPageRootView")) {
+                || !(effects.c17 ? group instanceof android.widget.RelativeLayout
+                    && group.getId() == group.getResources().getIdentifier("header_container", "id", "com.oplus.systemui.plugins")
+                    : group.getClass().getName().equals("com.oplus.systemui.plugins.shared.view.template.media.MediaPlayerCardPageRootView"))) {
             throw new ArtworkImmersiveMount.Unsupported("card_parent_contract");
         }
         parent = group;
         validate();
         Class<?> layoutType = image.getLayoutParams().getClass();
         // Actual C16 user DEX renames ConstraintLayout.LayoutParams to r.d. Do not mix loaders' params.
-        if (!layoutType.getName().equals("r.d")) {
+        if (!effects.c17 && !layoutType.getName().equals("r.d")) {
             throw new ArtworkImmersiveMount.Unsupported("card_layout_contract");
         }
-        leftToLeft = layoutType.getField("d");
-        topToTop = layoutType.getField("h");
-        if (leftToLeft.getType() != int.class || topToTop.getType() != int.class) {
-            throw new ArtworkImmersiveMount.Unsupported("card_constraint_contract");
+        ViewGroup.MarginLayoutParams params;
+        if (effects.c17) {
+            if (!(image.getLayoutParams() instanceof android.widget.RelativeLayout.LayoutParams nativeParams)) {
+                throw new ArtworkImmersiveMount.Unsupported("c17_card_layout");
+            }
+            leftToLeft = topToTop = null;
+            params = new android.widget.RelativeLayout.LayoutParams(nativeParams);
+        } else {
+            leftToLeft = layoutType.getField("d");
+            topToTop = layoutType.getField("h");
+            if (leftToLeft.getType() != int.class || topToTop.getType() != int.class) {
+                throw new ArtworkImmersiveMount.Unsupported("card_constraint_contract");
+            }
+            params = (ViewGroup.MarginLayoutParams) layoutType.getConstructor(int.class, int.class)
+                    .newInstance(image.getWidth(), image.getHeight());
+            leftToLeft.setInt(params, 0);
+            topToTop.setInt(params, 0);
+            params.leftMargin = image.getLeft();
+            params.topMargin = image.getTop();
         }
-        ViewGroup.MarginLayoutParams params = (ViewGroup.MarginLayoutParams) layoutType.getConstructor(int.class, int.class)
-                .newInstance(image.getWidth(), image.getHeight());
-        leftToLeft.setInt(params, 0);
-        topToTop.setInt(params, 0);
-        params.leftMargin = image.getLeft();
-        params.topMargin = image.getTop();
         layer = new MaskLayer(image.getContext());
         layer.setId(View.generateViewId());
         texture = new TextureView(image.getContext());
@@ -84,6 +95,14 @@ public final class ArtworkCardMount implements ArtworkVideoMount {
         layer.setTranslationY(image.getTranslationY());
         if (image.getWidth() <= 0 || image.getHeight() <= 0) return;
         ViewGroup.MarginLayoutParams params = (ViewGroup.MarginLayoutParams) layer.getLayoutParams();
+        if (effects.c17) {
+            if (params.width != image.getWidth() || params.height != image.getHeight()) {
+                params.width = image.getWidth(); params.height = image.getHeight(); layer.setLayoutParams(params);
+            }
+            layer.setX(image.getX()); layer.setY(image.getY());
+            layer.setElevation(image.getElevation()); layer.setTranslationZ(image.getTranslationZ());
+            return;
+        }
         if (params.width != image.getWidth() || params.height != image.getHeight()
                 || params.leftMargin != image.getLeft() || params.topMargin != image.getTop()) {
             params.width = image.getWidth();

@@ -23,6 +23,7 @@ enum LyricUiPreset {
                 .activeTranslationProgressOpacityPercent(
                         defaults.activeTranslationProgressOpacityPercent)
                 .inactiveTranslationFollowsMain(true)
+                .glowFollowsCover(false)
                 .verticalFadeEnabled(defaults.verticalFadeEnabled)
                 .verticalFadeLengthTenthsDp(defaults.verticalFadeLengthTenthsDp)
                 .inactiveRowFadePercent(defaults.inactiveRowFadePercent)
@@ -136,7 +137,8 @@ enum LyricUiPreset {
                 && left.glowRadiusPercent == right.glowRadiusPercent
                 && left.motionMode == right.motionMode
                 && left.primaryColor.equals(right.primaryColor)
-                && left.glowColor.equals(right.glowColor);
+                && left.glowColor.equals(right.glowColor)
+                && left.glowFollowsCover == right.glowFollowsCover;
     }
 
     private static boolean sameTypography(LyricUiConfig left, LyricUiConfig right) {

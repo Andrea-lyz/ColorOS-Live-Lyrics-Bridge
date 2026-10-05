@@ -15,6 +15,7 @@ public final class ArtworkCardEffectAccess {
     public final Class<?> imageType;
     public final Method bitmapSetter;
     public final Method angleSetter;
+    public final boolean c17;
     private final Field bitmap;
     private final Field animator;
     private final Field spring;
@@ -24,14 +25,32 @@ public final class ArtworkCardEffectAccess {
     private final Method superDraw;
 
     public ArtworkCardEffectAccess(ClassLoader loader) throws ReflectiveOperationException {
+        this(loader, false);
+    }
+
+    public ArtworkCardEffectAccess(ClassLoader loader, boolean c17) throws ReflectiveOperationException {
+        this.c17 = c17;
         imageType = loader.loadClass("com.oplus.systemui.plugins.shared.template.component.media.view.RotatableImageView");
         Class<?> base = imageType.getSuperclass();
         bitmap = unique(imageType, Bitmap.class);
         animator = unique(imageType, AnimatorSet.class);
         // These exact source/Dex fields are the current local C16 sample, not a cross-version spring API.
-        Class<?> springType = loader.loadClass("j1.h");
-        spring = unique(imageType, springType);
-        running = springType.getDeclaredField("g");
+        Class<?> springType;
+        if (c17) {
+            // C17 RotatableImageView.o -> r8.c5 (JADX aliases it C0086c5), base.i is running.
+            // Use the actual field type, never the decompiler's renamed class name.
+            spring = imageType.getDeclaredField("o");
+            springType = spring.getType();
+            if (Modifier.isStatic(spring.getModifiers()) || !springType.getName().startsWith("com.oplus.systemui.plugins.r8.")) {
+                throw new NoSuchFieldException("c17_card_spring");
+            }
+            spring.setAccessible(true);
+            running = springType.getSuperclass().getDeclaredField("i");
+        } else {
+            springType = loader.loadClass("j1.h");
+            spring = unique(imageType, springType);
+            running = springType.getDeclaredField("g");
+        }
         if (running.getType() != boolean.class || Modifier.isStatic(running.getModifiers())) {
             throw new NoSuchFieldException("card_spring_contract");
         }

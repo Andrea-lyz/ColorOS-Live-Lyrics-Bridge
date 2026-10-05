@@ -10,6 +10,30 @@ import java.util.ArrayList;
 import java.util.List;
 
 public final class LyricDrawLayoutEngineTest {
+    @Test public void unicodeWordSeparatorsWrapLikeSpacesWithoutChangingSourceOffsets() {
+        String plain = "  I walked through the door with you  ";
+        for (boolean balanced : new boolean[]{false, true}) {
+            LyricDrawLayoutEngine expected = new LyricDrawLayoutEngine((text, start, end) -> end - start);
+            expected.build(line(plain), plain, 23, false, balanced, 100, null);
+            for (char separator : new char[]{'\u00a0', '\u202f', '\u2007'}) {
+                String text = plain.replace(' ', separator);
+                WordLine source = line(text);
+                LyricDrawLayoutEngine actual = new LyricDrawLayoutEngine((value, start, end) -> end - start);
+                actual.build(source, text, 23, false, balanced, 100, null);
+                assertEquals(expected.lines().size(), actual.lines().size());
+                for (int i = 0; i < expected.lines().size(); i++) {
+                    assertEquals(expected.lines().get(i).start, actual.lines().get(i).start);
+                    assertEquals(expected.lines().get(i).end, actual.lines().get(i).end);
+                }
+                assertEquals(text, source.text);
+                assertTrue(actual.lines().stream().anyMatch(row -> text.substring(row.start, row.end).contains("door")));
+                // Cached layout must preserve exactly the same offsets too.
+                actual.build(source, text, 23, false, balanced, 100, null);
+                assertEquals(expected.lines().get(1).start, actual.lines().get(1).start);
+            }
+        }
+    }
+
     @Test
     public void expandedSentenceKeepsAllWrappedCharactersBeyondTwoLines() {
         String text = "这是一段需要超过两行才能显示完整的朗读文字，末尾几个字也必须保留。";

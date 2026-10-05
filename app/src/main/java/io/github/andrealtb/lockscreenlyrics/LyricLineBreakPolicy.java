@@ -43,7 +43,7 @@ public final class LyricLineBreakPolicy {
             if (character == ':' || character == '：') {
                 return false;
             }
-            if (!Character.isWhitespace(character)) {
+            if (!isLayoutSpace(character)) {
                 visibleCharacters++;
             }
         }
@@ -75,7 +75,7 @@ public final class LyricLineBreakPolicy {
                 break;
             }
             bestCharacterBoundary = next;
-            if (Character.isWhitespace(codePoint)) {
+            if (isLayoutSpace(codePoint)) {
                 bestWhitespaceBoundary = next;
             }
             index = next;
@@ -95,9 +95,15 @@ public final class LyricLineBreakPolicy {
         return Math.max(start + 1, Math.min(end, boundary));
     }
 
+    /** Lyrics may use NBSP between every timed word. Treat visible Unicode spaces as layout
+     * separators without rewriting the source text or its timing offsets. */
+    public static boolean isLayoutSpace(int codePoint) {
+        return Character.isWhitespace(codePoint) || Character.isSpaceChar(codePoint);
+    }
+
     private static boolean textContainsSpace(String text, int start, int end) {
         for (int i = start; i < end; i++) {
-            if (Character.isWhitespace(text.charAt(i))) {
+            if (isLayoutSpace(text.charAt(i))) {
                 return true;
             }
         }

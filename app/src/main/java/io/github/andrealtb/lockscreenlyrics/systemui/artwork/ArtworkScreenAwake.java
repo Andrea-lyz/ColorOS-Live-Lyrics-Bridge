@@ -25,6 +25,10 @@ public final class ArtworkScreenAwake implements AutoCloseable {
         void pulse();
     }
     public static final String PLAYING = "playing";
+
+    static boolean coverSurface(boolean immersive, boolean background, boolean verifiedCoverMode) {
+        return immersive && (!background || verifiedCoverMode);
+    }
     static final long LEASE_MS = 15_000;
     static final long RENEW_MS = 8_000;
     static final long RELEASE_GRACE_MS = 1_000;

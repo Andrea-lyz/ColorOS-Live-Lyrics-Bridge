@@ -111,6 +111,8 @@
     <string name="setting_glow_radius">光晕半径</string>
     <string name="setting_primary_color">主歌词颜色</string>
     <string name="setting_glow_color">光晕颜色</string>
+    <string name="setting_glow_follow_cover">跟随封面取色</string>
+    <string name="setting_glow_follow_cover_hint">光晕跟随当前封面的媒体进度条主色；无可用颜色时使用手动颜色</string>
     <string name="setting_motion">动效</string>
     <string name="motion_standard">标准</string>
     <string name="motion_reduced">减弱</string>

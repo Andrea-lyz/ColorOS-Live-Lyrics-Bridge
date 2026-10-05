@@ -30,6 +30,7 @@ final class LyricUiConfigCodec {
     static final String GLOW_RADIUS = "glow_radius_percent";
     static final String PRIMARY_COLOR = "primary_color";
     static final String GLOW_COLOR = "glow_color";
+    static final String GLOW_FOLLOWS_COVER = "glow_follows_cover";
     static final String MOTION_MODE = "motion_mode";
     static final String PASSIVE_VERTICAL_PAN = "passive_vertical_pan_enabled";
     static final String TRANSLATION_MARQUEE = "translation_marquee_enabled";
@@ -80,6 +81,7 @@ final class LyricUiConfigCodec {
         values.put(GLOW_RADIUS, config.glowRadiusPercent);
         values.put(PRIMARY_COLOR, config.primaryColor);
         values.put(GLOW_COLOR, config.glowColor);
+        values.put(GLOW_FOLLOWS_COVER, config.glowFollowsCover);
         values.put(MOTION_MODE, config.motionMode);
         values.put(PASSIVE_VERTICAL_PAN, config.passiveVerticalPanEnabled);
         values.put(TRANSLATION_MARQUEE, config.translationMarqueeEnabled);
@@ -137,6 +139,7 @@ final class LyricUiConfigCodec {
         if (values.containsKey(GLOW_RADIUS)) builder.glowRadiusPercent(integer(values.get(GLOW_RADIUS), base.glowRadiusPercent));
         if (values.containsKey(PRIMARY_COLOR)) builder.primaryColor(string(values.get(PRIMARY_COLOR), base.primaryColor));
         if (values.containsKey(GLOW_COLOR)) builder.glowColor(string(values.get(GLOW_COLOR), base.glowColor));
+        if (values.containsKey(GLOW_FOLLOWS_COVER)) builder.glowFollowsCover(bool(values.get(GLOW_FOLLOWS_COVER), base.glowFollowsCover));
         if (values.containsKey(MOTION_MODE)) builder.motionMode(integer(values.get(MOTION_MODE), base.motionMode));
         if (values.containsKey(PASSIVE_VERTICAL_PAN)) builder.passiveVerticalPanEnabled(bool(values.get(PASSIVE_VERTICAL_PAN), base.passiveVerticalPanEnabled));
         if (values.containsKey(TRANSLATION_MARQUEE)) builder.translationMarqueeEnabled(bool(values.get(TRANSLATION_MARQUEE), base.translationMarqueeEnabled));

@@ -4,6 +4,37 @@
 从 `feat/coloros17-adaptation` 的 `df7cf393d3a9ed928f4a409911179d989ccf2054` 建立。
 依据：[完整方案](DYNAMIC-ARTWORK-PROVIDER-PLAN.zh-CN.md)。
 
+2026-10-05 C17 fix4：光晕颜色新增默认关闭的“跟随封面取色”，C16 隐藏；读取对应媒体宿主的
+静态封面 primary80，与原生进度条同源，只替换光晕 RGB。无需动态封面 Provider 或视频开关，
+缺失配色时回退手动颜色。配置接入原有保存/同步/备份，见 [fix4 记录](DYNAMIC-ARTWORK-C17-FIX4-TEST.zh-CN.md)，尚未设备验证。
+
+2026-10-05 fix2 断词修复用户已确认正常。后续 fix3 针对普通逐行歌词进度的快速切句衔接，
+统一高光所属句与播放时间、取消无词索引时的全亮兜底、句尾提前短暂扫满；未改源时间轴。
+见 [fix3 说明](DYNAMIC-ARTWORK-C17-FIX3-TEST.zh-CN.md)。2026-10-05 用户反馈“可以，这版效果满意”，
+本次普通逐行歌词进度的句尾与切句衔接效果已设备确认。
+
+2026-10-05 C17 fix2：修复自绘歌词漏认 NBSP 等 Unicode 词间空格而拆开 door/your 的问题；
+只调整排版断点与空格裁剪，不改源文本或逐字索引。749 项测试通过、6 项既有跳过，Debug 构建通过，
+尚未设备复验。见 [fix2 记录](DYNAMIC-ARTWORK-C17-FIX2-TEST.zh-CN.md)。
+
+2026-10-05 C17 fix1：依据 DSU 实机崩溃日志与当前 framework，修复 TextureView 帧回调中同步拆层
+引发的空指针；失效立即撤销，拆层和状态通知移到绘制返回后。C17 大封面模式下的全屏动态背景
+接入常亮，歌词模式仍独立控制。见 [fix1 修复与复验](DYNAMIC-ARTWORK-C17-FIX1-TEST.zh-CN.md)，尚未设备复验。
+
+2026-10-05 fix1 后续 DSU 复测：`lyrics-log-20261005-070925.txt` 的 07:09:29–07:12:10 窗口
+未见 SystemUI 崩溃；视频播放/暂停恢复、动态封面常亮获取释放与歌词常亮 pulse/释放均有记录。
+用户反馈“好像没啥大问题了”，记为基本链路初步通过；本窗口未触发 stale_render，
+不扩大为原崩溃分支强制覆盖、长期资源预算或所有 C17 设备验收。
+
+2026-10-05 设计归档：[C17 专项适配计划](DYNAMIC-ARTWORK-C17-PLAN.zh-CN.md)。依据本地 C17
+反编译样本，优先 Square，补齐前景双槽与全屏背景的同步镜像、实时渐变模糊和独立过渡。
+计划归档时尚未实现；不继承 C16 动态封面的验证结论。
+
+2026-10-05 C17 首轮实现：新增经结构校验的双槽与当前背景 renderer 适配，补齐小卡 shader/布局差异；
+单路视频通过 RuntimeShader 同步绘制中央与上下镜像，并保留官方渐变模糊、歌词模式整体模糊和遮罩。
+过渡按 controller/pending 状态放行，不用固定等待。新增 C17 状态/几何/字段契约测试。
+当前仅为本地测试候选，官方模糊的视频采样与完整设备验收待确认；见 [首轮实现与验证](DYNAMIC-ARTWORK-C17-INITIAL-TEST.zh-CN.md)。
+
 2026-10-04 发布：动态封面 Provider 迁入 Providers 仓库（`artwork-provider-am`，v1.0.0 / versionCode 4，
 含 `artwork-contract` 镜像与逐文件哈希校验），Bridge 侧删除该模块、保留协议契约；预览版
 [v4.4.0-C16-Artwork](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/releases/tag/v4.4.0-C16-Artwork)

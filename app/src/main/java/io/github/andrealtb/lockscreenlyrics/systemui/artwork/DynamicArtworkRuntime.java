@@ -71,8 +71,39 @@ public final class DynamicArtworkRuntime {
     private ArtworkImmersivePlayback playback;
     private volatile boolean shapeObservationReady;
     private volatile ArtworkCardEffectAccess cardEffects;
+    private volatile ArtworkC17Access c17Access;
     private final AtomicBoolean displayPosted = new AtomicBoolean();
     private boolean systemInstalled;
+    private volatile boolean coverColorEnabled;
+    private volatile boolean requestedCoverColorEnabled;
+
+    public void setCoverColorEnabled(boolean enabled) {
+        if (requestedCoverColorEnabled == enabled) return;
+        requestedCoverColorEnabled = enabled;
+        main.post(() -> {
+            if (requestedCoverColorEnabled != enabled || coverColorEnabled == enabled) return;
+            coverColorEnabled = enabled;
+            if (observing()) { refreshSource(); refreshHosts(); }
+            else suspendObservations();
+        });
+    }
+
+    /** Scoped to the lyric's actual section, with current binding and snapshot ownership. */
+    public Integer coverColor(View lyric) {
+        if (!coverColorEnabled || android.os.Looper.myLooper() != main.getLooper()) return null;
+        for (View node = lyric; node != null; node = node.getParent() instanceof View parent ? parent : null) {
+            for (Host host : hosts) {
+                if (host.root.get() != node || !host.attached || host.epoch != pluginEpoch.get()
+                        || !host.model.splitModel || host.displayBinding == null || !host.displayBinding.ready()) continue;
+                Host.Observation snapshot = host.pending;
+                if (snapshot != null && host.applied != null && snapshot.input() == host.input
+                        && snapshot.surfaceEpoch() == host.surfaceVersion
+                        && java.util.Objects.equals(snapshot.card(), host.applied.card())) return snapshot.coverColor();
+                return null;
+            }
+        }
+        return null;
+    }
 
     public DynamicArtworkRuntime(HookInstaller hooks, Handler main, java.util.function.Supplier<Context> context,
             String settingsPermission) {
@@ -288,15 +319,28 @@ public final class DynamicArtworkRuntime {
             ImageView image = host.image.get();
             boolean surfaceEnabled = host.surface == ArtworkPlaybackPolicy.Surface.IMMERSIVE
                     ? active.immersiveEnabled() : active.cardEnabled();
-            if (surfaceEnabled && host.attached && host.epoch == pluginEpoch.get() && image != null && !host.model.splitModel
+            if (surfaceEnabled && host.attached && host.epoch == pluginEpoch.get() && image != null && host.model.splitModel
+                    && host.displayBinding != null && host.c17 != null) {
+                try {
+                    ImageView background = host.c17.background();
+                    boolean fullscreen = background != null && background.isShown();
+                    ImageView target = fullscreen ? background : host.c17.foreground();
+                    if (target != null) candidates.add(new ArtworkImmersivePlayback.Candidate(target,
+                            host.displayBinding, host.surface, null, host.c17, fullscreen));
+                    host.trace.state("ARTWORK_C17_SURFACE", () -> "fullscreen=" + fullscreen
+                            + " targetPresent=" + (target != null) + " ready=" + (target != null && host.c17.ready(target, fullscreen)));
+                } catch (ReflectiveOperationException | RuntimeException error) {
+                    host.trace.state("ARTWORK_C17_UNSUPPORTED", () -> "reason=host_state errorType=" + ArtworkTrace.errorType(error));
+                }
+            } else if (surfaceEnabled && host.attached && host.epoch == pluginEpoch.get() && image != null
                     && host.displayBinding != null && (host.surface == ArtworkPlaybackPolicy.Surface.IMMERSIVE
-                        ? shapeObservationReady : cardEffects != null)) {
+                        ? !host.model.splitModel && shapeObservationReady : cardEffects != null)) {
                 candidates.add(new ArtworkImmersivePlayback.Candidate(image, host.displayBinding, host.surface, cardEffects));
             }
         }
         trace.state("ARTWORK_TEST_HOST_CHECK", () -> "shapeObservationReady=" + shapeObservationReady
                 + " cardProfileReady=" + (cardEffects != null)
-                + " candidateCount=" + candidates.size() + " mode=card_and_single_slot_immersive");
+                + " candidateCount=" + candidates.size() + " c17ProfileReady=" + (c17Access != null));
         playback.observe(candidates);
     }
 
@@ -312,7 +356,7 @@ public final class DynamicArtworkRuntime {
 
     private boolean observing() {
         // With product enablement off, MEDIA debug permits read-only binding diagnostics only.
-        return displayEnabled || StructuredBridgeLog.isAreaEnabled(BridgeDebugArea.MEDIA);
+        return displayEnabled || coverColorEnabled || StructuredBridgeLog.isAreaEnabled(BridgeDebugArea.MEDIA);
     }
 
     public synchronized void initializeSystemUi(ClassLoader loader) {
@@ -373,12 +417,44 @@ public final class DynamicArtworkRuntime {
         if (epoch != pluginEpoch.get()) return;
         shapeObservationReady = false;
         cardEffects = null;
-        if (!targets.model().splitModel && android.os.Build.VERSION.SDK_INT >= 33) installCardObservation();
+        c17Access = null;
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            installCardObservation(targets.model().splitModel);
+            if (targets.c17() != null) installC17Observation(targets.c17());
+        }
         installSurface(epoch, targets.model(), targets.card());
         if (targets.immersive() != null) installSurface(epoch, targets.model(), targets.immersive());
         if (!targets.model().splitModel) installShapeObservation();
         log("ARTWORK_CAPABILITY_RESOLVED", "model=" + (targets.model().splitModel ? "info_progress" : "flat")
-                + " immersiveResolved=" + (targets.immersive() != null) + " display=disabled");
+                + " immersiveResolved=" + (targets.immersive() != null) + " c17ProfileReady=" + (c17Access != null)
+                + " coverColorResolved=" + targets.model().supportsCoverColor());
+    }
+
+    private void installC17Observation(ArtworkC17Access access) {
+        List<Runnable> installed = new ArrayList<>();
+        try {
+            for (Method method : access.changes) {
+                installed.add(hooks.install(method, "artwork-c17-" + method.getDeclaringClass().getName() + "-" + method.getName(), new AfterCall() {
+                    @Override public void before(Object receiver, Object[] args) {
+                        if (!displayEnabled || playback == null || android.os.Looper.myLooper() != main.getLooper()) return;
+                        for (Host host : hosts) if (host.c17 != null && host.c17.owns(receiver)) playback.invalidateC17(host.c17);
+                    }
+                    @Override public void observe(Object receiver, Object[] args, Object result) {
+                        if (!displayEnabled || android.os.Looper.myLooper() != main.getLooper()) return;
+                        for (Host host : hosts) if (host.c17 != null && host.c17.owns(receiver)) {
+                            updateDisplay();
+                            break;
+                        }
+                    }
+                }));
+            }
+            pluginHandles.addAll(installed);
+            c17Access = access;
+            log("ARTWORK_CAPABILITY_RESOLVED", "c17Profile=dual_slot_mirror nativeBlur=needs_device_validation");
+        } catch (Exception | LinkageError error) {
+            for (Runnable handle : installed) safeUnhook(handle);
+            log("ARTWORK_CAPABILITY_UNSUPPORTED", "c17Profile=unavailable errorType=" + ArtworkTrace.errorType(error));
+        }
     }
 
     private void installShapeObservation() {
@@ -404,10 +480,10 @@ public final class DynamicArtworkRuntime {
     }
 
     @androidx.annotation.RequiresApi(33)
-    private void installCardObservation() {
+    private void installCardObservation(boolean c17) {
         List<Runnable> installed = new ArrayList<>();
         try {
-            ArtworkCardEffectAccess access = new ArtworkCardEffectAccess(pluginLoader.get());
+            ArtworkCardEffectAccess access = new ArtworkCardEffectAccess(pluginLoader.get(), c17);
             for (Method method : new Method[]{access.bitmapSetter, access.angleSetter}) {
                 installed.add(hooks.install(method, "artwork-card-effect-" + method.getName(), new AfterCall() {
                     @Override public void before(Object receiver, Object[] args) {
@@ -427,7 +503,7 @@ public final class DynamicArtworkRuntime {
             }
             pluginHandles.addAll(installed);
             cardEffects = access;
-            log("ARTWORK_CAPABILITY_RESOLVED", "cardProfile=c16_user_shader cardHooks=true");
+            log("ARTWORK_CAPABILITY_RESOLVED", "cardProfile=" + (c17 ? "c17_shader" : "c16_user_shader") + " cardHooks=true");
         } catch (Exception | LinkageError error) {
             for (Runnable handle : installed) safeUnhook(handle);
             log("ARTWORK_CAPABILITY_UNSUPPORTED", "cardProfile=unavailable errorType=" + ArtworkTrace.errorType(error));
@@ -498,6 +574,12 @@ public final class DynamicArtworkRuntime {
             return;
         }
         Host host = new Host(epoch, section, vm, container, new WeakReference<>(image), model, target.surface(), diagnostic);
+        if (model.splitModel && target.surface() == ArtworkPlaybackPolicy.Surface.IMMERSIVE && c17Access != null) {
+            try { host.c17 = c17Access.bind(section.get(), root); }
+            catch (ReflectiveOperationException | RuntimeException error) {
+                diagnostic.state("ARTWORK_C17_UNSUPPORTED", () -> "reason=host_contract errorType=" + ArtworkTrace.errorType(error));
+            }
+        }
         hosts.add(host);
         root.addOnAttachStateChangeListener(host);
         diagnostic.state("ARTWORK_HOST_REGISTERED", () -> "surface=" + target.surface() + " pluginEpoch=" + epoch
@@ -663,7 +745,8 @@ public final class DynamicArtworkRuntime {
     }
 
     private final class Host implements View.OnAttachStateChangeListener {
-        private record Observation(ArtworkFlowBinding input, long surfaceEpoch, ArtworkCardIdentity card) {}
+        private record Observation(ArtworkFlowBinding input, long surfaceEpoch, ArtworkCardIdentity card, Integer coverColor) {}
+        private Observation applied;
         final long epoch;
         final WeakReference<Object> section;
         final WeakReference<Object> viewModel;
@@ -674,6 +757,7 @@ public final class DynamicArtworkRuntime {
         final ArtworkTrace trace;
         final ArtworkHostProbe probe;
         ArtworkSessionRegistry.Binding displayBinding;
+        ArtworkC17Access.Bound c17;
         WeakReference<android.graphics.drawable.Drawable> trackedDrawable = new WeakReference<>(null);
         ViewTreeObserver displayTree;
         final ViewTreeObserver.OnPreDrawListener displayLayout = () -> { updateDisplay(); return true; };
@@ -720,6 +804,7 @@ public final class DynamicArtworkRuntime {
             if (transition != null && drawable != null) transition.release(drawable);
             trackedDrawable = new WeakReference<>(null);
             displayBinding = null;
+            applied = null;
             if (displayTree != null && displayTree.isAlive()) displayTree.removeOnPreDrawListener(displayLayout);
             displayTree = null;
             updateDisplay();
@@ -837,7 +922,10 @@ public final class DynamicArtworkRuntime {
             if (!attached || epoch != pluginEpoch.get() || input != expected) return;
             ArtworkCardIdentity identity = model.readCard(value);
             if (input != expected) return;
-            pending = new Observation(expected, surfaceVersion, identity);
+            Integer coverColor = null;
+            if (coverColorEnabled) try { coverColor = model.readCoverColor(value); }
+            catch (ReflectiveOperationException | RuntimeException ignored) { /* manual glow fallback */ }
+            pending = new Observation(expected, surfaceVersion, identity, coverColor);
             if (ArtworkTrace.enabled()) synchronized (this) {
                 if (!java.util.Objects.equals(identity, diagnosticCard)) diagnosticModelRevision++;
                 diagnosticCard = identity;
@@ -853,6 +941,8 @@ public final class DynamicArtworkRuntime {
                 if (latest == null || latest.input() != input || latest.surfaceEpoch() != surfaceVersion) return;
                 registry.observeHost(this, epoch, surfaceVersion, latest.card(), trace, binding -> {
                     displayBinding = binding;
+                    ViewGroup currentRoot = root.get();
+                    if (coverColorEnabled && currentRoot != null) currentRoot.postInvalidateOnAnimation();
                     updateDisplay();
                     probe.sample();
                     trace.state(
@@ -866,6 +956,16 @@ public final class DynamicArtworkRuntime {
                                 + " playing=" + binding.playing()
                                 + " display=disabled");
                 });
+                Observation previous = applied;
+                applied = latest;
+                if (coverColorEnabled && (previous == null
+                        || !java.util.Objects.equals(previous.coverColor(), latest.coverColor())
+                        || !java.util.Objects.equals(previous.card(), latest.card()))) {
+                    trace.state("ARTWORK_COVER_COLOR", () -> "surface=" + surface + " source=primary80 available="
+                            + (latest.coverColor() != null) + " bound=" + (displayBinding != null && displayBinding.ready()));
+                    ViewGroup currentRoot = root.get();
+                    if (currentRoot != null) currentRoot.postInvalidateOnAnimation();
+                }
             });
         }
 

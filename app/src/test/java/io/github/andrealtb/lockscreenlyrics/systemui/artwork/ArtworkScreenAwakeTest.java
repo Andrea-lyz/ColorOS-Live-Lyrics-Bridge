@@ -40,6 +40,27 @@ public class ArtworkScreenAwakeTest {
     private String state = "no_video";
     private final ArtworkScreenAwake awake = new ArtworkScreenAwake(power, clock, () -> state, trace::add);
 
+    @Test public void fullscreenCoverHoldsButSwitchingToLyricsReleasesOnlyArtworkLock() {
+        awake.setEnabled(true);
+        state = ArtworkScreenAwake.coverSurface(true, true, true) ? ArtworkScreenAwake.PLAYING : "lyric_background_or_unknown";
+        awake.update();
+        assertTrue(power.held);
+        clock.advance(ArtworkScreenAwake.RENEW_MS);
+        assertEquals(2, power.holds);
+        state = ArtworkScreenAwake.coverSurface(true, true, false) ? ArtworkScreenAwake.PLAYING : "lyric_background_or_unknown";
+        awake.update();
+        clock.advance(ArtworkScreenAwake.RELEASE_GRACE_MS);
+        assertFalse(power.held);
+        assertEquals("state=released reason=lyric_background_or_unknown", trace.get(trace.size() - 1));
+    }
+
+    @Test public void legacyLargeCoverStillQualifiesButSmallCardAndUnknownBackgroundDoNot() {
+        assertTrue(ArtworkScreenAwake.coverSurface(true, false, false));
+        assertFalse(ArtworkScreenAwake.coverSurface(false, false, true));
+        assertFalse(ArtworkScreenAwake.coverSurface(false, true, true));
+        assertFalse(ArtworkScreenAwake.coverSurface(true, true, false));
+    }
+
     @Test public void staysOffUntilEnabledAndTheLargeCoverIsActuallyPlaying() {
         state = ArtworkScreenAwake.PLAYING;
         awake.update();

@@ -50,6 +50,7 @@ import android.widget.TextView;
 
 import org.json.JSONObject;
 
+import io.github.andrealtb.lockscreenlyrics.render.LineTimedRevealPolicy;
 import io.github.andrealtb.lockscreenlyrics.render.CachedDrawFrame;
 import io.github.andrealtb.lockscreenlyrics.render.CharLiftGeometry;
 import io.github.andrealtb.lockscreenlyrics.render.DrawFrame;
@@ -732,6 +733,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 public void drawWithOfficialRenderer(Canvas canvas, TextView textView, DrawFrame frame) {
                     long rendererStartedAt = performanceSampler.begin();
                     try {
+                        officialLyricTextRenderer.setCoverGlowColor(dynamicArtworkRuntime.coverColor(textView));
                         officialLyricTextRenderer.draw(canvas, textView, frame);
                     } finally {
                         performanceSampler.end(
@@ -1964,6 +1966,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         lyricContentCleanupConfig = LyricContentCleanupRepository.load(preferences);
         lyricUiConfig = config;
         runtimeLyricUiConfig = config;
+        dynamicArtworkRuntime.setCoverColorEnabled(config.glowFollowsCover && C17GlowSupport.available(context));
         applyLyricUiStyleSettings(
                 config.scaleEnabled,
                 config.blurEnabled,
@@ -2018,6 +2021,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 config);
         lyricUiConfig = config;
         runtimeLyricUiConfig = config;
+        dynamicArtworkRuntime.setCoverColorEnabled(config.glowFollowsCover && C17GlowSupport.available(context));
         if (intent.getBooleanExtra(
                 LyricUiSettings.EXTRA_CLEAR_TRANSLATION_OVERRIDES,
                 false)) {
@@ -8407,11 +8411,15 @@ public final class LockscreenLyricsModule extends XposedModule {
         return model != null && model.isBeforeFirstProgressStart(position);
     }
 
-    private static boolean isOfficialWordProgressActive(
+    private boolean isOfficialWordProgressActive(
             WordLyricModel model,
             WordLine activeLine,
             WordLine line,
             long position) {
+        if (lyricUiLineTimedProgressEnabled && !isAodLowFrameRateLyricMode()
+                && line != null && line.timingMode == LyricTimingMode.LINE_TIMED) {
+            return LineTimedRevealPolicy.active(model, line, position);
+        }
         boolean lineMatchesPlaybackActive = activeLine != null
                 && line != null
                 && activeLine.timeMillis == line.timeMillis
@@ -13052,6 +13060,13 @@ public final class LockscreenLyricsModule extends XposedModule {
             }
         }
 
+        void setCoverGlowColor(Integer color) {
+            int resolved = LyricUiColors.glowShadow(uiConfig, color);
+            if (resolved == palette.glowShadow) return;
+            palette = palette.withGlowShadow(resolved);
+            clearGlowCache();
+        }
+
         void setForceOfficialSlotHeight(boolean forceOfficialSlotHeight) {
             this.forceOfficialSlotHeight = forceOfficialSlotHeight;
         }
@@ -14010,7 +14025,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 return 0f;
             }
             if (line.timingMode == LyricTimingMode.LINE_TIMED && lineTimedProgressEnabled) {
-                return resolveLineElapsedProgress(model, line, position);
+                return resolveLineTimedRevealProgress(model, line, position);
             }
             if (line.words == null || line.words.isEmpty() || TextUtils.isEmpty(line.text)) {
                 return resolveLineElapsedProgress(model, line, position);
@@ -14037,6 +14052,14 @@ public final class LockscreenLyricsModule extends XposedModule {
                     + inactivePaint.measureText(line.text, activeStart, activeEnd)
                     * WordLyricRenderSupport.wordRevealProgress(model, line, wordIndex, position);
             return Math.max(0f, Math.min(1f, revealWidth / fullWidth));
+        }
+
+        private boolean isLineTimedProgress(WordLine line) {
+            return line != null && line.timingMode == LyricTimingMode.LINE_TIMED && lineTimedProgressEnabled;
+        }
+
+        private float resolveLineTimedRevealProgress(WordLyricModel model, WordLine line, long position) {
+            return LineTimedRevealPolicy.progress(line.timeMillis, resolveLineDisplayEndMillis(model, line), position);
         }
 
         private float resolveLineElapsedProgress(
@@ -14649,12 +14672,14 @@ public final class LockscreenLyricsModule extends XposedModule {
         /**
          * Resolves the endpoint of the reveal that the lift front follows. A
          * line-timed row has one synthetic whole-row range, but its linear
-         * reveal runs until the display end (normally the next row's start),
-         * rather than until the word-timing fallback would infer.
+         * reveal finishes just before the display handoff; it never uses an
+         * inferred last-word duration.
          */
         private long resolveCharLiftLineRevealEnd(WordLyricModel model, WordLine line) {
             if (line.timingMode == LyricTimingMode.LINE_TIMED) {
-                return resolveLineDisplayEndMillis(model, line);
+                return lineTimedProgressEnabled
+                        ? LineTimedRevealPolicy.revealEnd(line.timeMillis, resolveLineDisplayEndMillis(model, line))
+                        : resolveLineDisplayEndMillis(model, line);
             }
             return WordLyricRenderSupport.wordRevealEndMillis(
                     model,
@@ -14821,6 +14846,13 @@ public final class LockscreenLyricsModule extends XposedModule {
                 float x,
                 float y) {
             canvas.drawText(line.text, x, y, inactivePaint);
+            if (isLineTimedProgress(line)) {
+                float width = inactivePaint.measureText(line.text);
+                float reveal = width * resolveLineTimedRevealProgress(model, line, position);
+                drawProgressGlow(canvas, line, line.text, 0, line.text.length(), x, y, width, reveal);
+                drawRevealedText(canvas, line.text, 0, line.text.length(), x, y, width, reveal);
+                return;
+            }
             int wordIndex = line.findWordIndex(position);
             if (wordIndex < 0 || wordIndex >= line.words.size()) {
                 // Word-timed intro: keep the inactive base until the first word
@@ -14913,7 +14945,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                     ? inactivePaint
                     : activeLine && !drawProgress ? activePaint : inactivePaint;
             float segmentWidth = drawLine.width;
-            float revealWidth = drawProgress && activeWord != null
+            float revealWidth = drawProgress && (activeWord != null || isLineTimedProgress(line))
                     ? resolveWordRevealWidthForSegment(
                     model,
                     line,
@@ -14964,7 +14996,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 return;
             }
 
-            if (activeWord == null) {
+            if (activeWord == null && !isLineTimedProgress(line)) {
                 if (activeLine && line.timingMode != LyricTimingMode.WORD_TIMED) {
                     if (fullLineOverlayAmount > 0.001f) {
                         drawFullLineOverlayIfNeeded(
@@ -15084,6 +15116,16 @@ public final class LockscreenLyricsModule extends XposedModule {
                 int wordIndex,
                 long position,
                 float segmentWidth) {
+            if (isLineTimedProgress(line)) {
+                float total = 0f;
+                float preceding = 0f;
+                for (LyricDrawLine row : drawLines) {
+                    total += row.width;
+                    if (row.end <= drawLine.start) preceding += row.width;
+                }
+                return LineTimedRevealPolicy.segmentReveal(total, preceding, segmentWidth,
+                        resolveLineTimedRevealProgress(model, line, position));
+            }
             if (word == null) {
                 return 0f;
             }
@@ -15490,7 +15532,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 return 0f;
             }
             if (line.timingMode == LyricTimingMode.LINE_TIMED && lineTimedProgressEnabled) {
-                return resolveLineElapsedProgress(model, line, position);
+                return resolveLineTimedRevealProgress(model, line, position);
             }
             return WordLyricRenderSupport.wordRevealProgress(model, line, wordIndex, position);
         }

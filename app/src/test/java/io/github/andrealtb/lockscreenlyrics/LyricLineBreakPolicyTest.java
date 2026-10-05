@@ -10,6 +10,24 @@ public final class LyricLineBreakPolicyTest {
     private static final LyricLineBreakPolicy.WidthMeasurer CODE_UNIT_WIDTH =
             (text, start, end) -> end - start;
 
+    @Test public void timedLyricsWithNbspKeepDoorAndYourWhole() {
+        for (String plain : new String[]{"I walked through the door with you", "You taught me about your past"}) {
+            String word = plain.contains("door") ? "door" : "your";
+            for (char space : new char[]{' ', '\u00a0', '\u202f', '\u2007'}) {
+                String text = plain.replace(' ', space);
+                int wordStart = text.indexOf(word);
+                int boundary = LyricLineBreakPolicy.chooseWrapEnd(text, 0, text.length(), wordStart + 2, CODE_UNIT_WIDTH);
+                assertEquals("must move the whole word to the next row", wordStart, boundary);
+                assertTrue(LyricLineBreakPolicy.shouldBalanceUntranslatedText(text, 0, text.length(), wordStart + 2, CODE_UNIT_WIDTH));
+            }
+        }
+    }
+
+    @Test public void aWordWiderThanTheWholeRowStillMakesProgress() {
+        String text = "supercalifragilistic";
+        assertEquals(5, LyricLineBreakPolicy.chooseWrapEnd(text, 0, text.length(), 5, CODE_UNIT_WIDTH));
+    }
+
     @Test
     public void japaneseSentenceWithoutSpacesWrapsAtCharacterBoundary() {
         String text = "聞いて、私さ、"
