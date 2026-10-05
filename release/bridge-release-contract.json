@@ -65,7 +65,7 @@
     ],
     "module": "universal-provider",
     "buildTask": ":universal-provider:assembleRelease",
-    "testTask": ":universal-provider:testReleaseUnitTest",
+    "testTask": ":universal-provider:testDebugUnitTest",
     "applicationId": "io.github.andrealtb.coloroslyrics.provider.universal",
     "versionName": "1.1.1",
     "versionCode": 3,

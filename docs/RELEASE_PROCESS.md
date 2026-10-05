@@ -207,7 +207,7 @@ Provider ZIP 只能包含 14 个顶层 APK，不含目录、debug/unsigned APK �
      `assembleArtworkProviderRelease`；
    - applicationId、versionCode/Name、资产名与证书都必须与契约一致。
 5. 若 tag 列在 `previewUniversalProvider.previewTags` 中，还从同一固定 Provider commit 构建
-   通用播放器 Provider；执行该模块的 release 单测，并校验包名、独立版本、签名、scope 与 zipalign。
+   通用播放器 Provider；执行该模块的 debug 单测，并校验包名、独立版本、签名、scope 与 zipalign。
    `v4.4.0-C17-Artwork-Preview` 因此交付三个 APK 和一个 `SHA256SUMS`，不会在发布后临时补附件。
 6. `preview.yml` 创建 GitHub pre-release，不标记 latest。不构建其余歌词 Provider 矩阵，
    不创建 LSP tag，不上传 LSP mirror，也不修改正式契约版本。

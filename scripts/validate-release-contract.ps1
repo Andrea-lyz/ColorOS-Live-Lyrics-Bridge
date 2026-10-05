@@ -65,7 +65,7 @@ if ($null -ne $previewUniversal) {
     Assert-Contract ($previewUniversal.repository -eq $previewArtwork.repository -and $previewUniversal.ref -eq $previewArtwork.ref) 'preview Providers must share a pinned repository/commit'
     Assert-Contract ($previewUniversal.module -eq 'universal-provider') 'preview Universal module differs'
     Assert-Contract ($previewUniversal.buildTask -eq ':universal-provider:assembleRelease') 'preview Universal build task differs'
-    Assert-Contract ($previewUniversal.testTask -eq ':universal-provider:testReleaseUnitTest') 'preview Universal test task differs'
+    Assert-Contract ($previewUniversal.testTask -eq ':universal-provider:testDebugUnitTest') 'preview Universal test task differs'
     Assert-Contract ($previewUniversal.applicationId -eq 'io.github.andrealtb.coloroslyrics.provider.universal') 'preview Universal applicationId differs'
     Assert-Contract ($previewUniversal.versionName -match '^\d+\.\d+\.\d+$' -and [int]$previewUniversal.versionCode -gt 0) 'preview Universal version is invalid'
     Assert-Contract ($previewUniversal.asset -eq "ColorOS-Live-Lyrics-Provider-Universal-v$($previewUniversal.versionName).apk") 'preview Universal asset name differs'
