@@ -215,3 +215,9 @@ Provider ZIP 只能包含 14 个顶层 APK，不含目录、debug/unsigned APK �
    固定 commit，再推 tag，保证构建可复现。
 8. 用户要求移除被替代的旧预览 Release 时，先保存旧发布信息和资产，待新预览发布并独立下载验证后
    再删除旧 Release；不自动删除其 Git tag，也不移除未被点名的其他预览。
+
+### 已发布预览的独立 Provider 附件升级
+
+用户明确要求保留预览 Release 并升级独立 Provider 时，可交付新版本附件；不重跑原预览发布或移动原 tag。先递增 Provider versionName/versionCode 并冻结源码，更新当前契约。使用 `artwork-provider-v<版本>` 构建 tag 触发 `artwork-provider-candidate.yml`，只生成受控签名候选资产，不自动发布。候选复用公开 Bridge/Universal APK，运行既有包名、版本、证书、scope、DEX 和 zipalign 校验。
+
+发布前备份原 Release 正文和全部附件，独立验证候选并确认保留 APK 的哈希未变；上传新版本 Provider、更新校验和与双语说明，验证公开下载后移除旧版本 Provider 附件。台账记录新 Provider SHA、构建 tag/run、公开哈希及设备证据。预览性质及正式 RC 门禁不变；同版本 APK 不覆盖。保留 APK 的实际来源以原发布台账为准，不能因当前契约更新而改写历史来源。

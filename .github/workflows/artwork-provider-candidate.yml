@@ -1,0 +1,89 @@
+name: Artwork Provider candidate
+
+# Builds a versioned Provider update for an existing preview. Publishing is deliberately separate:
+# retained Bridge/Universal assets must be compared with the backed-up Release before replacement.
+on:
+  push:
+    tags:
+      - "artwork-provider-v*"
+
+permissions:
+  contents: read
+
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    env:
+      PREVIEW_TAG: v4.4.0-C17-Artwork-Preview
+    steps:
+      - uses: actions/checkout@v6
+      - name: Resolve immutable Provider source
+        id: meta
+        shell: pwsh
+        run: |
+          $c = Get-Content release/bridge-release-contract.json -Raw | ConvertFrom-Json
+          $p = $c.previewArtworkProvider
+          if ($env:GITHUB_REF_NAME -cne "artwork-provider-v$($p.versionName)") { throw 'Candidate tag/version mismatch' }
+          "repository=$($p.repository)" >> $env:GITHUB_OUTPUT
+          "ref=$($p.ref)" >> $env:GITHUB_OUTPUT
+          "task=$($p.buildTask)" >> $env:GITHUB_OUTPUT
+          "tools=$($c.androidBuildToolsVersion)" >> $env:GITHUB_OUTPUT
+      - uses: actions/checkout@v6
+        with:
+          repository: ${{ steps.meta.outputs.repository }}
+          ref: ${{ steps.meta.outputs.ref }}
+          path: provider-source
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Validate contracts
+        shell: pwsh
+        run: |
+          ./provider-source/scripts/verify-artwork-contract.ps1 -RepoRoot "$env:GITHUB_WORKSPACE/provider-source" -BridgeRepoRoot $env:GITHUB_WORKSPACE -Required
+          ./provider-source/scripts/validate-v5-release-contract.ps1 -RepoRoot "$env:GITHUB_WORKSPACE/provider-source"
+          ./scripts/validate-release-contract.ps1 -ProviderRepoRoot "$env:GITHUB_WORKSPACE/provider-source"
+      - name: Decode signing key
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$SIGNING_KEY" | base64 --decode > "$RUNNER_TEMP/release.jks"
+      - name: Test, lint and build signed Provider
+        env:
+          RELEASE_STORE_FILE: ${{ runner.temp }}/release.jks
+          RELEASE_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          chmod +x provider-source/gradlew
+          ./provider-source/gradlew --no-daemon -p provider-source :artwork-provider-am:testDebugUnitTest :artwork-provider-am:lintRelease ${{ steps.meta.outputs.task }}
+      - name: Remove signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.jks"
+      - name: Download retained preview assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release download "$PREVIEW_TAG" --repo "$GITHUB_REPOSITORY" --dir retained --pattern 'ColorOS-Live-Lyrics-Bridge-*.apk' --pattern 'ColorOS-Live-Lyrics-Provider-Universal-*.apk'
+      - name: Independently verify and stage complete asset set
+        shell: pwsh
+        env:
+          BUILD_TOOLS_VERSION: ${{ steps.meta.outputs.tools }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bridge = @(Get-ChildItem retained/ColorOS-Live-Lyrics-Bridge-*.apk)
+          $universal = @(Get-ChildItem retained/ColorOS-Live-Lyrics-Provider-Universal-*.apk)
+          $artwork = @(Get-ChildItem provider-source/artwork-provider-am/build/outputs/apk/release/*.apk)
+          if ($bridge.Count -ne 1 -or $universal.Count -ne 1 -or $artwork.Count -ne 1) { throw 'Unexpected APK count' }
+          ./scripts/build-preview-assets.ps1 -ApkPath $bridge[0].FullName -UniversalApkPath $universal[0].FullName -ArtworkApkPath $artwork[0].FullName -OutputDir candidate-assets -BuildToolsDir "$env:ANDROID_SDK_ROOT/build-tools/$env:BUILD_TOOLS_VERSION" -PreviewTag $env:PREVIEW_TAG
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ github.ref_name }}
+          path: candidate-assets/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
