@@ -31,10 +31,11 @@
 
 可选的动态封面在独立分支上开发，以预览版发布：C16 使用
 [v4.4.0-C16-Artwork](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/releases/tag/v4.4.0-C16-Artwork)，
-C17 使用 [v4.4.0-C17-Artwork-Preview](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/releases/tag/v4.4.0-C17-Artwork-Preview)。安装可选的
+C17 使用 [v4.4.0-C17-Artwork-Preview1](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/releases/tag/v4.4.0-C17-Artwork-Preview1)。安装可选的
 [动态封面 Provider](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Providers/blob/main/artwork-provider-am/README.md) 后，
 锁屏的歌词小封面与大封面可以播放当前歌曲的方形动态封面。它不属于 v4.4.0 正式版，
 用法与限制见预览版发布说明。C17 预览还包含同步镜像动态背景、封面取色光晕及通用播放器 Provider 1.1.1；
+Preview1 附带动态封面 Provider 1.0.2，大小卡共用原生 1080 视频，并新增手机 TXT 日志导出和准确的失败阶段提示。
 已在 C17 DSU 开发包上基本复测，不代表所有 C17 固件均已验收。
 
 ## 使用前先确认

@@ -23,7 +23,7 @@ public final class ArtworkSettingsStatusTest {
         assertEquals(Kind.OFF, ArtworkSettingsStatus.classify("off"));
         assertEquals(Kind.NO_MOTION, ArtworkSettingsStatus.classify("no_motion:confirmed_album_no_motion"));
         assertEquals(Kind.NO_MOTION, ArtworkSettingsStatus.classify("unsupported:no_square_motion_asset"));
-        assertEquals(Kind.PLAYBACK_FAILED, ArtworkSettingsStatus.classify("unsupported:media_manifest_mismatch"));
+        assertEquals(Kind.MEDIA_PREPARATION_FAILED, ArtworkSettingsStatus.classify("unsupported:media_manifest_mismatch"));
         assertEquals(Kind.UNMATCHED, ArtworkSettingsStatus.classify("retry_later:catalog_match_unconfirmed"));
         assertEquals(Kind.UNMATCHED, ArtworkSettingsStatus.classify("retry_later:catalog_album_unconfirmed"));
         assertEquals(Kind.UNMATCHED, ArtworkSettingsStatus.classify("ambiguous:multiple_catalog_matches"));
@@ -38,6 +38,27 @@ public final class ArtworkSettingsStatusTest {
         assertEquals(Kind.PROVIDER_FAILED, ArtworkSettingsStatus.classify("bind_failed"));
         assertEquals(Kind.PLAYBACK_FAILED, ArtworkSettingsStatus.classify("first_frame_timeout"));
         assertEquals(Kind.FAILED, ArtworkSettingsStatus.classify("error:resolver_failed"));
+    }
+
+    @Test
+    public void sourceFailuresDoNotBlameLockscreenLayout() {
+        for (String reason : new String[] { "source_no_initial_sample", "source_sample_read_failed", "media_extract_failed" }) {
+            assertEquals(Kind.MEDIA_UNREADABLE, ArtworkSettingsStatus.classify("unsupported:" + reason));
+        }
+        for (String reason : new String[] { "source_file_too_large", "remux_size_budget", "download_budget" }) {
+            assertEquals(Kind.MEDIA_TOO_LARGE, ArtworkSettingsStatus.classify("unsupported:" + reason));
+        }
+        for (String reason : new String[] { "unsupported_hls_layout", "invalid_hls_master", "no_1080_avc_variant", "no_avc_square_variant" }) {
+            assertEquals(Kind.MOTION_UNSUPPORTED, ArtworkSettingsStatus.classify("unsupported:" + reason));
+        }
+        for (String reason : new String[] { "missing_initial_keyframe", "source_initial_keyframe_missing", "media_validation_failed",
+                "media_remux_failed", "future_provider_reason", "" }) {
+            assertEquals(Kind.MEDIA_PREPARATION_FAILED, ArtworkSettingsStatus.classify("unsupported:" + reason));
+        }
+        assertEquals(Kind.LAYOUT_UNSUPPORTED, ArtworkSettingsStatus.classify("mount_unsupported"));
+        assertEquals(Kind.PLAYBACK_FAILED, ArtworkSettingsStatus.classify("decode_failed"));
+        assertEquals(Kind.PLAYBACK_FAILED, ArtworkSettingsStatus.classify("prepare_failed"));
+        assertEquals(Kind.PLAYBACK_FAILED, ArtworkSettingsStatus.classify("first_frame_timeout"));
     }
 
     @Test

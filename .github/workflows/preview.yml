@@ -8,6 +8,7 @@ on:
   push:
     tags:
       - "v*-Preview"
+      - "v*-Preview[0-9]*"
       - "v*-Artwork"
 
 permissions:
@@ -41,7 +42,7 @@ jobs:
               throw "Missing preview release notes: $notes"
           }
           $contract = Get-Content -LiteralPath release/bridge-release-contract.json -Raw | ConvertFrom-Json
-          $artwork = $env:PREVIEW_TAG -like '*-Artwork' -or $env:PREVIEW_TAG -like '*-Artwork-Preview'
+          $artwork = $env:PREVIEW_TAG -cmatch '-Artwork(?:-Preview[0-9]*)?$'
           $universal = @($contract.previewUniversalProvider.previewTags) -contains $env:PREVIEW_TAG
           if ($universal -and -not $artwork) { throw 'Universal preview requires the pinned Providers checkout' }
           if ($artwork) {
@@ -122,7 +123,7 @@ jobs:
             :app:assembleRelease \
             -PreleaseTag="$PREVIEW_TAG"
 
-      - name: Build signed Dynamic Artwork Provider
+      - name: Test, lint and build signed Dynamic Artwork Provider
         if: steps.meta.outputs.artwork == 'true'
         shell: bash
         env:
@@ -133,7 +134,7 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x ./provider-source/gradlew
-          ./provider-source/gradlew --no-daemon -p ./provider-source ${{ steps.meta.outputs.artwork_task }}
+          ./provider-source/gradlew --no-daemon -p ./provider-source :artwork-provider-am:testDebugUnitTest :artwork-provider-am:lintRelease ${{ steps.meta.outputs.artwork_task }}
           apk=$(find ./provider-source/artwork-provider-am/build/outputs/apk/release -maxdepth 1 -name '*.apk' | head -n 1)
           test -n "$apk"
           echo "ARTWORK_APK=$apk" >> "$GITHUB_ENV"

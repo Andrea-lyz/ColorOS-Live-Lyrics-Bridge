@@ -374,7 +374,7 @@ public final class ArtworkSettingsActivity extends SettingsBaseActivity {
             case PLAYED -> setStatus(COLOR_READY, getString(R.string.artwork_status_played), getString(R.string.artwork_status_idle_detail));
             case WAITING, OFF -> setStatus(COLOR_READY, getString(R.string.artwork_status_waiting), getString(R.string.artwork_status_idle_detail));
             case NO_MOTION -> setStatus(COLOR_BUSY, getString(R.string.artwork_status_no_motion), age);
-            case MOTION_UNSUPPORTED -> setStatus(COLOR_BUSY, getString(R.string.artwork_status_motion_unsupported), age);
+            case MOTION_UNSUPPORTED -> setStatus(COLOR_BUSY, getString(R.string.artwork_status_motion_unsupported), join(code(state), age));
             case SOURCE_UNREADABLE -> setStatus(COLOR_BUSY, getString(R.string.artwork_status_source_unreadable),
                     join(getString(R.string.artwork_status_source_unreadable_detail), age));
             case UNMATCHED -> setStatus(COLOR_BUSY, getString(R.string.artwork_status_unmatched), join(getString(R.string.artwork_status_unmatched_detail), age));
@@ -384,6 +384,12 @@ public final class ArtworkSettingsActivity extends SettingsBaseActivity {
             case PROVIDER_REJECTED -> setStatus(COLOR_PROBLEM, getString(R.string.artwork_status_rejected), getString(R.string.artwork_status_rejected_detail));
             case PROVIDER_UNAVAILABLE -> setStatus(COLOR_PROBLEM, getString(R.string.artwork_status_provider_unavailable), "");
             case PROVIDER_FAILED -> setStatus(COLOR_PROBLEM, getString(R.string.artwork_status_provider_failed), join(code(state), age));
+            case MEDIA_UNREADABLE -> setStatus(COLOR_PROBLEM, getString(R.string.artwork_status_media_unreadable),
+                    join(getString(R.string.artwork_status_provider_log_hint), join(code(state), age)));
+            case MEDIA_TOO_LARGE -> setStatus(COLOR_BUSY, getString(R.string.artwork_status_media_too_large), join(code(state), age));
+            case MEDIA_PREPARATION_FAILED -> setStatus(COLOR_PROBLEM, getString(R.string.artwork_status_media_preparation_failed),
+                    join(getString(R.string.artwork_status_provider_log_hint), join(code(state), age)));
+            case LAYOUT_UNSUPPORTED -> setStatus(COLOR_PROBLEM, getString(R.string.artwork_status_layout_unsupported), join(code(state), age));
             case PLAYBACK_FAILED -> setStatus(COLOR_PROBLEM, getString(R.string.artwork_status_playback_failed), join(code(state), age));
             case FAILED -> setStatus(COLOR_PROBLEM, getString(R.string.artwork_status_failed), join(code(state), age));
         }

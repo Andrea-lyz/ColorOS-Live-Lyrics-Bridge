@@ -72,7 +72,7 @@ if ($null -ne $previewUniversal) {
     Assert-Contract ((@($previewUniversal.scopes) -join ',') -eq 'system') 'preview Universal scope differs'
     Assert-Contract (@($previewUniversal.previewTags).Count -gt 0) 'preview Universal tag list is empty'
     foreach ($previewTag in @($previewUniversal.previewTags)) {
-        Assert-Contract ($previewTag -cmatch ('^' + [regex]::Escape($contract.releaseTag) + '-[A-Za-z0-9-]+-Artwork-Preview$')) 'Universal preview tag must be an artwork preview'
+        Assert-Contract ($previewTag -cmatch ('^' + [regex]::Escape($contract.releaseTag) + '-[A-Za-z0-9-]+-Artwork-Preview[0-9]*$')) 'Universal preview tag must be an artwork preview'
     }
 }
 

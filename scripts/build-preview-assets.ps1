@@ -142,7 +142,7 @@ $resolvedOutputDir = Resolve-AbsolutePath $OutputDir
 $resolvedBuildTools = Resolve-AbsolutePath $BuildToolsDir
 Assert-PreviewAsset (Test-Path -LiteralPath $resolvedApk -PathType Leaf) "missing APK: $resolvedApk"
 $resolvedArtworkApk = ''
-$artworkRequired = $PreviewTag -like '*-Artwork' -or $PreviewTag -like '*-Artwork-Preview'
+$artworkRequired = $PreviewTag -cmatch '-Artwork(?:-Preview[0-9]*)?$'
 Assert-PreviewAsset (-not $artworkRequired -or -not [string]::IsNullOrWhiteSpace($ArtworkApkPath)) 'artwork preview requires its Provider APK'
 $universalRequired = @($contract.previewUniversalProvider.previewTags) -contains $PreviewTag
 $hasUniversal = -not [string]::IsNullOrWhiteSpace($UniversalApkPath)

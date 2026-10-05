@@ -93,7 +93,12 @@
     <string name="artwork_status_rejected_detail">请在插件设置中检查授权。</string>
     <string name="artwork_status_provider_unavailable">插件不可用或签名已变化</string>
     <string name="artwork_status_provider_failed">无法连接插件</string>
-    <string name="artwork_status_playback_failed">视频无法在当前锁屏布局播放</string>
+    <string name="artwork_status_playback_failed">动态封面播放失败</string>
+    <string name="artwork_status_layout_unsupported">当前锁屏布局暂不支持动态封面</string>
+    <string name="artwork_status_media_unreadable">无法读取动态封面的视频数据</string>
+    <string name="artwork_status_media_too_large">动态封面视频超过大小限制</string>
+    <string name="artwork_status_media_preparation_failed">动态封面视频准备失败</string>
+    <string name="artwork_status_provider_log_hint">请在动态封面来源应用中开启诊断后复现，并导出日志。</string>
     <string name="artwork_status_failed">动态封面暂不可用</string>
     <string name="artwork_status_code">状态码：%1$s</string>
     <plurals name="artwork_status_age"><item quantity="other">%d 秒前</item></plurals>

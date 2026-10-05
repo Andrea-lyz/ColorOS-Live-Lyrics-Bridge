@@ -93,7 +93,12 @@
     <string name="artwork_status_rejected_detail">Check the authorization in the provider settings.</string>
     <string name="artwork_status_provider_unavailable">Provider unavailable or its signature changed</string>
     <string name="artwork_status_provider_failed">Could not connect to the provider</string>
-    <string name="artwork_status_playback_failed">The video cannot play on this lock-screen layout</string>
+    <string name="artwork_status_playback_failed">Motion artwork playback failed</string>
+    <string name="artwork_status_layout_unsupported">This lock-screen layout does not support motion artwork</string>
+    <string name="artwork_status_media_unreadable">Cannot read the motion artwork video data</string>
+    <string name="artwork_status_media_too_large">The motion artwork video exceeds the size limit</string>
+    <string name="artwork_status_media_preparation_failed">Could not prepare the motion artwork video</string>
+    <string name="artwork_status_provider_log_hint">Enable diagnostics in the artwork source app, reproduce the issue, and export its log.</string>
     <string name="artwork_status_failed">Dynamic artwork is temporarily unavailable</string>
     <string name="artwork_status_code">Status code: %1$s</string>
     <plurals name="artwork_status_age"><item quantity="one">%d second ago</item><item quantity="other">%d seconds ago</item></plurals>

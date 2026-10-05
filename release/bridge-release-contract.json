@@ -23,15 +23,15 @@
   "totalReleaseAssetCount": 18,
   "previewArtworkProvider": {
     "repository": "Andrea-lyz/ColorOS-Live-Lyrics-Providers",
-    "ref": "5af200a6e790f91815e77a92744b0bf3b0a24ce9",
+    "ref": "0248ca3a787f3e3df9e712eb68b93e41ac146e33",
     "module": "artwork-provider-am",
     "buildTask": ":artwork-provider-am:assembleRelease",
     "contractMirrorModule": "artwork-contract",
     "mirrorTask": "verifyArtworkContract",
     "applicationId": "io.github.andrealtb.artwork.am",
-    "versionName": "1.0.1",
-    "versionCode": 5,
-    "asset": "ColorOS-Live-Lyrics-Dynamic-Artwork-Provider-v1.0.1.apk"
+    "versionName": "1.0.2",
+    "versionCode": 6,
+    "asset": "ColorOS-Live-Lyrics-Dynamic-Artwork-Provider-v1.0.2.apk"
   },
   "forbiddenApkAscii": [
     "io.github.andrealtb.lockscreenlyrics.action.EXTERNAL_LYRIC_DIRECT_V4",
@@ -55,13 +55,17 @@
     "io.github.proify.lyricon.qishuiprovider",
     "io.github.proify.lyricon.metrolistprovider",
     "BridgeArchitectureGuardTest",
-    "Andrea-TB\\Desktop"
+    "Andrea-TB\\Desktop",
+    "Lio/github/andrealtb/artwork/am/AmVideoInspection;",
+    "Lio/github/andrealtb/artwork/am/AmInspectionStore;",
+    "Lio/github/andrealtb/artwork/am/AmMp4Structure;"
   ],
   "previewUniversalProvider": {
     "repository": "Andrea-lyz/ColorOS-Live-Lyrics-Providers",
-    "ref": "5af200a6e790f91815e77a92744b0bf3b0a24ce9",
+    "ref": "0248ca3a787f3e3df9e712eb68b93e41ac146e33",
     "previewTags": [
-      "v4.4.0-C17-Artwork-Preview"
+      "v4.4.0-C17-Artwork-Preview",
+      "v4.4.0-C17-Artwork-Preview1"
     ],
     "module": "universal-provider",
     "buildTask": ":universal-provider:assembleRelease",

@@ -5,7 +5,8 @@ final class ArtworkSettingsStatus {
     enum Kind {
         OFF, WAITING, RESOLVING, PLAYING, PLAYED, NO_MOTION, MOTION_UNSUPPORTED, UNMATCHED, SOURCE_UNREADABLE,
         SOURCE_DISABLED, NETWORK,
-        TEST_ONLY, PROVIDER_REJECTED, PROVIDER_UNAVAILABLE, PROVIDER_FAILED, PLAYBACK_FAILED, FAILED
+        TEST_ONLY, PROVIDER_REJECTED, PROVIDER_UNAVAILABLE, PROVIDER_FAILED,
+        MEDIA_UNREADABLE, MEDIA_TOO_LARGE, MEDIA_PREPARATION_FAILED, LAYOUT_UNSUPPORTED, PLAYBACK_FAILED, FAILED
     }
 
     private ArtworkSettingsStatus() {
@@ -59,8 +60,16 @@ final class ArtworkSettingsStatus {
                 return Kind.PROVIDER_FAILED;
             case "unsupported":
                 if (reason.equals("no_square_motion_asset")) return Kind.NO_MOTION;
-                return reason.equals("motion_asset_unrecognized") ? Kind.MOTION_UNSUPPORTED : Kind.PLAYBACK_FAILED;
+                return switch (reason) {
+                    case "source_no_initial_sample", "source_sample_read_failed", "media_extract_failed" -> Kind.MEDIA_UNREADABLE;
+                    case "source_file_too_large", "remux_size_budget", "download_budget" -> Kind.MEDIA_TOO_LARGE;
+                    case "motion_asset_unrecognized", "unsupported_hls_layout", "invalid_hls_master",
+                            "no_1080_avc_variant", "no_avc_square_variant", "source_track_layout", "source_format_mismatch" -> Kind.MOTION_UNSUPPORTED;
+                    // Legacy missing_initial_keyframe also covered negative time; do not reinterpret it as a proven keyframe defect.
+                    default -> Kind.MEDIA_PREPARATION_FAILED;
+                };
             case "mount_unsupported":
+                return Kind.LAYOUT_UNSUPPORTED;
             case "decode_failed":
             case "prepare_failed":
             case "first_frame_timeout":
