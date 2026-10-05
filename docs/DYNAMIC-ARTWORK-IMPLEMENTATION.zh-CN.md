@@ -4,6 +4,12 @@
 从 `feat/coloros17-adaptation` 的 `df7cf393d3a9ed928f4a409911179d989ccf2054` 建立。
 依据：[完整方案](DYNAMIC-ARTWORK-PROVIDER-PLAN.zh-CN.md)。
 
+2026-10-05 发布：[v4.4.0-C17-Artwork-Preview](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/releases/tag/v4.4.0-C17-Artwork-Preview)，
+Bridge `c53fb16`、Providers `b2d07c3`。交付 Bridge、Universal 1.1.1、Dynamic Artwork Provider 1.0.0
+三个正式签名 APK 与 SHA256SUMS；公开下载后的签名、版本、scope、zipalign 和哈希复核通过。
+新发布核验后已移除旧 C17-Preview Release，保留旧 Git tag 和 C16-Artwork，Latest 仍为 v4.4.0。
+见 [发布核验](releases/v4.4.0-C17-Artwork-Preview-verification.md)。设备结论仍按开发包/最终签名包分别记录。
+
 2026-10-05 C17 fix4：光晕颜色新增默认关闭的“跟随封面取色”，C16 隐藏；读取对应媒体宿主的
 静态封面 primary80，与原生进度条同源，只替换光晕 RGB。无需动态封面 Provider 或视频开关，
 缺失配色时回退手动颜色。配置接入原有保存/同步/备份，见 [fix4 记录](DYNAMIC-ARTWORK-C17-FIX4-TEST.zh-CN.md)，尚未设备验证。
