@@ -64,6 +64,17 @@ public class ArtworkContractTest {
                 "https://secret.example/token"));
     }
 
+    @Test public void native1280MotionCoverFitsNewQueriesButNotOlder1080Consumers() {
+        ArtworkAsset nativeVideo = new ArtworkAsset("opaque-id", "v1", "video/avc", 1280, 1280, 20_000, 6_615_720, 60_000);
+        assertTrue(nativeVideo.fits(new ArtworkQuery("Song", "Artist", "Album", 240_000, "", 288, 288,
+                ArtworkContract.MAX_RESOLUTION, ArtworkContract.MAX_RESOLUTION, ArtworkContract.MAX_FILE_BYTES)));
+        assertFalse(nativeVideo.fits(new ArtworkQuery("Song", "Artist", "Album", 240_000, "", 288, 288,
+                1080, 1080, ArtworkContract.MAX_FILE_BYTES)));
+        assertThrows(IllegalArgumentException.class, () -> new ArtworkAsset("id", "v1", "video/avc", 1282, 1282, 1000, 1024, 60_000));
+        assertThrows(IllegalArgumentException.class, () -> new ArtworkQuery("Song", "Artist", "Album", 240_000, "", 288, 288,
+                1282, 1282, ArtworkContract.MAX_FILE_BYTES));
+    }
+
     @Test public void requiresMajorAndMediaCapabilitiesNotMatchingVersionNumbers() {
         assertTrue(ArtworkContract.supports(1, "video/mp4", "square"));
         assertFalse(ArtworkContract.supports(2, "video/mp4", "square"));

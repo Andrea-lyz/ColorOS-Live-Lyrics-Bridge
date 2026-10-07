@@ -40,8 +40,8 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
     private List<Candidate> latestCandidates = List.of();
     private long surfaceHoldSince = -1;
     private final Runnable holdTimeout = this::expireHold;
-    /** Normal cold resolves answer in under 3 s; a silent request this old is treated as stuck. */
-    static final long RESOLVE_STALL_MS = 10_000;
+    /** A two-source cold request can legitimately exceed ten seconds; share the IPC request's bounded budget. */
+    static final long RESOLVE_STALL_MS = ArtworkResolveLifetime.ONLINE_TIMEOUT_MS;
     private static final int MAX_STALL_RESTARTS = 2;
     private final Runnable resolveStall = this::resolveStalled;
     private ArtworkRequestStamp stallSong;
@@ -188,10 +188,18 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
             if (holdSurface()) return;
             // An issued download is not tied to the current display state: it finishes and reaches the
             // cache, and is shown again once the surface returns. Only a gone surface or song abandons it.
-            if (resolvingResource && resolveTargetPresent(candidates)) {
-                if (renderer != null || mount != null) suspendVisual();
-                trace.state("ARTWORK_RESOURCE_WAIT", () -> "sameBinding=true visualSuspended=true");
-                return;
+            if (resolvingResource) {
+                boolean targetPresent = resolveTargetPresent(candidates);
+                // A keyguard transition can momentarily detach every host view. The bounded request keeps
+                // running, lands in the provider cache and is re-delivered when a surface shows it again.
+                boolean surfaceAbsent = candidates.isEmpty() && android.os.SystemClock.elapsedRealtime() - resolvingSince
+                        < ArtworkResolveLifetime.ONLINE_TIMEOUT_MS;
+                if (targetPresent || surfaceAbsent) {
+                    if (renderer != null || mount != null) suspendVisual();
+                    trace.state("ARTWORK_RESOURCE_WAIT", () -> "sameRecording=" + targetPresent
+                            + " surfaceAbsent=" + surfaceAbsent + " visualSuspended=true");
+                    return;
+                }
             }
             boolean retain = retryAt != Long.MAX_VALUE && contextEligible() && candidates.stream().anyMatch(candidate ->
                     candidate.image() == attemptedImage && candidate.image().isAttachedToWindow() && candidate.binding().ready()
@@ -271,11 +279,11 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
             if (next != null) { try { next.close(); } catch (RuntimeException ignored) { } }
         }
         if (resolvingResource && resolvingCandidate != null
-                && ArtworkResolveLifetime.retainForSameSong(resolvingCandidate.binding().stamp(),
-                        selected.binding().stamp(), android.os.SystemClock.elapsedRealtime() - resolvingSince)) {
-            // Same song on the other surface: work already triggered must still reach the cache.
+                && ArtworkResolveLifetime.retainForSameTarget(resolvingCandidate.binding().stamp(), resolvingCandidate.binding().metadata(),
+                        selected.binding().stamp(), selected.binding().metadata(), android.os.SystemClock.elapsedRealtime() - resolvingSince)) {
+            // Same recording on the other surface: work already triggered must still reach the cache.
             suspendVisual();
-            trace.state("ARTWORK_REQUEST_RETAINED", () -> "sameSong=true surfaceSwitched=true");
+            trace.state("ARTWORK_REQUEST_RETAINED", () -> "sameRecording=true surfaceSwitched=true");
             return;
         }
         stop();
@@ -322,17 +330,35 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
                     if (!reason.equals("selecting") && !reason.equals("connecting") && !reason.equals("resolving")) failure(reason);
                 }
                 @Override public void onAsset(ArtworkProviderClient.OpenedAsset asset) {
+                    // A keyguard remount replaces the host view while the same recording keeps playing; the
+                    // finished asset is handed to the surface that exists now instead of being discarded.
+                    Candidate target = request;
                     if (!matches(request, requestEpoch)) {
-                        asset.close();
-                        trace.state("ARTWORK_ASSET_DROPPED", () -> "phase=mount_gate currentEpoch=" + (requestEpoch == clientEpoch));
-                        if (requestEpoch == clientEpoch) { retryDelay = 1000; failure("asset_gate_changed"); }
-                        return;
+                        Candidate replacement = current;
+                        boolean sameRecording = replacement != null && replacement.binding().stamp() != null
+                                && !ArtworkResolveLifetime.abandoned(eligibilityReason(replacement))
+                                && ArtworkResolveLifetime.sameTarget(request.binding().stamp(), request.binding().metadata(),
+                                        replacement.binding().stamp(), replacement.binding().metadata());
+                        if (!sameRecording) {
+                            asset.close();
+                            trace.state("ARTWORK_ASSET_DROPPED", () -> "phase=mount_gate currentEpoch=" + (requestEpoch == clientEpoch));
+                            if (requestEpoch == clientEpoch) { retryDelay = 1000; failure("asset_gate_changed"); }
+                            return;
+                        }
+                        target = replacement;
+                        Candidate retarget = target;
+                        trace.state("ARTWORK_ASSET_RETARGETED", () -> "surface=" + retarget.surface() + " remount=true");
                     }
                     resolvingResource = false; resolvingCandidate = null; awaitingNetwork = false; networkRecoveryPending = false;
                     main.removeCallbacks(resolveStall); stallRestarts = 0;
-                    try { if (renderer == null) mountCandidate(request, requestEpoch); }
+                    try {
+                        if (renderer == null || renderCandidate != target) {
+                            if (renderer != null || mount != null) suspendVisual();
+                            mountCandidate(target, requestEpoch);
+                        }
+                    }
                     catch (Exception error) { asset.close(); failure("mount_unsupported"); return; }
-                    ArtworkRequestStamp stamp = stamp(request, requestEpoch);
+                    ArtworkRequestStamp stamp = stamp(target, requestEpoch);
                     playingForPx = requestedPx;
                     renderer.play(asset, stamp, () -> current == null ? null : stamp(current, clientEpoch),
                             () -> current != null && eligible(current));
@@ -350,13 +376,22 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
     }
 
     public void invalidate(ImageView image) {
-        if (current != null && current.image() == image || resolvingCandidate != null && resolvingCandidate.image() == image
-                || renderCandidate != null && renderCandidate.image() == image) {
-            wakeup.cancel();
-            stop();
+        boolean touched = current != null && current.image() == image || resolvingCandidate != null && resolvingCandidate.image() == image
+                || renderCandidate != null && renderCandidate.image() == image;
+        if (!touched) return;
+        if (resolvingResource && resolvingCandidate != null) {
+            // The host view is gone, but the recording did not change: the bounded download keeps running
+            // and is handed to the next surface that shows the same recording.
+            suspendVisual();
+            trace.state("ARTWORK_REQUEST_ORPHANED", () -> "invalidate=true downloadContinues=true");
             attempted = null;
             attemptedImage = null;
+            return;
         }
+        wakeup.cancel();
+        stop();
+        attempted = null;
+        attemptedImage = null;
     }
 
     void invalidateC17(ArtworkC17Access.Bound host) {
@@ -370,14 +405,17 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
                 && request.image() == current.image() && request.binding().stamp().equals(current.binding().stamp())
                 && eligible(current);
     }
-    /** The surface/song an issued download belongs to is still present; display state is irrelevant. */
+    /**
+     * The recording an issued download belongs to is still shown by some surface, even after a keyguard
+     * remount re-created the host view or the media session. Only a different recording abandons it.
+     */
     private boolean resolveTargetPresent(List<Candidate> candidates) {
         if (closed || !config.enabled() || resolvingCandidate == null) return false;
         for (Candidate candidate : candidates) {
-            if (candidate.image() != resolvingCandidate.image()) continue;
-            if (candidate.binding().stamp() == null
-                    || !candidate.binding().stamp().equals(resolvingCandidate.binding().stamp())) continue;
-            return !ArtworkResolveLifetime.abandoned(eligibilityReason(candidate));
+            if (!ArtworkResolveLifetime.sameTarget(resolvingCandidate.binding().stamp(), resolvingCandidate.binding().metadata(),
+                    candidate.binding().stamp(), candidate.binding().metadata())) continue;
+            if (ArtworkResolveLifetime.abandoned(eligibilityReason(candidate))) continue;
+            return true;
         }
         return false;
     }

@@ -31,6 +31,16 @@ public class ArtworkResolveLifetimeTest {
         assertFalse(ArtworkResolveLifetime.retainForSameSong(stamp(1, 7, 3), stamp(1, 8, 1), 500));
     }
 
+    @Test public void twoSourceColdResolveSurvivesPastTheOldTenSecondWatchdog() {
+        // Device fix1: AM exhausted discovery, NetEase retried a socket read, then cached READY at 16.151 s.
+        assertTrue(ArtworkImmersivePlayback.RESOLVE_STALL_MS > 16_151);
+        assertTrue(ArtworkResolveLifetime.ONLINE_TIMEOUT_MS > 52_000);
+        assertTrue(ArtworkResolveLifetime.ONLINE_TIMEOUT_MS < io.github.andrealtb.artwork.contract.ArtworkContract.LEASE_MS);
+        assertEquals(ArtworkResolveLifetime.ONLINE_TIMEOUT_MS, ArtworkImmersivePlayback.RESOLVE_STALL_MS);
+        assertTrue(ArtworkResolveLifetime.retainForSameSong(stamp(1, 7, 3), stamp(2, 7, 3), 16_151));
+        assertFalse(ArtworkResolveLifetime.retainForSameSong(stamp(1, 7, 3), stamp(2, 7, 4), 16_151));
+    }
+
     @Test public void aStuckRequestIsSupersededInsteadOfBlockingTheOtherSurface() {
         long window = ArtworkResolveLifetime.RETAIN_WINDOW_MS;
         assertTrue(ArtworkResolveLifetime.retainForSameSong(stamp(1, 7, 3), stamp(2, 7, 3), window));
@@ -45,5 +55,31 @@ public class ArtworkResolveLifetimeTest {
         assertFalse(ArtworkResolveLifetime.sameSong(card, new ArtworkRequestStamp(9, 4, 1, 1, 7, 4, 5, 1)));
         assertFalse(ArtworkResolveLifetime.sameSong(card, new ArtworkRequestStamp(9, 4, 1, 1, 9, 3, 5, 1)));
         assertFalse(ArtworkResolveLifetime.sameSong(null, largeCover));
+    }
+
+    private static ArtworkTrackIdentityPolicy.Metadata metadata(String title, String artist, long durationMs) {
+        return new ArtworkTrackIdentityPolicy.Metadata("private-host-id", title, artist, "Album", durationMs);
+    }
+
+    @Test public void sameRecordingKeepsTheProviderQueryFieldsOnly() {
+        var published = metadata("Something Just Like This", "The Chainsmokers/Coldplay", 247626);
+        assertTrue(ArtworkResolveLifetime.sameRecording(published, metadata("Something Just Like This", "The Chainsmokers/Coldplay", 247626)));
+        assertFalse(ArtworkResolveLifetime.sameRecording(published, metadata("Something Just Like This (Live)", "The Chainsmokers/Coldplay", 247626)));
+        assertFalse(ArtworkResolveLifetime.sameRecording(published, metadata("Something Just Like This", "Cover Band", 247626)));
+        assertFalse(ArtworkResolveLifetime.sameRecording(published, metadata("Something Just Like This", "The Chainsmokers/Coldplay", 259064)));
+        assertFalse(ArtworkResolveLifetime.sameRecording(published, null));
+        assertFalse(ArtworkResolveLifetime.sameRecording(new ArtworkTrackIdentityPolicy.Metadata("id", "", "Artist", "Album", 1000), metadata("x", "Artist", 1000)));
+        assertFalse(ArtworkResolveLifetime.sameRecording(new ArtworkTrackIdentityPolicy.Metadata("id", "Song", "Artist", "Album", 0), metadata("Song", "Artist", 0)));
+    }
+
+    @Test public void aReRegisteredSessionStillKeepsTheSameRecordingDownload() {
+        var song = metadata("Something Just Like This", "The Chainsmokers/Coldplay", 247626);
+        // Keyguard remount: the same song arrives with a new surface epoch, or a fully re-registered session.
+        assertTrue(ArtworkResolveLifetime.sameTarget(stamp(1, 7, 3), song, stamp(2, 7, 3), song));
+        assertTrue(ArtworkResolveLifetime.sameTarget(stamp(1, 7, 3), song, stamp(2, 9, 1), song));
+        assertTrue(ArtworkResolveLifetime.retainForSameTarget(stamp(1, 7, 3), song, stamp(2, 9, 1), song, 16_151));
+        assertFalse(ArtworkResolveLifetime.retainForSameTarget(stamp(1, 7, 3), song, stamp(2, 9, 1), song, ArtworkResolveLifetime.RETAIN_WINDOW_MS + 1));
+        assertFalse(ArtworkResolveLifetime.sameTarget(stamp(1, 7, 3), song, stamp(2, 9, 1), metadata("Other Song", "The Chainsmokers/Coldplay", 247626)));
+        assertFalse(ArtworkResolveLifetime.sameTarget(stamp(1, 7, 3), song, stamp(2, 9, 1), metadata("Something Just Like This", "Cover Band", 247626)));
     }
 }

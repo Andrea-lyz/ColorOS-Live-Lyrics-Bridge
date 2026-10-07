@@ -9,7 +9,8 @@ public class ArtworkLiveQueryTest {
         var query = ArtworkLiveQuery.from(metadata, 1312, 1312);
         assertEquals(metadata.title(), query.title); assertEquals(metadata.album(), query.album);
         assertEquals(231000, query.durationMs); assertEquals("", query.appleMusicUrl);
-        assertEquals(1080, query.displayWidthPx); assertEquals(1080, query.maxWidth);
+        assertEquals(1280, query.displayWidthPx); assertEquals(1280, query.maxWidth);
+        assertEquals(1280, query.maxHeight);
     }
     @Test(expected = IllegalArgumentException.class) public void incompleteIdentityRemainsStatic() {
         ArtworkLiveQuery.from(new ArtworkTrackIdentityPolicy.Metadata("id", "Song", "", "", 0), 288, 288);

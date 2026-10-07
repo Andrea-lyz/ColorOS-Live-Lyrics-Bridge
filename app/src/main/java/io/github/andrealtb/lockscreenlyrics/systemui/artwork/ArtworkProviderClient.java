@@ -117,7 +117,7 @@ public final class ArtworkProviderClient implements AutoCloseable {
         Request request = new Request(++epoch, provider, query, allowLocalFixture, listener);
         current = request;
         listener.onState("connecting");
-        main.postDelayed(request.timeout, allowLocalFixture ? 12_000 : 45_000);
+        main.postDelayed(request.timeout, allowLocalFixture ? 12_000 : ArtworkResolveLifetime.ONLINE_TIMEOUT_MS);
         main.postDelayed(request.handshake, HANDSHAKE_TIMEOUT_MS);
         execute(request, () -> {
             ArtworkProviderDirectory.verify(context, provider);

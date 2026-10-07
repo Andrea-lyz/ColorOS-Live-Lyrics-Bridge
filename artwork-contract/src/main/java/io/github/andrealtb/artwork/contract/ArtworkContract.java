@@ -6,13 +6,13 @@ public final class ArtworkContract {
     public static final String META_PROTOCOL_MAJOR = "io.github.andrealtb.artwork.PROTOCOL_MAJOR";
     public static final String META_SETTINGS_ACTIVITY = "io.github.andrealtb.artwork.SETTINGS_ACTIVITY";
     public static final int MAJOR = 1;
-    public static final int MINOR = 0;
+    public static final int MINOR = 1;
     public static final String MIME = "video/mp4";
     public static final String ORIENTATION = "square";
     public static final int MAX_TEXT = 512;
     public static final int MAX_URL = 2048;
     public static final int MAX_BUNDLE_BYTES = 16 * 1024;
-    public static final int MAX_RESOLUTION = 1080;
+    public static final int MAX_RESOLUTION = 1280;
     public static final long MAX_FILE_BYTES = 20L * 1024 * 1024;
     public static final long MAX_VIDEO_DURATION_MS = 120_000;
     public static final long LEASE_MS = 60_000;
