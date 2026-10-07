@@ -14,7 +14,7 @@ jobs:
   candidate:
     runs-on: ubuntu-latest
     env:
-      PREVIEW_TAG: v4.4.0-C17-Artwork-Preview
+      PREVIEW_TAG: v4.4.0-C17-Artwork-Preview1
     steps:
       - uses: actions/checkout@v6
       - name: Resolve immutable Provider source

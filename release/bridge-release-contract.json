@@ -23,15 +23,15 @@
   "totalReleaseAssetCount": 18,
   "previewArtworkProvider": {
     "repository": "Andrea-lyz/ColorOS-Live-Lyrics-Providers",
-    "ref": "0248ca3a787f3e3df9e712eb68b93e41ac146e33",
+    "ref": "eb4f7862fb5c671e21971e10d9b9423e4e3b6f4d",
     "module": "artwork-provider-am",
     "buildTask": ":artwork-provider-am:assembleRelease",
     "contractMirrorModule": "artwork-contract",
     "mirrorTask": "verifyArtworkContract",
     "applicationId": "io.github.andrealtb.artwork.am",
-    "versionName": "1.0.2",
-    "versionCode": 6,
-    "asset": "ColorOS-Live-Lyrics-Dynamic-Artwork-Provider-v1.0.2.apk"
+    "versionName": "1.0.3",
+    "versionCode": 7,
+    "asset": "ColorOS-Live-Lyrics-Dynamic-Artwork-Provider-v1.0.3.apk"
   },
   "forbiddenApkAscii": [
     "io.github.andrealtb.lockscreenlyrics.action.EXTERNAL_LYRIC_DIRECT_V4",
@@ -62,7 +62,7 @@
   ],
   "previewUniversalProvider": {
     "repository": "Andrea-lyz/ColorOS-Live-Lyrics-Providers",
-    "ref": "0248ca3a787f3e3df9e712eb68b93e41ac146e33",
+    "ref": "eb4f7862fb5c671e21971e10d9b9423e4e3b6f4d",
     "previewTags": [
       "v4.4.0-C17-Artwork-Preview",
       "v4.4.0-C17-Artwork-Preview1"
