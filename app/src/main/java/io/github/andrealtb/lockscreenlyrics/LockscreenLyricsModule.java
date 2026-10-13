@@ -192,6 +192,8 @@ public final class LockscreenLyricsModule extends XposedModule {
             "\u7ffb\u8bd1\uff1a";
     private static final String TRANSLATION_ACTION_NAME = "\u7ffb\u8bd1";
     private static final int TRANSLATION_ICON_FINGERPRINT_SIZE = 48;
+    /** Action icons stay far below this; artwork/wallpaper bitmaps would need a full main-thread copy to reject. */
+    private static final int TRANSLATION_ICON_MAX_BITMAP_PX = 512;
     private static final int OPLUS_LYRIC_ENTRANCE_ALL = 52;
     private static final long SCREEN_TIMEOUT_USER_ACTIVITY_INTERVAL_MS =
             LyricTimingTuningConstants.ScreenTimeout.USER_ACTIVITY_INTERVAL_MS;
@@ -561,6 +563,9 @@ public final class LockscreenLyricsModule extends XposedModule {
     private final WeakHashMap<Bitmap, Boolean> translationBitmapMatchCache = new WeakHashMap<>();
     private final WeakHashMap<Drawable, Boolean> translationDrawableMatchCache =
             new WeakHashMap<>();
+    /** Rebinds create new Drawable instances of the same resource; their shared state renders identically. */
+    private final WeakHashMap<Drawable.ConstantState, Boolean> translationDrawableStateMatchCache =
+            new WeakHashMap<>();
     private final WeakHashMap<View, Long> translationRootLastScanAt = new WeakHashMap<>();
     private volatile boolean translationActionViewRecoveryPosted;
     private static final Object VIEW_VISUAL_EFFECT_CACHE_LOCK = new Object();
@@ -574,6 +579,9 @@ public final class LockscreenLyricsModule extends XposedModule {
             RECYCLER_POSITION_METHOD_CACHE = new WeakHashMap<>();
     private static final WeakHashMap<Class<?>, Boolean> RECYCLER_POSITION_METHOD_MISSING =
             new WeakHashMap<>();
+    /** getAdapter lives on RecyclerView; a per-call declared-method walk throws once per subclass level. */
+    private static final WeakHashMap<Class<?>, WeakReference<Method>>
+            RECYCLER_ADAPTER_METHOD_CACHE = new WeakHashMap<>();
     private static final WeakHashMap<Class<?>, Boolean> LYRICS_RECYCLER_VIEW_CLASS_MATCH_CACHE =
             new WeakHashMap<>();
     private static final WeakHashMap<TextView, LyricsRecyclerMatch> LYRICS_RECYCLER_MATCH_CACHE =
@@ -733,7 +741,12 @@ public final class LockscreenLyricsModule extends XposedModule {
                 public void drawWithOfficialRenderer(Canvas canvas, TextView textView, DrawFrame frame) {
                     long rendererStartedAt = performanceSampler.begin();
                     try {
-                        officialLyricTextRenderer.setCoverGlowColor(dynamicArtworkRuntime.coverColor(textView));
+                        boolean coverTraced = BridgePerfTrace.begin("CLL:lyricCoverGlowColor");
+                        try {
+                            officialLyricTextRenderer.setCoverGlowColor(dynamicArtworkRuntime.coverColor(textView));
+                        } finally {
+                            BridgePerfTrace.end(coverTraced);
+                        }
                         officialLyricTextRenderer.draw(canvas, textView, frame);
                     } finally {
                         performanceSampler.end(
@@ -1944,7 +1957,12 @@ public final class LockscreenLyricsModule extends XposedModule {
                 < LYRIC_UI_STYLE_SETTINGS_RELOAD_MS) {
             return;
         }
-        loadLyricUiStyleSettings(currentApplicationContext(), false);
+        boolean traced = BridgePerfTrace.begin("CLL:lyricSettingsReload");
+        try {
+            loadLyricUiStyleSettings(currentApplicationContext(), false);
+        } finally {
+            BridgePerfTrace.end(traced);
+        }
     }
 
     private void loadLyricUiStyleSettings(Context context, boolean force) {
@@ -5268,8 +5286,13 @@ public final class LockscreenLyricsModule extends XposedModule {
                 }
             }
         }
-        for (View recycler : recyclers) {
-            discoverTranslationActionViewsNear(recycler);
+        boolean traced = BridgePerfTrace.begin("CLL:translationActionScan");
+        try {
+            for (View recycler : recyclers) {
+                discoverTranslationActionViewsNear(recycler);
+            }
+        } finally {
+            BridgePerfTrace.end(traced);
         }
     }
 
@@ -5346,15 +5369,24 @@ public final class LockscreenLyricsModule extends XposedModule {
             if (bitmap == null || bitmap.isRecycled()) {
                 return false;
             }
+            if (Math.max(bitmap.getWidth(), bitmap.getHeight()) > TRANSLATION_ICON_MAX_BITMAP_PX) {
+                return false;
+            }
             synchronized (translationBitmapMatchCache) {
                 Boolean cached = translationBitmapMatchCache.get(bitmap);
                 if (cached != null) {
                     return cached;
                 }
             }
-            boolean matches = alphaFingerprintsMatch(
-                    expected,
-                    renderBitmapAlphaFingerprint(bitmap));
+            boolean traced = BridgePerfTrace.begin("CLL:translationIconFingerprint");
+            boolean matches;
+            try {
+                matches = alphaFingerprintsMatch(
+                        expected,
+                        renderBitmapAlphaFingerprint(bitmap));
+            } finally {
+                BridgePerfTrace.end(traced);
+            }
             synchronized (translationBitmapMatchCache) {
                 translationBitmapMatchCache.put(bitmap, matches);
             }
@@ -5365,17 +5397,30 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (!drawableClassName.contains("VectorDrawable")) {
             return false;
         }
+        Drawable.ConstantState state = drawable.getConstantState();
         synchronized (translationDrawableMatchCache) {
             Boolean cached = translationDrawableMatchCache.get(drawable);
+            if (cached == null && state != null) {
+                cached = translationDrawableStateMatchCache.get(state);
+            }
             if (cached != null) {
                 return cached;
             }
         }
-        boolean matches = alphaFingerprintsMatch(
-                expected,
-                renderDrawableAlphaFingerprint(drawable));
+        boolean traced = BridgePerfTrace.begin("CLL:translationVectorFingerprint");
+        boolean matches;
+        try {
+            matches = alphaFingerprintsMatch(
+                    expected,
+                    renderDrawableAlphaFingerprint(drawable));
+        } finally {
+            BridgePerfTrace.end(traced);
+        }
         synchronized (translationDrawableMatchCache) {
             translationDrawableMatchCache.put(drawable, matches);
+            if (state != null) {
+                translationDrawableStateMatchCache.put(state, matches);
+            }
         }
         return matches;
     }
@@ -5443,15 +5488,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                     TRANSLATION_ICON_FINGERPRINT_SIZE,
                     TRANSLATION_ICON_FINGERPRINT_SIZE,
                     true);
-            byte[] alpha = new byte[
-                    TRANSLATION_ICON_FINGERPRINT_SIZE * TRANSLATION_ICON_FINGERPRINT_SIZE];
-            int index = 0;
-            for (int y = 0; y < TRANSLATION_ICON_FINGERPRINT_SIZE; y++) {
-                for (int x = 0; x < TRANSLATION_ICON_FINGERPRINT_SIZE; x++) {
-                    alpha[index++] = (byte) (scaled.getPixel(x, y) >>> 24);
-                }
-            }
-            return alpha;
+            return alphaFingerprintOf(scaled);
         } catch (Throwable ignored) {
             return null;
         } finally {
@@ -5462,6 +5499,17 @@ public final class LockscreenLyricsModule extends XposedModule {
                 software.recycle();
             }
         }
+    }
+
+    private static byte[] alphaFingerprintOf(Bitmap bitmap) {
+        int size = TRANSLATION_ICON_FINGERPRINT_SIZE;
+        int[] pixels = new int[size * size];
+        bitmap.getPixels(pixels, 0, size, 0, 0, size, size);
+        byte[] alpha = new byte[pixels.length];
+        for (int i = 0; i < pixels.length; i++) {
+            alpha[i] = (byte) (pixels[i] >>> 24);
+        }
+        return alpha;
     }
 
     private static byte[] renderDrawableAlphaFingerprint(Drawable drawable) {
@@ -5487,15 +5535,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             drawable.setAlpha(oldAlpha);
             drawable.setBounds(oldBounds);
 
-            byte[] alpha = new byte[
-                    TRANSLATION_ICON_FINGERPRINT_SIZE * TRANSLATION_ICON_FINGERPRINT_SIZE];
-            int index = 0;
-            for (int y = 0; y < TRANSLATION_ICON_FINGERPRINT_SIZE; y++) {
-                for (int x = 0; x < TRANSLATION_ICON_FINGERPRINT_SIZE; x++) {
-                    alpha[index++] = (byte) (bitmap.getPixel(x, y) >>> 24);
-                }
-            }
-            return alpha;
+            return alphaFingerprintOf(bitmap);
         } catch (Throwable ignored) {
             return null;
         } finally {
@@ -5972,7 +6012,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private void rememberLyricsRecyclerAdapter(View recycler) {
-        Object adapter = invokeNoArgByName(recycler, "getAdapter");
+        Object adapter = readRecyclerAdapter(recycler);
         if (adapter == null) {
             return;
         }
@@ -10319,6 +10359,41 @@ public final class LockscreenLyricsModule extends XposedModule {
         return null;
     }
 
+    private static Object readRecyclerAdapter(View recycler) {
+        if (recycler == null) {
+            return null;
+        }
+        Class<?> recyclerClass = recycler.getClass();
+        Method method;
+        synchronized (RECYCLER_POSITION_METHOD_CACHE_LOCK) {
+            WeakReference<Method> reference = RECYCLER_ADAPTER_METHOD_CACHE.get(recyclerClass);
+            method = reference == null ? null : reference.get();
+        }
+        if (method == null) {
+            for (Class<?> current = recyclerClass; current != null && method == null;
+                    current = current.getSuperclass()) {
+                try {
+                    method = current.getDeclaredMethod("getAdapter");
+                    method.setAccessible(true);
+                } catch (NoSuchMethodException ignored) {
+                } catch (Throwable ignored) {
+                    return null;
+                }
+            }
+            if (method == null) {
+                return null;
+            }
+            synchronized (RECYCLER_POSITION_METHOD_CACHE_LOCK) {
+                RECYCLER_ADAPTER_METHOD_CACHE.put(recyclerClass, new WeakReference<>(method));
+            }
+        }
+        try {
+            return method.invoke(recycler);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
     private static boolean invokeTwoIntByName(
             Object target,
             String methodName,
@@ -12921,6 +12996,14 @@ public final class LockscreenLyricsModule extends XposedModule {
                 new GlowSegmentCache()
         };
         private long glowCacheUseCounter;
+        private static final int GLYPH_RUN_NEIGHBOURS = 2;
+        private static final float GLYPH_RUN_SAFE_EPSILON = 0.05f;
+        private GraphemeLayoutCache lastGraphemeLayout;
+        private int glyphRunStart = -1;
+        private int glyphRunEnd;
+        private int glyphRunContextStart;
+        private int glyphRunContextEnd;
+        private float glyphRunX;
         private final GraphemeLayoutCache[] graphemeLayoutCaches = {
                 new GraphemeLayoutCache(),
                 new GraphemeLayoutCache(),
@@ -13139,13 +13222,20 @@ public final class LockscreenLyricsModule extends XposedModule {
                 return;
             }
 
-            String renderableTranslation = resolveRenderableTranslation(line);
-            boolean forceSlotHeight = forceOfficialSlotHeight && (frame.active || frame.focused);
-            int fixedSlotHeight = resolveSlotHeight(
-                    textView,
-                    line,
-                    renderableTranslation,
-                    forceSlotHeight);
+            boolean rowPrepTraced = BridgePerfTrace.begin("CLL:lyricRowPrepare");
+            String renderableTranslation;
+            int fixedSlotHeight;
+            try {
+                renderableTranslation = resolveRenderableTranslation(line);
+                boolean forceSlotHeight = forceOfficialSlotHeight && (frame.active || frame.focused);
+                fixedSlotHeight = resolveSlotHeight(
+                        textView,
+                        line,
+                        renderableTranslation,
+                        forceSlotHeight);
+            } finally {
+                BridgePerfTrace.end(rowPrepTraced);
+            }
             if (fixedSlotHeight <= 0) {
                 return;
             }
@@ -13185,11 +13275,16 @@ public final class LockscreenLyricsModule extends XposedModule {
                     frame.focused,
                     frame.activeIndex,
                     effectiveScrollScaleEnabled);
-            float appliedBlurRadius = resolveAppliedOfficialRowBlurRadius(textView, frame);
-            applyFocusedOfficialLyricViewEffects(
-                    textView,
-                    appliedBlurRadius,
-                    inactiveBlurEnabled && appliedBlurRadius > 0f);
+            boolean effectsTraced = BridgePerfTrace.begin("CLL:lyricViewEffects");
+            try {
+                float appliedBlurRadius = resolveAppliedOfficialRowBlurRadius(textView, frame);
+                applyFocusedOfficialLyricViewEffects(
+                        textView,
+                        appliedBlurRadius,
+                        inactiveBlurEnabled && appliedBlurRadius > 0f);
+            } finally {
+                BridgePerfTrace.end(effectsTraced);
+            }
             if ((frame.focused && focusAmount < 1f)
                     || (visualActiveLine && isAodLineFillTransitionRunning())
                     || (!aodLowFrameRateMode && rowVisualAnimationRunning)) {
@@ -13197,18 +13292,23 @@ public final class LockscreenLyricsModule extends XposedModule {
             }
             applyFade(1f, focusAmount);
             if (compactSlot) {
-                drawCompactLine(
-                        canvas,
-                        textView,
-                        frame.model,
-                        line,
-                        position,
-                        glowPosition,
-                        visualActiveLine,
-                        focusAmount,
-                        aodLineFillAmount,
-                        availableWidth,
-                        availableHeight);
+                boolean compactTraced = BridgePerfTrace.begin("CLL:lyricCompactLine");
+                try {
+                    drawCompactLine(
+                            canvas,
+                            textView,
+                            frame.model,
+                            line,
+                            position,
+                            glowPosition,
+                            visualActiveLine,
+                            focusAmount,
+                            aodLineFillAmount,
+                            availableWidth,
+                            availableHeight);
+                } finally {
+                    BridgePerfTrace.end(compactTraced);
+                }
                 drawBaseFade = 1f;
                 return;
             }
@@ -13604,21 +13704,28 @@ public final class LockscreenLyricsModule extends XposedModule {
                 float translationLayoutAmount,
                 String renderableTranslation) {
             LyricGroupDrawContext state = lyricGroupDrawContext;
-            if (!prepareLyricGroupDraw(
-                    textView,
-                    model,
-                    line,
-                    position,
-                    glowPosition,
-                    activeLine,
-                    availableWidth,
-                    availableHeight,
-                    focusAmount,
-                    aodLineFillAmount,
-                    translationAmount,
-                    translationLayoutAmount,
-                    renderableTranslation,
-                    state)) {
+            boolean prepareTraced = BridgePerfTrace.begin("CLL:lyricGroupPrepare");
+            boolean prepared;
+            try {
+                prepared = prepareLyricGroupDraw(
+                        textView,
+                        model,
+                        line,
+                        position,
+                        glowPosition,
+                        activeLine,
+                        availableWidth,
+                        availableHeight,
+                        focusAmount,
+                        aodLineFillAmount,
+                        translationAmount,
+                        translationLayoutAmount,
+                        renderableTranslation,
+                        state);
+            } finally {
+                BridgePerfTrace.end(prepareTraced);
+            }
+            if (!prepared) {
                 return;
             }
 
@@ -13629,9 +13736,21 @@ public final class LockscreenLyricsModule extends XposedModule {
                         0f,
                         textView.getWidth() - textView.getPaddingRight(),
                         textView.getHeight());
-                drawMainLyricPass(canvas, textView, state);
+                boolean mainTraced = BridgePerfTrace.begin(activeLine
+                        ? "CLL:lyricMainPassActive"
+                        : "CLL:lyricMainPassInactive");
+                try {
+                    drawMainLyricPass(canvas, textView, state);
+                } finally {
+                    BridgePerfTrace.end(mainTraced);
+                }
                 applyFade(1f, state.focusAmount);
-                drawTranslationPass(canvas, textView, state);
+                boolean translationTraced = BridgePerfTrace.begin("CLL:lyricTranslationPass");
+                try {
+                    drawTranslationPass(canvas, textView, state);
+                } finally {
+                    BridgePerfTrace.end(translationTraced);
+                }
             } finally {
                 canvas.restoreToCount(save);
             }
@@ -14945,33 +15064,47 @@ public final class LockscreenLyricsModule extends XposedModule {
                     ? inactivePaint
                     : activeLine && !drawProgress ? activePaint : inactivePaint;
             float segmentWidth = drawLine.width;
-            float revealWidth = drawProgress && (activeWord != null || isLineTimedProgress(line))
-                    ? resolveWordRevealWidthForSegment(
-                    model,
-                    line,
-                    text,
-                    drawLine,
-                    activeWord,
-                    wordIndex,
-                    position,
-                    segmentWidth)
-                    : 0f;
-            boolean lifted = charLift.lineActive
-                    && prepareCharLiftZone(line, text, drawLine, x, segmentWidth);
-            if (lifted) {
-                drawTextOutsideCharLiftZone(canvas, text, drawLine, x, y, basePaint);
-                drawLiftedGraphemes(
-                        canvas,
+            float revealWidth;
+            boolean lifted;
+            boolean segmentPrepTraced = BridgePerfTrace.begin("CLL:lyricSegmentPrepare");
+            try {
+                revealWidth = drawProgress && (activeWord != null || isLineTimedProgress(line))
+                        ? resolveWordRevealWidthForSegment(
+                        model,
+                        line,
                         text,
                         drawLine,
-                        x,
-                        y,
-                        basePaint,
-                        segmentWidth,
-                        revealWidth,
-                        false);
-            } else {
-                canvas.drawText(text, drawLine.start, drawLine.end, x, y, basePaint);
+                        activeWord,
+                        wordIndex,
+                        position,
+                        segmentWidth)
+                        : 0f;
+                lifted = charLift.lineActive
+                        && prepareCharLiftZone(line, text, drawLine, x, segmentWidth);
+            } finally {
+                BridgePerfTrace.end(segmentPrepTraced);
+            }
+            boolean baseTraced = BridgePerfTrace.begin(lifted
+                    ? "CLL:lyricBaseLifted"
+                    : "CLL:lyricBasePlain");
+            try {
+                if (lifted) {
+                    drawTextOutsideCharLiftZone(canvas, text, drawLine, x, y, basePaint);
+                    drawLiftedGraphemes(
+                            canvas,
+                            text,
+                            drawLine,
+                            x,
+                            y,
+                            basePaint,
+                            segmentWidth,
+                            revealWidth,
+                            false);
+                } else {
+                    canvas.drawText(text, drawLine.start, drawLine.end, x, y, basePaint);
+                }
+            } finally {
+                BridgePerfTrace.end(baseTraced);
             }
             if (!drawProgress) {
                 if (timestampHighlight) {
@@ -15027,47 +15160,62 @@ public final class LockscreenLyricsModule extends XposedModule {
                         segmentWidth);
             }
             if (glowRevealWidth > 0f) {
-                drawProgressGlow(
-                        canvas,
-                        line,
-                        text,
-                        drawLine.start,
-                        drawLine.end,
-                        x,
-                        y,
-                        segmentWidth,
-                        glowRevealWidth);
-            }
-            if (revealWidth > 0f) {
-                if (lifted) {
-                    drawRevealedTextOutsideCharLiftZone(
+                boolean glowTraced = BridgePerfTrace.begin("CLL:lyricProgressGlow");
+                try {
+                    drawProgressGlow(
                             canvas,
-                            text,
-                            drawLine,
-                            x,
-                            y,
-                            segmentWidth,
-                            revealWidth);
-                    drawLiftedGraphemes(
-                            canvas,
-                            text,
-                            drawLine,
-                            x,
-                            y,
-                            basePaint,
-                            segmentWidth,
-                            revealWidth,
-                            true);
-                } else {
-                    drawRevealedText(
-                            canvas,
+                            line,
                             text,
                             drawLine.start,
                             drawLine.end,
                             x,
                             y,
                             segmentWidth,
-                            revealWidth);
+                            glowRevealWidth);
+                } finally {
+                    BridgePerfTrace.end(glowTraced);
+                }
+            }
+            if (revealWidth > 0f) {
+                if (lifted) {
+                    boolean revealLiftTraced = BridgePerfTrace.begin("CLL:lyricRevealLifted");
+                    try {
+                        drawRevealedTextOutsideCharLiftZone(
+                                canvas,
+                                text,
+                                drawLine,
+                                x,
+                                y,
+                                segmentWidth,
+                                revealWidth);
+                        drawLiftedGraphemes(
+                                canvas,
+                                text,
+                                drawLine,
+                                x,
+                                y,
+                                basePaint,
+                                segmentWidth,
+                                revealWidth,
+                                true);
+                    } finally {
+                        BridgePerfTrace.end(revealLiftTraced);
+                    }
+                } else {
+                    boolean revealTraced = BridgePerfTrace.begin("CLL:lyricRevealedText");
+                    try {
+                        drawRevealedText(
+                                canvas,
+                                text,
+                                drawLine.start,
+                                drawLine.end,
+                                x,
+                                y,
+                                segmentWidth,
+                                revealWidth);
+                    } finally {
+                        BridgePerfTrace.end(revealTraced);
+                    }
                 }
             }
             if (activeLine) {
@@ -15177,6 +15325,9 @@ public final class LockscreenLyricsModule extends XposedModule {
                 charLift.segmentLeft = x;
                 charLift.segmentRight = x + segmentWidth;
                 charLift.prefixWidths = null;
+                charLift.runBoundaries = null;
+                charLift.runAdvances = null;
+                charLift.runSafe = null;
                 charLift.firstGrapheme = 0;
                 charLift.lastGrapheme = 0;
                 if (zoneEnd <= zoneStart) {
@@ -15211,6 +15362,12 @@ public final class LockscreenLyricsModule extends XposedModule {
                     return false;
                 }
                 charLift.prefixWidths = prefixWidths;
+                GraphemeLayoutCache layout = lastGraphemeLayout;
+                if (layout != null && layout.prefixWidths == prefixWidths && layout.ltrOnly) {
+                    charLift.runBoundaries = layout.boundaries;
+                    charLift.runAdvances = layout.runAdvances;
+                    charLift.runSafe = layout.runSafe;
+                }
                 charLift.firstGrapheme = first;
                 charLift.lastGrapheme = last;
                 charLift.zoneLeft = x + prefixWidths[first];
@@ -15320,6 +15477,48 @@ public final class LockscreenLyricsModule extends XposedModule {
          * revealed text are two separate passes so the progress glow keeps its
          * original place between them.
          */
+        /**
+         * Restricts the next segment draws to the graphemes around {@code grapheme}. The caller clips
+         * to that grapheme, so farther glyphs are fully clipped; the window keeps two neighbours on
+         * each side for overhang and shapes with the whole segment as context, so the visible glyphs
+         * and their positions match a full-segment draw.
+         */
+        private void beginGlyphRunWindow(LyricDrawLine drawLine, float x, int grapheme) {
+            int[] boundaries = charLift.runBoundaries;
+            float[] advances = charLift.runAdvances;
+            boolean[] safe = charLift.runSafe;
+            if (boundaries == null || advances == null || safe == null
+                    || boundaries.length != advances.length || boundaries.length != safe.length) {
+                glyphRunStart = -1;
+                return;
+            }
+            int startIndex = Math.max(0, grapheme - GLYPH_RUN_NEIGHBOURS);
+            while (startIndex > 0 && !safe[startIndex]) {
+                startIndex--;
+            }
+            int endIndex = Math.min(boundaries.length - 1, grapheme + 1 + GLYPH_RUN_NEIGHBOURS);
+            while (endIndex < boundaries.length - 1 && !safe[endIndex]) {
+                endIndex++;
+            }
+            glyphRunContextStart = drawLine.start;
+            glyphRunContextEnd = drawLine.end;
+            glyphRunEnd = boundaries[endIndex];
+            glyphRunX = x + advances[startIndex];
+            glyphRunStart = boundaries[startIndex];
+        }
+
+        private void drawSegmentText(
+                Canvas canvas, String text, int start, int end, float x, float y, Paint paint) {
+            if (glyphRunStart >= 0
+                    && start == glyphRunContextStart
+                    && end == glyphRunContextEnd
+                    && glyphRunStart < glyphRunEnd) {
+                canvas.drawTextRun(text, glyphRunStart, glyphRunEnd, start, end, glyphRunX, y, false, paint);
+                return;
+            }
+            canvas.drawText(text, start, end, x, y, paint);
+        }
+
         private void drawLiftedGraphemes(
                 Canvas canvas,
                 String text,
@@ -15357,6 +15556,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                             charLift.minClearance);
                     int save = canvas.save();
                     try {
+                        beginGlyphRunWindow(drawLine, x, i);
                         canvas.clipRect(left, 0f, right, canvasHeight);
                         if (sink > 0f) {
                             canvas.translate(0f, sink);
@@ -15382,13 +15582,15 @@ public final class LockscreenLyricsModule extends XposedModule {
                                     segmentWidth,
                                     revealWidth);
                         } else {
-                            canvas.drawText(text, drawLine.start, drawLine.end, x, y, basePaint);
+                            drawSegmentText(canvas, text, drawLine.start, drawLine.end, x, y, basePaint);
                         }
                     } finally {
+                        glyphRunStart = -1;
                         canvas.restoreToCount(save);
                     }
                 }
             } catch (RuntimeException error) {
+                glyphRunStart = -1;
                 // Never let this reach the coordinator: one draw error there
                 // blacklists the binding and drops the row back to native
                 // rendering permanently. Repaint the layer whole so the frame
@@ -15439,6 +15641,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 if (cache.matches(
                         line, text, drawLine.start, drawLine.end, textSizeKey, typeface)) {
                     cache.lastUsed = ++graphemeCacheUseCounter;
+                    lastGraphemeLayout = cache;
                     return cache.prefixWidths;
                 }
                 if (target == null || cache.lastUsed < target.lastUsed) {
@@ -15457,6 +15660,37 @@ public final class LockscreenLyricsModule extends XposedModule {
             for (int i = 1; i < boundaries.length; i++) {
                 prefixWidths[i] = inactivePaint.measureText(text, drawLine.start, boundaries[i]);
             }
+            boolean ltrOnly = !java.text.Bidi.requiresBidi(
+                    text.toCharArray(), drawLine.start, drawLine.end);
+            float[] runAdvances = null;
+            boolean[] runSafe = null;
+            if (ltrOnly) {
+                int last = boundaries.length - 1;
+                runAdvances = new float[boundaries.length];
+                for (int i = 1; i < boundaries.length; i++) {
+                    runAdvances[i] = inactivePaint.getRunAdvance(
+                            text, drawLine.start, drawLine.end,
+                            drawLine.start, drawLine.end, false, boundaries[i]);
+                }
+                // A run starting inside a ligature (e.g. the "i" of "fi") is shaped differently
+                // from the full segment and shifts every later glyph; only cut where the tail
+                // shaped on its own spans exactly the remaining full-segment advance.
+                runSafe = new boolean[boundaries.length];
+                runSafe[0] = true;
+                runSafe[last] = true;
+                float total = runAdvances[last];
+                for (int i = 1; i < last; i++) {
+                    float tail = inactivePaint.getRunAdvance(
+                            text, boundaries[i], drawLine.end,
+                            drawLine.start, drawLine.end, false, drawLine.end);
+                    runSafe[i] = Math.abs(runAdvances[i] + tail - total) < GLYPH_RUN_SAFE_EPSILON;
+                }
+            }
+            target.boundaries = boundaries;
+            target.runAdvances = runAdvances;
+            target.runSafe = runSafe;
+            target.ltrOnly = ltrOnly;
+            lastGraphemeLayout = target;
             target.line = line;
             target.text = text;
             target.start = drawLine.start;
@@ -15816,22 +16050,27 @@ public final class LockscreenLyricsModule extends XposedModule {
                             glowFontMetrics.bottom)
                             + padding * 2
                             + 2);
-            target.ensureBitmap(requiredWidth, requiredHeight);
-            if (target.bitmap == null || target.canvas == null) {
-                return null;
-            }
-            target.bitmap.eraseColor(0);
-            int rasterSave = target.canvas.save();
+            boolean glowTraced = BridgePerfTrace.begin("CLL:lyricGlowRaster");
             try {
-                target.canvas.clipRect(0, 0, requiredWidth, requiredHeight);
-                glowRasterPaint.setColor(scaleAlpha(
-                        palette.glowShadow,
-                        SETTLED_GLOW_ALPHA_FACTOR));
-                glowRasterPaint.setMaskFilter(glowMaskFilter);
-                target.canvas.drawText(text, start, end, padding, baseline, glowRasterPaint);
+                target.ensureBitmap(requiredWidth, requiredHeight);
+                if (target.bitmap == null || target.canvas == null) {
+                    return null;
+                }
+                target.bitmap.eraseColor(0);
+                int rasterSave = target.canvas.save();
+                try {
+                    target.canvas.clipRect(0, 0, requiredWidth, requiredHeight);
+                    glowRasterPaint.setColor(scaleAlpha(
+                            palette.glowShadow,
+                            SETTLED_GLOW_ALPHA_FACTOR));
+                    glowRasterPaint.setMaskFilter(glowMaskFilter);
+                    target.canvas.drawText(text, start, end, padding, baseline, glowRasterPaint);
+                } finally {
+                    glowRasterPaint.setMaskFilter(null);
+                    target.canvas.restoreToCount(rasterSave);
+                }
             } finally {
-                glowRasterPaint.setMaskFilter(null);
-                target.canvas.restoreToCount(rasterSave);
+                BridgePerfTrace.end(glowTraced);
             }
             // The opaque active glyph is drawn immediately after this cached bloom. Do not add
             // a second unblurred fill underneath it: its anti-aliased edge is what made the
@@ -15858,6 +16097,8 @@ public final class LockscreenLyricsModule extends XposedModule {
                 cache.clear();
             }
             charLift.reset();
+            lastGraphemeLayout = null;
+            glyphRunStart = -1;
             charLiftUnavailable = false;
             clearRenderableTranslationCache();
         }
@@ -15929,7 +16170,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 int fullSave = canvas.save();
                 try {
                     canvas.clipRect(segmentLeft, 0f, segmentRight, canvas.getHeight());
-                    canvas.drawText(text, start, end, x, y, revealPaint);
+                    drawSegmentText(canvas, text, start, end, x, y, revealPaint);
                 } finally {
                     canvas.restoreToCount(fullSave);
                 }
@@ -15946,7 +16187,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 int solidSave = canvas.save();
                 try {
                     canvas.clipRect(segmentLeft, 0f, featherStart, canvas.getHeight());
-                    canvas.drawText(text, start, end, x, y, revealPaint);
+                    drawSegmentText(canvas, text, start, end, x, y, revealPaint);
                 } finally {
                     canvas.restoreToCount(solidSave);
                 }
@@ -15962,7 +16203,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             int featherSave = canvas.save();
             try {
                 canvas.clipRect(featherStart, 0f, featherEnd, canvas.getHeight());
-                canvas.drawText(text, start, end, x, y, featherPaint);
+                drawSegmentText(canvas, text, start, end, x, y, featherPaint);
             } finally {
                 canvas.restoreToCount(featherSave);
                 featherPaint.setShader(null);
@@ -15976,14 +16217,19 @@ public final class LockscreenLyricsModule extends XposedModule {
                 boolean singleLine,
                 boolean balanceUntranslatedText) {
             int textSizeKey = Math.max(1, Math.round(inactivePaint.getTextSize() * 10f));
-            drawLayoutEngine.build(
-                    line,
-                    text,
-                    availableWidth,
-                    singleLine,
-                    balanceUntranslatedText,
-                    textSizeKey,
-                    inactivePaint.getTypeface());
+            boolean traced = BridgePerfTrace.begin("CLL:lyricLayoutBuild");
+            try {
+                drawLayoutEngine.build(
+                        line,
+                        text,
+                        availableWidth,
+                        singleLine,
+                        balanceUntranslatedText,
+                        textSizeKey,
+                        inactivePaint.getTypeface());
+            } finally {
+                BridgePerfTrace.end(traced);
+            }
         }
 
         private static boolean isCompactLyricSlot(TextView textView, float availableHeight) {
@@ -16290,6 +16536,10 @@ public final class LockscreenLyricsModule extends XposedModule {
             int firstGrapheme;
             int lastGrapheme;
             float[] prefixWidths;
+            /** Grapheme char offsets and contextual advances; null when the segment needs bidi. */
+            int[] runBoundaries;
+            float[] runAdvances;
+            boolean[] runSafe;
 
             /** True when part of this segment is already sung and sits on the baseline. */
             boolean hasHead() {
@@ -16318,6 +16568,9 @@ public final class LockscreenLyricsModule extends XposedModule {
                 firstGrapheme = 0;
                 lastGrapheme = 0;
                 prefixWidths = null;
+                runBoundaries = null;
+                runAdvances = null;
+                runSafe = null;
             }
         }
 
@@ -16329,6 +16582,12 @@ public final class LockscreenLyricsModule extends XposedModule {
             int end;
             int textSizeKey;
             float[] prefixWidths;
+            int[] boundaries;
+            /** Advance from the segment start to each boundary, shaped with the whole segment as context. */
+            float[] runAdvances;
+            /** Boundaries where a run can start or end without breaking a ligature or cluster. */
+            boolean[] runSafe;
+            boolean ltrOnly;
             long lastUsed;
 
             boolean matches(
@@ -16352,6 +16611,10 @@ public final class LockscreenLyricsModule extends XposedModule {
                 text = null;
                 typeface = null;
                 prefixWidths = null;
+                boundaries = null;
+                runAdvances = null;
+                runSafe = null;
+                ltrOnly = false;
                 lastUsed = 0L;
             }
         }

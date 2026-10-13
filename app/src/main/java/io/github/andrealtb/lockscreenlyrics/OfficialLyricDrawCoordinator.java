@@ -183,7 +183,12 @@ final class OfficialLyricDrawCoordinator {
             host.forgetRecentOfficialDrawFrame(textView);
             return null;
         }
-        host.noteVisibleLockscreenLyricTextView(textView, lyricsRecycler, drawElapsedRealtime);
+        boolean noteTraced = BridgePerfTrace.begin("CLL:lyricNoteVisible");
+        try {
+            host.noteVisibleLockscreenLyricTextView(textView, lyricsRecycler, drawElapsedRealtime);
+        } finally {
+            BridgePerfTrace.end(noteTraced);
+        }
         if (model == null) {
             host.officialRendererFallback(
                     "model-null",
@@ -222,7 +227,12 @@ final class OfficialLyricDrawCoordinator {
                     ? host.findRecentOfficialDrawFrame(textView)
                     : null;
             if (frame == null) {
-                frame = host.findOfficialLyricDrawFrame(textView);
+                boolean findTraced = BridgePerfTrace.begin("CLL:lyricFindFrame");
+                try {
+                    frame = host.findOfficialLyricDrawFrame(textView);
+                } finally {
+                    BridgePerfTrace.end(findTraced);
+                }
             }
             if (frame == null
                     && LyricTimingTuningConstants.OfficialLyric.DRAW_FRAME_REUSE_ENABLED
@@ -245,7 +255,12 @@ final class OfficialLyricDrawCoordinator {
             }
 
             host.setRendererForceOfficialSlotHeight(false);
-            host.drawWithOfficialRenderer(canvas, textView, frame);
+            boolean renderTraced = BridgePerfTrace.begin("CLL:lyricRender");
+            try {
+                host.drawWithOfficialRenderer(canvas, textView, frame);
+            } finally {
+                BridgePerfTrace.end(renderTraced);
+            }
             host.markBoundLyricFrameReady(textView, frame);
             if (LyricTimingTuningConstants.OfficialLyric.DRAW_FRAME_REUSE_ENABLED) {
                 host.rememberRecentOfficialDrawFrame(textView, frame);
