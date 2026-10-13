@@ -64,7 +64,10 @@ jobs:
 
       - name: Validate cross-repository contracts
         shell: pwsh
-        run: ./scripts/validate-release-contract.ps1 -ProviderRepoRoot ./provider-source
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./provider-source/scripts/verify-artwork-contract.ps1 -RepoRoot ./provider-source -BridgeRepoRoot . -Required
+          ./scripts/validate-release-contract.ps1 -ProviderRepoRoot ./provider-source
 
       - name: Resolve release metadata and frozen Provider commit
         id: meta
@@ -177,7 +180,7 @@ jobs:
         run: rm -f "$RUNNER_TEMP/release.jks"
 
   build-providers:
-    name: Test and build signed 14-Provider matrix
+    name: Test and build signed Provider matrix and artwork Provider
     needs: metadata
     runs-on: ubuntu-latest
     steps:
@@ -217,11 +220,22 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x ./gradlew
-          ./gradlew --no-daemon testV5Matrix assembleV5MatrixRelease --build-cache
+          ./gradlew --no-daemon testV5Matrix assembleV5MatrixRelease \
+            :artwork-provider-am:testDebugUnitTest \
+            :artwork-provider-am:lintRelease \
+            :artwork-provider-am:assembleRelease \
+            --build-cache
 
       - name: Collect canonical Provider assets
         shell: pwsh
-        run: ./scripts/collect-v5-release-apks.ps1 -OutputDir ./out
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./scripts/collect-v5-release-apks.ps1 -OutputDir ./out
+          $matrix = Get-Content -LiteralPath release/v5-provider-matrix.json -Raw | ConvertFrom-Json
+          $artwork = @($matrix.artworkProviders)[0]
+          $apks = @(Get-ChildItem -LiteralPath "$($artwork.module)/build/outputs/apk/release" -File -Filter '*.apk')
+          if ($apks.Count -ne 1) { throw "expected one artwork Provider release APK, found $($apks.Count)" }
+          Copy-Item -LiteralPath $apks[0].FullName -Destination (Join-Path ./out $artwork.asset)
 
       - name: Upload Provider APKs
         uses: actions/upload-artifact@v7

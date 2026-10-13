@@ -119,9 +119,10 @@ foreach ($tool in @($aapt2, $apksigner, $zipalign)) {
     Assert-ReleaseAsset (Test-Path -LiteralPath $tool -PathType Leaf) "Android build tool is missing: $tool"
 }
 
+$artworkProvider = @($providerContract.artworkProviders)[0]
 $expectedApkNames = @([string]$bridgeContract.bridgeAsset) + @(
     $providerContract.providers | ForEach-Object { [string]$_.asset }
-)
+) + @([string]$artworkProvider.asset)
 $incomingApks = @(Get-ChildItem -LiteralPath $resolvedInputDir -File -Filter '*.apk')
 Assert-ReleaseAsset ($incomingApks.Count -eq $bridgeContract.totalApkCount) "expected $($bridgeContract.totalApkCount) incoming APKs, found $($incomingApks.Count)"
 Assert-ReleaseAsset (-not (Compare-Object ($incomingApks.Name | Sort-Object) ($expectedApkNames | Sort-Object))) 'incoming APK names differ from contract'
@@ -205,6 +206,17 @@ foreach ($provider in @($providerContract.providers)) {
 }
 
 Assert-ReleaseAsset ($providerOutputPaths.Count -eq $bridgeContract.providerApkCount) 'Provider APK count changed while staging'
+
+# A standalone app outside the lyric matrix: published next to the bundle, never inside it.
+$artworkAssetArguments = @{
+    AssetName = [string]$artworkProvider.asset
+    ExpectedApplicationId = [string]$artworkProvider.applicationId
+    ExpectedVersionName = [string]$artworkProvider.versionName
+    ExpectedVersionCode = [int]$artworkProvider.versionCode
+    Kind = 'artwork-provider-apk'
+    Module = [string]$artworkProvider.module
+}
+Verify-And-StageApk @artworkAssetArguments | Out-Null
 $bundlePath = Join-Path $resolvedOutputDir ([string]$bridgeContract.providerBundleAsset)
 Compress-Archive -LiteralPath $providerOutputPaths -DestinationPath $bundlePath -CompressionLevel Optimal
 

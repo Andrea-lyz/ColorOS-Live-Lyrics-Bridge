@@ -13,7 +13,7 @@
 
 它不是一套盖在锁屏上的悬浮窗，而是把播放器的完整歌词交给系统原生界面显示。这样既能保留 ColorOS 的锁屏风格、切歌动画和息屏显示，也能补上逐字高亮、翻译和外观设置。
 
-> 当前正式版本：**v4.4.0**。
+> 当前正式版本：**v4.5.0**。
 
 ## 主要功能
 
@@ -29,15 +29,11 @@
 - 保留系统媒体卡片的上一首、播放/暂停、下一首等原有操作。
 - 针对切歌、暂停恢复、AOD 切换、重复歌词和中日文长句做了专门处理。
 
-可选的动态封面在独立分支上开发，以预览版发布：C16 使用
-[v4.4.0-C16-Artwork](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/releases/tag/v4.4.0-C16-Artwork)，
-C17 使用 [v4.4.0-C17-Artwork-Preview2](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/releases/tag/v4.4.0-C17-Artwork-Preview2)。安装可选的
-[动态封面 Provider](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Providers/blob/main/artwork-provider-am/README.md) 后，
-锁屏的歌词小封面与大封面可以播放当前歌曲的方形动态封面。它不属于 v4.4.0 正式版，
-用法与限制见预览版发布说明。C17 预览还包含同步镜像动态背景、封面取色光晕及通用播放器 Provider 1.1.1；
-Preview2 附带动态封面 Provider 1.0.4，新增网易云来源、AM 优先的并发查询、临时网络重试、独立搜索框及真实封面缩略图。
-原始网易云视频最高 1280，需同时更新 Bridge 与动态封面 Provider；AM 保持原生 1080。
-用户已确认 fix9 实机测试通过；两项发布前收尾修复及最终签名包未另做设备 RC，不代表所有 C17 固件均已验收。
+自 v4.5.0 起，可选的动态封面进入正式版：安装同一 Release 中的
+[动态封面 Provider](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Providers/blob/main/artwork-provider-am/README.md)
+并在 Bridge「设置 → 动态封面」中选择、授权后，锁屏歌词小封面与大封面会播放当前歌曲的方形动态封面；
+C17 还支持同步镜像动态背景与封面取色光晕。动态封面的帧率可在 10–30 fps 之间调节：调低更省电，
+调高更流畅（默认 30 fps，即视频原帧率）。不安装 Provider 时锁屏保持官方静态封面，AOD 始终使用静态封面。
 
 ## 使用前先确认
 

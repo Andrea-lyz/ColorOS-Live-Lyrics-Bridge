@@ -1,9 +1,9 @@
 {
   "schema": 1,
-  "suiteVersion": "4.4.0",
-  "releaseTag": "v4.4.0",
-  "versionCode": 144,
-  "lspTag": "144-4.4.0",
+  "suiteVersion": "4.5.0",
+  "releaseTag": "v4.5.0",
+  "versionCode": 145,
+  "lspTag": "145-4.5.0",
   "providersSourceRepository": "Andrea-lyz/ColorOS-Live-Lyrics-Providers",
   "providersSourceTag": "main",
   "providerContractPath": "release/v5-provider-matrix.json",
@@ -14,24 +14,25 @@
     "system",
     "com.android.systemui"
   ],
-  "bridgeAsset": "ColorOS-Live-Lyrics-Bridge-v4.4.0.apk",
-  "providerBundleAsset": "ColorOS-Live-Lyrics-Providers-v4.4.0.zip",
+  "bridgeAsset": "ColorOS-Live-Lyrics-Bridge-v4.5.0.apk",
+  "providerBundleAsset": "ColorOS-Live-Lyrics-Providers-v4.5.0.zip",
   "checksumsAsset": "SHA256SUMS",
-  "assetManifest": "release-assets-v4.4.0.json",
+  "assetManifest": "release-assets-v4.5.0.json",
   "providerApkCount": 14,
-  "totalApkCount": 15,
-  "totalReleaseAssetCount": 18,
+  "artworkProviderApkCount": 1,
+  "totalApkCount": 16,
+  "totalReleaseAssetCount": 19,
   "previewArtworkProvider": {
     "repository": "Andrea-lyz/ColorOS-Live-Lyrics-Providers",
-    "ref": "acd1cd8198e08e2f214d87bb12a0d384201b1c4e",
+    "ref": "02503b342d536f0cd5d340050e7a8a221cd2a75c",
     "module": "artwork-provider-am",
     "buildTask": ":artwork-provider-am:assembleRelease",
     "contractMirrorModule": "artwork-contract",
     "mirrorTask": "verifyArtworkContract",
     "applicationId": "io.github.andrealtb.artwork.am",
-    "versionName": "1.0.4",
-    "versionCode": 8,
-    "asset": "ColorOS-Live-Lyrics-Dynamic-Artwork-Provider-v1.0.4.apk"
+    "versionName": "1.0.5",
+    "versionCode": 9,
+    "asset": "ColorOS-Live-Lyrics-Dynamic-Artwork-Provider-v1.0.5.apk"
   },
   "forbiddenApkAscii": [
     "io.github.andrealtb.lockscreenlyrics.action.EXTERNAL_LYRIC_DIRECT_V4",
@@ -59,24 +60,5 @@
     "Lio/github/andrealtb/artwork/am/AmVideoInspection;",
     "Lio/github/andrealtb/artwork/am/AmInspectionStore;",
     "Lio/github/andrealtb/artwork/am/AmMp4Structure;"
-  ],
-  "previewUniversalProvider": {
-    "repository": "Andrea-lyz/ColorOS-Live-Lyrics-Providers",
-    "ref": "acd1cd8198e08e2f214d87bb12a0d384201b1c4e",
-    "previewTags": [
-      "v4.4.0-C17-Artwork-Preview",
-      "v4.4.0-C17-Artwork-Preview1",
-      "v4.4.0-C17-Artwork-Preview2"
-    ],
-    "module": "universal-provider",
-    "buildTask": ":universal-provider:assembleRelease",
-    "testTask": ":universal-provider:testDebugUnitTest",
-    "applicationId": "io.github.andrealtb.coloroslyrics.provider.universal",
-    "versionName": "1.1.1",
-    "versionCode": 3,
-    "scopes": [
-      "system"
-    ],
-    "asset": "ColorOS-Live-Lyrics-Provider-Universal-v1.1.1.apk"
-  }
+  ]
 }

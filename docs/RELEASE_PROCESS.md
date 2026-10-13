@@ -1,6 +1,7 @@
-# 4.3.0 正式发布流程
+# 正式发布流程
 
-适用范围：Bridge `4.3.0`、14 个独立 Provider API 102 套件与 LSPosed mirror。
+适用范围：Bridge、14 个独立 Provider API 102 套件、动态封面 Provider 与 LSPosed mirror。
+版本号、资产名与数量以两仓库机器契约为准；下文以 4.5.0 为例。
 
 涉及仓库：
 
@@ -45,8 +46,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
 
 - Bridge versionName/versionCode、`v<version>` 与 LSP `<versionCode>-<version>` tag；
 - Provider source repository/main 与 metadata 阶段冻结的 commit SHA；
-- 14 个 module/applicationId/scope/内部版本；
-- 15 个 APK 与 18 项最终资产的精确数量；
+- 14 个 module/applicationId/scope/内部版本，以及唯一的动态封面 Provider（`distribution = bridge-release`）；
+- 16 个 APK 与 19 项最终资产的精确数量；
 - 规范文件名、正式签名证书 SHA-256、固定 Android build-tools；
 - 最终 APK DEX 禁用字符串。
 
@@ -91,6 +92,11 @@ release 必须由受控 Actions secrets 构建。
 
 Release Notes 必须是完整历史风格正文，至少包含架构变化、用户功能、兼容矩阵、迁移、
 验证、已知限制、资产和致谢，不能只有一句摘要。
+若版本变更了 Provider 桌面图标入口（移除 launcher 图标、改用 INFO 前门入口等），Release Notes
+与升级说明必须包含：更新安装后旧桌面图标需重启桌面（启动器）才会消失。
+若版本变更是通用播放器 Provider 的黑名单范围（例如放开官方播放器包名），Release Notes
+与升级说明必须包含：同一播放器只开一个 Provider（它的官方/专属 Provider 与通用 Provider 二选一），
+同时开启时两者都会写入 lyricInfo 而互相覆盖。
 
 ## 5. 私有 RC
 
@@ -106,10 +112,10 @@ RC mode 必须：
 
 1. checkout Providers `main` 并记录解析后的不可变 Provider SHA；
 2. Bridge 标准测试、release lint、正式签名 release 构建；
-3. Provider `testV5Matrix`、14 module release/R8、正式签名；
-4. 校验 15 APK 的 DEX 禁用字符串、包名、版本、证书和 zipalign；
-5. 生成 14 APK Provider ZIP、asset manifest 和 `SHA256SUMS`；
-6. 上传恰好 18 项 complete artifact；
+3. Provider `testV5Matrix`、14 module release/R8，动态封面 Provider 单测、release lint 与 release 构建，均正式签名；
+4. 校验 16 APK 的 DEX 禁用字符串、包名、版本、证书和 zipalign，并校验动态封面协议镜像；
+5. 生成 14 APK Provider ZIP、asset manifest 和 `SHA256SUMS`；动态封面 Provider 作为独立资产，不进入 ZIP；
+6. 上传恰好 19 项 complete artifact；
 7. 跳过 publish job，不创建公开 Release。
 
 下载 complete artifact 后，再独立复算哈希并重跑 asset verifier。真机只测试该 batch；
@@ -122,6 +128,9 @@ RC mode 必须：
 - Bridge 4.0.0 覆盖升级和 schema v3 设置保留；
 - 12 个专属 Provider 与通用播放器 Provider 均使用 libxposed API 102 入口；
 - Provider Debug Remote Preferences 首次升级的默认关闭与重启生效行为；
+- Provider 图标入口变更版本：覆盖安装更新后，旧桌面图标需重启桌面（启动器）才会消失（属预期）；
+- 通用播放器 Provider 黑名单变更版本：手动绑定一个此前被禁的播放器（如网易云音乐）后歌词正常显示；
+- 通用播放器 Provider 与其官方/专属 Provider 同时开启时无重复或不稳定歌词（推荐二选一，验收说明需提示）；
 - Bridge 配置备份/恢复；
 - 12 个专属 Provider、通用播放器 Provider 及所有多宿主 profile；
 - 播放、暂停/恢复、seek、连续切歌、同曲重播；
@@ -165,27 +174,28 @@ workflow 拒绝覆盖已经存在的公开 Release。发布后修复使用新版
 
 ## 10. 正式资产白名单
 
-`4.3.0` 预期恰好 18 项：
+`4.5.0` 预期恰好 19 项：
 
-1. `ColorOS-Live-Lyrics-Bridge-v4.3.0.apk`
-2. 14 个 `ColorOS-Live-Lyrics-Provider-<Name>-v4.3.0.apk`
-3. `ColorOS-Live-Lyrics-Providers-v4.3.0.zip`
-4. `release-assets-v4.3.0.json`
-5. `SHA256SUMS`
+1. `ColorOS-Live-Lyrics-Bridge-v4.5.0.apk`
+2. 14 个 `ColorOS-Live-Lyrics-Provider-<Name>-v4.5.0.apk`
+3. `ColorOS-Live-Lyrics-Dynamic-Artwork-Provider-v<Provider 版本>.apk`
+4. `ColorOS-Live-Lyrics-Providers-v4.5.0.zip`
+5. `release-assets-v4.5.0.json`
+6. `SHA256SUMS`
 
-Provider ZIP 只能包含 14 个顶层 APK，不含目录、debug/unsigned APK 或旧包名。
+Provider ZIP 只能包含 14 个顶层歌词 Provider APK，不含动态封面 Provider、目录、debug/unsigned APK 或旧包名。
 
 ## 11. 发布后独立复核
 
 1. 等待 workflow 结束，用 `gh run view` 核对每个 job；不能从轮询中推测成功。
-2. 分别从 Bridge 与 LSP Release 下载 18 项资产。
+2. 分别从 Bridge 与 LSP Release 下载 19 项资产。
 3. 比较两个 Release 的文件名、字节数和 SHA-256。
-4. 对 15 APK 重跑 package/version/certificate/zipalign 检查。
+4. 对 16 APK 重跑 package/version/certificate/zipalign 检查。
 5. 核对 Bridge tag、Provider `main` 的已冻结 SHA、LSP tag 与三个 commit。
 6. 用公开下载的 Bridge + 至少一个 Provider 做最后安装冒烟。
-7. 将 run、commit、tag、哈希和设备结论写入 4.3 发布台账。
+7. 将 run、commit、tag、哈希和设备结论写入对应版本发布台账（`docs/releases/v<version>.md`）。
 
-只有这些门禁全部关闭，才能将 v4.3.0 标记为正式完成。
+只有这些门禁全部关闭，才能将该版本标记为正式完成。
 
 ## 12. Bridge 预览版（非主线）
 
@@ -208,7 +218,8 @@ Provider ZIP 只能包含 14 个顶层 APK，不含目录、debug/unsigned APK �
    - applicationId、versionCode/Name、资产名与证书都必须与契约一致。
 5. 若 tag 列在 `previewUniversalProvider.previewTags` 中，还从同一固定 Provider commit 构建
    通用播放器 Provider；执行该模块的 debug 单测，并校验包名、独立版本、签名、scope 与 zipalign。
-   当前列出的 C17 Artwork Preview、Preview1 与 Preview2 均交付三个 APK 和一个 `SHA256SUMS`，不会在发布后临时补附件；精确 tag 清单以契约为准。
+   v4.4.0 的 C17 Artwork Preview、Preview1 与 Preview2 均交付三个 APK 和一个 `SHA256SUMS`。4.5.0 起动态封面与通用
+   Provider 进入正式版，契约不再列出 `previewUniversalProvider`；新预览需要时再按当前版本添加。
 6. `preview.yml` 创建 GitHub pre-release，不标记 latest。不构建其余歌词 Provider 矩阵，
    不创建 LSP tag，不上传 LSP mirror，也不修改正式契约版本。
 7. 每次需要新的动态封面预览时，先把 `previewArtworkProvider.ref` 更新为 Providers 仓库的

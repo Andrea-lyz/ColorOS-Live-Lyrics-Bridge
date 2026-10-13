@@ -13,7 +13,7 @@ Bring lyrics from more music apps to the native ColorOS / OPlus lock-screen lyri
 
 This is not a floating overlay. It passes a player's full lyric timeline to the system UI, keeping the ColorOS look, transitions, and always-on display while adding word-by-word highlighting, translations, and appearance controls.
 
-> Current release: **v4.4.0**.
+> Current release: **v4.5.0**.
 
 ## What it does
 
@@ -29,7 +29,14 @@ This is not a floating overlay. It passes a player's full lyric timeline to the 
 - Preserves the media card's original previous, play/pause, next, and other controls.
 - Handles rapid track changes, pause/resume, AOD transitions, repeated lines, and long CJK text more reliably.
 
-Optional dynamic artwork is developed on a separate branch: use [v4.4.0-C16-Artwork](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/releases/tag/v4.4.0-C16-Artwork) for C16, or [v4.4.0-C17-Artwork-Preview2](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Bridge/releases/tag/v4.4.0-C17-Artwork-Preview2) for C17. With the optional [Dynamic Artwork Provider](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Providers/blob/main/artwork-provider-am/README.md), supported covers play square motion artwork. The C17 preview also adds synchronized mirrored backgrounds and artwork-based glow colors, and includes Universal Provider 1.1.1. Preview2 includes Artwork Provider 1.0.4 with opt-in NetEase covers, concurrent lookup with AM download priority, transient-network recovery, separate searches and real cover thumbnails. Update both Bridge and Artwork Provider for native NetEase video up to 1280; AM remains native 1080. The user confirmed fix9 device testing; the two final audit fixes and final signed APKs have not received separate device RC acceptance. These features are not part of stable v4.4.0; see the preview notes for usage and limitations.
+From v4.5.0, optional dynamic artwork is part of the stable release. Install the
+[Dynamic Artwork Provider](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Providers/blob/main/artwork-provider-am/README.md)
+from the same Release, then pick and authorize it in Bridge under Settings → Dynamic artwork; the small
+lyric cover and the large cover then play the current song's square motion artwork. On C17 it also
+drives a synchronized mirrored background and artwork-based glow colors. The motion cover frame rate is
+adjustable from 10 to 30 fps: lower saves battery, higher is smoother (default 30 fps, the video's
+original rate). Without the Provider the lock screen keeps the official static cover; AOD always uses
+the static cover.
 
 ## Before you install
 
@@ -169,7 +176,7 @@ If your player already has a full lyric timeline, the preferred integration is t
 - [4.0 migration guide](docs/4.0/MIGRATION-3.8-TO-4.0.md)
 - [Bridge and LyricProvider responsibilities (Chinese)](docs/LYRIC_PROVIDER_BRIDGE.zh-CN.md)
 - [Dynamic artwork Provider and Bridge design (Chinese)](docs/DYNAMIC-ARTWORK-PROVIDER-PLAN.zh-CN.md)
-- [Dynamic artwork implementation status (Chinese; unreleased development branch, verified on one C16 device)](docs/DYNAMIC-ARTWORK-IMPLEMENTATION.zh-CN.md)
+- [Dynamic artwork implementation status (Chinese)](docs/DYNAMIC-ARTWORK-IMPLEMENTATION.zh-CN.md)
 - [Dynamic Artwork Provider source (lives in the Providers repository)](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Providers/blob/main/artwork-provider-am/README.md) and its [protocol contract](artwork-contract/README.md)
 
 ## Building locally

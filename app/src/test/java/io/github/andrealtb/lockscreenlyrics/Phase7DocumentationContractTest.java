@@ -59,7 +59,8 @@ public final class Phase7DocumentationContractTest {
 
         assertTrue(process.contains("Andrea-lyz/ColorOS-Live-Lyrics-Providers"));
         assertTrue(process.contains("mode=rc"));
-        assertTrue(process.contains("18"));
+        assertTrue(process.contains("19"));
+        assertTrue(process.contains("ColorOS-Live-Lyrics-Dynamic-Artwork-Provider-v"));
         assertFalse(process.contains("Andrea-lyz/LyricProvider"));
         assertTrue(notes.contains("Character float-up"));
         assertTrue(notes.contains("libxposed API 102"));

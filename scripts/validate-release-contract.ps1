@@ -44,7 +44,8 @@ for ($index = 0; $index -lt $expectedScope.Count; $index++) {
 }
 
 Assert-Contract ($contract.providerApkCount -eq 14) 'release must contain exactly 14 Provider APKs'
-Assert-Contract ($contract.totalApkCount -eq (1 + $contract.providerApkCount)) 'totalApkCount must equal Bridge plus Providers'
+Assert-Contract ($contract.artworkProviderApkCount -eq 1) 'release must contain exactly one artwork Provider APK'
+Assert-Contract ($contract.totalApkCount -eq (1 + $contract.providerApkCount + $contract.artworkProviderApkCount)) 'totalApkCount must equal Bridge, Providers, and the artwork Provider'
 Assert-Contract ($contract.totalReleaseAssetCount -eq ($contract.totalApkCount + 3)) 'asset count must include APKs, bundle, checksums, and manifest'
 
 $previewArtwork = $contract.previewArtworkProvider
@@ -132,7 +133,7 @@ if (-not [string]::IsNullOrWhiteSpace($ProviderRepoRoot)) {
     Assert-Contract ([string]$providerArtwork[0].versionName -eq [string]$previewArtwork.versionName) 'artwork Provider versionName differs between contracts'
     Assert-Contract ([int]$providerArtwork[0].versionCode -eq [int]$previewArtwork.versionCode) 'artwork Provider versionCode differs between contracts'
     Assert-Contract ([string]$providerArtwork[0].asset -eq [string]$previewArtwork.asset) 'artwork Provider asset differs between contracts'
-    Assert-Contract ([string]$providerArtwork[0].distribution -eq 'bridge-preview') 'artwork Provider distribution must stay bridge-preview'
+    Assert-Contract ([string]$providerArtwork[0].distribution -eq 'bridge-release') 'artwork Provider must ship with the Bridge release'
     if ($null -ne $previewUniversal) {
         $providerUniversal = @($providerContract.providers | Where-Object { $_.module -eq $previewUniversal.module })
         Assert-Contract ($providerUniversal.Count -eq 1) 'Provider matrix must contain exactly one Universal module'
