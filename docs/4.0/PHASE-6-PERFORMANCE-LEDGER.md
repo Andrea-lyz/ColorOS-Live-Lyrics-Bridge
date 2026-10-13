@@ -320,6 +320,45 @@ hex `substring + Integer.parseInt`，feather color array 也只随 config 创建
   model-parse 单曲一次约 26ms，无异常采样。日志中 `LockscreenLyricsParse`
   trace 的中文乱码为 logcat 抓取编码伪影，非解析问题。
 
+## 8A. 锁屏掉帧专项（2026-10-13，Perfetto）
+
+设备 PJZ110 / ColorOS 17 尝鲜版，120Hz 自适应。抓取用
+`scripts/capture-lockscreen-perf.ps1 -Mode jank`（45s，FrameTimeline + atrace + aidl），
+配置经 stdin 交给 perfetto（SELinux 禁止 traced 读 `/data/local/tmp`）。
+
+- 基线（停用 Bridge）：AOD 切换窗掉帧率 5.7%、其他 1.9%，RenderThread
+  queueBuffer 约 14.5s/45s，与启用 Bridge 时同量级；锁屏/AOD 掉帧主体归
+  ColorOS 测试版，Bridge 增量约 0.5–4 个百分点（单轮样本）。
+- `ArtworkImmersivePlayback` 资格检查的 `isKeyguardLocked`（无缓存 WMS binder）
+  每帧 12–32 次 → 250ms 缓存 + 屏幕广播失效；SystemUI 主线程 binder
+  25.6k/70.6k → 235/287 次，doFrame 平均 −14–15%。trace 已验证。
+- 翻译按钮扫描：跳过 >512px bitmap；矢量图标匹配按 `ConstantState` 缓存；
+  指纹改 `getPixels` 批量读取。冷启动 167ms 与 rebind 后 208ms 主线程长任务
+  消失（后续单次 ≤27ms）。trace 已验证。
+- `getAdapter` 改按类缓存 Method，去掉每 250ms 的逐级 NoSuchMethodException。
+- 字符上浮：每字的裁剪绘制改为 `drawTextRun` 窗口（前后各 2 字，整段为
+  shaping context），起止对齐可安全切分的边界（避免 "fi" 等连字被拆导致
+  字形左移）；含 bidi 的段与异常路径回退整段绘制。lyricRender p50
+  634→521µs，上浮填充层 −38%；RenderThread 不变（主要成本是整窗合成）。
+  用户已设备目测确认无切边/错位。
+- 新增 `BridgePerfTrace` 与 `CLL:*` atrace 区段，仅在 SystemUI app tracing
+  开启时输出。实测 settings reload、cover 取色、layout build、反射均很小，
+  未改动；剩余热点为当前行主歌词（上浮开时约 60% 在上浮）与偶发
+  glow raster（1–6ms/次）。
+- 未做：上浮静止字合并绘制、下一行 glow 预热。
+- 动态封面耗电（50% 手动亮度，电池计数器，本机无 power rails）：动态约为静态
+  封面的 2.7–2.9×。ABBA 归因（`debug.cll.artwork.decode_only=1` 只解码不显示）：
+  只解码 ≈ 静态，额外耗电几乎全在显示链路——每个视频帧触发 C17 全屏镜像
+  shader、内容容器整体模糊与整窗重绘。送显帧数减半时额外耗电约降 70%。
+- 新增「动态封面帧率」设置（10–30 fps，默认 30 = 原始，`ArtworkDisplaySettings`
+  `artwork_frame_rate_limit`，含备份）。30 走原 MediaPlayer 直连；低于 30 用
+  `ArtworkPacedPlayer`（MediaCodec 解码到视图，按时间戳由 `ArtworkFramePacer`
+  决定 release 是否渲染，缓冲始终回到解码器池）。首版 ImageReader→ImageWriter
+  零拷贝转交会让缓冲离开解码器池、数秒后卡死，已弃用。用户已设备确认 10/15/30
+  播放、循环与切换正常。
+- 未做：独立图层（SurfaceView/SurfaceControl）方案——内容容器模糊与镜像 shader
+  无法作用于独立图层，需另行验证系统级窗口模糊。
+
 ## 9. 后续切片
 
 ### renderer 后续
