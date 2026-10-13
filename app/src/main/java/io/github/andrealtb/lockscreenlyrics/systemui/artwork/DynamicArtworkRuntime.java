@@ -132,6 +132,7 @@ public final class DynamicArtworkRuntime {
             active = next;
             activeSource = source;
             playback.setKeepAwake(next.keepAwake());
+            playback.setFrameRateLimit(next.frameRateLimit());
             traceConfig("decoderKept=true");
             updateDisplay();
             return;
@@ -166,7 +167,7 @@ public final class DynamicArtworkRuntime {
         trace.state("ARTWORK_DISPLAY_CONFIG", () -> "source=" + source + " enabled=" + displayEnabled
                 + " revision=" + config.revision() + " mode=" + (config.localFixture() ? "local_fixture" : "live_query")
                 + " card=" + config.cardEnabled() + " largeCover=" + config.immersiveEnabled()
-                + " keepAwake=" + config.keepAwake() + " " + detail);
+                + " keepAwake=" + config.keepAwake() + " frameRateLimit=" + config.frameRateLimit() + " " + detail);
     }
 
     /**

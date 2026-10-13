@@ -1,7 +1,13 @@
 package io.github.andrealtb.lockscreenlyrics.systemui.artwork;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.ValueAnimator;
+import android.graphics.ImageFormat;
 import android.graphics.Matrix;
 import android.graphics.SurfaceTexture;
+import android.media.Image;
+import android.media.ImageReader;
 import android.media.MediaPlayer;
 import android.os.Handler;
 import android.os.HandlerThread;
@@ -9,6 +15,7 @@ import android.os.Looper;
 import android.view.Surface;
 import android.view.TextureView;
 import android.view.View;
+import android.view.animation.AccelerateDecelerateInterpolator;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
@@ -17,6 +24,13 @@ import java.util.function.Supplier;
 
 /** Local-FD renderer. Mounting, geometry, shape and official transitions belong to verified hosts. */
 public final class DynamicArtworkRenderer implements AutoCloseable, TextureView.SurfaceTextureListener {
+    private static final long FADE_IN_MS = 320;
+    private static final long FADE_OUT_MS = 220;
+    /**
+     * Power experiment only, set with {@code adb shell setprop}: decode into an offscreen reader
+     * and discard frames, leaving the native static cover on screen. Read once per session.
+     */
+    private static final String DECODE_ONLY_PROPERTY = "debug.cll.artwork.decode_only";
     private static final Handler MEDIA;
     private static DynamicArtworkRenderer owner;
     static {
@@ -33,6 +47,9 @@ public final class DynamicArtworkRenderer implements AutoCloseable, TextureView.
     private boolean closed;
     private TextureView handoverFrom;
     private Runnable pendingDetach;
+    private ValueAnimator opacity;
+    /** User cap in fps; {@link ArtworkDisplaySettings#FRAME_RATE_UNLIMITED} keeps the direct surface. */
+    private volatile int frameRateLimit = ArtworkDisplaySettings.FRAME_RATE_UNLIMITED;
 
     public DynamicArtworkRenderer(TextureView view, Consumer<String> status) {
         this(view, status, false);
@@ -43,6 +60,20 @@ public final class DynamicArtworkRenderer implements AutoCloseable, TextureView.
         this.status = status;
         this.fitXY = fitXY;
         adopt(view);
+    }
+
+    /**
+     * Applies to the running decoder when it already paces frames; switching between capped and
+     * uncapped takes effect from the next playback session.
+     */
+    public void setFrameRateLimit(int fps) {
+        frameRateLimit = fps;
+        Session active = session;
+        if (active != null) active.pacer.setLimit(paceFor(fps));
+    }
+
+    private static int paceFor(int fps) {
+        return fps >= ArtworkDisplaySettings.FRAME_RATE_UNLIMITED ? 0 : fps;
     }
 
     private void adopt(TextureView target) {
@@ -57,12 +88,55 @@ public final class DynamicArtworkRenderer implements AutoCloseable, TextureView.
     public boolean isPlaying() {
         requireMain();
         Session active = session;
-        return !closed && active != null && active.started && active.player != null;
+        return !closed && active != null && active.started && !active.retiring && active.hasPlayer();
     }
 
     /** The first frame is on screen: false while preparing, between a handover and its next frame, and after stop. */
     public boolean isShowing() {
         return isPlaying() && session.visible;
+    }
+
+    public boolean isFadingToStatic() {
+        requireMain();
+        return !closed && session != null && session.retiring;
+    }
+
+    /** A hidden same-song host returns through a fresh frame, without restarting its decoder. */
+    public void reveal() {
+        requireMain();
+        Session active = session;
+        if (!isPlaying() || !current(active)) return;
+        frames.clear();
+        cancelOpacity();
+        view.setAlpha(0f);
+        active.visible = false;
+        active.updated = false;
+        main.removeCallbacks(active.timeout);
+        if (!active.decodeOnly) main.postDelayed(active.timeout, ArtworkSurfaceHandover.MAX_HOLD_MS);
+    }
+
+    /** Only a settled, still-current paused song may keep its last frame while returning to static. */
+    public boolean fadeToStatic(ArtworkRenderGuard guard, Runnable completed) {
+        requireMain();
+        Session active = session;
+        if (!isShowing() || pendingDetach != null || view.getAlpha() <= 0f || !guard.permits()) {
+            guard.close();
+            return false;
+        }
+        active.guard.close();
+        active.guard = guard;
+        active.retiring = true;
+        main.removeCallbacks(active.timeout);
+        MEDIA.post(() -> {
+            if (!active.active.get() || !active.hasPlayer()) return;
+            try {
+                if (active.paced != null) active.paced.pause();
+                else active.player.pause();
+            }
+            catch (RuntimeException error) { main.post(() -> fail(active, "pause_failed")); }
+        });
+        animateOpacity(active, 0f, FADE_OUT_MS, completed);
+        return true;
     }
 
     /** Replace a surface lease with a bounded same-song transition lease; the decoder keeps running. */
@@ -84,14 +158,15 @@ public final class DynamicArtworkRenderer implements AutoCloseable, TextureView.
         requireMain();
         Session active = session;
         if (closed || active == null || next == null || next == view || pendingDetach != null) { guard.close(); return false; }
-        if (!guard.permits() || active.player == null) { guard.close(); return false; }
+        if (!guard.permits() || !active.hasPlayer()) { guard.close(); return false; }
         frames.clear();
+        cancelOpacity();
         active.guard.close();
         active.guard = guard;
         active.visible = false;
         active.updated = false;
         main.removeCallbacks(active.timeout);
-        main.postDelayed(active.timeout, ArtworkSurfaceHandover.MAX_HOLD_MS);
+        if (!active.decodeOnly) main.postDelayed(active.timeout, ArtworkSurfaceHandover.MAX_HOLD_MS);
         view.setSurfaceTextureListener(null);
         handoverFrom = view;
         pendingDetach = onDetached;
@@ -109,13 +184,15 @@ public final class DynamicArtworkRenderer implements AutoCloseable, TextureView.
             Surface next = null;
             boolean attached = false;
             try {
-                MediaPlayer player = target.player;
-                if (player == null || !target.active.get()) throw new IllegalStateException("handover_lost");
-                next = new Surface(texture);
-                player.setSurface(next);
-                stale = target.surface;
-                target.surface = next;
-                attached = true;
+                if (!target.hasPlayer() || !target.active.get()) throw new IllegalStateException("handover_lost");
+                if (target.reader == null) {
+                    next = new Surface(texture);
+                    if (target.paced != null) target.paced.setSurface(next);
+                    else target.player.setSurface(next);
+                    stale = target.surface;
+                    target.surface = next;
+                    attached = true;
+                }
             } catch (RuntimeException error) {
                 if (next != null && !attached) next.release();
                 main.post(() -> fail(target, "surface_handover_failed"));
@@ -165,10 +242,28 @@ public final class DynamicArtworkRenderer implements AutoCloseable, TextureView.
         MEDIA.post(() -> {
             if (!target.active.get()) { target.asset.close(); return; }
             try {
-                target.surface = new Surface(texture);
+                Surface decoderSink;
+                if (decodeOnlyExperiment()) {
+                    target.decodeOnly = true;
+                    target.reader = ImageReader.newInstance(Math.max(1, target.asset.metadata.width),
+                            Math.max(1, target.asset.metadata.height), ImageFormat.PRIVATE, 3);
+                    target.reader.setOnImageAvailableListener(reader -> {
+                        Image frame = reader.acquireLatestImage();
+                        if (frame != null) frame.close();
+                    }, MEDIA);
+                    decoderSink = target.reader.getSurface();
+                    main.post(() -> main.removeCallbacks(target.timeout));
+                } else {
+                    target.surface = new Surface(texture);
+                    decoderSink = target.surface;
+                    if (paceFor(target.limitAtStart) > 0) {
+                        startPaced(target);
+                        return;
+                    }
+                }
                 target.player = new MediaPlayer();
                 MediaPlayer player = target.player;
-                player.setSurface(target.surface);
+                player.setSurface(decoderSink);
                 player.setVolume(0f, 0f);
                 player.setLooping(true);
                 player.setOnPreparedListener(prepared -> {
@@ -219,13 +314,39 @@ public final class DynamicArtworkRenderer implements AutoCloseable, TextureView.
     }
 
     private void firstFrame(Session target) {
-        if (!current(target) || target.visible || !target.started || !target.rendering || !target.updated) return;
+        if (!current(target) || target.visible || target.retiring || !target.started || !target.rendering || !target.updated) return;
         target.visible = true;
         main.removeCallbacks(target.timeout);
         // A handover lands on a settled surface showing the native static cover, so it fades in too.
-        view.animate().cancel();
-        view.animate().alpha(1f).setDuration(200).start();
+        animateOpacity(target, 1f, FADE_IN_MS, null);
         status.accept("playing");
+    }
+
+    private void animateOpacity(Session target, float alpha, long durationMs, Runnable completed) {
+        cancelOpacity();
+        ValueAnimator next = ValueAnimator.ofFloat(view.getAlpha(), alpha);
+        opacity = next;
+        // An interrupted fade continues from the current opacity rather than flashing back to an endpoint.
+        next.setDuration(Math.max(1, Math.round(durationMs * Math.abs(alpha - view.getAlpha()))));
+        next.setInterpolator(new AccelerateDecelerateInterpolator());
+        next.addUpdateListener(animation -> {
+            if (opacity == next && current(target)) view.setAlpha((float) animation.getAnimatedValue());
+        });
+        next.addListener(new AnimatorListenerAdapter() {
+            @Override public void onAnimationEnd(Animator animation) {
+                // cancel() also calls onAnimationEnd; a retired animation cannot remove a newer mount.
+                if (opacity != next) return;
+                opacity = null;
+                if (completed != null && current(target)) completed.run();
+            }
+        });
+        next.start();
+    }
+
+    private void cancelOpacity() {
+        ValueAnimator previous = opacity;
+        opacity = null;
+        if (previous != null) previous.cancel();
     }
 
     private void crop(Session target) {
@@ -262,7 +383,7 @@ public final class DynamicArtworkRenderer implements AutoCloseable, TextureView.
         if (pending != null) pending.run();
         Session previous = session;
         session = null;
-        view.animate().cancel();
+        cancelOpacity();
         view.setAlpha(0f);
         if (owner == this) owner = null;
         if (previous == null) return;
@@ -274,6 +395,14 @@ public final class DynamicArtworkRenderer implements AutoCloseable, TextureView.
             if (previous.player != null) {
                 try { previous.player.release(); } catch (RuntimeException ignored) {}
                 previous.player = null;
+            }
+            if (previous.paced != null) {
+                previous.paced.release();
+                previous.paced = null;
+            }
+            if (previous.reader != null) {
+                previous.reader.close();
+                previous.reader = null;
             }
             if (previous.surface != null) {
                 previous.surface.release();
@@ -296,7 +425,7 @@ public final class DynamicArtworkRenderer implements AutoCloseable, TextureView.
         // may remove the mount, so they must not run inside that framework stack.
         main.post(() -> {
             if (target == null || session != target || closed || view != source || source.getSurfaceTexture() != texture) return;
-            if (target.player == null) prepare(target, texture);
+            if (!target.hasPlayer()) prepare(target, texture);
             else if (pendingDetach != null && current(target)) attach(target, texture);
         });
     }
@@ -324,7 +453,7 @@ public final class DynamicArtworkRenderer implements AutoCloseable, TextureView.
         // Revoke immediately, but never call current()/status/mount.close() in this stack.
         if (!target.guard.permits()) {
             target.visible = false;
-            source.animate().cancel();
+            cancelOpacity();
             source.setAlpha(0f);
         }
         frames.offer(() -> {
@@ -334,6 +463,56 @@ public final class DynamicArtworkRenderer implements AutoCloseable, TextureView.
                 firstFrame(target);
             }
         });
+    }
+
+    /**
+     * Media lane. Capped playback decodes straight to the view and decides per frame whether its
+     * release renders, so skipped frames never trigger a window redraw.
+     */
+    private void startPaced(Session target) throws java.io.IOException {
+        target.pacer.setLimit(paceFor(target.limitAtStart));
+        ArtworkPacedPlayer paced = new ArtworkPacedPlayer(MEDIA, target.pacer, new ArtworkPacedPlayer.Listener() {
+            @Override public void onRenderingStart() {
+                main.post(() -> {
+                    if (current(target)) {
+                        target.rendering = true;
+                        target.updated = false;
+                    }
+                });
+            }
+
+            @Override public void onError() {
+                main.post(() -> fail(target, "decode_failed"));
+            }
+        });
+        target.paced = paced;
+        try {
+            paced.start(target.asset.descriptor.getFileDescriptor(), target.asset.metadata.fileBytes, target.surface);
+        } finally {
+            // The extractor duplicates the descriptor. No Java FD remains for the playback lifetime.
+            target.asset.close();
+        }
+        main.post(() -> {
+            if (!current(target)) return;
+            target.started = true;
+            status.accept("waiting_first_frame");
+            firstFrame(target);
+        });
+    }
+
+    private static boolean decodeOnlyExperiment() {
+        return "1".equals(experimentProperty(DECODE_ONLY_PROPERTY));
+    }
+
+    private static String experimentProperty(String name) {
+        try {
+            Object value = Class.forName("android.os.SystemProperties")
+                    .getMethod("get", String.class)
+                    .invoke(null, name);
+            return value instanceof String text ? text : "";
+        } catch (ReflectiveOperationException | RuntimeException error) {
+            return "";
+        }
     }
 
     private static void requireMain() {
@@ -350,9 +529,22 @@ public final class DynamicArtworkRenderer implements AutoCloseable, TextureView.
         boolean rendering;
         boolean updated;
         boolean visible;
+        boolean retiring;
         // Media lane only; UI invalidates the session before enqueuing its release.
         MediaPlayer player;
+        /** The TextureView surface the decoder renders to. */
         Surface surface;
+        /** Decoder sink for the decode-only power experiment. */
+        ImageReader reader;
+        /** Decoder under a frame-rate cap, used instead of {@link #player}. */
+        ArtworkPacedPlayer paced;
+        boolean decodeOnly;
+        final ArtworkFramePacer pacer = new ArtworkFramePacer();
+        final int limitAtStart = frameRateLimit;
+
+        boolean hasPlayer() {
+            return player != null || paced != null;
+        }
 
         Session(ArtworkProviderClient.OpenedAsset asset, ArtworkRenderGuard guard) {
             this.asset = asset;

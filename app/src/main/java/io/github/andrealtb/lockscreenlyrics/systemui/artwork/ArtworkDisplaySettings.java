@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
  * component, signer and protocol again before every bind.
  */
 public record ArtworkDisplaySettings(long revision, boolean enabled, String component, String signer,
-        int protocolMajor, boolean cardEnabled, boolean immersiveEnabled, boolean keepAwake) {
+        int protocolMajor, boolean cardEnabled, boolean immersiveEnabled, boolean keepAwake, int frameRateLimit) {
     public static final String PREFERENCES = "lockscreen_lyrics_artwork";
     public static final String ACTION_CHANGED = "io.github.andrealtb.lockscreenlyrics.action.ARTWORK_SETTINGS_CHANGED";
     public static final String ACTION_REQUEST_STATUS = "io.github.andrealtb.lockscreenlyrics.action.REQUEST_ARTWORK_STATUS";
@@ -31,6 +31,11 @@ public record ArtworkDisplaySettings(long revision, boolean enabled, String comp
     static final String KEY_CARD = "artwork_card_enabled";
     static final String KEY_IMMERSIVE = "artwork_immersive_enabled";
     static final String KEY_KEEP_AWAKE = "artwork_keep_awake";
+    static final String KEY_FRAME_RATE = "artwork_frame_rate_limit";
+    /** Lowest user cap; below this a looping cover reads as a slideshow. */
+    public static final int FRAME_RATE_MIN = 10;
+    /** Covers are 30fps; this value presents every decoded frame and is the default. */
+    public static final int FRAME_RATE_UNLIMITED = 30;
     /** Status reply from SystemUI: which settings it runs and what the display last did. */
     public static final String STATUS_REVISION = "artwork_status_revision";
     public static final String STATUS_SOURCE = "artwork_status_source";
@@ -44,7 +49,8 @@ public record ArtworkDisplaySettings(long revision, boolean enabled, String comp
     private static final Pattern SIGNER = Pattern.compile("[0-9a-f]{64}(:[0-9a-f]{64}){0,7}");
 
     public static ArtworkDisplaySettings defaults() {
-        return new ArtworkDisplaySettings(0, false, "", "", ArtworkContract.MAJOR, true, true, false);
+        return new ArtworkDisplaySettings(0, false, "", "", ArtworkContract.MAJOR, true, true, false,
+                FRAME_RATE_UNLIMITED);
     }
 
     /** A complete, current-protocol provider reference; whether it is still installed is checked elsewhere. */
@@ -61,27 +67,36 @@ public record ArtworkDisplaySettings(long revision, boolean enabled, String comp
     public ArtworkPlaybackConfig playback() {
         if (!active()) return ArtworkPlaybackConfig.DISABLED;
         return new ArtworkPlaybackConfig(true, ComponentName.unflattenFromString(component), signer, revision,
-                false, keepAwake, cardEnabled, immersiveEnabled);
+                false, keepAwake, cardEnabled, immersiveEnabled, frameRateLimit);
     }
 
     public ArtworkDisplaySettings withRevision(long value) {
-        return new ArtworkDisplaySettings(value, enabled, component, signer, protocolMajor, cardEnabled, immersiveEnabled, keepAwake);
+        return new ArtworkDisplaySettings(value, enabled, component, signer, protocolMajor, cardEnabled, immersiveEnabled, keepAwake, frameRateLimit);
     }
     public ArtworkDisplaySettings withEnabled(boolean value) {
-        return new ArtworkDisplaySettings(revision, value, component, signer, protocolMajor, cardEnabled, immersiveEnabled, keepAwake);
+        return new ArtworkDisplaySettings(revision, value, component, signer, protocolMajor, cardEnabled, immersiveEnabled, keepAwake, frameRateLimit);
     }
     public ArtworkDisplaySettings withSelection(String flattenedComponent, String signingIdentity) {
         return new ArtworkDisplaySettings(revision, enabled, flattenedComponent == null ? "" : flattenedComponent,
-                signingIdentity == null ? "" : signingIdentity, ArtworkContract.MAJOR, cardEnabled, immersiveEnabled, keepAwake);
+                signingIdentity == null ? "" : signingIdentity, ArtworkContract.MAJOR, cardEnabled, immersiveEnabled, keepAwake,
+                frameRateLimit);
     }
     public ArtworkDisplaySettings withCard(boolean value) {
-        return new ArtworkDisplaySettings(revision, enabled, component, signer, protocolMajor, value, immersiveEnabled, keepAwake);
+        return new ArtworkDisplaySettings(revision, enabled, component, signer, protocolMajor, value, immersiveEnabled, keepAwake, frameRateLimit);
     }
     public ArtworkDisplaySettings withImmersive(boolean value) {
-        return new ArtworkDisplaySettings(revision, enabled, component, signer, protocolMajor, cardEnabled, value, keepAwake);
+        return new ArtworkDisplaySettings(revision, enabled, component, signer, protocolMajor, cardEnabled, value, keepAwake, frameRateLimit);
     }
     public ArtworkDisplaySettings withKeepAwake(boolean value) {
-        return new ArtworkDisplaySettings(revision, enabled, component, signer, protocolMajor, cardEnabled, immersiveEnabled, value);
+        return new ArtworkDisplaySettings(revision, enabled, component, signer, protocolMajor, cardEnabled, immersiveEnabled, value, frameRateLimit);
+    }
+    public ArtworkDisplaySettings withFrameRateLimit(int fps) {
+        return new ArtworkDisplaySettings(revision, enabled, component, signer, protocolMajor, cardEnabled, immersiveEnabled, keepAwake,
+                clampFrameRate(fps));
+    }
+
+    public static int clampFrameRate(int fps) {
+        return Math.max(FRAME_RATE_MIN, Math.min(FRAME_RATE_UNLIMITED, fps));
     }
 
     public Map<String, Object> toMap() {
@@ -95,6 +110,7 @@ public record ArtworkDisplaySettings(long revision, boolean enabled, String comp
         values.put(KEY_CARD, cardEnabled);
         values.put(KEY_IMMERSIVE, immersiveEnabled);
         values.put(KEY_KEEP_AWAKE, keepAwake);
+        values.put(KEY_FRAME_RATE, frameRateLimit);
         return values;
     }
 
@@ -116,7 +132,8 @@ public record ArtworkDisplaySettings(long revision, boolean enabled, String comp
                 values.get(KEY_REVISION) instanceof Long value ? Math.max(0, value) : 0,
                 flag(values.get(KEY_ENABLED), defaults.enabled), component, signer, protocol,
                 flag(values.get(KEY_CARD), defaults.cardEnabled), flag(values.get(KEY_IMMERSIVE), defaults.immersiveEnabled),
-                flag(values.get(KEY_KEEP_AWAKE), defaults.keepAwake));
+                flag(values.get(KEY_KEEP_AWAKE), defaults.keepAwake),
+                values.get(KEY_FRAME_RATE) instanceof Integer fps ? clampFrameRate(fps) : defaults.frameRateLimit);
     }
 
     /** Strict for transport: only a complete snapshot of this schema is accepted. */
@@ -125,7 +142,7 @@ public record ArtworkDisplaySettings(long revision, boolean enabled, String comp
         if (extras == null || extras.getInt(KEY_SCHEMA, -1) != SCHEMA) throw new IllegalArgumentException("artwork_settings_schema");
         Map<String, Object> values = new LinkedHashMap<>();
         for (String key : new String[] {KEY_REVISION, KEY_ENABLED, KEY_COMPONENT, KEY_SIGNER, KEY_PROTOCOL,
-                KEY_CARD, KEY_IMMERSIVE, KEY_KEEP_AWAKE}) {
+                KEY_CARD, KEY_IMMERSIVE, KEY_KEEP_AWAKE, KEY_FRAME_RATE}) {
             if (!extras.containsKey(key)) throw new IllegalArgumentException("artwork_settings_incomplete");
             values.put(key, extras.get(key));
         }
@@ -135,7 +152,8 @@ public record ArtworkDisplaySettings(long revision, boolean enabled, String comp
     public Intent putExtras(Intent intent) {
         return intent.putExtra(KEY_SCHEMA, SCHEMA).putExtra(KEY_REVISION, revision).putExtra(KEY_ENABLED, enabled)
                 .putExtra(KEY_COMPONENT, component).putExtra(KEY_SIGNER, signer).putExtra(KEY_PROTOCOL, protocolMajor)
-                .putExtra(KEY_CARD, cardEnabled).putExtra(KEY_IMMERSIVE, immersiveEnabled).putExtra(KEY_KEEP_AWAKE, keepAwake);
+                .putExtra(KEY_CARD, cardEnabled).putExtra(KEY_IMMERSIVE, immersiveEnabled).putExtra(KEY_KEEP_AWAKE, keepAwake)
+                .putExtra(KEY_FRAME_RATE, frameRateLimit);
     }
 
     public static ArtworkDisplaySettings load(SharedPreferences preferences) {

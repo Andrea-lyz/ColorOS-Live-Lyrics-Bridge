@@ -43,6 +43,10 @@
     <string name="artwork_settings_enable">Enable dynamic artwork</string>
     <string name="artwork_settings_card">Small lock-screen cover</string>
     <string name="artwork_settings_large_cover">Large cover and full-screen background</string>
+    <string name="artwork_settings_frame_rate">Motion cover frame rate</string>
+    <string name="artwork_settings_frame_rate_value">%1$d fps</string>
+    <string name="artwork_settings_frame_rate_original">30 fps · Original</string>
+    <string name="artwork_settings_frame_rate_hint" formatted="false">Trades smoothness for battery. Most of a motion cover\'s power goes into showing it: every video frame shown redraws the whole lock screen and recomputes its blur, while decoding the video costs little. A lower frame rate shows fewer frames and noticeably cuts lock-screen power, but the video looks less fluid. All the way right (30 fps) plays at the video\'s original rate, smoothest and most power-hungry. On the test device at 50% brightness, the lock screen drew about 3× the power of a static cover at 30 fps and about 1.6× at 15 fps. 10, 15 and 30 fps pace most evenly; switching between 30 fps and a lower rate restarts the playing cover.</string>
     <string name="artwork_settings_section_source">Artwork source</string>
     <string name="artwork_settings_provider_none">No provider selected</string>
     <string name="artwork_settings_provider_state_none">Choose a provider that supports artwork protocol v1</string>

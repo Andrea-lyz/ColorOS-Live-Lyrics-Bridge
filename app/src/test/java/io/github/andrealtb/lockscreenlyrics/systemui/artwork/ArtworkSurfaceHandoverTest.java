@@ -43,4 +43,37 @@ public class ArtworkSurfaceHandoverTest {
         hold.close();
         assertFalse(hold.permits());
     }
+
+    @Test public void onlyASettledPauseOnTheSameHostMayFadeBackToStatic() {
+        assertTrue(ArtworkSurfaceHandover.mayFadeToStatic(LARGE, LARGE, "paused", true));
+        assertFalse(ArtworkSurfaceHandover.mayFadeToStatic(LARGE, LARGE, "paused", false));
+        assertFalse(ArtworkSurfaceHandover.mayFadeToStatic(LARGE, CARD, "paused", true));
+        assertFalse(ArtworkSurfaceHandover.mayFadeToStatic(LARGE, null, "paused", true));
+        for (String reason : new String[] {"eligible", "screen_off", "display_off", "keyguard_open",
+                "bridge_off", "detached", "binding_not_ready", "geometry_transition", "native_transition"}) {
+            assertFalse(reason, ArtworkSurfaceHandover.mayFadeToStatic(LARGE, LARGE, reason, true));
+        }
+    }
+
+    @Test public void changedSongSessionPluginProviderOrConfigurationCannotKeepThePausedFrame() {
+        for (ArtworkRequestStamp changed : new ArtworkRequestStamp[] {
+                new ArtworkRequestStamp(3, 1, 1, 2, 1, 2, 1, 1),
+                new ArtworkRequestStamp(3, 1, 1, 2, 2, 1, 1, 1),
+                new ArtworkRequestStamp(3, 1, 2, 2, 1, 1, 1, 1),
+                new ArtworkRequestStamp(3, 2, 1, 2, 1, 1, 1, 1),
+                new ArtworkRequestStamp(3, 1, 1, 2, 1, 1, 1, 2)}) {
+            assertFalse(ArtworkSurfaceHandover.mayFadeToStatic(LARGE, changed, "paused", true));
+        }
+    }
+
+    @Test public void revokedFadeLeaseCannotReviveAfterRapidSongChanges() {
+        ArtworkRequestStamp[] live = { LARGE };
+        ArtworkRenderGuard fade = new ArtworkRenderGuard(LARGE, () -> live[0],
+                () -> ArtworkSurfaceHandover.mayFadeToStatic(LARGE, live[0], "paused", true));
+        assertTrue(fade.permits());
+        live[0] = new ArtworkRequestStamp(3, 1, 1, 2, 1, 2, 1, 1);
+        assertFalse(fade.permits());
+        live[0] = LARGE;
+        assertFalse(fade.permits());
+    }
 }

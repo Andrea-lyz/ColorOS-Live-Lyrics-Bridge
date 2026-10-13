@@ -95,4 +95,30 @@ public class ArtworkDisplaySettingsTest {
         assertFalse(ArtworkPlaybackConfig.DISABLED.sameSession(base));
         assertTrue(on.active());
     }
+
+    @Test public void frameRateDefaultsToOriginalAndIsClampedAndCarried() {
+        ArtworkDisplaySettings defaults = ArtworkDisplaySettings.defaults();
+        assertEquals(ArtworkDisplaySettings.FRAME_RATE_UNLIMITED, defaults.frameRateLimit());
+        assertEquals(10, defaults.withFrameRateLimit(3).frameRateLimit());
+        assertEquals(30, defaults.withFrameRateLimit(60).frameRateLimit());
+        ArtworkDisplaySettings capped = defaults.withSelection(COMPONENT, SIGNER).withEnabled(true).withFrameRateLimit(15);
+        assertEquals(capped, ArtworkDisplaySettings.fromMap(capped.toMap()));
+        assertEquals(15, capped.playback().frameRateLimit());
+        assertTrue(capped.playback().frameRateLimited());
+        assertFalse(capped.withFrameRateLimit(30).playback().frameRateLimited());
+
+        Map<String, Object> legacy = new HashMap<>(capped.toMap());
+        legacy.remove(ArtworkDisplaySettings.KEY_FRAME_RATE);
+        assertEquals(30, ArtworkDisplaySettings.fromMap(legacy).frameRateLimit());
+        legacy.put(ArtworkDisplaySettings.KEY_FRAME_RATE, 1);
+        assertEquals(10, ArtworkDisplaySettings.fromMap(legacy).frameRateLimit());
+    }
+
+    @Test public void onlyCrossingTheOriginalRateRebuildsTheDecoder() {
+        ArtworkDisplaySettings on = ArtworkDisplaySettings.defaults().withSelection(COMPONENT, SIGNER).withEnabled(true);
+        ArtworkPlaybackConfig fifteen = on.withFrameRateLimit(15).playback();
+        assertTrue(fifteen.sameSession(on.withFrameRateLimit(20).playback()));
+        assertFalse(fifteen.sameSession(on.withFrameRateLimit(30).playback()));
+        assertTrue(on.playback().sameSession(on.withKeepAwake(true).playback()));
+    }
 }

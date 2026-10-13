@@ -1,6 +1,8 @@
 package io.github.andrealtb.lockscreenlyrics;
 
 import android.content.Intent;
+import android.content.res.ColorStateList;
+import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
@@ -17,6 +19,8 @@ import android.widget.Toast;
 import androidx.appcompat.app.AlertDialog;
 
 import com.google.android.material.materialswitch.MaterialSwitch;
+import com.google.android.material.slider.LabelFormatter;
+import com.google.android.material.slider.Slider;
 
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -42,6 +46,8 @@ public final class ArtworkSettingsActivity extends SettingsBaseActivity {
     private MaterialSwitch card;
     private MaterialSwitch immersive;
     private MaterialSwitch keepAwake;
+    private Slider frameRate;
+    private TextView frameRateValue;
     private TextView providerName;
     private TextView providerState;
     private Button providerSettings;
@@ -132,6 +138,13 @@ public final class ArtworkSettingsActivity extends SettingsBaseActivity {
         immersive = toggle(getString(R.string.artwork_settings_large_cover), true);
         immersive.setOnCheckedChangeListener((view, checked) -> { if (!binding) save(settings.withImmersive(checked)); });
         display.addView(immersive, matchWrap());
+        addCardDivider(display);
+        display.addView(frameRateRow(), matchWrap());
+        TextView frameRateHint = text(getString(R.string.artwork_settings_frame_rate_hint), 11.5f,
+                getColor(R.color.settings_text_secondary));
+        frameRateHint.setLineSpacing(0f, 1.2f);
+        frameRateHint.setPadding(dp(17), 0, dp(17), dp(14));
+        display.addView(frameRateHint, matchWrap());
         content.addView(display, marginBottom(dp(12)));
 
         LinearLayout source = card();
@@ -200,8 +213,67 @@ public final class ArtworkSettingsActivity extends SettingsBaseActivity {
         card.setChecked(settings.cardEnabled());
         immersive.setChecked(settings.immersiveEnabled());
         keepAwake.setChecked(settings.keepAwake());
+        frameRate.setValue(settings.frameRateLimit());
+        showFrameRate(settings.frameRateLimit());
         binding = false;
         bindSelection();
+    }
+
+    private View frameRateRow() {
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(17), dp(2), dp(12), dp(2));
+        row.setMinimumHeight(dp(48));
+        String label = getString(R.string.artwork_settings_frame_rate);
+        TextView title = text(label, 12.5f, settingsTextColor());
+        title.setIncludeFontPadding(false);
+        row.addView(title, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        frameRate = new Slider(this);
+        frameRate.setValueFrom(ArtworkDisplaySettings.FRAME_RATE_MIN);
+        frameRate.setValueTo(ArtworkDisplaySettings.FRAME_RATE_UNLIMITED);
+        frameRate.setStepSize(1f);
+        frameRate.setValue(ArtworkDisplaySettings.FRAME_RATE_UNLIMITED);
+        frameRate.setTickVisible(false);
+        frameRate.setLabelBehavior(LabelFormatter.LABEL_GONE);
+        frameRate.setTrackHeight(dp(4));
+        frameRate.setTrackActiveTintList(ColorStateList.valueOf(getColor(R.color.settings_primary)));
+        frameRate.setTrackInactiveTintList(ColorStateList.valueOf(0x21344455));
+        frameRate.setThumbRadius(dp(8));
+        frameRate.setThumbTintList(ColorStateList.valueOf(getColor(R.color.settings_primary)));
+        frameRate.setThumbStrokeColor(ColorStateList.valueOf(Color.WHITE));
+        frameRate.setThumbStrokeWidth(dp(2.5f));
+        frameRate.setHaloRadius(dp(16));
+        frameRate.setHaloTintList(ColorStateList.valueOf(0x3DF2C14E));
+        frameRate.setContentDescription(label);
+        frameRate.addOnChangeListener((slider, value, fromUser) -> {
+            showFrameRate(Math.round(value));
+            // A drag saves once on release; keyboard and accessibility steps save immediately.
+            if (fromUser && !binding && !slider.isPressed()) saveFrameRate(Math.round(value));
+        });
+        frameRate.addOnSliderTouchListener(new Slider.OnSliderTouchListener() {
+            @Override public void onStartTrackingTouch(Slider slider) {}
+            @Override public void onStopTrackingTouch(Slider slider) {
+                if (!binding) saveFrameRate(Math.round(slider.getValue()));
+            }
+        });
+        row.addView(frameRate, new LinearLayout.LayoutParams(0, dp(48), 1.3f));
+        frameRateValue = text("", 10.5f, 0xFF9A6A12);
+        frameRateValue.setTypeface(Typeface.MONOSPACE, Typeface.NORMAL);
+        frameRateValue.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        row.addView(frameRateValue, new LinearLayout.LayoutParams(dp(84), dp(48)));
+        return row;
+    }
+
+    private void showFrameRate(int fps) {
+        frameRateValue.setText(fps >= ArtworkDisplaySettings.FRAME_RATE_UNLIMITED
+                ? getString(R.string.artwork_settings_frame_rate_original)
+                : getString(R.string.artwork_settings_frame_rate_value, fps));
+    }
+
+    private void saveFrameRate(int fps) {
+        if (ArtworkDisplaySettings.clampFrameRate(fps) != settings.frameRateLimit()) {
+            save(settings.withFrameRateLimit(fps));
+        }
     }
 
     /** Turning the display on names what leaves the device and needs a provider first. */

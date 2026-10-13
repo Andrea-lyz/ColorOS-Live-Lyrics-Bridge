@@ -50,6 +50,11 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
     private int playingForPx;
     private long clientEpoch;
     private boolean screenBlocked;
+    private int frameRateLimit;
+    /** isKeyguardLocked is an uncached WMS binder, and eligibility runs several times per frame. */
+    private static final long KEYGUARD_STATE_CACHE_MS = 250L;
+    private boolean keyguardLockedCached;
+    private long keyguardCacheUntil;
     private boolean closed;
     private long retryAt = Long.MAX_VALUE;
     private long retryDelay = Long.MAX_VALUE;
@@ -79,6 +84,7 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
     };
     private final BroadcastReceiver screen = new BroadcastReceiver() {
         @Override public void onReceive(Context ctx, Intent intent) {
+            keyguardCacheUntil = 0L;
             screenBlocked = !Intent.ACTION_SCREEN_ON.equals(intent.getAction());
             if (!screenBlocked) return;
             keepAwake.releaseNow(Intent.ACTION_USER_PRESENT.equals(intent.getAction()) ? "unlocked" : "screen_off");
@@ -105,6 +111,7 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
                 failure -> trace.state("ARTWORK_KEEP_AWAKE", () -> failure)), scheduler,
                 this::keepAwakeState, state -> trace.state("ARTWORK_KEEP_AWAKE", () -> state));
         keepAwake.setEnabled(config.keepAwake());
+        frameRateLimit = config.frameRateLimit();
         client = new ArtworkProviderClient(this.context);
         IntentFilter filter = new IntentFilter(Intent.ACTION_SCREEN_OFF);
         filter.addAction(Intent.ACTION_SCREEN_ON);
@@ -132,6 +139,13 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
     /** Debug keep-awake choice, changed without restarting the running test. */
     public void setKeepAwake(boolean enabled) {
         if (!closed) keepAwake.setEnabled(enabled);
+    }
+
+    /** A new cap within the capped range, applied to the running decoder. */
+    public void setFrameRateLimit(int fps) {
+        if (closed) return;
+        frameRateLimit = fps;
+        if (renderer != null) renderer.setFrameRateLimit(fps);
     }
 
     /** {@link ArtworkScreenAwake#PLAYING} only while the motion cover is visibly playing on the large cover. */
@@ -208,7 +222,7 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
                 wakeup.cancel(); awaitingNetwork = false; networkRecoveryPending = false; attempted = null; attemptedImage = null;
             }
             trace.state("ARTWORK_RETRY_CONTEXT", () -> "retained=" + retain + " candidateCount=" + candidates.size());
-            stop(); return;
+            stop(pausedRenderCandidate() != null); return;
         }
         if (networkRecoveryPending && awaitingNetwork) {
             trace.state("ARTWORK_NETWORK_RECOVERED", () -> "retryCurrent=true phase=eligible_again");
@@ -222,7 +236,7 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
                 clearHold();
                 renderCandidate = target;
                 attempted = target.binding().stamp(); attemptedImage = target.image();
-                try { mount.sync(); mount.show(true); } catch (Exception error) { failure("geometry_changed"); }
+                try { mount.sync(); mount.show(true); renderer.reveal(); } catch (Exception error) { failure("geometry_changed"); }
                 return;
             }
         }
@@ -443,6 +457,7 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
             if (reason.equals("playing")) outcome("played");
             keepAwake.update();
         }, mount.fitXY());
+        renderer.setFrameRateLimit(frameRateLimit);
         mount.show(true);
     }
     private ArtworkVideoMount createMount(Candidate request) throws Exception {
@@ -537,6 +552,16 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
         keepAwake.update();
     }
 
+    private Candidate pausedRenderCandidate() {
+        if (!contextEligible() || renderCandidate == null || mount == null || surfaceHoldSince >= 0) return null;
+        for (Candidate candidate : latestCandidates) {
+            if (candidate.image() == renderCandidate.image() && candidate.binding() != null
+                    && ArtworkSurfaceHandover.mayFadeToStatic(renderCandidate.binding().stamp(), candidate.binding().stamp(),
+                        eligibilityReason(candidate), eligibilityReason(candidate, false).equals("eligible"))) return candidate;
+        }
+        return null;
+    }
+
     /** Same size rule as the provider query: the larger host side, capped at the contract resolution. */
     private static int requestPx(ImageView image) {
         return Math.max(1, Math.min(Math.max(image.getWidth(), image.getHeight()), ArtworkContract.MAX_RESOLUTION));
@@ -553,22 +578,31 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
     }
     private boolean contextEligible() {
         PowerManager power = context.getSystemService(PowerManager.class);
-        KeyguardManager keyguard = context.getSystemService(KeyguardManager.class);
         return config.enabled() && !closed && !screenBlocked && power != null && power.isInteractive()
-                && keyguard != null && keyguard.isKeyguardLocked();
+                && keyguardLocked();
+    }
+    private boolean keyguardLocked() {
+        long now = android.os.SystemClock.uptimeMillis();
+        if (now < keyguardCacheUntil) return keyguardLockedCached;
+        KeyguardManager keyguard = context.getSystemService(KeyguardManager.class);
+        keyguardLockedCached = keyguard != null && keyguard.isKeyguardLocked();
+        keyguardCacheUntil = now + KEYGUARD_STATE_CACHE_MS;
+        return keyguardLockedCached;
     }
     private String eligibilityReason(Candidate candidate) {
+        return eligibilityReason(candidate, true);
+    }
+    private String eligibilityReason(Candidate candidate, boolean requirePlaying) {
         ImageView image = candidate.image();
         if (closed || !config.enabled()) return "bridge_off";
         if (candidate.binding() == null || !candidate.binding().ready() || candidate.binding().stamp() == null) return "binding_not_ready";
         if (!image.isAttachedToWindow()) return "detached";
-        if (!candidate.binding().playing()) return "paused";
+        if (requirePlaying && !candidate.binding().playing()) return "paused";
         if (screenBlocked) return "screen_off";
         PowerManager power = context.getSystemService(PowerManager.class);
         if (power == null || !power.isInteractive()) return "screen_off";
         if (image.getDisplay() == null || image.getDisplay().getState() != Display.STATE_ON) return "display_off";
-        KeyguardManager keyguard = context.getSystemService(KeyguardManager.class);
-        if (keyguard == null || !keyguard.isKeyguardLocked()) return "keyguard_open";
+        if (!keyguardLocked()) return "keyguard_open";
         if (!image.isShown() || image.getWindowVisibility() != android.view.View.VISIBLE) return "hidden";
         if (image.getWidth() <= 0 || image.getHeight() <= 0) return "no_bounds";
         if ((image.getForeground() != null && (candidate.c17() == null || candidate.background()))
@@ -661,6 +695,11 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
     }
 
     private void stop() {
+        stop(false);
+    }
+    private void stop(boolean fadeToStatic) {
+        // Pre-draw selection runs throughout the fade. A repeated paused state must not restart it.
+        if (fadeToStatic && renderer != null && renderer.isFadingToStatic()) return;
         resolvingResource = false;
         main.removeCallbacks(resolveStall);
         boolean pending = resolvingCandidate != null;
@@ -668,6 +707,18 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
         if (renderer == null && mount == null && !pending) return;
         ++clientEpoch;
         client.close();
+        Candidate paused = fadeToStatic ? pausedRenderCandidate() : null;
+        if (paused != null && renderer != null) {
+            DynamicArtworkRenderer fading = renderer;
+            ArtworkRenderGuard guard = new ArtworkRenderGuard(stamp(paused, clientEpoch), () -> {
+                Candidate live = pausedRenderCandidate();
+                return live == null ? null : stamp(live, clientEpoch);
+            }, () -> pausedRenderCandidate() != null);
+            if (fading.fadeToStatic(guard, () -> { if (renderer == fading) suspendVisual(); })) {
+                keepAwake.update();
+                return;
+            }
+        }
         suspendVisual();
     }
 

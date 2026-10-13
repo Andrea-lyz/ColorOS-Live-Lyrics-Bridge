@@ -10,7 +10,7 @@ import io.github.andrealtb.lockscreenlyrics.BuildConfig;
  * the Bridge signature permission; SystemUI still verifies the selected provider before each bind.
  */
 public record ArtworkPlaybackConfig(boolean enabled, ComponentName component, String signer, long revision,
-        boolean localFixture, boolean keepAwake, boolean cardEnabled, boolean immersiveEnabled) {
+        boolean localFixture, boolean keepAwake, boolean cardEnabled, boolean immersiveEnabled, int frameRateLimit) {
     public static final ArtworkPlaybackConfig DISABLED = new ArtworkPlaybackConfig(false, null, "", 0);
     /** Debug-only fixture test; ignored by release builds. */
     public static final String ACTION_TEST = "io.github.andrealtb.lockscreenlyrics.action.ARTWORK_IMMERSIVE_TEST";
@@ -21,10 +21,24 @@ public record ArtworkPlaybackConfig(boolean enabled, ComponentName component, St
     public ArtworkPlaybackConfig(boolean enabled, ComponentName component, String signer, long revision, boolean localFixture) {
         this(enabled, component, signer, revision, localFixture, false, true, true);
     }
+    public ArtworkPlaybackConfig(boolean enabled, ComponentName component, String signer, long revision,
+            boolean localFixture, boolean keepAwake, boolean cardEnabled, boolean immersiveEnabled) {
+        this(enabled, component, signer, revision, localFixture, keepAwake, cardEnabled, immersiveEnabled,
+                ArtworkDisplaySettings.FRAME_RATE_UNLIMITED);
+    }
 
-    /** Same provider and mode: presentation toggles can change without restarting the decoder. */
+    /** Capped playback decodes into a pacing reader; uncapped playback writes the view directly. */
+    public boolean frameRateLimited() {
+        return frameRateLimit < ArtworkDisplaySettings.FRAME_RATE_UNLIMITED;
+    }
+
+    /**
+     * Same provider and mode: presentation toggles and a new cap within the capped range change without
+     * restarting the decoder; switching between capped and uncapped rebuilds its output path.
+     */
     public boolean sameSession(ArtworkPlaybackConfig other) {
         return other != null && enabled && other.enabled && localFixture == other.localFixture
+                && frameRateLimited() == other.frameRateLimited()
                 && java.util.Objects.equals(component, other.component) && signer.equals(other.signer);
     }
 

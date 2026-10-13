@@ -43,6 +43,10 @@
     <string name="artwork_settings_enable">启用动态封面</string>
     <string name="artwork_settings_card">锁屏小封面</string>
     <string name="artwork_settings_large_cover">大封面与全屏背景</string>
+    <string name="artwork_settings_frame_rate">动态封面帧率</string>
+    <string name="artwork_settings_frame_rate_value">%1$d fps</string>
+    <string name="artwork_settings_frame_rate_original">30 fps · 原始</string>
+    <string name="artwork_settings_frame_rate_hint" formatted="false">用于在流畅与省电之间取舍。动态封面的耗电主要来自画面刷新：每显示一帧视频，锁屏界面都要整体重绘并重新计算模糊效果，视频解码本身耗电很少。调低帧率会少显示一些画面帧，锁屏耗电随之明显下降，但视频会变得不连贯；拉到最右（30 fps）按视频原帧率播放，最流畅也最耗电。测试设备在 50% 亮度下，30 fps 时锁屏耗电约为静态封面的 3 倍，15 fps 时约 1.6 倍。10、15、30 fps 的画面节奏最均匀；在 30 fps 与更低帧率之间切换时，正在播放的动态封面会重新开始。</string>
     <string name="artwork_settings_section_source">封面来源</string>
     <string name="artwork_settings_provider_none">未选择插件</string>
     <string name="artwork_settings_provider_state_none">选择一个支持动态封面协议 v1 的插件</string>
