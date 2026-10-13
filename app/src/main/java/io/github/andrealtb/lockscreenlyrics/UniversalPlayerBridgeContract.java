@@ -27,7 +27,6 @@ final class UniversalPlayerBridgeContract {
     static final String PREF_PRESENT = "universal_player_provider_present";
     static final String PREF_BOUND_PACKAGES = "universal_player_bound_packages";
     static final String TRANSLATION_GROUP_PACKAGE = "__universal_player__";
-    static final String HEYTAP_MUSIC = "com.heytap.music";
 
     private static final Set<String> EXTRA_HISTORY_PACKAGES = ConcurrentHashMap.newKeySet();
     private static final AtomicInteger BINDINGS_GENERATION = new AtomicInteger();
@@ -41,13 +40,7 @@ final class UniversalPlayerBridgeContract {
     }
 
     static boolean isBlockedFromUniversalAdmission(String packageName) {
-        return PlayerSystemUiPolicy.QQ_MUSIC.equals(packageName)
-                || PlayerSystemUiPolicy.NETEASE_MUSIC.equals(packageName)
-                || PlayerSystemUiPolicy.NETEASE_HONOR.equals(packageName)
-                || PlayerSystemUiPolicy.KUGOU.equals(packageName)
-                || PlayerSystemUiPolicy.KUGOU_LITE.equals(packageName)
-                || PlayerSystemUiPolicy.KUWO.equals(packageName)
-                || HEYTAP_MUSIC.equals(packageName);
+        return PlayerSystemUiPolicy.KUWO.equals(packageName);
     }
 
     static List<String> sanitizeBoundPackages(Iterable<String> packages) {

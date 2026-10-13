@@ -32,7 +32,7 @@ public final class UniversalPlayerBridgeContractTest {
     }
 
     @Test
-    public void sanitizeDropsOfficialAndSpecialHosts() {
+    public void sanitizeDropsOnlyKuwo() {
         List<String> sanitized = UniversalPlayerBridgeContract.sanitizeBoundPackages(Arrays.asList(
                 " com.salt.music ",
                 "com.tencent.qqmusic",
@@ -46,7 +46,15 @@ public final class UniversalPlayerBridgeContractTest {
                 "",
                 null,
                 "remix.myplayer"));
-        assertEquals(Arrays.asList("com.salt.music", "remix.myplayer"), sanitized);
+        assertEquals(Arrays.asList(
+                "com.salt.music",
+                "com.tencent.qqmusic",
+                "com.netease.cloudmusic",
+                "com.hihonor.cloudmusic",
+                "com.kugou.android",
+                "com.kugou.android.lite",
+                "com.heytap.music",
+                "remix.myplayer"), sanitized);
     }
 
     @Test

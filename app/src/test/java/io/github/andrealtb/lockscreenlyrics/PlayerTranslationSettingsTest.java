@@ -48,10 +48,10 @@ public final class PlayerTranslationSettingsTest {
     }
 
     @Test
-    public void translationSettingsAcceptUniversalHostsButNotOfficialBlockedOnes() {
+    public void translationSettingsAcceptUniversalHosts() {
         assertTrue(PlayerTranslationSettings.isTranslationSettingsTarget("remix.myplayer"));
         assertTrue(PlayerTranslationSettings.isTranslationSettingsTarget("com.salt.music"));
-        assertFalse(PlayerTranslationSettings.isTranslationSettingsTarget("com.heytap.music"));
+        assertTrue(PlayerTranslationSettings.isTranslationSettingsTarget("com.heytap.music"));
         assertTrue(PlayerTranslationSettings.isTranslationSettingsTarget("com.tencent.qqmusic"));
     }
 
