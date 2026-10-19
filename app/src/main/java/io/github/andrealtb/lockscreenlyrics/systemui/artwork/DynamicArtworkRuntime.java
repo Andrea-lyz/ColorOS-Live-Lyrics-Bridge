@@ -420,8 +420,24 @@ public final class DynamicArtworkRuntime {
         cardEffects = null;
         c17Access = null;
         if (android.os.Build.VERSION.SDK_INT >= 33) {
-            installCardObservation(targets.model().splitModel);
+            installCardObservation(targets.model().splitModel, targets.cardSpringRunning());
             if (targets.c17() != null) installC17Observation(targets.c17());
+        }
+        if (targets.model().splitModel) {
+            // Once per plugin generation and always on: a silent C17 miss looks like "no artwork"
+            // on a same-versionName build whose obfuscated layout differs.
+            ArtworkC17Access c17 = targets.c17();
+            boolean letterMismatch = c17 != null && !c17.legacyMismatches.isEmpty();
+            String profile = "c17Profile=" + (c17 == null ? "unavailable" : c17Access == c17 ? "resolved" : "hook_failed")
+                    + " roles=" + (c17 == null ? "none" : c17.roleSource)
+                    + (letterMismatch ? " legacyMismatch=" + c17.legacyMismatches : "")
+                    + " cardSpringRoles=" + (targets.cardSpringRunning() != null ? "dexkit" : "legacy")
+                    + (targets.c17Status().isEmpty() ? "" : " status=" + targets.c17Status());
+            if (c17Access != c17 || !targets.c17Status().isEmpty() || letterMismatch) {
+                StructuredBridgeLog.warn(BridgeDebugArea.MEDIA, "ARTWORK_C17_PROFILE", profile);
+            } else {
+                StructuredBridgeLog.infoAlways(BridgeDebugArea.MEDIA, "ARTWORK_C17_PROFILE", profile);
+            }
         }
         installSurface(epoch, targets.model(), targets.card());
         if (targets.immersive() != null) installSurface(epoch, targets.model(), targets.immersive());
@@ -481,10 +497,10 @@ public final class DynamicArtworkRuntime {
     }
 
     @androidx.annotation.RequiresApi(33)
-    private void installCardObservation(boolean c17) {
+    private void installCardObservation(boolean c17, java.lang.reflect.Field springRunning) {
         List<Runnable> installed = new ArrayList<>();
         try {
-            ArtworkCardEffectAccess access = new ArtworkCardEffectAccess(pluginLoader.get(), c17);
+            ArtworkCardEffectAccess access = new ArtworkCardEffectAccess(pluginLoader.get(), c17, springRunning);
             for (Method method : new Method[]{access.bitmapSetter, access.angleSetter}) {
                 installed.add(hooks.install(method, "artwork-card-effect-" + method.getName(), new AfterCall() {
                     @Override public void before(Object receiver, Object[] args) {

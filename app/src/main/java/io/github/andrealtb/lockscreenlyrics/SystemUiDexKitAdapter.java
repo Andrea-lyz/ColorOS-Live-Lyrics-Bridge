@@ -8,9 +8,12 @@ import android.os.Bundle;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindClass;
+import org.luckypray.dexkit.query.FindMethod;
 import org.luckypray.dexkit.query.matchers.ClassMatcher;
+import org.luckypray.dexkit.query.matchers.MethodMatcher;
 import org.luckypray.dexkit.result.ClassData;
 import org.luckypray.dexkit.result.ClassDataList;
+import org.luckypray.dexkit.result.MethodDataList;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -128,6 +131,7 @@ public final class SystemUiDexKitAdapter {
                             && method.getParameterTypes()[3] == String.class
                             && method.getParameterTypes()[4] == String.class
                             && method.getReturnType() == method.getParameterTypes()[5]);
+            Method metadataChanged = findMetadataChanged(bridge, classLoader, lyricLoaderClass);
             Method mediaDataToBundle = requireUniqueMethod(
                     seedlingBundleClass,
                     "Seedling media bundle mapper",
@@ -148,6 +152,7 @@ public final class SystemUiDexKitAdapter {
                     updatePkgActionsRule,
                     createActionsFromState,
                     loadLyricInBg,
+                    metadataChanged,
                     mediaDataToBundle,
                     true,
                     getRusWhiteList != null ? RUS_VARIANT_OLD : RUS_VARIANT_NEW);
@@ -170,18 +175,32 @@ public final class SystemUiDexKitAdapter {
         Class<?> seedlingBundleClass = classLoader.loadClass(
                 "com.oplus.systemui.seedlingservice.utils.SeedlingMediaDataHandleUtils");
 
-        Method dealEndTag = rusManagerClass.getDeclaredMethod(
+        Method dealEndTag = findDeclaredMethod(
+                rusManagerClass,
                 "dealEndTag",
-                String.class,
-                Set.class,
-                Set.class,
-                List.class,
-                List.class,
-                Map.class,
-                Map.class,
-                Map.class,
-                Map.class,
-                Map.class);
+                new Class<?>[]{
+                        String.class,
+                        Set.class,
+                        Set.class,
+                        List.class,
+                        List.class,
+                        Map.class,
+                        Map.class,
+                        Map.class,
+                        Map.class,
+                        Map.class},
+                new Class<?>[]{
+                        String.class,
+                        Set.class,
+                        Set.class,
+                        List.class,
+                        List.class,
+                        Map.class,
+                        Map.class,
+                        Map.class,
+                        Map.class,
+                        Map.class,
+                        Map.class});
         Method saveListToSp = findDeclaredMethod(
                 rusManagerClass,
                 "saveListToSP",
@@ -204,6 +223,18 @@ public final class SystemUiDexKitAdapter {
                         Map.class,
                         Map.class,
                         Map.class,
+                        int.class},
+                new Class<?>[]{
+                        Context.class,
+                        Set.class,
+                        Set.class,
+                        Map.class,
+                        Map.class,
+                        Map.class,
+                        Map.class,
+                        Map.class,
+                        Map.class,
+                        Map.class,
                         int.class});
         Method getRusWhiteList = findOptionalDeclaredMethod(rusManagerClass, "getRusWhiteList");
         Method mediaRusConfigWhiteListGetter = findMediaRusConfigWhiteListGetter(classLoader);
@@ -217,6 +248,14 @@ public final class SystemUiDexKitAdapter {
                         Map.class,
                         Map.class},
                 new Class<?>[]{
+                        Map.class,
+                        Map.class,
+                        Map.class,
+                        Map.class,
+                        Map.class,
+                        Map.class},
+                new Class<?>[]{
+                        Map.class,
                         Map.class,
                         Map.class,
                         Map.class,
@@ -248,6 +287,7 @@ public final class SystemUiDexKitAdapter {
                         String.class,
                         String.class,
                         lyricDataClass),
+                findMetadataChangedEntry(managerClass),
                 seedlingBundleClass.getDeclaredMethod(
                         "mediaDataToBundle",
                         List.class,
@@ -382,10 +422,14 @@ public final class SystemUiDexKitAdapter {
         }
     }
 
+    /**
+     * Shared static form through the C17 17.99.02 reference. PYB110 17.0.0.155 keeps that
+     * versionName and appends {@code pkgImmersiveFullBgMap}.
+     */
     static boolean isDealEndTagShape(Method method) {
         return Modifier.isStatic(method.getModifiers())
                 && method.getReturnType() == void.class
-                && hasParameterTypes(
+                && (hasParameterTypes(
                 method,
                 String.class,
                 Set.class,
@@ -396,12 +440,26 @@ public final class SystemUiDexKitAdapter {
                 Map.class,
                 Map.class,
                 Map.class,
-                Map.class);
+                Map.class)
+                || hasParameterTypes(
+                method,
+                String.class,
+                Set.class,
+                Set.class,
+                List.class,
+                List.class,
+                Map.class,
+                Map.class,
+                Map.class,
+                Map.class,
+                Map.class,
+                Map.class));
     }
 
     /**
      * ColorOS 16.0.9.x: instance method with {@code (Context, Set, Set, Map x5)}.
-     * ColorOS 16.0.10.x: static method with {@code (Context, Set, Set, Map x5, Map, int)}.
+     * ColorOS 16.0.10.x and the C17 reference: static {@code (Context, Set, Set, Map x6, int)}.
+     * PYB110 17.0.0.155 inserts the immersive-background map before the action-config map.
      */
     static boolean isSaveListToSpShape(Method method) {
         if (method.getReturnType() != void.class) {
@@ -430,11 +488,25 @@ public final class SystemUiDexKitAdapter {
                 Map.class,
                 Map.class,
                 Map.class,
+                int.class)
+                || hasParameterTypes(
+                method,
+                Context.class,
+                Set.class,
+                Set.class,
+                Map.class,
+                Map.class,
+                Map.class,
+                Map.class,
+                Map.class,
+                Map.class,
+                Map.class,
                 int.class);
     }
 
     /**
-     * ColorOS 16.0.9.x passes five maps; 16.0.10.x adds a sixth (lyric enable) map.
+     * ColorOS 16.0.9.x passes five maps; 16.0.10.x adds lyric enable.
+     * PYB110 17.0.0.155 appends immersive full-background after lyric enable.
      */
     static boolean isUpdatePkgActionsRuleShape(Method method) {
         if (Modifier.isStatic(method.getModifiers()) || method.getReturnType() != void.class) {
@@ -449,6 +521,15 @@ public final class SystemUiDexKitAdapter {
                 Map.class)
                 || hasParameterTypes(
                 method,
+                Map.class,
+                Map.class,
+                Map.class,
+                Map.class,
+                Map.class,
+                Map.class)
+                || hasParameterTypes(
+                method,
+                Map.class,
                 Map.class,
                 Map.class,
                 Map.class,
@@ -494,6 +575,106 @@ public final class SystemUiDexKitAdapter {
                 && List.class.isAssignableFrom(method.getReturnType());
     }
 
+    /**
+     * Same-versionName SystemUI builds keep the log line but rename the method: reviewed
+     * {@code onMetaDataChanged(String, MediaMetadata)} versus PYB110
+     * {@code access$onMetaDataChanged(ExImpl, String, MediaMetadata, Continuation)}.
+     * {@code loadLyricInBg} also takes a key plus {@code MediaMetadata}, so the name fragment
+     * is required when DexKit is unavailable.
+     */
+    static boolean isMetadataChangedEntry(Method method) {
+        return method != null
+                && method.getName().contains("onMetaDataChanged")
+                && metadataParameterIndex(method) >= 0;
+    }
+
+    static boolean isReplayableMetadataChanged(Method method) {
+        return method != null
+                && !Modifier.isStatic(method.getModifiers())
+                && method.getReturnType() == void.class
+                && hasParameterTypes(method, String.class, MediaMetadata.class);
+    }
+
+    static int metadataParameterIndex(Method method) {
+        if (method == null) {
+            return -1;
+        }
+        Class<?>[] types = method.getParameterTypes();
+        int index = -1;
+        for (int i = 0; i < types.length; i++) {
+            if (types[i] != MediaMetadata.class) {
+                continue;
+            }
+            if (index >= 0) {
+                return -1;
+            }
+            index = i;
+        }
+        if (index < 1 || types[index - 1] != String.class) {
+            return -1;
+        }
+        return index;
+    }
+
+    /**
+     * Locate the metadata-changed entry by its unique error log. Missing or ambiguous hits
+     * stay optional so bootstrap / RUS activation still proceeds.
+     */
+    private static Method findMetadataChanged(
+            DexKitBridge bridge,
+            ClassLoader classLoader,
+            Class<?> owner) {
+        try {
+            MethodDataList methods = bridge.findMethod(FindMethod.create().matcher(
+                    MethodMatcher.create()
+                            .declaredClass(owner.getName())
+                            .usingEqStrings("onMetaDataChanged error: metaData is null")));
+            if (methods.size() == 1) {
+                Method method = methods.get(0).getMethodInstance(classLoader);
+                if (metadataParameterIndex(method) >= 0) {
+                    method.setAccessible(true);
+                    return method;
+                }
+            }
+        } catch (Throwable ignored) {
+            // Fall through to the name-fragment scan.
+        }
+        return findMetadataChangedEntry(owner);
+    }
+
+    /**
+     * Prefer the reviewed instance method when a synthetic {@code access$} twin is also
+     * present. Two replayable methods still fail closed.
+     */
+    static Method findMetadataChangedEntry(Class<?> owner) {
+        Method replayable = null;
+        Method other = null;
+        for (Method method : owner.getDeclaredMethods()) {
+            if (!isMetadataChangedEntry(method)) {
+                continue;
+            }
+            if (isReplayableMetadataChanged(method)) {
+                if (replayable != null) {
+                    throw new IllegalStateException(
+                            "Expected one replayable metadata changed in " + owner.getName()
+                                    + ", found at least " + replayable + " and " + method);
+                }
+                replayable = method;
+            } else if (other != null) {
+                throw new IllegalStateException(
+                        "Expected one metadata changed in " + owner.getName()
+                                + ", found at least " + other + " and " + method);
+            } else {
+                other = method;
+            }
+        }
+        Method match = replayable != null ? replayable : other;
+        if (match != null) {
+            match.setAccessible(true);
+        }
+        return match;
+    }
+
     private static Method requireUniqueMethod(
             Class<?> owner,
             String description,
@@ -535,6 +716,8 @@ public final class SystemUiDexKitAdapter {
         final Method updatePkgActionsRule;
         final Method createActionsFromState;
         final Method loadLyricInBg;
+        /** Present when the unique metadata-changed log (or name fragment) resolves; otherwise {@code null}. */
+        final Method metadataChanged;
         final Method mediaDataToBundle;
         final boolean resolvedByDexKit;
         final String rusVariant;
@@ -549,6 +732,7 @@ public final class SystemUiDexKitAdapter {
                 Method updatePkgActionsRule,
                 Method createActionsFromState,
                 Method loadLyricInBg,
+                Method metadataChanged,
                 Method mediaDataToBundle,
                 boolean resolvedByDexKit,
                 String rusVariant) {
@@ -561,6 +745,7 @@ public final class SystemUiDexKitAdapter {
             this.updatePkgActionsRule = updatePkgActionsRule;
             this.createActionsFromState = createActionsFromState;
             this.loadLyricInBg = loadLyricInBg;
+            this.metadataChanged = metadataChanged;
             this.mediaDataToBundle = mediaDataToBundle;
             this.resolvedByDexKit = resolvedByDexKit;
             this.rusVariant = rusVariant;

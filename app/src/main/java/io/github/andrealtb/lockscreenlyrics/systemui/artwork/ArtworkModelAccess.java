@@ -30,6 +30,11 @@ public final class ArtworkModelAccess {
 
     public ArtworkModelAccess(Class<?> cardClass, Class<?> modelClass, Class<?> infoClass,
             Class<?> immersiveCardClass) throws ReflectiveOperationException {
+        this(cardClass, modelClass, infoClass, immersiveCardClass, null);
+    }
+
+    public ArtworkModelAccess(Class<?> cardClass, Class<?> modelClass, Class<?> infoClass,
+            Class<?> immersiveCardClass, Field albumArt) throws ReflectiveOperationException {
         this.cardClass = cardClass;
         this.modelClass = modelClass;
         splitModel = modelClass != infoClass;
@@ -44,7 +49,7 @@ public final class ArtworkModelAccess {
         title = labels.get("songName");
         artist = labels.get("artist");
         ArtworkPaletteAccess paletteAccess = null;
-        if (splitModel) try { paletteAccess = new ArtworkPaletteAccess(infoClass); }
+        if (splitModel) try { paletteAccess = new ArtworkPaletteAccess(infoClass, albumArt); }
         catch (ReflectiveOperationException | RuntimeException ignored) { /* color is an independent capability */ }
         palette = paletteAccess;
     }

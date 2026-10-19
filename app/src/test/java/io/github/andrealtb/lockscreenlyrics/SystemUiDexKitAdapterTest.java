@@ -69,6 +69,51 @@ public class SystemUiDexKitAdapterTest {
         }
     }
 
+    /** PYB110 17.0.0.155 appends the immersive full-background map on the same versionName. */
+    private static final class ImmersiveFullBgRusShapes {
+        public static void dealEndTag(
+                String tag,
+                Set set,
+                Set set2,
+                List list,
+                List list2,
+                Map map,
+                Map map2,
+                Map map3,
+                Map map4,
+                Map map5,
+                Map immersiveFullBg) {
+        }
+
+        public static void saveListToSP(
+                Context context,
+                Set set,
+                Set set2,
+                Map map,
+                Map map2,
+                Map map3,
+                Map map4,
+                Map map5,
+                Map immersiveFullBg,
+                Map actionConfig,
+                int version) {
+        }
+
+        public void instanceDealEndTag(
+                String tag,
+                Set set,
+                Set set2,
+                List list,
+                List list2,
+                Map map,
+                Map map2,
+                Map map3,
+                Map map4,
+                Map map5,
+                Map immersiveFullBg) {
+        }
+    }
+
     /** Mirrors MediaActionPrioritySelectorImpl before/after the sixth map. */
     private static final class SelectorShapes {
         public int getLyricEnable(String packageName) {
@@ -99,6 +144,16 @@ public class SystemUiDexKitAdapterTest {
                 Map map6) {
         }
 
+        public void updatePkgActionsRule(
+                Map map,
+                Map map2,
+                Map map3,
+                Map map4,
+                Map map5,
+                Map map6,
+                Map map7) {
+        }
+
         public static void staticUpdatePkgActionsRule(
                 Map map,
                 Map map2,
@@ -110,6 +165,37 @@ public class SystemUiDexKitAdapterTest {
     }
 
     private static final class NoWhiteListGetter {
+    }
+
+    private static final class MetadataShapes {
+        void onMetaDataChanged(String key, MediaMetadata metadata) {}
+
+        static Object access$onMetaDataChanged(
+                MetadataShapes self,
+                String key,
+                MediaMetadata metadata,
+                Object continuation) {
+            return null;
+        }
+
+        void loadLyricInBg(
+                String key,
+                MediaMetadata metadata,
+                String title,
+                String artist,
+                String packageName,
+                Object lyricData) {}
+    }
+
+    /** PYB110-style: the named instance method is gone and only the synthetic remains. */
+    private static final class SyntheticMetadataShapes {
+        static Object access$onMetaDataChanged(
+                SyntheticMetadataShapes self,
+                String key,
+                MediaMetadata metadata,
+                Object continuation) {
+            return null;
+        }
     }
 
     private static Method method(Class<?> owner, String name, Class<?>... parameterTypes)
@@ -152,6 +238,24 @@ public class SystemUiDexKitAdapterTest {
     }
 
     @Test
+    public void saveListToSpShapeAcceptsImmersiveFullBgMap() throws Exception {
+        assertTrue(SystemUiDexKitAdapter.isSaveListToSpShape(method(
+                ImmersiveFullBgRusShapes.class,
+                "saveListToSP",
+                Context.class,
+                Set.class,
+                Set.class,
+                Map.class,
+                Map.class,
+                Map.class,
+                Map.class,
+                Map.class,
+                Map.class,
+                Map.class,
+                int.class)));
+    }
+
+    @Test
     public void saveListToSpShapeRejectsMismatchedShapes() throws Exception {
         assertFalse(SystemUiDexKitAdapter.isSaveListToSpShape(
                 method(SelectorShapes.class, "updatePkgActionsRule", Map.class, Map.class, Map.class, Map.class, Map.class)));
@@ -163,8 +267,19 @@ public class SystemUiDexKitAdapterTest {
     public void updatePkgActionsRuleShapeAcceptsFiveAndSixMaps() throws Exception {
         Method fiveMaps = method(SelectorShapes.class, "updatePkgActionsRule", Map.class, Map.class, Map.class, Map.class, Map.class);
         Method sixMaps = method(SelectorShapes.class, "updatePkgActionsRule", Map.class, Map.class, Map.class, Map.class, Map.class, Map.class);
+        Method sevenMaps = method(
+                SelectorShapes.class,
+                "updatePkgActionsRule",
+                Map.class,
+                Map.class,
+                Map.class,
+                Map.class,
+                Map.class,
+                Map.class,
+                Map.class);
         assertTrue(SystemUiDexKitAdapter.isUpdatePkgActionsRuleShape(fiveMaps));
         assertTrue(SystemUiDexKitAdapter.isUpdatePkgActionsRuleShape(sixMaps));
+        assertTrue(SystemUiDexKitAdapter.isUpdatePkgActionsRuleShape(sevenMaps));
         assertFalse(SystemUiDexKitAdapter.isUpdatePkgActionsRuleShape(
                 method(SelectorShapes.class, "staticUpdatePkgActionsRule", Map.class, Map.class, Map.class, Map.class, Map.class, Map.class)));
     }
@@ -213,8 +328,36 @@ public class SystemUiDexKitAdapterTest {
                 Map.class,
                 Map.class);
         assertTrue(SystemUiDexKitAdapter.isDealEndTagShape(dealEndTag));
+        assertTrue(SystemUiDexKitAdapter.isDealEndTagShape(method(
+                ImmersiveFullBgRusShapes.class,
+                "dealEndTag",
+                String.class,
+                Set.class,
+                Set.class,
+                List.class,
+                List.class,
+                Map.class,
+                Map.class,
+                Map.class,
+                Map.class,
+                Map.class,
+                Map.class)));
         assertFalse(SystemUiDexKitAdapter.isDealEndTagShape(
                 method(OldRusShapes.class, "getRusWhiteList")));
+        assertFalse(SystemUiDexKitAdapter.isDealEndTagShape(method(
+                ImmersiveFullBgRusShapes.class,
+                "instanceDealEndTag",
+                String.class,
+                Set.class,
+                Set.class,
+                List.class,
+                List.class,
+                Map.class,
+                Map.class,
+                Map.class,
+                Map.class,
+                Map.class,
+                Map.class)));
     }
 
     @Test
@@ -240,6 +383,44 @@ public class SystemUiDexKitAdapterTest {
                 new String[]{"parseSaveXmlValue whiteList: ", "getRusWhiteList: cache is empty"});
         assertNull(matcher.getAnyOfMatchers());
         assertEquals(2, matcher.getUsingStringsMatcher().size());
+    }
+
+    @Test
+    public void metadataChangedEntryAcceptsNamedAndSyntheticAccessForms() throws Exception {
+        Method named = method(MetadataShapes.class, "onMetaDataChanged", String.class, MediaMetadata.class);
+        Method access = method(
+                MetadataShapes.class,
+                "access$onMetaDataChanged",
+                MetadataShapes.class,
+                String.class,
+                MediaMetadata.class,
+                Object.class);
+        Method synthetic = method(
+                SyntheticMetadataShapes.class,
+                "access$onMetaDataChanged",
+                SyntheticMetadataShapes.class,
+                String.class,
+                MediaMetadata.class,
+                Object.class);
+        Method loader = method(
+                MetadataShapes.class,
+                "loadLyricInBg",
+                String.class,
+                MediaMetadata.class,
+                String.class,
+                String.class,
+                String.class,
+                Object.class);
+        assertTrue(SystemUiDexKitAdapter.isReplayableMetadataChanged(named));
+        assertFalse(SystemUiDexKitAdapter.isReplayableMetadataChanged(access));
+        assertTrue(SystemUiDexKitAdapter.isMetadataChangedEntry(named));
+        assertTrue(SystemUiDexKitAdapter.isMetadataChangedEntry(access));
+        assertTrue(SystemUiDexKitAdapter.isMetadataChangedEntry(synthetic));
+        assertFalse(SystemUiDexKitAdapter.isMetadataChangedEntry(loader));
+        assertEquals(1, SystemUiDexKitAdapter.metadataParameterIndex(named));
+        assertEquals(2, SystemUiDexKitAdapter.metadataParameterIndex(access));
+        assertEquals(named, SystemUiDexKitAdapter.findMetadataChangedEntry(MetadataShapes.class));
+        assertEquals(synthetic, SystemUiDexKitAdapter.findMetadataChangedEntry(SyntheticMetadataShapes.class));
     }
 
     @Test

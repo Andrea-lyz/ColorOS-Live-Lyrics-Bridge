@@ -23,40 +23,58 @@ public final class ArtworkC17Access {
     private final Class<?> backgroundType;
     private final Method rendererView;
     final List<Method> changes;
+    /** {@code dexkit} or {@code legacy}; which binding supplied the controller roles. */
+    final String roleSource;
+    /** Roles where DexKit and the reviewed letters disagree; empty when they match or one is missing. */
+    final List<String> legacyMismatches;
 
+    /**
+     * @param dexRoles roles bound from log-line anchors, or {@code null} when that scan failed.
+     *     The reviewed 17.000.002 letters are only a fallback: same-versionName builds move them.
+     */
     @androidx.annotation.RequiresApi(31)
-    ArtworkC17Access(Class<?> section, Class<?> control, Class<?> background) throws ReflectiveOperationException {
+    ArtworkC17Access(Class<?> section, Class<?> control, Class<?> background, Method album,
+            ArtworkC17Roles dexRoles) throws ReflectiveOperationException {
         ClassLoader loader = section.getClassLoader();
         Class<?> smart = loader.loadClass(VIEW + "SmartShapeableImageView");
         if (!smart.getSuperclass().getName().equals(
                 "com.oplus.systemui.plugins.shared.template.component.view.CustomLottieView")) {
             throw new NoSuchFieldException("c17_shape_parent");
         }
-        controller = ArtworkModelAccess.uniqueField(section, control);
-        current = field(control, "r", smart);
-        next = field(control, "s", smart);
-        animation = field(control, "t", ValueAnimator.class);
-        pending = field(control, "u", Drawable.class);
-        pendingModel = field(control, "j", control.getDeclaredField("k").getType());
-        switching = field(control, "n", boolean.class);
-        waitingLayout = field(control, "o", boolean.class);
-        immersive = field(control, "c", boolean.class);
-        lyricMode = field(control, "p", boolean.class);
-        backgroundHost = field(control, "h", ViewGroup.class);
-        renderer = control.getDeclaredField("i");
-        if (!renderer.getType().isInterface() || Modifier.isStatic(renderer.getModifiers())) {
-            throw new NoSuchFieldException("c17_renderer_interface");
-        }
-        renderer.setAccessible(true);
-        rendererView = renderer.getType().getMethod("d");
-        if (rendererView.getReturnType() != View.class) throw new NoSuchMethodException("c17_renderer_view");
         backgroundType = background;
         if (!android.widget.FrameLayout.class.isAssignableFrom(background)) throw new NoSuchFieldException("c17_background_type");
-        backgroundRunning = field(background, "f", boolean.class);
-        backgroundPending = field(background, "g", Bitmap.class);
+        ArtworkC17Roles legacy = legacyRoles(control, background, smart);
+        ArtworkC17Roles roles = dexRoles != null ? dexRoles : legacy;
+        if (roles == null) throw new NoSuchFieldException("c17_roles_unresolved");
+        roleSource = dexRoles != null ? "dexkit" : "legacy";
+        legacyMismatches = dexRoles != null ? dexRoles.mismatches(legacy) : List.of();
+        controller = ArtworkModelAccess.uniqueField(section, control);
+        current = requireRole(roles.current(), control, smart);
+        next = requireRole(roles.next(), control, smart);
+        if (current.equals(next)) throw new NoSuchFieldException("c17_slot_same");
+        pendingModel = requireRole(roles.pendingModel(), control, null);
+        if (pendingModel.getType().isPrimitive()) throw new NoSuchFieldException("c17_pending_model");
+        switching = requireRole(roles.switching(), control, boolean.class);
+        waitingLayout = requireRole(roles.waitingLayout(), control, boolean.class);
+        immersive = requireRole(roles.immersive(), control, boolean.class);
+        lyricMode = requireRole(roles.lyricMode(), control, boolean.class);
+        renderer = requireRole(roles.renderer(), control, null);
+        if (!renderer.getType().isInterface()) throw new NoSuchFieldException("c17_renderer_interface");
+        rendererView = ArtworkC17Roles.viewAccessor(renderer.getType());
+        rendererView.setAccessible(true);
+        backgroundRunning = requireRole(roles.backgroundRunning(), background, boolean.class);
+        // Fields that are the only one of their exact type need no name; the reviewed letter
+        // remains only for a build that adds a second field of the same type.
+        animation = typedOrNamed(control, ValueAnimator.class, "t");
+        pending = typedOrNamed(control, Drawable.class, "u");
+        backgroundHost = typedOrNamed(control, ViewGroup.class, "h");
+        backgroundPending = typedOrNamed(background, Bitmap.class, "g");
         Class<?> blur = loader.loadClass("com.oplus.systemui.plugins.shared.template.section.media.BackdropBlurView");
-        blurEffect = field(blur, "g", RenderEffect.class);
-        Method album = control.getDeclaredMethod("e", Drawable.class, boolean.class);
+        blurEffect = typedOrNamed(blur, RenderEffect.class, "g");
+        if (!isAlbumUpdate(album) || album.getDeclaringClass() != control) {
+            throw new NoSuchMethodException("c17_album_update_shape");
+        }
+        album.setAccessible(true);
         Method bg = null;
         for (Method method : background.getDeclaredMethods()) {
             Class<?>[] args = method.getParameterTypes();
@@ -79,6 +97,52 @@ public final class ArtworkC17Access {
                 || !((current.get(owner) == first && next.get(owner) == second)
                     || (current.get(owner) == second && next.get(owner) == first))) throw new NoSuchFieldException("c17_slot_owner");
         return new Bound(owner, first, second);
+    }
+
+    /** Name-independent shape of the immersive album writer. Both {@code e} and {@code f} qualify. */
+    static boolean isAlbumUpdate(Method method) {
+        return method != null
+                && !Modifier.isStatic(method.getModifiers())
+                && method.getReturnType() == void.class
+                && method.getParameterCount() == 2
+                && method.getParameterTypes()[0] == Drawable.class
+                && method.getParameterTypes()[1] == boolean.class;
+    }
+
+    /** The reviewed 17.000.002 letters, or {@code null} when this build does not carry them. */
+    private static ArtworkC17Roles legacyRoles(Class<?> control, Class<?> background, Class<?> smart) {
+        try {
+            Field renderer = control.getDeclaredField("i");
+            return new ArtworkC17Roles(
+                    field(control, "r", smart),
+                    field(control, "s", smart),
+                    field(control, "j", control.getDeclaredField("k").getType()),
+                    field(control, "n", boolean.class),
+                    field(control, "o", boolean.class),
+                    field(control, "c", boolean.class),
+                    field(control, "p", boolean.class),
+                    field(control, "i", renderer.getType()),
+                    field(background, "f", boolean.class));
+        } catch (ReflectiveOperationException | RuntimeException error) {
+            return null;
+        }
+    }
+
+    private static Field requireRole(Field field, Class<?> owner, Class<?> type) throws NoSuchFieldException {
+        if (field == null || field.getDeclaringClass() != owner || Modifier.isStatic(field.getModifiers())
+                || (type != null && field.getType() != type)) {
+            throw new NoSuchFieldException("c17_role_shape");
+        }
+        field.setAccessible(true);
+        return field;
+    }
+
+    private static Field typedOrNamed(Class<?> owner, Class<?> type, String name) throws ReflectiveOperationException {
+        try {
+            return ArtworkModelAccess.uniqueField(owner, type);
+        } catch (NoSuchFieldException ambiguous) {
+            return field(owner, name, type);
+        }
     }
 
     static Field field(Class<?> type, String name, Class<?> expected) throws NoSuchFieldException {

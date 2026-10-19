@@ -25,10 +25,15 @@ public final class ArtworkCardEffectAccess {
     private final Method superDraw;
 
     public ArtworkCardEffectAccess(ClassLoader loader) throws ReflectiveOperationException {
-        this(loader, false);
+        this(loader, false, null);
     }
 
-    public ArtworkCardEffectAccess(ClassLoader loader, boolean c17) throws ReflectiveOperationException {
+    /**
+     * @param c17SpringRunning C17 spring running flag bound from DexKit; {@code null} keeps the
+     *     reviewed base-class letter.
+     */
+    public ArtworkCardEffectAccess(ClassLoader loader, boolean c17, Field c17SpringRunning)
+            throws ReflectiveOperationException {
         this.c17 = c17;
         imageType = loader.loadClass("com.oplus.systemui.plugins.shared.template.component.media.view.RotatableImageView");
         Class<?> base = imageType.getSuperclass();
@@ -37,15 +42,13 @@ public final class ArtworkCardEffectAccess {
         // These exact source/Dex fields are the current local C16 sample, not a cross-version spring API.
         Class<?> springType;
         if (c17) {
-            // C17 RotatableImageView.o -> r8.c5 (JADX aliases it C0086c5), base.i is running.
+            // C17: the spring is the only r8-typed field (o -> r8.c5 / r8.d5 on reviewed builds).
             // Use the actual field type, never the decompiler's renamed class name.
-            spring = imageType.getDeclaredField("o");
+            spring = c17Spring(imageType);
             springType = spring.getType();
-            if (Modifier.isStatic(spring.getModifiers()) || !springType.getName().startsWith("com.oplus.systemui.plugins.r8.")) {
-                throw new NoSuchFieldException("c17_card_spring");
-            }
-            spring.setAccessible(true);
-            running = springType.getSuperclass().getDeclaredField("i");
+            running = c17SpringRunning != null && c17SpringRunning.getDeclaringClass().isAssignableFrom(springType)
+                    ? c17SpringRunning
+                    : springType.getSuperclass().getDeclaredField("i");
         } else {
             springType = loader.loadClass("j1.h");
             spring = unique(imageType, springType);
@@ -90,6 +93,21 @@ public final class ArtworkCardEffectAccess {
             throw new ArtworkImmersiveMount.Unsupported("card_shader_contract");
         }
         return nativeShader;
+    }
+
+    static Field c17Spring(Class<?> imageType) throws NoSuchFieldException {
+        try {
+            return ArtworkC17Roles.single(java.util.List.of(imageType.getDeclaredFields()),
+                    field -> field.getType().getName().startsWith("com.oplus.systemui.plugins.r8."), "c17_card_spring");
+        } catch (NoSuchFieldException unresolved) {
+            Field named = imageType.getDeclaredField("o");
+            if (Modifier.isStatic(named.getModifiers())
+                    || !named.getType().getName().startsWith("com.oplus.systemui.plugins.r8.")) {
+                throw new NoSuchFieldException("c17_card_spring");
+            }
+            named.setAccessible(true);
+            return named;
+        }
     }
 
     private static Field unique(Class<?> owner, Class<?> type) throws NoSuchFieldException {

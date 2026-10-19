@@ -2117,7 +2117,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (context == null
                 || owner == null
                 || metadata == null
-                || !"onMetaDataChanged".equals(context.refreshMethod.getName())
+                || !SystemUiDexKitAdapter.isReplayableMetadataChanged(context.refreshMethod)
                 || !TextUtils.equals(context.title, lastSystemUiSongName)
                 || !TextUtils.equals(context.artist, lastSystemUiArtistName)) {
             return false;
@@ -2696,7 +2696,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             installKuWoArtworkSnapshotHook(loadLyricInBg.getDeclaringClass());
             installKuWoSeedlingArtworkHook(classLoader);
             installSystemUiArtworkDiagnosticsHook(classLoader);
-            installKuWoCarLyricMetadataHook(loadLyricInBg.getDeclaringClass());
+            installKuWoCarLyricMetadataHook(loadLyricInBg.getDeclaringClass(), targets.metadataChanged);
             installKuWoCarLyricLoadMetadataHook(
                     classLoader,
                     "com.android.systemui.media.controls.domain.pipeline.LegacyMediaDataManagerImpl");
@@ -2981,21 +2981,15 @@ public final class LockscreenLyricsModule extends XposedModule {
                         + ":identity-" + System.identityHashCode(bitmap);
     }
 
-    private void installKuWoCarLyricMetadataHook(Class<?> ownerClass) {
+    private void installKuWoCarLyricMetadataHook(Class<?> ownerClass, Method metadataChanged) {
         try {
-            Method changed = null;
-            Class<?> current = ownerClass;
-            while (current != null && changed == null) {
-                for (Method method : current.getDeclaredMethods()) {
-                    if ("onMetaDataChanged".equals(method.getName())
-                            && method.getParameterCount() == 2
-                            && method.getParameterTypes()[0] == String.class
-                            && method.getParameterTypes()[1] == MediaMetadata.class) {
-                        changed = method;
-                        break;
-                    }
+            Method changed = metadataChanged;
+            if (changed == null || SystemUiDexKitAdapter.metadataParameterIndex(changed) < 0) {
+                Class<?> current = ownerClass;
+                while (current != null && changed == null) {
+                    changed = SystemUiDexKitAdapter.findMetadataChangedEntry(current);
+                    current = current.getSuperclass();
                 }
-                current = current.getSuperclass();
             }
             if (changed == null) {
                 warn(
@@ -3005,12 +2999,19 @@ public final class LockscreenLyricsModule extends XposedModule {
                 return;
             }
             changed.setAccessible(true);
+            if (SystemUiDexKitAdapter.isReplayableMetadataChanged(changed)) {
+                systemUiMetadataRefreshMethod = changed;
+            }
             hook(changed)
                     .setId(HOOK_ID_MEDIA_DATA_METADATA_CHANGED)
                     .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                     .intercept(this::onOplusMediaDataMetadataChanged);
             infoAlways(BridgeDebugArea.BOOTSTRAP, BridgeEvents.HOOK_INSTALLED, "Hooked OPlus media metadata changed for KuWo car-lyric identity: "
-                    + changed.getDeclaringClass().getName());
+                    + changed.getDeclaringClass().getName()
+                    + "#"
+                    + changed.getName()
+                    + " params="
+                    + changed.getParameterCount());
         } catch (Throwable t) {
             warn(
                     LyricLogFormatter.Area.SYSTEM_UI,
@@ -3021,12 +3022,13 @@ public final class LockscreenLyricsModule extends XposedModule {
 
     private Object onOplusMediaDataMetadataChanged(XposedInterface.Chain chain)
             throws Throwable {
-        rememberOplusMediaDataManager(chain.getThisObject());
-        Object metadataArg = chain.getArg(1);
-        if (!(metadataArg instanceof MediaMetadata)) {
+        Object[] args = chain.getArgs().toArray(new Object[0]);
+        rememberOplusMediaDataManager(metadataChangedOwner(chain, args));
+        int metadataIndex = metadataArgIndex(args);
+        if (metadataIndex < 0) {
             return chain.proceed();
         }
-        MediaMetadata metadata = (MediaMetadata) metadataArg;
+        MediaMetadata metadata = (MediaMetadata) args[metadataIndex];
         String incomingTitle = firstNonEmpty(
                 getText(metadata, MediaMetadata.METADATA_KEY_TITLE),
                 getText(metadata, MediaMetadata.METADATA_KEY_DISPLAY_TITLE));
@@ -3044,12 +3046,40 @@ public final class LockscreenLyricsModule extends XposedModule {
                 metadata,
                 lastSystemUiSongName,
                 lastSystemUiArtistName);
-        Object[] args = chain.getArgs().toArray(new Object[0]);
-        args[1] = stable;
+        args[metadataIndex] = stable;
         if (kuWoRuntime.takeCarLyricNormalizedLogOnce()) {
             info(BridgeDebugArea.MEDIA, BridgeEvents.DETAIL, "Normalized KuWo car-lyric identity before media data update");
         }
         return chain.proceed(args);
+    }
+
+    private static Object metadataChangedOwner(XposedInterface.Chain chain, Object[] args) {
+        Object owner = chain.getThisObject();
+        if (owner != null) {
+            return owner;
+        }
+        int metadataIndex = metadataArgIndex(args);
+        if (metadataIndex >= 2 && args[0] != null && args[metadataIndex - 1] instanceof String) {
+            return args[0];
+        }
+        return null;
+    }
+
+    private static int metadataArgIndex(Object[] args) {
+        int index = -1;
+        for (int i = 0; i < args.length; i++) {
+            if (!(args[i] instanceof MediaMetadata)) {
+                continue;
+            }
+            if (index >= 0) {
+                return -1;
+            }
+            index = i;
+        }
+        if (index < 1 || !(args[index - 1] instanceof String)) {
+            return -1;
+        }
+        return index;
     }
 
     private void installKuWoCarLyricLoadMetadataHook(

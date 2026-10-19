@@ -10,7 +10,12 @@ final class ArtworkPaletteAccess {
     private final Field[] chain;
 
     ArtworkPaletteAccess(Class<?> info) throws ReflectiveOperationException {
-        artwork = objectField(info, "d");
+        this(info, null);
+    }
+
+    ArtworkPaletteAccess(Class<?> info, Field albumArt) throws ReflectiveOperationException {
+        artwork = usableAlbumArt(info, albumArt) ? albumArt : objectField(info, "d");
+        artwork.setAccessible(true);
         icon = objectField(artwork.getType(), "a");
         processed = objectField(icon.getType(), "e");
         colors = objectField(processed.getType(), "b");
@@ -36,6 +41,17 @@ final class ArtworkPaletteAccess {
         if (value == null) return null;
         int color = primary80.getInt(value);
         return (color >>> 24) == 0xFF ? color : null;
+    }
+
+    /**
+     * DexKit binds {@code MediaInfo.albumArt} from the unique toString label. Same-versionName
+     * builds have several fields of that object type, so the reviewed letter is only a fallback.
+     */
+    private static boolean usableAlbumArt(Class<?> info, Field albumArt) {
+        return albumArt != null
+                && albumArt.getDeclaringClass() == info
+                && !albumArt.getType().isPrimitive()
+                && !Modifier.isStatic(albumArt.getModifiers());
     }
 
     private static Field objectField(Class<?> owner, String name) throws NoSuchFieldException {
