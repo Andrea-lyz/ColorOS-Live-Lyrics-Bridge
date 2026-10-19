@@ -6,3 +6,7 @@
 
 # DexKit's JNI entry is loaded by its original class name.
 -keep class org.luckypray.dexkit.** { *; }
+
+# R8 rewrites a Class.getName() literal when it renames that class in this APK.
+# The plugin's flow collector still uses the original kotlin name.
+-keep class kotlin.coroutines.Continuation

@@ -111,11 +111,22 @@ public final class ArtworkModuleSource {
             Class<?>[] parameters = method.getParameterTypes();
             if (!Modifier.isStatic(method.getModifiers()) && parameters.length == 2
                     && method.getReturnType() == Object.class
-                    && parameters[1].getName().equals("kotlin.coroutines.Continuation")) {
+                    && parameters[1].getName().equals(kotlinContinuationName())) {
                 getter.setAccessible(true);
                 return getter;
             }
         }
         throw new NoSuchMethodException("state_collector_missing");
+    }
+
+    /**
+     * Built from characters so R8 cannot treat it as a class-name literal and rewrite it when
+     * this APK's own {@code kotlin.coroutines.Continuation} is renamed. The plugin class keeps
+     * the original name. The keep rule stops the rename as well.
+     */
+    private static String kotlinContinuationName() {
+        return new String(new char[]{
+                'k', 'o', 't', 'l', 'i', 'n', '.', 'c', 'o', 'r', 'o', 'u', 't', 'i', 'n', 'e', 's', '.',
+                'C', 'o', 'n', 't', 'i', 'n', 'u', 'a', 't', 'i', 'o', 'n'});
     }
 }
