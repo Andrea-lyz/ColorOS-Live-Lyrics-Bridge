@@ -14714,12 +14714,10 @@ public final class LockscreenLyricsModule extends XposedModule {
                 charLift.flowSegmentStart += drawLine.width;
                 lineY += lineHeight + lineGap;
             }
-            // Sink is a pure function of playback position, so the only frames
-            // this effect owns are the ones where the row is sinking in and the
-            // ones where the wave is clearing the end of the text. In between it
-            // rides the existing reveal invalidate loop, and a settled row is
-            // static. Both windows have hard time limits.
-            if (charLift.lineActive && (charLift.ramp < 1f || charLift.finishing)) {
+            // Upcoming rows already hold their unsung geometry and need no
+            // animation loop. Only the current row follows the reveal and its
+            // bounded finish overshoot.
+            if (charLift.lineActive && charLift.finishing) {
                 textView.postInvalidateOnAnimation();
             }
         }
@@ -14748,8 +14746,6 @@ public final class LockscreenLyricsModule extends XposedModule {
             charLift.reset();
             if (!charLiftEnabled
                     || charLiftUnavailable
-                    || !activeLine
-                    || !drawProgress
                     // drawProgress alone does not rule out AOD: the low frame
                     // rate path still draws word progress while the fill
                     // transition runs, and an animation there costs battery for
@@ -14761,6 +14757,9 @@ public final class LockscreenLyricsModule extends XposedModule {
                     || !lineTimedProgressEnabled))
                     || line.words == null
                     || line.words.isEmpty()
+                    || !CharLiftGeometry.shouldPrepareLine(
+                    activeLine, drawProgress, position,
+                    Math.max(line.timeMillis, line.words.get(0).timeMillis))
                     || TextUtils.isEmpty(text)
                     // The cross-fade overlay repaints the whole row undisplaced,
                     // so sinking underneath it would only ghost.
@@ -14769,7 +14768,6 @@ public final class LockscreenLyricsModule extends XposedModule {
                 return;
             }
             try {
-                // activeWord == null keeps the front at the start during pre-roll.
                 float textSize = inactivePaint.getTextSize();
                 float maxSink = textSize
                         * WordLyricRenderConstants.CHAR_LIFT_MAX_FACTOR
@@ -14778,17 +14776,10 @@ public final class LockscreenLyricsModule extends XposedModule {
                 if (maxSink <= CHAR_LIFT_FRAME_EPSILON) {
                     return;
                 }
-                float ramp = CharLiftGeometry.sinkRamp(
-                        position,
-                        line.timeMillis,
-                        WordLyricRenderConstants.CHAR_LIFT_SINK_IN_MS);
-                if (ramp <= 0f) {
-                    return;
-                }
                 float waveWidth =
                         textSize * WordLyricRenderConstants.CHAR_LIFT_WAVE_WIDTH_FACTOR;
-                // Before the first word the row is entirely unsung, so the front
-                // sits at the start of the text rather than being absent.
+                // Upcoming rows and the active row's pre-roll share the same
+                // zero-progress geometry. Activation must not sink the row.
                 float revealFront = activeWord == null
                         ? 0f
                         : resolveLineFlowFront(model, line, text, activeWord, wordIndex, position);
@@ -14799,12 +14790,11 @@ public final class LockscreenLyricsModule extends XposedModule {
                         lineRevealEndMillis,
                         WordLyricRenderConstants.CHAR_LIFT_FINISH_MS,
                         waveWidth);
-                charLift.finishing = position < lineRevealEndMillis
+                charLift.finishing = activeLine && position < lineRevealEndMillis
                         + WordLyricRenderConstants.CHAR_LIFT_FINISH_MS;
                 charLift.flowSegmentStart = flowOffsetBeforeSegment(windowStart);
                 charLift.waveWidth = waveWidth;
                 charLift.maxSink = maxSink;
-                charLift.ramp = ramp;
                 charLift.floorY = charLiftFloorY > 0f ? charLiftFloorY : canvasHeight;
                 charLift.minClearance = minClearance;
                 charLift.lineActive = true;
@@ -15416,7 +15406,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         /** Sink shared by every grapheme past the wave, clamped to the floor. */
         private float resolveTailSink(float y) {
             return CharLiftGeometry.clampSink(
-                    charLift.maxSink * charLift.ramp,
+                    charLift.maxSink,
                     y + inactivePaint.descent(),
                     charLift.floorY,
                     charLift.minClearance);
@@ -15579,8 +15569,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                                     charLift.flowFront,
                                     flowCenter,
                                     charLift.waveWidth,
-                                    charLift.maxSink,
-                                    charLift.ramp),
+                                    charLift.maxSink),
                             glyphBottomY,
                             charLift.floorY,
                             charLift.minClearance);
@@ -15594,7 +15583,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                             // baseline snapping so a slow rise (held note) is
                             // continuous instead of one-pixel steps. Fully sunk
                             // graphemes are static and keep the crisp path.
-                            if (sink < charLift.maxSink * charLift.ramp - CHAR_LIFT_FRAME_EPSILON) {
+                            if (sink < charLift.maxSink - CHAR_LIFT_FRAME_EPSILON) {
                                 canvas.rotate(
                                         WordLyricRenderConstants.CHAR_LIFT_SUBPIXEL_TILT_DEGREES,
                                         left,
@@ -16551,8 +16540,6 @@ public final class LockscreenLyricsModule extends XposedModule {
             float flowSegmentStart;
             float waveWidth;
             float maxSink;
-            /** Sink-in factor while the row settles into its unsung position. */
-            float ramp;
             /** True while the wave is still running off the end of the text. */
             boolean finishing;
             /** Canvas y the sunk glyph bottoms may not cross. */
@@ -16587,7 +16574,6 @@ public final class LockscreenLyricsModule extends XposedModule {
                 flowSegmentStart = 0f;
                 waveWidth = 0f;
                 maxSink = 0f;
-                ramp = 0f;
                 finishing = false;
                 floorY = 0f;
                 minClearance = 0f;

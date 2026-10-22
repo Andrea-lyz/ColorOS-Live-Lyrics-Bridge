@@ -83,26 +83,38 @@ public final class CharLiftRendererContractTest {
                 "the bell model's settle decay has no place in a step model",
                 module.contains("revealDecay"));
         assertFalse(module.contains("CHAR_LIFT_SETTLE_TAIL_MS"));
-        assertTrue(
-                "the only animation this effect owns is the sink-in ramp",
+        assertFalse("activation must not animate a whole-row sink",
                 module.contains("CharLiftGeometry.sinkRamp("));
-        assertTrue(
-                "the ramp must be anchored on the row's own start",
-                module.contains("WordLyricRenderConstants.CHAR_LIFT_SINK_IN_MS"));
+        assertFalse(module.contains("CHAR_LIFT_SINK_IN_MS"));
     }
 
     @Test
-    public void theRowSinksBeforeItsFirstWordRatherThanOnIt() throws Exception {
+    public void upcomingRowsShareTheActivePrerollGeometry() throws Exception {
         String module = module();
         int gate = module.indexOf("private void beginCharLiftLine(");
         assertTrue("beginCharLiftLine is missing", gate >= 0);
         String body = module.substring(gate, gate + 3_000);
+        assertTrue("future inactive rows must be prepared before the active handoff",
+                body.contains("CharLiftGeometry.shouldPrepareLine("));
+        assertTrue("the intro must remain prepared until the first word starts",
+                body.contains("Math.max(line.timeMillis, line.words.get(0).timeMillis)"));
         assertFalse(
                 "a row with no active word yet is still unsung and must sink",
                 body.contains("|| activeWord == null"));
         assertTrue(
                 "the front rests at the start of the text during the pre-roll",
                 body.contains("activeWord == null"));
+    }
+
+    @Test
+    public void upcomingRowsDoNotOwnAnAnimationLoop() throws Exception {
+        String module = module();
+        int gate = module.indexOf("private void beginCharLiftLine(");
+        assertTrue("beginCharLiftLine is missing", gate >= 0);
+        String body = module.substring(gate, gate + 4_000);
+        assertTrue("only the active row may keep the lift animation alive",
+                body.contains("charLift.finishing = activeLine && position < lineRevealEndMillis"));
+        assertTrue(module.contains("if (charLift.lineActive && charLift.finishing)"));
     }
 
     @Test

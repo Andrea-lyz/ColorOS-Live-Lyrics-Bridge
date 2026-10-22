@@ -2,6 +2,7 @@ package io.github.andrealtb.lockscreenlyrics.render;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -9,7 +10,6 @@ import org.junit.Test;
 public final class CharLiftGeometryTest {
 
     private static final float WAVE = WordLyricRenderConstants.CHAR_LIFT_WAVE_WIDTH_FACTOR;
-    private static final long SINK_IN = WordLyricRenderConstants.CHAR_LIFT_SINK_IN_MS;
 
     // Each non-ASCII fixture is asserted for char length before it is used.
     // An editor that normalizes the decomposed sequence to its precomposed form
@@ -84,17 +84,17 @@ public final class CharLiftGeometryTest {
         assertEquals(
                 "a sung character must be exactly on the baseline",
                 0f,
-                CharLiftGeometry.sinkFor(100f, 40f, wave, maxSink, 1f),
+                CharLiftGeometry.sinkFor(100f, 40f, wave, maxSink),
                 1e-6f);
         assertEquals(
                 "an unsung character must rest a full sink below it",
                 maxSink,
-                CharLiftGeometry.sinkFor(100f, 200f, wave, maxSink, 1f),
+                CharLiftGeometry.sinkFor(100f, 200f, wave, maxSink),
                 1e-6f);
         assertEquals(
                 "the character at the front is halfway up",
                 maxSink * 0.5f,
-                CharLiftGeometry.sinkFor(100f, 100f, wave, maxSink, 1f),
+                CharLiftGeometry.sinkFor(100f, 100f, wave, maxSink),
                 1e-5f);
     }
 
@@ -104,7 +104,7 @@ public final class CharLiftGeometryTest {
         float maxSink = 6f;
         float previous = Float.MAX_VALUE;
         for (float front = 60f; front <= 140f; front += 2f) {
-            float sink = CharLiftGeometry.sinkFor(front, 100f, wave, maxSink, 1f);
+            float sink = CharLiftGeometry.sinkFor(front, 100f, wave, maxSink);
             assertTrue("sink grew as the front advanced at front=" + front, sink <= previous + 1e-6f);
             previous = sink;
         }
@@ -112,12 +112,12 @@ public final class CharLiftGeometryTest {
     }
 
     @Test
-    public void sinkScalesWithTheRampAndIgnoresDegenerateInput() {
+    public void sinkScalesWithStrengthAndIgnoresNonpositiveAmplitude() {
         float wave = 60f;
-        assertEquals(3f, CharLiftGeometry.sinkFor(100f, 200f, wave, 6f, 0.5f), 1e-5f);
-        assertEquals(0f, CharLiftGeometry.sinkFor(100f, 200f, wave, 6f, 0f), 1e-6f);
-        assertEquals(0f, CharLiftGeometry.sinkFor(100f, 200f, wave, 0f, 1f), 1e-6f);
-        assertEquals(6f, CharLiftGeometry.sinkFor(100f, 200f, wave, 6f, 4f), 1e-5f);
+        assertEquals(3f, CharLiftGeometry.sinkFor(100f, 200f, wave, 3f), 1e-5f);
+        assertEquals(6f, CharLiftGeometry.sinkFor(100f, 200f, wave, 6f), 1e-5f);
+        assertEquals(0f, CharLiftGeometry.sinkFor(100f, 200f, wave, 0f), 1e-6f);
+        assertEquals(0f, CharLiftGeometry.sinkFor(100f, 200f, wave, -6f), 1e-6f);
     }
 
     /**
@@ -138,18 +138,18 @@ public final class CharLiftGeometryTest {
             assertEquals(
                     "a sung grapheme drifted off the baseline at " + center,
                     0f,
-                    CharLiftGeometry.sinkFor(front, center, wave, maxSink, 1f),
+                    CharLiftGeometry.sinkFor(front, center, wave, maxSink),
                     1e-6f);
         }
 
         float frontAtLineEnd = firstSegmentWidth + secondSegmentWidth;
         assertEquals(
                 0f,
-                CharLiftGeometry.sinkFor(frontAtLineEnd, 95f, wave, maxSink, 1f),
+                CharLiftGeometry.sinkFor(frontAtLineEnd, 95f, wave, maxSink),
                 1e-6f);
         assertTrue(
                 "the last characters are still mid-rise while the front parks on them",
-                CharLiftGeometry.sinkFor(frontAtLineEnd, frontAtLineEnd - 1f, wave, maxSink, 1f)
+                CharLiftGeometry.sinkFor(frontAtLineEnd, frontAtLineEnd - 1f, wave, maxSink)
                         > 0f);
         assertEquals(
                 "and the finish overshoot puts the whole row on one baseline",
@@ -158,8 +158,7 @@ public final class CharLiftGeometryTest {
                         frontAtLineEnd + wave * 0.5f,
                         frontAtLineEnd - 1f,
                         wave,
-                        maxSink,
-                        1f),
+                        maxSink),
                 1e-6f);
     }
 
@@ -196,19 +195,49 @@ public final class CharLiftGeometryTest {
     }
 
     @Test
-    public void sinkRampRunsFromTheRowStartAndThenHoldsAtFull() {
-        assertEquals(0f, CharLiftGeometry.sinkRamp(1_000L, 1_000L, SINK_IN), 1e-6f);
-        assertEquals(0f, CharLiftGeometry.sinkRamp(900L, 1_000L, SINK_IN), 1e-6f);
-        assertEquals(1f, CharLiftGeometry.sinkRamp(1_000L + SINK_IN, 1_000L, SINK_IN), 1e-6f);
-        assertEquals(1f, CharLiftGeometry.sinkRamp(90_000L, 1_000L, SINK_IN), 1e-6f);
-        assertEquals(0.5f, CharLiftGeometry.sinkRamp(1_000L + SINK_IN / 2L, 1_000L, SINK_IN), 1e-5f);
-        assertEquals(1f, CharLiftGeometry.sinkRamp(1_001L, 1_000L, 0L), 1e-6f);
+    public void upcomingRowsArePreparedAndPreviouslySungRowsAreNot() {
+        assertTrue(CharLiftGeometry.shouldPrepareLine(false, false, 900L, 1_000L));
+        assertTrue(CharLiftGeometry.shouldPrepareLine(true, true, 1_000L, 1_000L));
+        assertTrue(CharLiftGeometry.shouldPrepareLine(true, true, 1_240L, 1_000L));
+        assertFalse(CharLiftGeometry.shouldPrepareLine(false, false, 1_000L, 1_000L));
+        assertFalse(CharLiftGeometry.shouldPrepareLine(false, false, 1_240L, 1_000L));
+        assertFalse(CharLiftGeometry.shouldPrepareLine(true, false, 1_000L, 1_000L));
+    }
 
-        float previous = -1f;
-        for (long offset = 0L; offset <= SINK_IN; offset += 10L) {
-            float value = CharLiftGeometry.sinkRamp(1_000L + offset, 1_000L, SINK_IN);
-            assertTrue("ramp fell at +" + offset + "ms", value >= previous - 1e-6f);
-            previous = value;
+    @Test
+    public void delayedFirstWordIsPreparedBeforeTheRowIsProgressActive() {
+        long firstWord = 4_000L;
+        assertTrue(CharLiftGeometry.shouldPrepareLine(false, false, 0L, firstWord));
+        assertTrue(CharLiftGeometry.shouldPrepareLine(false, false, firstWord - 1L, firstWord));
+        assertTrue(CharLiftGeometry.shouldPrepareLine(true, true, firstWord, firstWord));
+        // Seeking backward needs no remembered animation state to prepare again.
+        assertTrue(CharLiftGeometry.shouldPrepareLine(false, false, 2_000L, firstWord));
+        assertFalse(CharLiftGeometry.shouldPrepareLine(false, false, 5_000L, firstWord));
+    }
+
+    @Test
+    public void activationAndDelayedFirstWordNeverSinkTheWaitingRowFurther() {
+        long lineBegin = 1_000L;
+        long firstWord = 1_400L;
+        float wave = 60f;
+        float maxSink = 6f;
+        // Include the first glyphs inside the wave and a second wrapped segment.
+        for (float center : new float[]{5f, 20f, 50f, 110f, 170f}) {
+            assertTrue(CharLiftGeometry.shouldPrepareLine(false, false, lineBegin - 1L, firstWord));
+            float waitingSink = CharLiftGeometry.sinkFor(0f, center, wave, maxSink);
+            for (long position = lineBegin; position <= firstWord; position += 20L) {
+                assertTrue(CharLiftGeometry.shouldPrepareLine(true, true, position, firstWord));
+                float activeSink = CharLiftGeometry.sinkFor(0f, center, wave, maxSink);
+                assertEquals("pre-roll changed the waiting geometry at " + position,
+                        waitingSink, activeSink, 1e-6f);
+            }
+            float previous = waitingSink;
+            for (float front = 0f; front <= 220f; front += 2f) {
+                float sink = CharLiftGeometry.sinkFor(front, center, wave, maxSink);
+                assertTrue("the row dipped as reveal started", sink <= previous + 1e-6f);
+                previous = sink;
+            }
+            assertEquals(0f, previous, 1e-6f);
         }
     }
 
