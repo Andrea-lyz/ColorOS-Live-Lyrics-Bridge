@@ -50,9 +50,6 @@ public final class WordLyricRenderConstants {
      */
     public static final float CHAR_LIFT_WAVE_WIDTH_FACTOR = 3.0f;
 
-    /** How long the unsung text takes to settle into its sunk position when a row activates. */
-    public static final long CHAR_LIFT_SINK_IN_MS = 240L;
-
     /**
      * How long the wave takes to run off the end of the text once the last word
      * is revealed. Without it the front parks at the end of the line with the

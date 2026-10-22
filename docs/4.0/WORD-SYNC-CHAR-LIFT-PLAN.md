@@ -4,6 +4,10 @@
 `testDebugUnitTest` / `lintDebug` / `assembleDebug` 已通过，用户已实机确认逐字歌词（含
 换行多段行）与开启普通逐行歌词进度后的 LINE_TIMED 字符上浮效果。**
 
+2026-10-22 修正：待唱行提前保持零进度的字符位移，移除实时行激活后的 240ms
+整行下沉斜坡，避免先下沉再上浮。以下模型、门控与验收项已更新；本次衔接效果仍需
+设备验证，前述 v4.3.0 验收不覆盖此次修改。
+
 模型经历三次修订：2026-09-11 评审把 canvas-x 前沿改为流坐标（换行段尾字素
 常驻峰值）；实机测试后整个动画模型由钟形鼓包改为 Salt Player 式阶跃
 （Slice F，原因见 §3.1 决策记录）；2026-09-12 实机 trace 发现全行前沿的
@@ -126,7 +130,7 @@ u_i    = (flowCenter_i - flowFront + W/2) / W        // 窗口归一化坐标
 w(u)   = 1                     (u <= 0，已唱)
        | 0                     (u >= 1，未唱)
        | (1 + cos(u*pi)) / 2   (过渡)
-sink_i = H * (1 - w(u_i)) * sinkRamp
+sink_i = H * (1 - w(u_i))
 ```
 
 绘制时字素 `translate(0, +sink_i)`：未唱字符停在正常基线**下方** H，被前沿
@@ -206,14 +210,14 @@ try {
 - RTL：流坐标与书写方向无关；方向只影响"流区间 → 段内 canvas x"的映射，而该
   映射沿用 `drawRevealedText` 既有的左→右揭示方向（§10）。
 
-### 3.5 行首下沉与行尾收尾
+### 3.5 待唱位置与行尾收尾
 
-两个纯函数补足模型两端，都是 `position` 的函数，无每行状态：
+两端均不保存每行动画状态：
 
-- **下沉斜坡** `sinkRamp = smoothStep((position - line.timeMillis) / CHAR_LIFT_SINK_IN_MS)`
-  （240ms）。否则行激活瞬间整行未唱文本会突然出现在下方。行在
-  `line.timeMillis` 之后才激活时 ramp 已到 1、直接沉底，可接受——行激活本身带
-  0.9→1.0 缩放与滑动，会吸收这点。
+- **待唱位置**：在 `position < max(line.timeMillis, words[0].timeMillis)` 的非激活
+  行也准备 `flowFront = 0` 的位移，与实时行首词前的几何一致；移除行激活后的下沉
+  斜坡。首行时间为 0、首词延迟的前奏也保持这个位置。激活后只随揭示前沿上浮，
+  不再先整行下沉；已唱过的非激活行按正常基线绘制。
 - **收尾推进** `finishOvershoot = W/2 * smoothStep((position - lineRevealEnd) / CHAR_LIFT_FINISH_MS)`
   （240ms），加到 `flowFront` 上。**这一条是本计划相对 Salt 的必要补充**：前沿停在
   行尾时，最后约 1.5 个字号的字符仍落在过渡窗口内，会永久停在半沉位置。Salt 的行
@@ -228,7 +232,9 @@ try {
 
 sink 仅在以下全部成立时计算：
 
-1. `activeLine && drawProgress && !aodLowFrameRateMode`——`drawProgress` 并不
+1. 实时行需 `activeLine && drawProgress`，待唱行需 `!activeLine` 且
+   `position < max(line.timeMillis, words[0].timeMillis)`；两者都需
+   `!aodLowFrameRateMode`。`drawProgress` 并不
    蕴含非 AOD：`shouldDrawWordProgressForVisual`（:13549）在
    `aodLineFillAmount < 0.999f` 时即使低帧率模式也返回真，必须单独判；
 2. `line.timingMode == WORD_TIMED`，或 `line.timingMode == LINE_TIMED` 且
@@ -240,9 +246,9 @@ sink 仅在以下全部成立时计算：
 **不要求 `activeWord != null`**：首词开始前整行未唱，必须已经沉底，否则首词一响
 整行会突然下坠。此时 `flowFront = 0`（前沿停在文本起点）。
 
-帧续命：sink 是 `position` 的纯函数，揭示进行中已有 `progress < 1` 的 invalidate
-循环，本效果只需额外负责两段有硬时限的窗口：
-`lineActive && (sinkRamp < 1 || 仍在 finishOvershoot 窗口内)`。唱完的行完全静止。
+帧续命：仅实时行在揭示与收尾结束前允许本效果续帧，条件为
+`lineActive && finishing`；`finishing` 必须同时受 `activeLine` 限制。待唱行只持有静态
+位移，不新增 invalidate 循环；唱完的行完全静止。
 
 
 ## 4. 纯函数拆分（可单测的新代码）
@@ -257,8 +263,8 @@ sink 仅在以下全部成立时计算：
 | `graphemeBoundaries(String text, int start, int end)` | 字素边界 int[]，BreakIterator 封装 |
 | `floatWeight(float u)` | §3.1 升余弦权重，1=已升到基线，0=沉底 |
 | `waveCoordinate(float flowFront, float flowCenter, float waveWidth)` | 字素在过渡窗口内的归一化坐标 u |
-| `sinkFor(float flowFront, float flowCenter, float waveWidth, float maxSink, float ramp)` | 单字素相对正常基线的下沉像素 |
-| `sinkRamp(long position, long lineBeginMillis, long sinkInMillis)` | 行激活时的下沉斜坡 0..1 |
+| `shouldPrepareLine(boolean activeLine, boolean drawProgress, long position, long progressStartMillis)` | 实时行进度与待唱行静态位置的门控 |
+| `sinkFor(float flowFront, float flowCenter, float waveWidth, float maxSink)` | 单字素相对正常基线的下沉像素 |
 | `finishOvershoot(long position, long lineRevealEndMillis, long finishMillis, float waveWidth)` | 行尾把波形推离文本末端的额外前沿距离 |
 | `clampSink(float sink, float glyphBottomY, float floorY, float minClearance)` | §5.5 底部余量 clamp |
 | `waveZoneStart/End(float flowFront, float waveWidth, float flowSegStart, float flowSegEnd)` | 段内过渡区流区间交集（`end <= start` 即空） |
@@ -267,13 +273,13 @@ sink 仅在以下全部成立时计算：
 常量放 `render/WordLyricRenderConstants.java`（与现有渲染常量同居）：
 `CHAR_LIFT_MAX_FACTOR = 0.10f`（Salt `floatUpPercentage` 默认值）、
 `CHAR_LIFT_WAVE_WIDTH_FACTOR = 3.0f`（Salt 窗口宽）、
-`CHAR_LIFT_SINK_IN_MS = 240L`、`CHAR_LIFT_FINISH_MS = 240L`、
+`CHAR_LIFT_FINISH_MS = 240L`、
 `CHAR_LIFT_MIN_CLEARANCE_DP = 1f`。
 
 测试放 `app/src/test/java/.../render/CharLiftGeometryTest.java`，覆盖：
 `floatWeight` 与 Salt 公式 `(1+cos(uπ))/2` 逐点一致（步长 0.01）及 u≤0 / u≥1 /
-u=0.5 边界、单调性；sink 在头区为 0、尾区为 H、过渡区单调；`sinkRamp` 与
-`finishOvershoot` 的边界与单调性；`clampSink`；字素切分（CJK / Latin / emoji /
+u=0.5 边界、单调性；sink 在头区为 0、尾区为 H、过渡区单调；待唱→实时行位置连续、
+首词延迟与回拖后的待唱门控；`finishOvershoot` 的边界与单调性；`clampSink`；字素切分（CJK / Latin / emoji /
 代理对 / 组合字符）；waveZone 交集空/全覆盖/跨换行两段同时开区；以及"已唱字符
 必须停在正常基线"的回归（旧鼓包模型下会有非零位移）。
 
@@ -490,7 +496,7 @@ codec，不出 UI。
 | 14 | 备份/恢复 | 新 key 往返一致；旧备份导入默认关 |
 | 15 | 行内长停顿（≥500ms） | 字符持续缓慢浮动而非静止悬浮；下一词开始无跳变（前沿在停顿期间本就匀速走完当前词，见下） |
 | 16 | 字素接缝（在 #1 CJK / #2 Latin 各盯一次） | 相邻字素位移相同时完全无缝；位移不同时允许 ≤1px 错位，但不得出现发丝亮缝或接缝压暗 |
-| 17 | 行激活瞬间 | 未唱文本在 240ms 内平滑沉到下方，首词开始无突跳 |
+| 17 | 待唱→实时行，含首词延迟 | 待唱位置与实时行零进度位置一致，无整行下沉，只随逐字进度上浮；待唱行无持续刷新 |
 | 18 | 有翻译行 | 未唱主行字形不与翻译行字形重叠；若幅度被 clamp 到几乎不可见，记录实测值 |
 | 19 | 快速 rap 段（<120ms/字） | 已唱/未唱仍有清晰可辨的高度差（本次重做的验收点） |
 | 20 | 强度滑块 0 / 100 / 200 | 0 等同关闭；200 幅度约为字号 20%，无裁切、无与翻译行重叠 |
@@ -511,7 +517,7 @@ codec，不出 UI。
 
 另一项同样只作备选的对称打磨：若行首 1.5 字号的半浮（§3.6，按 Salt 保留）显得突兀，
 可在首词前 240ms 让 `flowFront` 从 `-W/2` 平滑推到 0（锚点
-`words[0].timeMillis - CHAR_LIFT_SINK_IN_MS`，同样无状态），效果是波形"从左侧到达"。
+`words[0].timeMillis - 240ms`，同样无状态），效果是波形"从左侧到达"。
 两项都等实机反馈再决定。
 
 \#15 的前提已用单测锁定（`WordRevealFrontContinuityTest`）：`WordLine.wordEndMillis`

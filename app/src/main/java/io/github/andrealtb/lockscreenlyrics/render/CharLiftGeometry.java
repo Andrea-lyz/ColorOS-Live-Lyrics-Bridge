@@ -106,44 +106,38 @@ public final class CharLiftGeometry {
     }
 
     /**
+     * Upcoming rows hold the same geometry as an active row at zero progress,
+     * so becoming active never starts a whole-row sink. Previously sung rows
+     * keep their ordinary baseline. Progress may start after the line's own
+     * timestamp, including a first row stamped at zero with a delayed first
+     * word. The caller owns effect and timing gates.
+     */
+    public static boolean shouldPrepareLine(
+            boolean activeLine,
+            boolean drawProgress,
+            long position,
+            long progressStartMillis) {
+        return activeLine ? drawProgress : position < progressStartMillis;
+    }
+
+    /**
      * How far below the normal baseline a grapheme currently sits: {@code 0}
      * once sung, {@code maxSink} while still ahead of the wave, raised cosine in
-     * between. {@code ramp} is the row's sink-in factor from {@link #sinkRamp}.
+     * between. Unsung geometry is stable before and after line activation.
      */
     public static float sinkFor(
             float flowFront,
             float flowCenter,
             float waveWidth,
-            float maxSink,
-            float ramp) {
-        if (maxSink <= 0f || ramp <= 0f) {
+            float maxSink) {
+        if (maxSink <= 0f) {
             return 0f;
         }
         float weight = floatWeight(waveCoordinate(flowFront, flowCenter, waveWidth));
         if (weight >= 1f) {
             return 0f;
         }
-        return maxSink * (1f - weight) * Math.min(1f, ramp);
-    }
-
-    /**
-     * Sink-in factor for a row that has just become active, so the unsung text
-     * settles into its sunk position instead of appearing there. A pure
-     * function of playback position: no per-row animation state to drift or to
-     * reset on a seek.
-     */
-    public static float sinkRamp(long position, long lineBeginMillis, long sinkInMillis) {
-        if (sinkInMillis <= 0L) {
-            return 1f;
-        }
-        if (position <= lineBeginMillis) {
-            return 0f;
-        }
-        long elapsed = position - lineBeginMillis;
-        if (elapsed >= sinkInMillis) {
-            return 1f;
-        }
-        return smoothStep((float) elapsed / (float) sinkInMillis);
+        return maxSink * (1f - weight);
     }
 
     /**
