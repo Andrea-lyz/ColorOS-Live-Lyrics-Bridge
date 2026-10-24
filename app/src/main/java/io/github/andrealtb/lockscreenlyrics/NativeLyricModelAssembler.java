@@ -14,6 +14,7 @@ import java.util.Map;
 import io.github.andrealtb.lockscreenlyrics.render.InlineTimedLyricLine;
 import io.github.andrealtb.lockscreenlyrics.render.LyricTimingMode;
 import io.github.andrealtb.lockscreenlyrics.render.NormalizedWordLineText;
+import io.github.andrealtb.lockscreenlyrics.render.OfficialLyricDataset;
 import io.github.andrealtb.lockscreenlyrics.render.TagMatch;
 import io.github.andrealtb.lockscreenlyrics.render.WordLine;
 import io.github.andrealtb.lockscreenlyrics.render.WordLyricModel;
@@ -40,9 +41,20 @@ final class NativeLyricModelAssembler {
     static final long SUPPLEMENTAL_MATCH_WINDOW_MS = 120L;
 
     private final LyricParseTraceSink traceSink;
+    private String lastDisplaySource;
+    private OfficialLyricDataset lastDisplayDataset;
 
     NativeLyricModelAssembler(LyricParseTraceSink traceSink) {
         this.traceSink = traceSink;
+    }
+
+    synchronized OfficialLyricDataset displayDatasetFor(String source) {
+        String effectiveSource = source == null ? "" : source;
+        if (lastDisplayDataset == null || !effectiveSource.equals(lastDisplaySource)) {
+            lastDisplaySource = effectiveSource;
+            lastDisplayDataset = OfficialLyricDataset.fromDisplaySource(effectiveSource);
+        }
+        return lastDisplayDataset;
     }
 
     static final class AssemblyResult {
@@ -110,6 +122,7 @@ final class NativeLyricModelAssembler {
                     LyricInfoContract.containsTimedLrc(translationLyric),
                     null);
         }
+        model.officialDataset = displayDatasetFor(displayLyric);
         int propagatedTranslations = model.propagateNearbyTranslations(6);
         LyricModelTraceSupport.traceWordLyricModel(traceSink, model, "final-systemui", "systemui");
         return new AssemblyResult(

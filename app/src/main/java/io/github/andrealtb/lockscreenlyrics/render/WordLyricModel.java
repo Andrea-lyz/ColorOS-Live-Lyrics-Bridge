@@ -15,6 +15,7 @@ public final class WordLyricModel {
 
     public final ArrayList<WordLine> lines = new ArrayList<>();
     public final ArrayList<WordLine> officialLines = new ArrayList<>();
+    public OfficialLyricDataset officialDataset;
     final ArrayList<String> renderableTextCountsKeys = new ArrayList<>();
     final ArrayList<Integer> renderableTextCountsValues = new ArrayList<>();
     final LinkedHashMap<String, Integer> renderableTextCounts = new LinkedHashMap<>();

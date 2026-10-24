@@ -10,6 +10,7 @@ import android.view.View;
 import android.widget.TextView;
 
 import io.github.andrealtb.lockscreenlyrics.render.DrawFrame;
+import io.github.andrealtb.lockscreenlyrics.render.LyricRenderTransactions;
 import io.github.andrealtb.lockscreenlyrics.render.WordLine;
 import io.github.andrealtb.lockscreenlyrics.render.WordLyricModel;
 
@@ -64,7 +65,10 @@ public final class OfficialLyricDrawCoordinatorTest {
         @Override public boolean isAodLowFrameRateLyricMode() { return false; }
         @Override public boolean isLyricRecyclerSettleWindowActive() { return false; }
         @Override public boolean shouldSuppressOfficialLyricForTrackHandoff() { return false; }
-        @Override public boolean isUnboundLyricsRecyclerRow(TextView textView) { return false; }
+        @Override public LyricRenderTransactions.Status lyricDrawBindingStatus(
+                TextView textView, View recycler, WordLyricModel model) {
+            return LyricRenderTransactions.Status.READY;
+        }
         @Override public View findContainingLyricsRecyclerView(TextView textView) { return null; }
         @Override public boolean activateSystemUiLyricModeFromPendingDraw(
                 TextView textView, View lyricsRecycler, String reason) { return false; }
@@ -76,8 +80,10 @@ public final class OfficialLyricDrawCoordinatorTest {
         @Override public void setRendererAodLowFrameRateMode(boolean enabled) { }
         @Override public void setRendererForceOfficialSlotHeight(boolean force) { }
         @Override public void drawWithOfficialRenderer(Canvas canvas, TextView textView, DrawFrame frame) { }
-        @Override public DrawFrame findOfficialLyricDrawFrame(TextView textView) { return null; }
-        @Override public DrawFrame findRecentOfficialDrawFrame(TextView textView) { return null; }
+        @Override public DrawFrame findOfficialLyricDrawFrame(
+                TextView textView, WordLyricModel model) { return null; }
+        @Override public DrawFrame findRecentOfficialDrawFrame(
+                TextView textView, WordLyricModel model) { return null; }
         @Override public void rememberRecentOfficialDrawFrame(TextView textView, DrawFrame frame) { }
         @Override public void forgetRecentOfficialDrawFrame(TextView textView) { }
         @Override public void markBoundLyricFrameReady(TextView textView, DrawFrame frame) { }
