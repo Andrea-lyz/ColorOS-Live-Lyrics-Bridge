@@ -54,4 +54,6 @@ RC1 已被后续代码替代。RC2 已在设备复测中确认仍有三行残留
 
 改为 `LyricRecyclerAdapterContract` 从宿主自己的层级和反射签名发现 Adapter 基类：公开抽象的 count、bind、create 方法必须使用同一宿主 holder 类型，holder 必须包含公开 final View 字段。绑定方法也从该宿主基类的实际签名解析到具体 override，不依赖本模块的 AndroidX 类名、类身份或混淆名；基类默认 payload 包装方法不进入 Hook。类型发现与 Hook 安装按类缓存，并为不支持的契约记录一次明确诊断。
 
-RC4 本地检查：866 项测试，860 通过、6 项既有条件跳过，0 失败/错误；assembleDebug、lintDebug、lintRelease 均通过，lint 各 0 错误、54 警告。新增 6 项覆盖真实 AndroidX Adapter、不同类名/方法名的宿主结构、无关 holder 重载、默认包装方法、继承 override 和不完整结构。候选交付前还需检查最终 R8 APK 中的实际识别路径，设备效果仍待 RC4 复测。
+RC4 本地检查：866 项测试，860 通过、6 项既有条件跳过，0 失败/错误；assembleDebug、lintDebug、lintRelease 均通过，lint 各 0 错误、54 警告。新增 6 项覆盖真实 AndroidX Adapter、不同类名/方法名的宿主结构、无关 holder 重载、默认包装方法、继承 override 和不完整结构。最终签名 APK 的实际 R8 识别路径及全部资产均已独立核验。
+
+用户于 2026-10-25 确认正式签名 RC4 测试通过，切歌效果满意，切换过程中无歌词残留，并明确授权正式发布。该结论对应 Bridge d82babddae1fda14ebf04856fff6947633df2327、batch 4.5.3-rc.4-d82babd-48305d0；Bridge APK SHA256 为 aa5564f5428d25b13cd32bde4fe9fa973f81b847cdc97bdd9d50c40ec4bc8da2。
