@@ -51,7 +51,7 @@ public final class OfficialLyricDrawCoordinatorTest {
         assertFalse(OfficialLyricDrawCoordinator.shouldPreferRecentDrawFrame(true, true, true, true));
     }
 
-    private static final class FakeHost implements OfficialLyricDrawCoordinator.Host {
+    static class FakeHost implements OfficialLyricDrawCoordinator.Host {
         boolean inspect;
         boolean reactivationPending;
 
@@ -64,6 +64,7 @@ public final class OfficialLyricDrawCoordinatorTest {
         @Override public boolean isAodLowFrameRateLyricMode() { return false; }
         @Override public boolean isLyricRecyclerSettleWindowActive() { return false; }
         @Override public boolean shouldSuppressOfficialLyricForTrackHandoff() { return false; }
+        @Override public boolean isUnboundLyricsRecyclerRow(TextView textView) { return false; }
         @Override public View findContainingLyricsRecyclerView(TextView textView) { return null; }
         @Override public boolean activateSystemUiLyricModeFromPendingDraw(
                 TextView textView, View lyricsRecycler, String reason) { return false; }
