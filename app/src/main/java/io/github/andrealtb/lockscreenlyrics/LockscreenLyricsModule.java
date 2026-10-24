@@ -6159,20 +6159,20 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private boolean tryInstallLyricAdapterBindHook(Object adapter) {
-        Class<?> baseClass = findRecyclerAdapterBaseClass(adapter);
-        if (baseClass == null) return false;
+        if (adapter == null) return false;
         Class<?> adapterClass = adapter.getClass();
         synchronized (pluginHookGenerationLock) {
             Boolean installed = lyricAdapterBindHookClasses.get(adapterClass);
             if (installed != null) return installed;
+            Class<?> baseClass = findRecyclerAdapterBaseClass(adapter);
+            if (baseClass == null) {
+                lyricAdapterBindHookClasses.put(adapterClass, false);
+                infoAlways(BridgeDebugArea.BOOTSTRAP, BridgeEvents.HOOK_FAILED,
+                        "Lyric adapter runtime contract unavailable, class=" + adapterClass.getName());
+                return false;
+            }
             int count = 0;
-            for (Method method : adapterClass.getMethods()) {
-                Class<?>[] parameters = method.getParameterTypes();
-                if (!"onBindViewHolder".equals(method.getName())
-                        || method.getDeclaringClass() == baseClass
-                        || method.getReturnType() != void.class
-                        || (parameters.length != 2 && parameters.length != 3)
-                        || parameters[1] != int.class) continue;
+            for (Method method : LyricRecyclerAdapterContract.bindingMethods(adapter, baseClass)) {
                 try {
                     method.setAccessible(true);
                     XposedInterface.HookHandle handle = hook(method)
@@ -6187,7 +6187,8 @@ public final class LockscreenLyricsModule extends XposedModule {
             }
             lyricAdapterBindHookClasses.put(adapterClass, count > 0);
             if (count > 0) infoAlways(BridgeDebugArea.BOOTSTRAP, BridgeEvents.HOOK_INSTALLED,
-                    "Hooked lyric adapter binding transactions, methods=" + count);
+                    "Hooked lyric adapter binding transactions, methods=" + count
+                            + ", contract=runtime-signatures, class=" + adapterClass.getName());
             return count > 0;
         }
     }
@@ -8262,14 +8263,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private static Class<?> findRecyclerAdapterBaseClass(Object adapter) {
-        Class<?> current = adapter == null ? null : adapter.getClass();
-        while (current != null) {
-            if ("androidx.recyclerview.widget.RecyclerView$Adapter".equals(current.getName())) {
-                return current;
-            }
-            current = current.getSuperclass();
-        }
-        return null;
+        return LyricRecyclerAdapterContract.findBaseClass(adapter);
     }
 
     private synchronized void tryInstallRecyclerAdapterNotifyHook(
