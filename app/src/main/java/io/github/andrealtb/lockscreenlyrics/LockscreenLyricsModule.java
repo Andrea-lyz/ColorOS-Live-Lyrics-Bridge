@@ -59,6 +59,8 @@ import io.github.andrealtb.lockscreenlyrics.render.LyricDrawLayoutEngine;
 import io.github.andrealtb.lockscreenlyrics.render.LyricTimingMode;
 import io.github.andrealtb.lockscreenlyrics.render.LyricsRecyclerGeometry;
 import io.github.andrealtb.lockscreenlyrics.render.OfficialLyricFrameResolver;
+import io.github.andrealtb.lockscreenlyrics.render.OfficialLyricDataset;
+import io.github.andrealtb.lockscreenlyrics.render.LyricRenderTransactions;
 import io.github.andrealtb.lockscreenlyrics.render.WordLine;
 import io.github.andrealtb.lockscreenlyrics.render.WordLyricModel;
 import io.github.andrealtb.lockscreenlyrics.render.WordLyricRenderConstants;
@@ -624,6 +626,10 @@ public final class LockscreenLyricsModule extends XposedModule {
     /** Set while the Bridge replays updatePkgActionsRule; see {@link #replayOplusPkgActionsRule}. */
     private final ThreadLocal<Boolean> replayingOplusPkgActionsRule = new ThreadLocal<>();
     private final OfficialLyricTextRenderer officialLyricTextRenderer = new OfficialLyricTextRenderer();
+    private final LyricRenderTransactions<WordLyricModel> lyricRenderTransactions =
+            new LyricRenderTransactions<>();
+    private final WeakHashMap<Class<?>, Boolean> lyricAdapterBindHookClasses = new WeakHashMap<>();
+    private volatile boolean lyricDatasetHookAvailable;
     private final OfficialLyricFrameResolver officialLyricFrameResolver =
             new OfficialLyricFrameResolver();
     private final OfficialLyricFrameResolver.Selection officialFrameSelection =
@@ -655,7 +661,9 @@ public final class LockscreenLyricsModule extends XposedModule {
             new OfficialLyricDrawCoordinator(new OfficialLyricDrawCoordinator.Host() {
                 @Override
                 public boolean shouldInspectLyricTextViewHooks() {
-                    return LockscreenLyricsModule.this.shouldInspectLyricTextViewHooks();
+                    return lyricRenderTransactions.currentModel() != null
+                            || LockscreenLyricsModule.this.shouldSuppressOfficialLyricForTrackHandoff()
+                            || LockscreenLyricsModule.this.shouldInspectLyricTextViewHooks();
                 }
 
                 @Override
@@ -670,7 +678,7 @@ public final class LockscreenLyricsModule extends XposedModule {
 
                 @Override
                 public WordLyricModel currentWordLyricModel() {
-                    return currentWordLyricModel;
+                    return lyricRenderTransactions.currentModel();
                 }
 
                 @Override
@@ -699,8 +707,11 @@ public final class LockscreenLyricsModule extends XposedModule {
                 }
 
                 @Override
-                public boolean isUnboundLyricsRecyclerRow(TextView textView) {
-                    return LockscreenLyricsModule.isUnboundLyricsRecyclerRow(textView);
+                public LyricRenderTransactions.Status lyricDrawBindingStatus(
+                        TextView textView, View recycler, WordLyricModel model) {
+                    return lyricDatasetHookAvailable
+                            ? lyricRenderTransactions.rowStatus(recycler, textView, model)
+                            : LyricRenderTransactions.Status.UNSUPPORTED;
                 }
 
                 @Override
@@ -762,13 +773,13 @@ public final class LockscreenLyricsModule extends XposedModule {
                 }
 
                 @Override
-                public DrawFrame findOfficialLyricDrawFrame(TextView textView) {
-                    return LockscreenLyricsModule.this.findOfficialLyricDrawFrame(textView);
+                public DrawFrame findOfficialLyricDrawFrame(TextView textView, WordLyricModel model) {
+                    return LockscreenLyricsModule.this.findOfficialLyricDrawFrame(textView, model);
                 }
 
                 @Override
-                public DrawFrame findRecentOfficialDrawFrame(TextView textView) {
-                    return LockscreenLyricsModule.this.findRecentOfficialDrawFrame(textView);
+                public DrawFrame findRecentOfficialDrawFrame(TextView textView, WordLyricModel model) {
+                    return LockscreenLyricsModule.this.findRecentOfficialDrawFrame(textView, model);
                 }
 
                 @Override
@@ -4010,8 +4021,8 @@ public final class LockscreenLyricsModule extends XposedModule {
         currentLyricProviderPackage = "";
         lastSystemUiPackageSupported = false;
         systemUiHasOfficialLyric = false;
-        cancelBrightLyricGeometryCommit();
         currentWordLyricModel = null;
+        clearCommittedLyricRenderModel();
         currentWordLyricModelSignature = "";
         currentWordLyricModelTrackKey = "";
         currentCleanupSnapshotTrackKey = "";
@@ -4019,8 +4030,9 @@ public final class LockscreenLyricsModule extends XposedModule {
         currentCleanupSnapshotDisplayLyric = "";
         currentCleanupSnapshotTitle = "";
         currentCleanupSnapshotArtist = "";
-        clearSeedlingActiveLyricHint();
-        deactivateSystemUiLyricModeAfterSurfaceHidden();
+        mainHandler.post(() -> {
+            if (currentWordLyricModel == null) deactivateSystemUiLyricModeAfterSurfaceHidden();
+        });
         mainHandler.post(this::clearSystemUiPlaybackControllerBinding);
         mainHandler.post(this::refreshTranslationActionViewVisibility);
         updateScreenTimeoutWakeLock(currentApplicationContext());
@@ -4771,17 +4783,10 @@ public final class LockscreenLyricsModule extends XposedModule {
         currentLyricProviderPayload = null;
         currentLyricObservedTrackKey = "";
         systemUiHasOfficialLyric = false;
-        cancelBrightLyricGeometryCommit();
         currentWordLyricModel = null;
+        clearCommittedLyricRenderModel();
         currentWordLyricModelSignature = "";
         currentWordLyricModelTrackKey = "";
-        resetAdaptiveLineTimedRecyclerFollow();
-        clearSeedlingActiveLyricHint();
-        clearActiveRendererTargets();
-        activeRendererWordLine = null;
-        officialLyricTextRenderer.clearGlowCache();
-        activeLyricLine = "";
-        activeLyricLineTimeMs = -1L;
         clearScreenTimeoutLyricEvidence();
         mainHandler.post(() -> {
             refreshTranslationActionViewVisibility();
@@ -5803,6 +5808,10 @@ public final class LockscreenLyricsModule extends XposedModule {
         final int epoch;
         final long startedAt = SystemClock.elapsedRealtime();
         WordLyricModel model = currentWordLyricModel;
+        if (lyricRenderTransactions.surfaceStatus(recycler, model)
+                != LyricRenderTransactions.Status.READY) {
+            return;
+        }
         synchronized (lyricSurfaceRenderEpochsLock) {
             Integer previous = lyricSurfaceRenderEpochs.get(recycler);
             epoch = previous == null
@@ -5862,8 +5871,26 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
         refreshTranslationActionViewVisibility();
         ArrayList<View> recyclers = snapshotLyricsRecyclerViews();
+        boolean hasObservedSurface = !recyclers.isEmpty();
+        recyclers.removeIf(recycler -> lyricRenderTransactions.surfaceStatus(recycler, model)
+                != LyricRenderTransactions.Status.READY);
+        if (hasObservedSurface && recyclers.isEmpty()) {
+            // The parser's new model is not a commit of the old adapter dataset. The real
+            // setLyrics event resumes this transaction, without a timer or text-based takeover.
+            invalidateRememberedLyricViews();
+            return;
+        }
         boolean deferBrightPixels = !isAodLowFrameRateLyricMode() && !recyclers.isEmpty();
         for (View recycler : recyclers) {
+            if (recycler instanceof ViewGroup) {
+                ViewGroup group = (ViewGroup) recycler;
+                int[] cohort = {0, 0, 0};
+                for (int i = 0; i < group.getChildCount(); i++) {
+                    View item = group.getChildAt(i);
+                    observeLyricDrawCohort(recycler, item, readRecyclerChildPosition(recycler, item),
+                            model, cohort);
+                }
+            }
             configureOfficialLyricScaleOwnership(recycler);
             applyVisibleLyricBlockHeights(recycler);
             if (!deferBrightPixels) {
@@ -6054,6 +6081,8 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (adapter == null) {
             return;
         }
+        tryInstallLyricAdapterBindHook(adapter);
+        lyricRenderTransactions.registerAdapter(recycler, adapter);
         synchronized (lyricsRecyclerAdaptersLock) {
             for (int i = lyricsRecyclerAdapters.size() - 1; i >= 0; i--) {
                 Object existing = lyricsRecyclerAdapters.get(i).get();
@@ -6067,6 +6096,233 @@ public final class LockscreenLyricsModule extends XposedModule {
                 lyricsRecyclerAdapters.remove(0);
             }
             lyricsRecyclerAdapters.add(new WeakReference<>(adapter));
+        }
+    }
+
+    private Object onLyricsRecyclerSetLyrics(XposedInterface.Chain chain) throws Throwable {
+        View recycler = (View) chain.getThisObject();
+        Object adapter = readRecyclerAdapter(recycler);
+        if (adapter == null) {
+            // setLyrics owns a final adapter before the first setAdapter call.
+            Object found = null;
+            for (Class<?> type = recycler.getClass(); type != null && type != View.class;
+                    type = type.getSuperclass()) {
+                for (Field field : type.getDeclaredFields()) {
+                    if (java.lang.reflect.Modifier.isStatic(field.getModifiers())) continue;
+                    try {
+                        field.setAccessible(true);
+                        Object value = field.get(recycler);
+                        if (findRecyclerAdapterBaseClass(value) != null) {
+                            if (found != null && found != value) {
+                                found = null;
+                                break;
+                            }
+                            found = value;
+                        }
+                    } catch (Throwable ignored) {
+                        // Only a uniquely observed adapter can be enrolled in the transaction.
+                    }
+                }
+                if (found != null) break;
+            }
+            adapter = found;
+        }
+        boolean bindingAvailable = tryInstallLyricAdapterBindHook(adapter);
+        OfficialLyricDataset dataset = bindingAvailable
+                ? OfficialLyricDataset.fromNativeRows((List<?>) chain.getArg(0)) : null;
+        LyricRenderTransactions.DatasetChange change =
+                lyricRenderTransactions.beginDataset(recycler, adapter, dataset);
+        Object result;
+        try {
+            result = chain.proceed();
+        } catch (Throwable hostFailure) {
+            lyricRenderTransactions.abortDataset(change);
+            throw hostFailure;
+        }
+        lyricRenderTransactions.commitDataset(change, readRecyclerAdapter(recycler));
+        rememberLyricsRecyclerView(recycler);
+        WordLyricModel model = lyricRenderTransactions.currentModel();
+        if (model != null && model == currentWordLyricModel
+                && lyricRenderTransactions.surfaceStatus(recycler, model)
+                == LyricRenderTransactions.Status.READY) {
+            int generation = beginBrightLyricGeometryCommit(model);
+            preparePublishedLyricModelGeometry(model, generation);
+        }
+        invalidateLyricsRecyclerDescendants(recycler);
+        recycler.postInvalidateOnAnimation();
+        StructuredBridgeLog.debugTransition(
+                BridgeDebugArea.RENDERER, BridgeEvents.LYRIC_HANDOFF,
+                () -> "action=dataset-committed, rows=" + (dataset == null ? -1 : dataset.size())
+                        + ", modelReady=" + (lyricRenderTransactions.surfaceStatus(recycler, model)
+                        == LyricRenderTransactions.Status.READY));
+        return result;
+    }
+
+    private boolean tryInstallLyricAdapterBindHook(Object adapter) {
+        Class<?> baseClass = findRecyclerAdapterBaseClass(adapter);
+        if (baseClass == null) return false;
+        Class<?> adapterClass = adapter.getClass();
+        synchronized (pluginHookGenerationLock) {
+            Boolean installed = lyricAdapterBindHookClasses.get(adapterClass);
+            if (installed != null) return installed;
+            int count = 0;
+            for (Method method : adapterClass.getMethods()) {
+                Class<?>[] parameters = method.getParameterTypes();
+                if (!"onBindViewHolder".equals(method.getName())
+                        || method.getDeclaringClass() == baseClass
+                        || method.getReturnType() != void.class
+                        || (parameters.length != 2 && parameters.length != 3)
+                        || parameters[1] != int.class) continue;
+                try {
+                    method.setAccessible(true);
+                    XposedInterface.HookHandle handle = hook(method)
+                            .setId(HOOK_ID_LYRICS_RECYCLER + "-adapter-bind-" + count)
+                            .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                            .intercept(this::onLyricsAdapterBindViewHolder);
+                    rememberPluginHookHandle(adapterClass.getClassLoader(), handle);
+                    count++;
+                } catch (Throwable failure) {
+                    error("Failed to observe lyric adapter binding", failure);
+                }
+            }
+            lyricAdapterBindHookClasses.put(adapterClass, count > 0);
+            if (count > 0) infoAlways(BridgeDebugArea.BOOTSTRAP, BridgeEvents.HOOK_INSTALLED,
+                    "Hooked lyric adapter binding transactions, methods=" + count);
+            return count > 0;
+        }
+    }
+
+    private Object onLyricsAdapterBindViewHolder(XposedInterface.Chain chain) throws Throwable {
+        Object adapter = chain.getThisObject();
+        Object owner = lyricRenderTransactions.surfaceForAdapter(adapter);
+        if (owner instanceof View) {
+            observeCommittedLyricAdapterData((View) owner, adapter);
+        }
+        LyricRenderTransactions.RowBinding binding = lyricRenderTransactions.beginRowBind(
+                adapter, ((Number) chain.getArg(1)).intValue());
+        Object result = chain.proceed();
+        if (binding == null) return result;
+        Object holder = chain.getArg(0);
+        for (Class<?> type = holder.getClass(); type != null; type = type.getSuperclass()) {
+            try {
+                Field itemField = type.getDeclaredField("itemView");
+                itemField.setAccessible(true);
+                Object item = itemField.get(holder);
+                if (item instanceof View) {
+                    recordBoundLyricItem((View) item, binding, new int[]{0});
+                }
+                break;
+            } catch (NoSuchFieldException ignored) {
+                // itemView is declared by RecyclerView.ViewHolder, not the vendor subclass.
+            } catch (Throwable failure) {
+                error("Failed to associate lyric holder with dataset", failure);
+                break;
+            }
+        }
+        return result;
+    }
+
+    private void observeCommittedLyricAdapterData(View recycler, Object adapter) {
+        OfficialLyricDataset dataset = tryInstallLyricAdapterBindHook(adapter)
+                ? OfficialLyricDataset.fromAdapter(adapter) : null;
+        if (!lyricRenderTransactions.observeAdapterDataset(adapter, dataset)) return;
+        invalidateCommittedLyricRows(recycler);
+        WordLyricModel model = lyricRenderTransactions.currentModel();
+        mainHandler.post(() -> {
+            if (model == null || currentWordLyricModel != model
+                    || lyricRenderTransactions.currentModel() != model
+                    || lyricRenderTransactions.surfaceStatus(recycler, model)
+                    != LyricRenderTransactions.Status.READY) return;
+            int generation = beginBrightLyricGeometryCommit(model);
+            preparePublishedLyricModelGeometry(model, generation);
+        });
+    }
+
+    private void invalidateCommittedLyricRows(View recycler) {
+        for (Object row : lyricRenderTransactions.rowsForSurface(recycler)) {
+            if (row instanceof TextView) ((TextView) row).invalidate();
+        }
+        invalidateLyricsRecyclerDescendants(recycler);
+        recycler.invalidate();
+    }
+
+    private Object onLyricsRecyclerDraw(XposedInterface.Chain chain) throws Throwable {
+        Object target = chain.getThisObject();
+        if (!(target instanceof ViewGroup) || !isLyricsRecyclerView((View) target)
+                || !(chain.getArg(0) instanceof Canvas)) return chain.proceed();
+        ViewGroup recycler = (ViewGroup) target;
+        Object adapter = readRecyclerAdapter(recycler);
+        if (adapter != null) {
+            rememberLyricsRecyclerAdapter(recycler);
+            WordLyricModel candidate = lyricRenderTransactions.currentModel();
+            if (lyricRenderTransactions.surfaceStatus(recycler, candidate)
+                    != LyricRenderTransactions.Status.READY) {
+                observeCommittedLyricAdapterData(recycler, adapter);
+            }
+        }
+        WordLyricModel model = lyricRenderTransactions.currentModel();
+        LyricRenderTransactions.Status status = lyricRenderTransactions.surfaceStatus(recycler, model);
+        if (model == null && !shouldSuppressOfficialLyricForTrackHandoff()) return chain.proceed();
+        if (status == LyricRenderTransactions.Status.UNSUPPORTED) return chain.proceed();
+        int[] cohort = {0, 0, 0};
+        if (status == LyricRenderTransactions.Status.READY) {
+            for (int i = 0; i < recycler.getChildCount(); i++) {
+                View item = recycler.getChildAt(i);
+                observeLyricDrawCohort(recycler, item, readRecyclerChildPosition(recycler, item),
+                        model, cohort);
+            }
+        }
+        boolean coherent = status == LyricRenderTransactions.Status.READY
+                && pendingBrightLyricGeometryModel != model && cohort[0] > 0 && cohort[1] == 0;
+        boolean exposed = lyricRenderTransactions.commitSurfacePixels(recycler, model, coherent);
+        if (exposed) {
+            // Includes retired/hidden holders no longer listed by getChildCount. Their cached
+            // RenderNodes must not replay pixels from the previous dataset when the batch opens.
+            invalidateCommittedLyricRows(recycler);
+            StructuredBridgeLog.debugTransition(
+                    BridgeDebugArea.RENDERER, BridgeEvents.LYRIC_HANDOFF,
+                    () -> "action=render-transaction-committed, rows=" + cohort[0]);
+        }
+        return LyricSurfaceDrawTransaction.draw(
+                (Canvas) chain.getArg(0), coherent, chain::proceed);
+    }
+
+    private void observeLyricDrawCohort(
+            View recycler, View view, int position, WordLyricModel model, int[] counts) {
+        if (view == null || view.getVisibility() != View.VISIBLE) return;
+        if (counts[2]++ > 320) {
+            counts[1]++;
+            return;
+        }
+        if (view instanceof TextView && ((TextView) view).length() > 0) {
+            LyricRenderTransactions.RowStatus status = lyricRenderTransactions.observeRowPosition(
+                    recycler, view, position, model);
+            if (status == LyricRenderTransactions.RowStatus.CURRENT) counts[0]++;
+            else if (status == LyricRenderTransactions.RowStatus.WAITING) counts[1]++;
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                observeLyricDrawCohort(recycler, group.getChildAt(i), position, model, counts);
+            }
+        }
+    }
+
+    private void recordBoundLyricItem(
+            View view, LyricRenderTransactions.RowBinding binding, int[] visited) {
+        if (view == null || visited[0]++ > 128) return;
+        if (view instanceof TextView) {
+            TextView textView = (TextView) view;
+            forgetLyricTextViewCaches(textView);
+            beginLyricTextBindEpoch(textView);
+            lyricRenderTransactions.completeRowBind(binding, textView);
+            scheduleOfficialLyricSlotPrebind(textView);
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                recordBoundLyricItem(group.getChildAt(i), binding, visited);
+            }
         }
     }
 
@@ -6121,6 +6377,8 @@ public final class LockscreenLyricsModule extends XposedModule {
 
     private void primeLyricsRecyclerView(View recycler, String reason) {
         WordLyricModel model = currentWordLyricModel;
+        if (lyricRenderTransactions.surfaceStatus(recycler, model)
+                != LyricRenderTransactions.Status.READY) return;
         if (!LyricsRecyclerPolicy.hasPrimeInputs(
                 recycler != null,
                 model != null && !model.lines.isEmpty(),
@@ -6582,7 +6840,10 @@ public final class LockscreenLyricsModule extends XposedModule {
             if (text != null
                     && text.length() > 0
                     && text.length() <= lyricTextLengthLimit()
-                    && isInLyricsRecyclerView(textView)) {
+                    && isInLyricsRecyclerView(textView)
+                    && lyricRenderTransactions.rowStatus(
+                    findContainingLyricsRecyclerView(textView), textView, model)
+                    == LyricRenderTransactions.Status.READY) {
                 LyricTextMatch match = findLyricTextMatch(
                         model,
                         textView,
@@ -6830,7 +7091,8 @@ public final class LockscreenLyricsModule extends XposedModule {
                     && text.length() <= lyricTextLengthLimit()
                     && model.hasRenderableText(normalizedText)
                     && findContainingLyricsRecyclerView(textView) == recycler
-                    && !isUnboundLyricsRecyclerRow(textView)) {
+                    && lyricRenderTransactions.rowStatus(recycler, textView, model)
+                    == LyricRenderTransactions.Status.READY) {
                 counts[0]++;
                 int bindEpoch = ensureLyricTextBindEpoch(textView);
                 int contentHash = charSequenceContentHash(text);
@@ -6956,6 +7218,9 @@ public final class LockscreenLyricsModule extends XposedModule {
             if (TextUtils.isEmpty(normalizedText)) {
                 return;
             }
+            if (lyricRenderTransactions.rowStatus(
+                    findContainingLyricsRecyclerView(textView), textView, model)
+                    != LyricRenderTransactions.Status.READY) return;
             LyricTextMatch match = findLyricTextMatch(
                     model,
                     textView,
@@ -7116,6 +7381,9 @@ public final class LockscreenLyricsModule extends XposedModule {
             oplusPluginKuWoTargets = null;
             resolvedLyricPositionController = null;
             lyricPositionControllerHooked = false;
+            lyricDatasetHookAvailable = false;
+            lyricAdapterBindHookClasses.clear();
+            lyricRenderTransactions.clearBindings();
         }
         synchronized (officialLyricsRecyclerCompatibilityLock) {
             officialLyricsRecyclerBindings.clear();
@@ -7659,10 +7927,34 @@ public final class LockscreenLyricsModule extends XposedModule {
             int scalePivotHooks = 0;
             int rowStyleHooks = 0;
             int immersiveEntryHooks = 0;
+            int datasetHooks = 0;
+            int drawHooks = 0;
             Class<?> current = lyricsRecyclerViewClass;
             while (current != null) {
                 for (Method method : current.getDeclaredMethods()) {
-                    if (isLyricsRecyclerCurrentLyricMethod(method)) {
+                    if (drawHooks == 0 && "draw".equals(method.getName())
+                            && method.getReturnType() == void.class
+                            && method.getParameterTypes().length == 1
+                            && method.getParameterTypes()[0] == Canvas.class) {
+                        method.setAccessible(true);
+                        XposedInterface.HookHandle handle = hook(method)
+                                .setId(HOOK_ID_LYRICS_RECYCLER + "-surface-draw")
+                                .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                                .intercept(this::onLyricsRecyclerDraw);
+                        rememberPluginHookHandle(pluginLoader, handle);
+                        drawHooks++;
+                    } else if ("setLyrics".equals(method.getName())
+                            && method.getReturnType() == void.class
+                            && method.getParameterTypes().length == 1
+                            && List.class.isAssignableFrom(method.getParameterTypes()[0])) {
+                        method.setAccessible(true);
+                        XposedInterface.HookHandle handle = hook(method)
+                                .setId(HOOK_ID_LYRICS_RECYCLER + "-dataset-" + datasetHooks)
+                                .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                                .intercept(this::onLyricsRecyclerSetLyrics);
+                        rememberPluginHookHandle(pluginLoader, handle);
+                        datasetHooks++;
+                    } else if (isLyricsRecyclerCurrentLyricMethod(method)) {
                         method.setAccessible(true);
                         XposedInterface.HookHandle handle = hook(method)
                                 .setId(HOOK_ID_LYRICS_RECYCLER
@@ -7710,15 +8002,18 @@ public final class LockscreenLyricsModule extends XposedModule {
                 }
                 current = current.getSuperclass();
             }
+            lyricDatasetHookAvailable = drawHooks > 0;
             if (currentLyricHooks > 0
                     || scalePivotHooks > 0
                     || rowStyleHooks > 0
-                    || immersiveEntryHooks > 0) {
+                    || immersiveEntryHooks > 0 || datasetHooks > 0 || drawHooks > 0) {
                 infoAlways(BridgeDebugArea.BOOTSTRAP, BridgeEvents.HOOK_INSTALLED, "Hooked LyricsRecyclerView runtime methods, currentMethods="
                         + currentLyricHooks
                         + ", pivotMethods=" + scalePivotHooks
                         + ", rowStyleMethods=" + rowStyleHooks
-                        + ", immersiveEntryMethods=" + immersiveEntryHooks);
+                        + ", immersiveEntryMethods=" + immersiveEntryHooks
+                        + ", datasetMethods=" + datasetHooks
+                        + ", surfaceDrawMethods=" + drawHooks);
             }
             if (currentLyricHooks == 0) {
                 // Module-driven positioning invokes the ColorOS 16 entry only; the ColorOS 17
@@ -8110,6 +8405,9 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (model == null || textView == null || TextUtils.isEmpty(normalizedText)) {
             return LyricTextMatch.EMPTY;
         }
+        if (lyricRenderTransactions.rowStatus(
+                findContainingLyricsRecyclerView(textView), textView, model)
+                != LyricRenderTransactions.Status.READY) return LyricTextMatch.EMPTY;
 
         int adapterPosition = findValidLyricsRecyclerAdapterPosition(textView, model);
         WordLine indexedLine = model.lineAtAdapterIndexMatchingText(
@@ -8142,10 +8440,10 @@ public final class LockscreenLyricsModule extends XposedModule {
                         lyricTextMatchSelection.translationLine);
     }
 
-    private DrawFrame findOfficialLyricDrawFrame(TextView textView) {
+    private DrawFrame findOfficialLyricDrawFrame(TextView textView, WordLyricModel model) {
         long performanceStartedAt = performanceSampler.begin();
         try {
-            return resolveOfficialLyricDrawFrame(textView);
+            return resolveOfficialLyricDrawFrame(textView, model);
         } finally {
             performanceSampler.end(
                     BridgePerformanceSampler.Metric.FRAME_RESOLVE,
@@ -8153,8 +8451,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
     }
 
-    private DrawFrame resolveOfficialLyricDrawFrame(TextView textView) {
-        WordLyricModel model = currentWordLyricModel;
+    private DrawFrame resolveOfficialLyricDrawFrame(TextView textView, WordLyricModel model) {
         if (model == null || !isReadyForLyricDraw(textView)) {
             return null;
         }
@@ -8312,12 +8609,11 @@ public final class LockscreenLyricsModule extends XposedModule {
                         now));
     }
 
-    private DrawFrame findRecentOfficialDrawFrame(TextView textView) {
+    private DrawFrame findRecentOfficialDrawFrame(TextView textView, WordLyricModel model) {
         if (textView == null || !isReadyForLyricDraw(textView) || !isInLyricsRecyclerView(textView)) {
             return null;
         }
         CachedDrawFrame cached = recentOfficialDrawFrames.get(textView);
-        WordLyricModel model = currentWordLyricModel;
         long now = SystemClock.elapsedRealtime();
         if (cached == null
                 || model == null
@@ -8835,22 +9131,6 @@ public final class LockscreenLyricsModule extends XposedModule {
         } catch (Throwable ignored) {
             return -1;
         }
-    }
-
-    private static boolean isUnboundLyricsRecyclerRow(TextView textView) {
-        LyricsRecyclerMatch match = findLyricsRecyclerMatch(textView);
-        if (match == null) {
-            return false;
-        }
-        View recycler = match.recycler();
-        View itemView = match.itemView();
-        if (recycler == null || itemView == null) {
-            return false;
-        }
-        return LyricRecyclerRowBinding.isUnbound(
-                recycler,
-                itemView,
-                resolveRecyclerChildPositionMethod(recycler.getClass()));
     }
 
     private static Method resolveRecyclerChildPositionMethod(Class<?> recyclerClass) {
@@ -11556,6 +11836,8 @@ public final class LockscreenLyricsModule extends XposedModule {
             // Keep the complete payload and cleanup/translation lanes along with its model.
             // The caller still forwards this native update and remembers the new load context.
             markScreenTimeoutLyricModelEvidence();
+            publishLyricRenderBinding(currentWordLyricModel,
+                    nativeLyricModelAssembler.displayDatasetFor(displayLyric), loadEpoch);
             info(BridgeDebugArea.RENDERER, BridgeEvents.LYRIC_MODEL_RETAINED,
                     "Retained identity-bound custom model during native-only refresh"
                             + " | epoch=" + loadEpoch
@@ -11579,6 +11861,10 @@ public final class LockscreenLyricsModule extends XposedModule {
             screenTimeoutLyricEvidenceGraceUntilElapsedMs = 0L;
         }
         if (assembled == null) {
+            if (currentWordLyricModel != null) {
+                publishLyricRenderBinding(currentWordLyricModel,
+                        nativeLyricModelAssembler.displayDatasetFor(displayLyric), loadEpoch);
+            }
             updateScreenTimeoutWakeLock(currentApplicationContext());
             return true;
         }
@@ -11639,7 +11925,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                             + ", track=" + SensitiveFieldRedactor.trackHash(
                                     buildTrackKey(observedTitle, observedArtist)));
         }
-        publishWordLyricModel(model, signature, payloadKey);
+        publishWordLyricModel(model, signature, payloadKey, loadEpoch);
         return true;
     }
 
@@ -11665,15 +11951,10 @@ public final class LockscreenLyricsModule extends XposedModule {
 
     private void clearWordLyricModelState(BridgeDebugArea area, String event, String message) {
         traceLyricModelState("cleared", currentWordLyricModel);
-        cancelBrightLyricGeometryCommit();
         currentWordLyricModel = null;
+        clearCommittedLyricRenderModel();
         currentWordLyricModelSignature = "";
         currentWordLyricModelTrackKey = "";
-        resetAdaptiveLineTimedRecyclerFollow();
-        clearSeedlingActiveLyricHint();
-        clearActiveRendererTargets();
-        activeRendererWordLine = null;
-        officialLyricTextRenderer.clearGlowCache();
         lyricModelReplacementInProgress = false;
         info(area, event, message);
         mainHandler.post(this::refreshTranslationActionViewVisibility);
@@ -11681,29 +11962,23 @@ public final class LockscreenLyricsModule extends XposedModule {
         updateScreenTimeoutWakeLock(currentApplicationContext());
     }
 
-    private void publishWordLyricModel(WordLyricModel model, String signature, String payloadKey) {
-        int geometryCommitGeneration = beginBrightLyricGeometryCommit(model);
+    private void publishWordLyricModel(
+            WordLyricModel model, String signature, String payloadKey, long loadEpoch) {
+        // Parsing/cache state may advance on the metadata worker. It is not render ownership.
         currentWordLyricModel = model;
         currentWordLyricModelSignature = signature;
         currentWordLyricModelTrackKey = payloadKey;
-        resetAdaptiveLineTimedRecyclerFollow();
-        clearSeedlingActiveLyricHint();
-        lyricModelReplacementInProgress = false;
-        clearActiveRendererTargets();
-        activeRendererWordLine = null;
-        officialLyricTextRenderer.clearGlowCache();
-        officialLyricTextRenderer.cancelModelSwitchReveal();
-        traceLyricModelState("published", model);
+        traceLyricModelState("parsed", model);
         info(BridgeDebugArea.LYRIC, BridgeEvents.DETAIL,
                 "Cached native SystemUI word lyric model, parser=" + model.parserName
                         + ", lines=" + model.lines.size()
                         + ", translations=" + model.translationCount());
         maybeLogWordLyricModelSlotIntegrity(model, "systemui-cache");
-        mainHandler.post(() -> preparePublishedLyricModelGeometry(
-                model, geometryCommitGeneration));
+        publishLyricRenderBinding(model, model.officialDataset, loadEpoch);
         String translationPackage = currentLyricProviderPackage;
         mainHandler.post(() -> {
             if (currentWordLyricModel != model
+                    || !systemUiLyricPublicationGate.canCommit(loadEpoch)
                     || !translationPackage.equals(currentLyricProviderPackage)) return;
             String rebindKey = translationPackage + "|" + payloadKey
                     + "|" + (model.translationCount() > 0);
@@ -11713,6 +11988,44 @@ public final class LockscreenLyricsModule extends XposedModule {
             }
         });
         updateScreenTimeoutWakeLock(currentApplicationContext());
+    }
+
+    private void publishLyricRenderBinding(
+            WordLyricModel model, OfficialLyricDataset dataset, long loadEpoch) {
+        mainHandler.post(() -> {
+            if (model == null || currentWordLyricModel != model
+                    || !systemUiLyricPublicationGate.canCommit(loadEpoch)) return;
+            if (lyricRenderTransactions.currentModel() == model
+                    && dataset.equals(lyricRenderTransactions.currentDataset())) return;
+            // Model, dataset expectation and mutable Canvas caches commit between UI traversals.
+            lyricRenderTransactions.publish(model, dataset);
+            traceLyricModelState("published", model);
+            int generation = beginBrightLyricGeometryCommit(model);
+            resetCommittedLyricRendererState();
+            lyricModelReplacementInProgress = false;
+            preparePublishedLyricModelGeometry(model, generation);
+        });
+    }
+
+    private void resetCommittedLyricRendererState() {
+        resetAdaptiveLineTimedRecyclerFollow();
+        clearSeedlingActiveLyricHint();
+        clearActiveRendererTargets();
+        activeRendererWordLine = null;
+        activeLyricLine = "";
+        activeLyricLineTimeMs = -1L;
+        officialLyricTextRenderer.clearGlowCache();
+        officialLyricTextRenderer.cancelModelSwitchReveal();
+    }
+
+    private void clearCommittedLyricRenderModel() {
+        mainHandler.post(() -> {
+            if (currentWordLyricModel != null) return;
+            lyricRenderTransactions.publish(null, null);
+            cancelBrightLyricGeometryCommit();
+            resetCommittedLyricRendererState();
+            invalidateRememberedLyricViews();
+        });
     }
 
     private void traceLyricModelState(String action, WordLyricModel model) {

@@ -6,6 +6,7 @@ import android.view.View;
 import android.widget.TextView;
 
 import io.github.andrealtb.lockscreenlyrics.render.DrawFrame;
+import io.github.andrealtb.lockscreenlyrics.render.LyricRenderTransactions;
 import io.github.andrealtb.lockscreenlyrics.render.WordLine;
 import io.github.andrealtb.lockscreenlyrics.render.WordLyricModel;
 import io.github.andrealtb.lockscreenlyrics.render.WordLyricRenderSupport;
@@ -47,7 +48,8 @@ final class OfficialLyricDrawCoordinator {
 
         boolean shouldSuppressOfficialLyricForTrackHandoff();
 
-        boolean isUnboundLyricsRecyclerRow(TextView textView);
+        LyricRenderTransactions.Status lyricDrawBindingStatus(
+                TextView textView, View lyricsRecycler, WordLyricModel model);
 
         View findContainingLyricsRecyclerView(TextView textView);
 
@@ -68,9 +70,9 @@ final class OfficialLyricDrawCoordinator {
 
         void drawWithOfficialRenderer(Canvas canvas, TextView textView, DrawFrame frame);
 
-        DrawFrame findOfficialLyricDrawFrame(TextView textView);
+        DrawFrame findOfficialLyricDrawFrame(TextView textView, WordLyricModel model);
 
-        DrawFrame findRecentOfficialDrawFrame(TextView textView);
+        DrawFrame findRecentOfficialDrawFrame(TextView textView, WordLyricModel model);
 
         void rememberRecentOfficialDrawFrame(TextView textView, DrawFrame frame);
 
@@ -176,13 +178,18 @@ final class OfficialLyricDrawCoordinator {
             host.forgetRecentOfficialDrawFrame(textView);
             return null;
         }
-        if (model != null && host.isUnboundLyricsRecyclerRow(textView)) {
-            // Removed/change-animation holders can still be attached and contain text shared by
-            // the next song. Neither a text match nor a cached frame makes that holder current.
-            host.forgetRecentOfficialDrawFrame(textView);
-            host.scheduleBoundLyricFrameRetry(textView, model);
-            host.officialRendererFallback("row-unbound-suppressed", textView, model, "");
-            return null;
+        if (model != null) {
+            LyricRenderTransactions.Status binding =
+                    host.lyricDrawBindingStatus(textView, lyricsRecycler, model);
+            if (binding == LyricRenderTransactions.Status.WAITING) {
+                // Wait for the real dataset/bind commit. A shared string or cached frame cannot
+                // transfer an outgoing holder into the incoming song's render transaction.
+                return null;
+            }
+            if (binding == LyricRenderTransactions.Status.UNSUPPORTED) {
+                host.officialRendererFallback("dataset-unsupported", textView, model, "");
+                return proceed.proceed();
+            }
         }
         synchronized (failedBindings) {
             WordLyricModel failedModel = failedBindings.get(textView);
@@ -234,12 +241,14 @@ final class OfficialLyricDrawCoordinator {
                     aodLowFrameRateMode,
                     recyclerFadeInProgress);
             DrawFrame frame = preferRecentFrame
-                    ? host.findRecentOfficialDrawFrame(textView)
+                    ? host.findRecentOfficialDrawFrame(textView, model)
                     : null;
+            if (frame != null && frame.model != model) frame = null;
             if (frame == null) {
                 boolean findTraced = BridgePerfTrace.begin("CLL:lyricFindFrame");
                 try {
-                    frame = host.findOfficialLyricDrawFrame(textView);
+                    frame = host.findOfficialLyricDrawFrame(textView, model);
+                    if (frame != null && frame.model != model) frame = null;
                 } finally {
                     BridgePerfTrace.end(findTraced);
                 }
@@ -247,7 +256,8 @@ final class OfficialLyricDrawCoordinator {
             if (frame == null
                     && LyricTimingTuningConstants.OfficialLyric.DRAW_FRAME_REUSE_ENABLED
                     && !preferRecentFrame) {
-                frame = host.findRecentOfficialDrawFrame(textView);
+                frame = host.findRecentOfficialDrawFrame(textView, model);
+                if (frame != null && frame.model != model) frame = null;
             }
             if (frame == null) {
                 host.officialRendererFallback(
@@ -281,6 +291,9 @@ final class OfficialLyricDrawCoordinator {
                 textView.post(() -> {
                     if (host.currentWordLyricModel() == activeFrameModel
                             && textView.isAttachedToWindow()
+                            && host.lyricDrawBindingStatus(textView,
+                            host.findContainingLyricsRecyclerView(textView), activeFrameModel)
+                            == LyricRenderTransactions.Status.READY
                             && WordLyricRenderSupport.matchesWordLineText(
                                     activeFrameLine,
                                     host.normalizedTextOf(textView))) {
