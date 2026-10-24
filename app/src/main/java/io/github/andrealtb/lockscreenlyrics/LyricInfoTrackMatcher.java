@@ -57,6 +57,104 @@ final class LyricInfoTrackMatcher {
                 actualKey);
     }
 
+    /** A native-only refresh must not evict a complete model bound to this player and track. */
+    static boolean canRetainModelForNativeOnlyUpdate(
+            LyricInfoContract.Payload previousPayload,
+            String boundTrackKey,
+            String previousPackage,
+            LyricInfoContract.Payload incomingPayload,
+            String incomingPackage,
+            String observedTitle,
+            String observedArtist) {
+        return nativeOnlyModelRetention(
+                previousPayload, boundTrackKey, previousPackage, incomingPayload,
+                incomingPackage, observedTitle, observedArtist) == NativeOnlyModelRetention.RETAIN;
+    }
+
+    enum NativeOnlyModelRetention {
+        RETAIN,
+        MISSING_PAYLOAD,
+        PLAYER_MISMATCH,
+        UNBOUND_TRACK,
+        OBSERVED_TRACK_MISMATCH,
+        SENTENCE_WINDOW,
+        MEDIA_ID_MISMATCH,
+        GENERATION_MISMATCH,
+        NO_COMPLETE_SOURCE,
+        COMPLETE_UPDATE,
+        NO_TIMED_DISPLAY,
+        PREVIOUS_IDENTITY_MISMATCH,
+        NATIVE_IDENTITY_MISMATCH
+    }
+
+    static NativeOnlyModelRetention nativeOnlyModelRetention(
+            LyricInfoContract.Payload previousPayload,
+            String boundTrackKey,
+            String previousPackage,
+            LyricInfoContract.Payload incomingPayload,
+            String incomingPackage,
+            String observedTitle,
+            String observedArtist) {
+        if (previousPayload == null || incomingPayload == null) {
+            return NativeOnlyModelRetention.MISSING_PAYLOAD;
+        }
+        if (isEmpty(previousPackage) || !previousPackage.equals(incomingPackage)) {
+            return NativeOnlyModelRetention.PLAYER_MISMATCH;
+        }
+        if (isEmpty(boundTrackKey)
+                || observedTitle == null || observedTitle.trim().isEmpty()) {
+            return NativeOnlyModelRetention.UNBOUND_TRACK;
+        }
+        if (!boundTrackKey.equals(TrackIdentity.buildKey(observedTitle, observedArtist))) {
+            return NativeOnlyModelRetention.OBSERVED_TRACK_MISMATCH;
+        }
+        if (previousPayload.snapshotPositionMillis >= 0L
+                || incomingPayload.snapshotPositionMillis >= 0L) {
+            return NativeOnlyModelRetention.SENTENCE_WINDOW;
+        }
+        if (!isEmpty(previousPayload.songId) && !isEmpty(incomingPayload.songId)
+                && !previousPayload.songId.equals(incomingPayload.songId)) {
+            return NativeOnlyModelRetention.MEDIA_ID_MISMATCH;
+        }
+        if (previousPayload.sessionGeneration > 0L
+                && incomingPayload.sessionGeneration > 0L
+                && previousPayload.sessionGeneration != incomingPayload.sessionGeneration) {
+            return NativeOnlyModelRetention.GENERATION_MISMATCH;
+        }
+        if (!LyricInfoContract.containsTimedLrc(SentenceWindowContract.renderSource(previousPayload))) {
+            return NativeOnlyModelRetention.NO_COMPLETE_SOURCE;
+        }
+        if (LyricInfoContract.containsTimedLrc(SentenceWindowContract.renderSource(incomingPayload))) {
+            return NativeOnlyModelRetention.COMPLETE_UPDATE;
+        }
+        if (!LyricInfoContract.containsTimedLrc(incomingPayload.lyric)) {
+            return NativeOnlyModelRetention.NO_TIMED_DISPLAY;
+        }
+        if (!payloadMatchesTrack(previousPayload, observedTitle, observedArtist)) {
+            return NativeOnlyModelRetention.PREVIOUS_IDENTITY_MISMATCH;
+        }
+        return nativeIdentityAgreesWithObservation(incomingPayload, observedTitle, observedArtist)
+                ? NativeOnlyModelRetention.RETAIN
+                : NativeOnlyModelRetention.NATIVE_IDENTITY_MISMATCH;
+    }
+
+    private static boolean nativeIdentityAgreesWithObservation(
+            LyricInfoContract.Payload payload, String observedTitle, String observedArtist) {
+        String observedKey = TrackIdentity.buildKey(observedTitle, observedArtist);
+        if (!isEmpty(payload.trackKey)) {
+            return TrackIdentity.matchesHintKey(
+                    normalizePayloadTrackHintKey(payload.trackKey), observedKey);
+        }
+        // UI7's loader falls back to the metadata song/artist when native JSON omits them.
+        // The existing model has already proved that binding; a lyric title banner is display
+        // content and must not independently veto it. Explicit JSON identities still must agree.
+        return TrackIdentity.matchesHintKey(
+                TrackIdentity.buildKey(
+                        isEmpty(payload.songName) ? observedTitle : payload.songName,
+                        payload.artist),
+                observedKey);
+    }
+
     /**
      * provider-core publishes TrackIdentity.buildStableKey as
      * {@code id|title|artist|durationSeconds}. Bridge's display matcher uses

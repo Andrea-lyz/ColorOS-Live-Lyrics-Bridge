@@ -193,7 +193,8 @@ public final class BridgeDebugSettingsActivity extends SettingsBaseActivity {
                                 LyricUiSettings.SOURCE_DEBUG_SETTINGS)
                         .putExtra(
                                 LyricUiSettings.EXTRA_RESULT_RECEIVER,
-                                new DebugApplyResultReceiver(revision)));
+                                ResultReceiverTransport.forRemoteProcess(
+                                        new DebugApplyResultReceiver(revision))));
         sendBroadcast(intent);
         Toast.makeText(this, getString(R.string.debug_saved), Toast.LENGTH_SHORT).show();
         getWindow().getDecorView().postDelayed(() -> {
@@ -212,7 +213,8 @@ public final class BridgeDebugSettingsActivity extends SettingsBaseActivity {
                     .setPackage("com.android.systemui")
                     .putExtra(
                             LyricUiSettings.EXTRA_RESULT_RECEIVER,
-                            new DebugModuleStatusReceiver());
+                            ResultReceiverTransport.forRemoteProcess(
+                                    new DebugModuleStatusReceiver()));
             intent.addFlags(
                     Intent.FLAG_RECEIVER_REGISTERED_ONLY | Intent.FLAG_RECEIVER_FOREGROUND);
             sendBroadcast(intent);

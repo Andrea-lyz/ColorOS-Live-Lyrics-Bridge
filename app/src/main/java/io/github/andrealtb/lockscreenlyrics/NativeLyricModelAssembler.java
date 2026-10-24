@@ -75,7 +75,12 @@ final class NativeLyricModelAssembler {
             String displayLyric,
             boolean displayHasTimedLrc,
             String translationLyric) {
-        WordLyricModel model = parseWordLyric(rawLyric, rawHasTimedLrc, null, true, true);
+        // Native metadata can arrive before the Provider's raw extension, or carry a new
+        // identity that correctly prevents reusing the previous model. Render this packet's
+        // timed display source instead; plain LRC stays LINE_TIMED in the existing parser.
+        String primaryLyric = rawHasTimedLrc || !displayHasTimedLrc ? rawLyric : displayLyric;
+        WordLyricModel model = parseWordLyric(
+                primaryLyric, rawHasTimedLrc || displayHasTimedLrc, null, true, true);
         int aliasesApplied = 0;
         String firstAlias = "";
         int displayAdded = 0;
@@ -93,14 +98,14 @@ final class NativeLyricModelAssembler {
             displayAdded = mergeSupplementalTranslations(
                     model,
                     displayLyric,
-                    rawLyric,
+                    primaryLyric,
                     false,
                     displayHasTimedLrc,
                     displaySplitLines);
             translationAdded = mergeSupplementalTranslations(
                     model,
                     translationLyric,
-                    rawLyric,
+                    primaryLyric,
                     true,
                     LyricInfoContract.containsTimedLrc(translationLyric),
                     null);

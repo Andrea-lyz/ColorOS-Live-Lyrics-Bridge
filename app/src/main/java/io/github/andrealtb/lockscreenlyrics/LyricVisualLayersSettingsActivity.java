@@ -487,7 +487,8 @@ public final class LyricVisualLayersSettingsActivity extends SettingsBaseActivit
                                 LyricUiSettings.SOURCE_VISUAL_LAYERS)
                         .putExtra(
                                 LyricUiSettings.EXTRA_RESULT_RECEIVER,
-                                new VisualLayersApplyResultReceiver(revision)),
+                                ResultReceiverTransport.forRemoteProcess(
+                                        new VisualLayersApplyResultReceiver(revision))),
                 config);
         sendBroadcast(intent);
         savedConfig = config;
@@ -511,7 +512,7 @@ public final class LyricVisualLayersSettingsActivity extends SettingsBaseActivit
         }, APPLY_ACK_TIMEOUT_MS);
     }
 
-    /** Named ResultReceiver: anonymous numbering shifts across builds and crashes SystemUI. */
+    /** This callback remains local; ResultReceiverTransport exports its Binder proxy. */
     private final class VisualLayersApplyResultReceiver extends ResultReceiver {
         private final long revision;
 

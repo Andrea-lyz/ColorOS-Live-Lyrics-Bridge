@@ -1,0 +1,12 @@
+apk=PlayerSource/SystemUI/UI7/SystemUIPlugin.apk
+apkPackage=com.oplus.systemui.plugins
+apkVersionCode=16001002
+apkSha256=A63E68702113EC0AE2701D9042FB10010A49C07F04D40A368C8DD2A07FF15B83
+class=com.oplus.systemui.plugins.shared.template.component.media.view.LyricsRecyclerView
+source=classes.dex field table and JADX sources, verified 2026-10-24
+spacing=public final int u; constructor getDimensionPixelSize(4, 0); x6.h.onBindViewHolder bottomMargin = i < getItemCount() - 1 ? this.b.u : 0
+duration=public final long v; constructor getInt(8, 300); i(v, ...) passes the duration to setDuration(long)
+inactiveScale=public final float B; constructor getFloat(7, 1.0f); x6.h.onBindViewHolder setScaleX/setScaleY(active ? 1.0f : recycler.B)
+fontWeight=public final int t; x6.h.onBindViewHolder Typeface.create(H, recycler.t, false); never line spacing
+fingerprint=u:I:0x11, v:J:0x11, B:F:0x11; C:Z:0x1, A:I:0x11
+jadxAliases=f2360t, f2361u, f2362v are display aliases for DEX fields t, u, v; never use these aliases in reflection

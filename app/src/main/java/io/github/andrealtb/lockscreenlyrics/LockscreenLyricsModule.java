@@ -306,6 +306,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     private volatile long lastOfficialFrameDecisionLogAt;
     private final Map<String, Long> officialRendererFallbackLogAt =
             new ConcurrentHashMap<>();
+    private int lastCustomDrawLogGeometryGeneration = -1;
     private volatile String lastOfficialFrameDecisionLogKey = "";
     private static final Map<String, Long> officialAdapterSuppressionLogTimes =
             new ConcurrentHashMap<>();
@@ -3998,6 +3999,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (currentWordLyricModel != null && hasAttachedLyricsRecyclerView()) {
             beginOfficialLyricTrackHandoff("lyricInfo temporarily unavailable");
         }
+        traceLyricModelState("provider-cleared", currentWordLyricModel);
         currentLyricProviderPayload = null;
         currentLyricObservedTrackKey = "";
         currentLyricProviderPackage = "";
@@ -4760,6 +4762,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 artist,
                 "SystemUI track changed");
         beginOfficialLyricTrackHandoff("SystemUI track changed");
+        traceLyricModelState("track-cleared", currentWordLyricModel);
         currentLyricProviderPayload = null;
         currentLyricObservedTrackKey = "";
         systemUiHasOfficialLyric = false;
@@ -10695,26 +10698,36 @@ public final class LockscreenLyricsModule extends XposedModule {
                 @Override
                 public void onReceive(Context receiverContext, Intent intent) {
                     if (intent == null) return;
-                    if (LyricUiSettings.ACTION_STYLE_CHANGED.equals(intent.getAction())) {
-                        handleLyricUiStyleSettingsChanged(receiverContext, intent);
-                    } else if (LyricUiSettings.ACTION_PLAYER_TRANSLATION_SETTINGS_CHANGED.equals(
-                            intent.getAction())) {
-                        handlePlayerTranslationSettingsChanged(receiverContext, intent);
-                    } else if (LyricUiSettings.ACTION_REQUEST_MEDIA_SNAPSHOT.equals(
-                            intent.getAction())) {
-                        sendMediaSnapshotResult(intent);
-                    } else if (LyricUiSettings.ACTION_REQUEST_MODULE_STATUS.equals(
-                            intent.getAction())) {
-                        handleModuleStatusRequest(intent);
-                    } else if (LyricUiSettings.ACTION_CONTENT_CLEANUP_CHANGED.equals(
-                            intent.getAction())) {
-                        handleLyricContentCleanupChanged(receiverContext, intent);
-                    } else if (LyricUiSettings.ACTION_DEBUG_SETTINGS_CHANGED.equals(
-                            intent.getAction())) {
-                        handleBridgeDebugSettingsChanged(receiverContext, intent);
-                    } else if (LyricUiSettings.ACTION_RESTART_SYSTEM_UI.equals(
-                            intent.getAction())) {
-                        handleSystemUiRestartRequest(intent);
+                    try {
+                        if (LyricUiSettings.ACTION_STYLE_CHANGED.equals(intent.getAction())) {
+                            handleLyricUiStyleSettingsChanged(receiverContext, intent);
+                        } else if (LyricUiSettings.ACTION_PLAYER_TRANSLATION_SETTINGS_CHANGED.equals(
+                                intent.getAction())) {
+                            handlePlayerTranslationSettingsChanged(receiverContext, intent);
+                        } else if (LyricUiSettings.ACTION_REQUEST_MEDIA_SNAPSHOT.equals(
+                                intent.getAction())) {
+                            sendMediaSnapshotResult(intent);
+                        } else if (LyricUiSettings.ACTION_REQUEST_MODULE_STATUS.equals(
+                                intent.getAction())) {
+                            handleModuleStatusRequest(intent);
+                        } else if (LyricUiSettings.ACTION_CONTENT_CLEANUP_CHANGED.equals(
+                                intent.getAction())) {
+                            handleLyricContentCleanupChanged(receiverContext, intent);
+                        } else if (LyricUiSettings.ACTION_DEBUG_SETTINGS_CHANGED.equals(
+                                intent.getAction())) {
+                            handleBridgeDebugSettingsChanged(receiverContext, intent);
+                        } else if (LyricUiSettings.ACTION_RESTART_SYSTEM_UI.equals(
+                                intent.getAction())) {
+                            handleSystemUiRestartRequest(intent);
+                        }
+                    } catch (RuntimeException failure) {
+                        // An unreadable callback or stale request must not kill the host process.
+                        warn(
+                                LyricLogFormatter.Area.SETTINGS,
+                                "settings-request-failed",
+                                "Could not handle settings request"
+                                        + " | action=" + intent.getAction()
+                                        + ", error=" + failure.getClass().getSimpleName());
                     }
                 }
             };
@@ -11471,8 +11484,25 @@ public final class LockscreenLyricsModule extends XposedModule {
         boolean rawTimed = LyricInfoContract.containsTimedLrc(rawLyric);
         String payloadKey = payloadTrackKey(payload);
         String signature = buildWordLyricModelSignature(payload, rawLyric, translationLyric);
+        if (!rawTimed) {
+            String observedKey = buildTrackKey(observedTitle, observedArtist);
+            if (TextUtils.isEmpty(payloadKey)) payloadKey = observedKey;
+            signature = "native-display|" + observedKey + '|' + signature;
+        }
+        final boolean hadModel = currentWordLyricModel != null;
+        final LyricInfoTrackMatcher.NativeOnlyModelRetention retention =
+                !rawTimed && hadModel && lastSystemUiPackageSupported
+                        ? LyricInfoTrackMatcher.nativeOnlyModelRetention(
+                                currentLyricProviderPayload,
+                                currentLyricObservedTrackKey,
+                                currentLyricProviderPackage,
+                                payload,
+                                packageName,
+                                observedTitle,
+                                observedArtist)
+                        : null;
         NativeLyricModelAssembler.AssemblyResult assembled = null;
-        if (rawTimed
+        if (retention != LyricInfoTrackMatcher.NativeOnlyModelRetention.RETAIN
                 && !(currentWordLyricModel != null
                 && !TextUtils.isEmpty(signature)
                 && signature.equals(currentWordLyricModelSignature))) {
@@ -11480,7 +11510,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             try {
                 assembled = nativeLyricModelAssembler.assemble(
                         rawLyric,
-                        true,
+                        rawTimed,
                         displayLyric,
                         displayTimed,
                         translationLyric);
@@ -11500,6 +11530,19 @@ public final class LockscreenLyricsModule extends XposedModule {
             return false;
         }
 
+        if (retention == LyricInfoTrackMatcher.NativeOnlyModelRetention.RETAIN) {
+            // Keep the complete payload and cleanup/translation lanes along with its model.
+            // The caller still forwards this native update and remembers the new load context.
+            markScreenTimeoutLyricModelEvidence();
+            info(BridgeDebugArea.RENDERER, BridgeEvents.LYRIC_MODEL_RETAINED,
+                    "Retained identity-bound custom model during native-only refresh"
+                            + " | epoch=" + loadEpoch
+                            + ", track=" + SensitiveFieldRedactor.trackHash(
+                                    currentLyricObservedTrackKey));
+            updateScreenTimeoutWakeLock(currentApplicationContext());
+            return true;
+        }
+
         rememberCurrentCleanupSnapshot(originalPayload, observedTitle, observedArtist);
         acceptCurrentLyricProvider(
                 chain,
@@ -11512,13 +11555,6 @@ public final class LockscreenLyricsModule extends XposedModule {
             markScreenTimeoutLyricModelEvidence();
         } else {
             screenTimeoutLyricEvidenceGraceUntilElapsedMs = 0L;
-        }
-        if (!rawTimed) {
-            clearWordLyricModelState(
-                    BridgeDebugArea.MEDIA,
-                    BridgeEvents.DETAIL,
-                    "Accepted SystemUI timed lyric without word model");
-            return true;
         }
         if (assembled == null) {
             updateScreenTimeoutWakeLock(currentApplicationContext());
@@ -11566,6 +11602,21 @@ public final class LockscreenLyricsModule extends XposedModule {
                     "Lyrics Core returned no renderable model; using official SystemUI lyric renderer");
             return true;
         }
+        if (!rawTimed) {
+            StructuredBridgeLog.debugTransition(
+                    BridgeDebugArea.RENDERER,
+                    BridgeEvents.LYRIC_MODEL_STATE,
+                    () -> "action=native-display-model"
+                            + ", epoch=" + loadEpoch
+                            + ", previousModel=" + hadModel
+                            + ", retention=" + (retention != null
+                                    ? retention.name()
+                                    : hadModel ? "player-inactive" : "model-missing")
+                            + ", lines=" + model.lines.size()
+                            + ", parser=" + model.parserName
+                            + ", track=" + SensitiveFieldRedactor.trackHash(
+                                    buildTrackKey(observedTitle, observedArtist)));
+        }
         publishWordLyricModel(model, signature, payloadKey);
         return true;
     }
@@ -11591,6 +11642,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private void clearWordLyricModelState(BridgeDebugArea area, String event, String message) {
+        traceLyricModelState("cleared", currentWordLyricModel);
         cancelBrightLyricGeometryCommit();
         currentWordLyricModel = null;
         currentWordLyricModelSignature = "";
@@ -11619,6 +11671,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         activeRendererWordLine = null;
         officialLyricTextRenderer.clearGlowCache();
         officialLyricTextRenderer.cancelModelSwitchReveal();
+        traceLyricModelState("published", model);
         info(BridgeDebugArea.LYRIC, BridgeEvents.DETAIL,
                 "Cached native SystemUI word lyric model, parser=" + model.parserName
                         + ", lines=" + model.lines.size()
@@ -11639,6 +11692,22 @@ public final class LockscreenLyricsModule extends XposedModule {
         });
         updateScreenTimeoutWakeLock(currentApplicationContext());
     }
+
+    private void traceLyricModelState(String action, WordLyricModel model) {
+        StructuredBridgeLog.debugTransition(
+                BridgeDebugArea.RENDERER,
+                BridgeEvents.LYRIC_MODEL_STATE,
+                () -> "action=" + action
+                        + ", elapsedMs=" + SystemClock.elapsedRealtime()
+                        + ", modelId=" + (model == null
+                                ? "none" : Integer.toHexString(System.identityHashCode(model)))
+                        + ", lines=" + (model == null ? 0 : model.lines.size())
+                        + ", translations=" + (model == null ? 0 : model.translationCount())
+                        + ", geometryGeneration=" + brightLyricGeometryCommitGeneration
+                        + ", track=" + SensitiveFieldRedactor.trackHash(
+                                currentLyricObservedTrackKey));
+    }
+
     private void beginOfficialLyricTrackHandoff(String reason) {
         beginOfficialLyricTrackHandoff(reason, true);
     }
@@ -11659,9 +11728,14 @@ public final class LockscreenLyricsModule extends XposedModule {
                 now + SYSTEMUI_LYRIC_MODEL_HANDOFF_MAX_MS;
         pendingCustomLyricTakeoverFade = true;
         int generation = ++officialLyricHandoffGeneration;
-        if (isLyricLayoutDiagnosticsEnabled()) {
-            info(BridgeDebugArea.RENDERER, BridgeEvents.RENDER_STATE_CHANGED, "Suppressing official lyric frames during track handoff, reason=" + reason);
-        }
+        StructuredBridgeLog.debugTransition(
+                BridgeDebugArea.RENDERER,
+                BridgeEvents.LYRIC_HANDOFF,
+                () -> "action=begin, generation=" + generation
+                        + ", reason=" + reason
+                        + ", elapsedMs=" + now
+                        + ", model=" + (currentWordLyricModel != null)
+                        + ", limitMs=" + SYSTEMUI_LYRIC_MODEL_HANDOFF_MAX_MS);
         mainHandler.post(() -> {
             suppressRememberedLyricsRecyclerViews();
             invalidateRememberedLyricViews();
@@ -11674,9 +11748,12 @@ public final class LockscreenLyricsModule extends XposedModule {
             officialLyricHandoffStartedAtElapsedMs = 0L;
             officialLyricHandoffReleaseRetryGeneration = -1;
             pendingCustomLyricTakeoverFade = false;
-            if (isLyricLayoutDiagnosticsEnabled()) {
-                info(BridgeDebugArea.RENDERER, BridgeEvents.RENDER_STATE_CHANGED, "Fading lyric renderer in after handoff timeout");
-            }
+            StructuredBridgeLog.debugTransition(
+                    BridgeDebugArea.RENDERER,
+                    BridgeEvents.LYRIC_HANDOFF,
+                    () -> "action=timeout, generation=" + generation
+                            + ", elapsedMs=" + SystemClock.elapsedRealtime()
+                            + ", model=" + (currentWordLyricModel != null));
             restoreSuppressedLyricsRecyclerViews(true);
             invalidateRememberedLyricViews();
         }, SYSTEMUI_LYRIC_MODEL_HANDOFF_MAX_MS);
@@ -11688,11 +11765,21 @@ public final class LockscreenLyricsModule extends XposedModule {
                 && !pendingCustomLyricTakeoverFade) {
             return;
         }
+        int finishedGeneration = officialLyricHandoffGeneration;
+        long startedAt = officialLyricHandoffStartedAtElapsedMs;
         officialLyricDrawSuppressedUntilElapsedMs = 0L;
         officialLyricHandoffStartedAtElapsedMs = 0L;
         officialLyricHandoffReleaseRetryGeneration = -1;
         pendingCustomLyricTakeoverFade = false;
         int generation = ++officialLyricHandoffGeneration;
+        StructuredBridgeLog.debugTransition(
+                BridgeDebugArea.RENDERER,
+                BridgeEvents.LYRIC_HANDOFF,
+                () -> "action=finish, generation=" + finishedGeneration
+                        + ", elapsedMs=" + SystemClock.elapsedRealtime()
+                        + ", heldMs=" + (startedAt > 0L
+                                ? SystemClock.elapsedRealtime() - startedAt : -1L)
+                        + ", model=" + (currentWordLyricModel != null));
         mainHandler.post(() -> {
             invalidateRememberedLyricViews();
             View anchor = firstAttachedLyricsRecyclerView();
@@ -12205,6 +12292,24 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private void maybeLogTextViewDraw(DrawFrame frame, TextView view) {
+        if (frame != null && view != null
+                && StructuredBridgeLog.isAreaEnabled(BridgeDebugArea.RENDERER)
+                && lastCustomDrawLogGeometryGeneration != brightLyricGeometryCommitGeneration) {
+            int geometryGeneration = brightLyricGeometryCommitGeneration;
+            lastCustomDrawLogGeometryGeneration = geometryGeneration;
+            StructuredBridgeLog.debugTransition(
+                    BridgeDebugArea.RENDERER,
+                    BridgeEvents.LYRIC_CUSTOM_FRAME,
+                    () -> "elapsedMs=" + SystemClock.elapsedRealtime()
+                            + ", geometryGeneration=" + geometryGeneration
+                            + ", modelId=" + Integer.toHexString(
+                                    System.identityHashCode(frame.model))
+                            + ", viewId=" + Integer.toHexString(System.identityHashCode(view))
+                            + ", lineIndex=" + frame.lineIndex
+                            + ", active=" + frame.active
+                            + ", shown=" + view.isShown()
+                            + ", viewAlpha=" + view.getAlpha());
+        }
         if (!isLyricVerboseDiagnosticsEnabled()) {
             return;
         }
@@ -12233,7 +12338,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             TextView view,
             WordLyricModel model,
             String detail) {
-        if (!isLyricVerboseDiagnosticsEnabled() || view == null
+        if (!StructuredBridgeLog.isAreaEnabled(BridgeDebugArea.RENDERER) || view == null
                 || !isInLyricsRecyclerView(view)) {
             return;
         }
@@ -12242,6 +12347,21 @@ public final class LockscreenLyricsModule extends XposedModule {
         Long last = officialRendererFallbackLogAt.get(safeReason);
         if (last != null && now - last < 3_000L) return;
         officialRendererFallbackLogAt.put(safeReason, now);
+        StructuredBridgeLog.debugTransition(
+                BridgeDebugArea.RENDERER,
+                BridgeEvents.LYRIC_RENDER_FALLBACK,
+                () -> "reason=" + safeReason
+                        + ", elapsedMs=" + now
+                        + ", modelId=" + (model == null
+                                ? "none" : Integer.toHexString(System.identityHashCode(model)))
+                        + ", viewId=" + Integer.toHexString(System.identityHashCode(view))
+                        + ", handoffRemainingMs=" + Math.max(
+                                0L, officialLyricDrawSuppressedUntilElapsedMs - now)
+                        + ", fadeRemainingMs=" + Math.max(
+                                0L, lyricRecyclerFadeInUntilElapsedMs - now));
+        if (!isLyricVerboseDiagnosticsEnabled()) {
+            return;
+        }
         info(BridgeDebugArea.RENDERER, BridgeEvents.RENDER_STATE_CHANGED, "Official lyric renderer fallback"
                 + " | reason=" + safeReason
                 + ", alignment=" + lyricUiConfig.alignment

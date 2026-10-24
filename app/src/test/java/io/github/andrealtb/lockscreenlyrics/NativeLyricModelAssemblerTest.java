@@ -7,6 +7,7 @@ import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
+import io.github.andrealtb.lockscreenlyrics.render.LyricTimingMode;
 import io.github.andrealtb.lockscreenlyrics.render.WordLine;
 import io.github.andrealtb.lockscreenlyrics.render.WordLyricModel;
 
@@ -145,6 +146,58 @@ public final class NativeLyricModelAssemblerTest {
         assertEquals(0, result.aliasesApplied);
         assertEquals(0, result.supplementalDisplayAdded);
         assertEquals(0, result.supplementalTranslationAdded);
+    }
+
+    @Test
+    public void nativeDisplayWithoutRawSourceBuildsLineTimedModel() {
+        String display = "[00:01.000]Hello world\n[00:05.000]Next line\n";
+        NativeLyricModelAssembler.AssemblyResult result = assembler().assemble(
+                "", false, display, true, "[00:01.000]你好世界\n");
+
+        assertEquals(2, result.model.lines.size());
+        WordLine hello = result.model.lines.get(0);
+        assertEquals("Hello world", hello.text);
+        assertEquals(1_000L, hello.timeMillis);
+        assertEquals(LyricTimingMode.LINE_TIMED, hello.timingMode);
+        assertEquals(1, hello.words.size());
+        assertEquals("你好世界", hello.translation);
+        assertEquals(0, result.supplementalDisplayAdded);
+        assertEquals(1, result.supplementalTranslationAdded);
+        assertEquals(LyricTimingMode.LINE_TIMED, result.model.lines.get(1).timingMode);
+        assertEquals(5_000L, result.model.lines.get(1).timeMillis);
+    }
+
+    @Test
+    public void completeSourceReplacesNativeLineTimingWithRealWordTiming() {
+        String display = "[00:01.000]Hello world\n[00:05.000]Next line\n";
+        String raw = "[00:01.000]<00:01.000>Hello <00:02.000>world<00:03.000>\n"
+                + "[00:05.000]Next line\n";
+        NativeLyricModelAssembler parser = assembler();
+        WordLyricModel nativeModel = parser.assemble(
+                "", false, display, true, "").model;
+        WordLyricModel completeModel = parser.assemble(
+                raw, true, display, true, "").model;
+
+        assertEquals(2, nativeModel.lines.size());
+        assertEquals(LyricTimingMode.LINE_TIMED, nativeModel.lines.get(0).timingMode);
+        assertEquals(1, nativeModel.lines.get(0).words.size());
+        WordLine timed = completeModel.lines.get(0);
+        assertEquals(LyricTimingMode.WORD_TIMED, timed.timingMode);
+        assertEquals(2, timed.words.size());
+        assertEquals(2_000L, timed.words.get(1).timeMillis);
+        assertEquals("Hello world", timed.displayText);
+    }
+
+    @Test
+    public void untimedRawFieldDoesNotBlockTheValidNativeDisplay() {
+        String display = "[00:01.000]Current song\n[00:05.000]Next line\n";
+        NativeLyricModelAssembler.AssemblyResult result = assembler().assemble(
+                "unusable raw text", false, display, true, "");
+
+        assertEquals(2, result.model.lines.size());
+        assertEquals("Current song", result.model.lines.get(0).text);
+        assertEquals(LyricTimingMode.LINE_TIMED, result.model.lines.get(0).timingMode);
+        assertEquals(0, result.supplementalDisplayAdded);
     }
 
     @Test

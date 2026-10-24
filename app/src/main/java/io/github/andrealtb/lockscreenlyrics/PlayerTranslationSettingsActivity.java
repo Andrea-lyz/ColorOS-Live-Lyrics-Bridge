@@ -367,7 +367,8 @@ public final class PlayerTranslationSettingsActivity extends SettingsBaseActivit
                         LyricUiSettings.SOURCE_PLAYER_TRANSLATION)
                 .putExtra(
                         LyricUiSettings.EXTRA_RESULT_RECEIVER,
-                        createApplyResultReceiver(revision));
+                        ResultReceiverTransport.forRemoteProcess(
+                                createApplyResultReceiver(revision)));
         sendBroadcast(intent);
         clearRequestedPackages.clear();
         logSettingsEvent(
@@ -393,7 +394,7 @@ public final class PlayerTranslationSettingsActivity extends SettingsBaseActivit
         return new PlayerTranslationApplyResultReceiver(revision);
     }
 
-    /** Named ResultReceiver: anonymous numbering shifts across builds and crashes SystemUI. */
+    /** This callback remains local; ResultReceiverTransport exports its Binder proxy. */
     private final class PlayerTranslationApplyResultReceiver extends ResultReceiver {
         private final long revision;
 

@@ -2176,7 +2176,8 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
                     .setPackage("com.android.systemui")
                     .putExtra(
                             LyricUiSettings.EXTRA_RESULT_RECEIVER,
-                            createModuleStatusResultReceiver());
+                            ResultReceiverTransport.forRemoteProcess(
+                                    createModuleStatusResultReceiver()));
             intent.addFlags(
                     Intent.FLAG_RECEIVER_REGISTERED_ONLY | Intent.FLAG_RECEIVER_FOREGROUND);
             sendBroadcast(intent);
@@ -2210,11 +2211,7 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
         activationText.setText(label);
     }
 
-    /**
-     * Named (not anonymous) ResultReceivers: the class name is parceled to SystemUI, and
-     * anonymous numbering shifts whenever the activity gains new anonymous classes, which
-     * crashes SystemUI with BadParcelableException after an APK update. Keep names stable.
-     */
+    /** Callbacks stay in the settings app; only framework proxies are sent to SystemUI. */
     private final class SystemUiRestartResultReceiver extends ResultReceiver {
         private final long requestId;
 
@@ -2406,7 +2403,8 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
                             requestId)
                     .putExtra(
                             LyricUiSettings.EXTRA_SYSTEM_UI_RESTART_RESULT_RECEIVER,
-                            createSystemUiRestartResultReceiver(requestId));
+                            ResultReceiverTransport.forRemoteProcess(
+                                    createSystemUiRestartResultReceiver(requestId)));
             intent.addFlags(
                     Intent.FLAG_RECEIVER_REGISTERED_ONLY | Intent.FLAG_RECEIVER_FOREGROUND);
             sendBroadcast(intent);
@@ -2455,7 +2453,8 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
                                 LyricUiSettings.SOURCE_MAIN_SETTINGS)
                         .putExtra(
                                 LyricUiSettings.EXTRA_RESULT_RECEIVER,
-                                createApplyResultReceiver(revision)),
+                                ResultReceiverTransport.forRemoteProcess(
+                                        createApplyResultReceiver(revision))),
                 config);
         // SystemUI registers its dynamic receiver with CHANGE_SETTINGS_PERMISSION, which
         // authenticates this sender. Passing the same value as receiverPermission would

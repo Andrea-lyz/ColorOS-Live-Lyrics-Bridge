@@ -25,6 +25,13 @@ final class OfficialLyricsRecyclerCompatibility {
             return uvC;
         }
 
+        // Verified realme UI7 16.001.002: u=int spacing, v=long duration, B=float scale.
+        // f2361u/f2362v are JADX aliases, not names in the APK's DEX field table.
+        Binding uvB = bindingIfExact(recyclerClass, "u", "v", "B", "u/v/B");
+        if (uvB != null) {
+            return uvB;
+        }
+
         // SystemUIPlugin 16.001.002 user: t=int spacing, u=long duration, A=float scale.
         return bindingIfExact(recyclerClass, "t", "u", "A", "t/u/A");
     }
