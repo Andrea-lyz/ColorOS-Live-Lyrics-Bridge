@@ -44,4 +44,14 @@ UI7 反编译参考位于工作区 `.codex-tmp/ui7-plugin-jadx/sources/`，样�
 
 ## 发布与设备状态
 
-RC1 已被后续代码替代。RC2 已在设备复测中确认仍有三行残留，不可作为最终候选发布。新的事务实现将生成 RC3；验收窗口包括连续切歌、共有制作信息、展开/亮屏、逐字/翻译与 AOD 恢复。需要设备验证：最终签名 RC3 的视觉效果与厂商原生过渡是否连贯。
+RC1 已被后续代码替代。RC2 已在设备复测中确认仍有三行残留。RC3 出现下述正式混淆包回归，同样不可发布。后续使用新签名 RC4 验证连续切歌、共有制作信息、展开/亮屏、逐字/翻译与 AOD 恢复。
+
+## RC3 正式包回归：R8 改写了外部类型标识
+
+用户复测出现原生大字、高亮与翻译自绘失效。最新同窗日志确认模型正常解析、发布，但连续出现 `LYRIC_RENDER_FALLBACK reason=dataset-unsupported`，活跃行刷新均为 `updated=0`，没有成功安装 adapter binding transactions 的记录。这是 Bridge 自绘主动回退原生，不是 Provider 未送达歌词。
+
+独立检查实际签名 RC3 的 DEX：入口为 `r2.y1`，`t3(Object)` 中原先用于识别宿主 `RecyclerView$Adapter` 的类名比较被 R8 改写为 `"a1.k0".equals(superclass.getName())`。`a1.k0` 是本模块打包的 AndroidX 类型名，不属于 SystemUI 的 ClassLoader。原生 C17 APK 的真实 DEX 类型仍为 `androidx.recyclerview.widget.RecyclerView$Adapter`，两个标识不匹配，导致 `tryInstallLyricAdapterBindHook` 始终失败，原生 dataset 被标成 unsupported。仅检查 debug 测试、签名、包名、哈希，不能证明这条 release 反射契约成立。
+
+改为 `LyricRecyclerAdapterContract` 从宿主自己的层级和反射签名发现 Adapter 基类：公开抽象的 count、bind、create 方法必须使用同一宿主 holder 类型，holder 必须包含公开 final View 字段。绑定方法也从该宿主基类的实际签名解析到具体 override，不依赖本模块的 AndroidX 类名、类身份或混淆名；基类默认 payload 包装方法不进入 Hook。类型发现与 Hook 安装按类缓存，并为不支持的契约记录一次明确诊断。
+
+RC4 本地检查：866 项测试，860 通过、6 项既有条件跳过，0 失败/错误；assembleDebug、lintDebug、lintRelease 均通过，lint 各 0 错误、54 警告。新增 6 项覆盖真实 AndroidX Adapter、不同类名/方法名的宿主结构、无关 holder 重载、默认包装方法、继承 override 和不完整结构。候选交付前还需检查最终 R8 APK 中的实际识别路径，设备效果仍待 RC4 复测。
