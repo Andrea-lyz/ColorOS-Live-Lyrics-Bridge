@@ -699,6 +699,11 @@ public final class LockscreenLyricsModule extends XposedModule {
                 }
 
                 @Override
+                public boolean isUnboundLyricsRecyclerRow(TextView textView) {
+                    return LockscreenLyricsModule.isUnboundLyricsRecyclerRow(textView);
+                }
+
+                @Override
                 public View findContainingLyricsRecyclerView(TextView textView) {
                     return LockscreenLyricsModule.this.findContainingLyricsRecyclerView(textView);
                 }
@@ -6824,7 +6829,8 @@ public final class LockscreenLyricsModule extends XposedModule {
                     && text.length() > 0
                     && text.length() <= lyricTextLengthLimit()
                     && model.hasRenderableText(normalizedText)
-                    && findContainingLyricsRecyclerView(textView) == recycler) {
+                    && findContainingLyricsRecyclerView(textView) == recycler
+                    && !isUnboundLyricsRecyclerRow(textView)) {
                 counts[0]++;
                 int bindEpoch = ensureLyricTextBindEpoch(textView);
                 int contentHash = charSequenceContentHash(text);
@@ -8829,6 +8835,22 @@ public final class LockscreenLyricsModule extends XposedModule {
         } catch (Throwable ignored) {
             return -1;
         }
+    }
+
+    private static boolean isUnboundLyricsRecyclerRow(TextView textView) {
+        LyricsRecyclerMatch match = findLyricsRecyclerMatch(textView);
+        if (match == null) {
+            return false;
+        }
+        View recycler = match.recycler();
+        View itemView = match.itemView();
+        if (recycler == null || itemView == null) {
+            return false;
+        }
+        return LyricRecyclerRowBinding.isUnbound(
+                recycler,
+                itemView,
+                resolveRecyclerChildPositionMethod(recycler.getClass()));
     }
 
     private static Method resolveRecyclerChildPositionMethod(Class<?> recyclerClass) {

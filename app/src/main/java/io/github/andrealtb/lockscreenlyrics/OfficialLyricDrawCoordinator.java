@@ -47,6 +47,8 @@ final class OfficialLyricDrawCoordinator {
 
         boolean shouldSuppressOfficialLyricForTrackHandoff();
 
+        boolean isUnboundLyricsRecyclerRow(TextView textView);
+
         View findContainingLyricsRecyclerView(TextView textView);
 
         boolean activateSystemUiLyricModeFromPendingDraw(
@@ -149,15 +151,6 @@ final class OfficialLyricDrawCoordinator {
         boolean recyclerFadeInProgress =
                 drawElapsedRealtime < host.lyricRecyclerFadeInUntilElapsedMs();
         WordLyricModel model = host.currentWordLyricModel();
-        synchronized (failedBindings) {
-            WordLyricModel failedModel = failedBindings.get(textView);
-            if (failedModel == model && model != null) {
-                return proceed.proceed();
-            }
-            if (failedModel != null && failedModel != model) {
-                failedBindings.remove(textView);
-            }
-        }
         if (model == null && !suppressingTrackHandoff && !recyclerFadeInProgress) {
             if (lyricsRecycler == null) {
                 lyricsRecycler = host.findContainingLyricsRecyclerView(textView);
@@ -182,6 +175,23 @@ final class OfficialLyricDrawCoordinator {
                 && lyricsRecycler.getVisibility() != View.VISIBLE) {
             host.forgetRecentOfficialDrawFrame(textView);
             return null;
+        }
+        if (model != null && host.isUnboundLyricsRecyclerRow(textView)) {
+            // Removed/change-animation holders can still be attached and contain text shared by
+            // the next song. Neither a text match nor a cached frame makes that holder current.
+            host.forgetRecentOfficialDrawFrame(textView);
+            host.scheduleBoundLyricFrameRetry(textView, model);
+            host.officialRendererFallback("row-unbound-suppressed", textView, model, "");
+            return null;
+        }
+        synchronized (failedBindings) {
+            WordLyricModel failedModel = failedBindings.get(textView);
+            if (failedModel == model && model != null) {
+                return proceed.proceed();
+            }
+            if (failedModel != null && failedModel != model) {
+                failedBindings.remove(textView);
+            }
         }
         boolean noteTraced = BridgePerfTrace.begin("CLL:lyricNoteVisible");
         try {
