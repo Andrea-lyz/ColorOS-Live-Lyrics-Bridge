@@ -393,7 +393,10 @@ public final class ArtworkSettingsActivity extends SettingsBaseActivity {
         try {
             Intent intent = new Intent(ArtworkDisplaySettings.ACTION_REQUEST_STATUS)
                     .setPackage("com.android.systemui")
-                    .putExtra(ArtworkDisplaySettings.EXTRA_RESULT_RECEIVER, new ArtworkStatusReceiver(request));
+                    .putExtra(
+                            ArtworkDisplaySettings.EXTRA_RESULT_RECEIVER,
+                            ResultReceiverTransport.forRemoteProcess(
+                                    new ArtworkStatusReceiver(request)));
             intent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY | Intent.FLAG_RECEIVER_FOREGROUND);
             sendBroadcast(intent);
         } catch (RuntimeException error) {
@@ -483,7 +486,7 @@ public final class ArtworkSettingsActivity extends SettingsBaseActivity {
         statusDetail.setVisibility(detail.isEmpty() ? View.GONE : View.VISIBLE);
     }
 
-    /** Named, not anonymous: its class name is parceled to SystemUI and must stay stable across updates. */
+    /** This callback remains local; ResultReceiverTransport exports its Binder proxy. */
     private final class ArtworkStatusReceiver extends ResultReceiver {
         private final long request;
 

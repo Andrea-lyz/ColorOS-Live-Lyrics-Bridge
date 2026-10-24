@@ -100,6 +100,7 @@ dependencies {
     implementation("org.jetbrains.kotlin:kotlin-stdlib:2.3.0")
     implementation("org.luckypray:dexkit:2.2.0")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.16.1")
     testImplementation("org.json:json:20260522")
     testImplementation(project(":libxposed-api-stubs"))
 }

@@ -212,11 +212,13 @@ public final class LyricOpeningCleanupSettingsActivity extends SettingsBaseActiv
         ResultReceiver receiver = new MediaSnapshotResultReceiver();
         Intent request = new Intent(LyricUiSettings.ACTION_REQUEST_MEDIA_SNAPSHOT)
                 .setPackage("com.android.systemui")
-                .putExtra(LyricUiSettings.EXTRA_RESULT_RECEIVER, receiver);
+                .putExtra(
+                        LyricUiSettings.EXTRA_RESULT_RECEIVER,
+                        ResultReceiverTransport.forRemoteProcess(receiver));
         sendBroadcast(request);
     }
 
-    /** Named ResultReceiver: anonymous numbering shifts across builds and crashes SystemUI. */
+    /** This callback remains local; ResultReceiverTransport exports its Binder proxy. */
     private final class MediaSnapshotResultReceiver extends ResultReceiver {
         MediaSnapshotResultReceiver() {
             super(new Handler(getMainLooper()));

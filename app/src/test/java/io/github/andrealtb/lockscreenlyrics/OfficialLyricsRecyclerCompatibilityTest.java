@@ -46,6 +46,32 @@ public class OfficialLyricsRecyclerCompatibilityTest {
     }
 
     @Test
+    public void realmeUi7UsesSpacingUAndScaleBWithoutChangingFontWeightOrDuration() {
+        Ui7Layout recycler = new Ui7Layout();
+
+        OfficialLyricsRecyclerCompatibility.Binding binding =
+                OfficialLyricsRecyclerCompatibility.resolve(recycler.getClass());
+
+        assertNotNull(binding);
+        assertEquals("u/v/B", binding.layoutName);
+        assertEquals(Integer.valueOf(20), binding.readLineSpacing(recycler));
+        assertEquals(Float.valueOf(0.73f), binding.readInactiveScale(recycler));
+        assertTrue(binding.writeLineSpacing(recycler, -20));
+        assertEquals(-20, recycler.u);
+        assertEquals(500, recycler.t);
+        assertEquals(300L, recycler.v);
+        assertTrue(binding.writeInactiveScale(recycler, 0.84f));
+        assertEquals(0.84f, recycler.B, 0.0001f);
+        assertTrue(recycler.C);
+    }
+
+    @Test
+    public void ui7BindingRejectsStaticSpacingOrWrongScaleType() {
+        assertNull(OfficialLyricsRecyclerCompatibility.resolve(StaticUi7Layout.class));
+        assertNull(OfficialLyricsRecyclerCompatibility.resolve(WrongUi7ScaleLayout.class));
+    }
+
+    @Test
     public void ambiguousFieldNameWithoutVerifiedFingerprintIsRejected() {
         assertNull(OfficialLyricsRecyclerCompatibility.resolve(
                 DangerousPartialLayout.class));
@@ -114,6 +140,26 @@ public class OfficialLyricsRecyclerCompatibilityTest {
     private static final class DangerousPartialLayout {
         long u = 340L;
         float A = 0.9f;
+    }
+
+    private static final class Ui7Layout {
+        int t = 500;
+        int u = 20;
+        long v = 300L;
+        float B = 0.73f;
+        boolean C = true;
+    }
+
+    private static final class StaticUi7Layout {
+        static int u = 20;
+        long v = 300L;
+        float B = 0.73f;
+    }
+
+    private static final class WrongUi7ScaleLayout {
+        int u = 20;
+        long v = 300L;
+        boolean B = true;
     }
 
     private static final class UnknownLayout {
