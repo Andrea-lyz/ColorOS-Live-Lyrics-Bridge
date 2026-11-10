@@ -128,6 +128,14 @@ public final class OfficialLyricDataset {
 
     public int size() { return rows.size(); }
 
+    public long timeMillisAt(int index) {
+        return index >= 0 && index < rows.size() ? rows.get(index).timeMillis : -1L;
+    }
+
+    public String textAt(int index) {
+        return index >= 0 && index < rows.size() ? rows.get(index).text : null;
+    }
+
     public boolean matchesNative(OfficialLyricDataset nativeDataset) {
         if (nativeDataset == null || rows.size() != nativeDataset.rows.size()) return false;
         for (int i = 0; i < rows.size(); i++) {

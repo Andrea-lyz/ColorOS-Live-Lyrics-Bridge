@@ -276,6 +276,7 @@ final class NativeLyricModelAssembler {
         String firstAlias = "";
         LinkedHashMap<String, Integer> textOccurrences = new LinkedHashMap<>();
         model.officialLines.clear();
+        model.clearOfficialDisplayAliases();
         model.renderableTextIndexBuilt = false;
         ArrayList<String> splitLines = sharedSplitLines != null
                 ? sharedSplitLines
@@ -336,6 +337,9 @@ final class NativeLyricModelAssembler {
                     && (openingTitleSlotReuse
                     || (displayMatchesMainText && !alreadyMapped));
             model.officialLines.add(reuseSlot ? wordLine : null);
+            if (reuseSlot && openingTitleSlotReuse) {
+                model.addOfficialDisplayAlias(officialIndex, normalizedDisplayText);
+            }
             traceOfficialAliasMapping(
                     model,
                     model.officialLines.size() - 1,

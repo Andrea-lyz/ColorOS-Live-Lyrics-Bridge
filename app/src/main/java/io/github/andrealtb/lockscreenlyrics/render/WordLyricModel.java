@@ -16,6 +16,8 @@ public final class WordLyricModel {
     public final ArrayList<WordLine> lines = new ArrayList<>();
     public final ArrayList<WordLine> officialLines = new ArrayList<>();
     public OfficialLyricDataset officialDataset;
+    private final LinkedHashMap<Integer, String> officialDisplayAliases = new LinkedHashMap<>();
+
     final ArrayList<String> renderableTextCountsKeys = new ArrayList<>();
     final ArrayList<Integer> renderableTextCountsValues = new ArrayList<>();
     final LinkedHashMap<String, Integer> renderableTextCounts = new LinkedHashMap<>();
@@ -29,6 +31,16 @@ public final class WordLyricModel {
     WordLine officialIndexCacheFirst;
     WordLine officialIndexCacheLast;
     public String parserName = "lyrics-core";
+
+    public void clearOfficialDisplayAliases() { officialDisplayAliases.clear(); }
+
+    public void addOfficialDisplayAlias(int index, String normalizedText) {
+        officialDisplayAliases.put(index, normalizedText);
+    }
+
+    public boolean matchesOfficialDisplayAlias(int index, String normalizedText) {
+        return !isEmpty(normalizedText) && normalizedText.equals(officialDisplayAliases.get(index));
+    }
 
     public WordLine findLine(long position, String currentLine) {
         String normalizedCurrent = WordLyricRenderSupport.normalizeLine(currentLine);
@@ -112,6 +124,16 @@ public final class WordLyricModel {
             return adapterLine;
         }
         return adapterLine;
+    }
+
+    /** Resolve a committed native row by its own time, never by the current playback occurrence. */
+    public WordLine lineAtBoundRow(int index, String normalizedText, long timeMillis) {
+        WordLine candidate = lineAtAdapterIndexMatchingText(index, normalizedText);
+        if (matchesOfficialDisplayAlias(index, normalizedText)) return lineAtOfficialIndex(index);
+        if (WordLyricRenderSupport.matchesWordLineRenderableText(candidate, normalizedText)
+                && !hasDuplicateRenderableText(normalizedText)) return candidate;
+        WordLine main = findLineByText(normalizedText, timeMillis);
+        return main != null ? main : findLineByTranslation(normalizedText, timeMillis);
     }
 
     public int indexOfLine(WordLine target) {

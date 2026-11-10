@@ -126,6 +126,13 @@ public final class LyricRenderTransactions<M> {
                 ? Status.READY : Status.WAITING;
     }
 
+    /** Immutable native row identity, available only for the current model/dataset/bind owner. */
+    public synchronized RowBinding readyRowBinding(Object surface, Object row, M model) {
+        if (rowStatus(surface, row, model) != Status.READY) return null;
+        RowBinding binding = rows.get(row).binding;
+        return binding.text() == null ? null : binding;
+    }
+
     /** Carries unchanged DiffUtil rows only after the complete native dataset is authoritative. */
     public synchronized RowStatus observeRowPosition(Object surface, Object row, int position, M model) {
         if (surfaceStatus(surface, model) != Status.READY) return RowStatus.WAITING;
@@ -239,6 +246,16 @@ public final class LyricRenderTransactions<M> {
         private final Epoch epoch;
         private final int position;
         private final Object lineage;
+
+        public int position() { return position; }
+
+        public long timeMillis() {
+            return epoch.dataset == null ? -1L : epoch.dataset.timeMillisAt(position);
+        }
+
+        public String text() {
+            return epoch.dataset == null ? null : epoch.dataset.textAt(position);
+        }
 
         private RowBinding(Surface surface, Epoch epoch, int position, Object lineage) {
             this.surface = surface;

@@ -326,6 +326,8 @@ public final class NativeLyricModelAssemblerTest {
         assertEquals(firstLyric, result.model.officialLines.get(0));
         assertNull(result.model.officialLines.get(3));
         assertEquals(0, result.model.adapterIndexOfLine(firstLyric));
+        assertEquals(firstLyric, result.model.lineAtBoundRow(
+                0, "回家的路 The Long Way Home - HOYO-MiX", 700L));
     }
 
     @Test
@@ -378,5 +380,25 @@ public final class NativeLyricModelAssemblerTest {
         assertEquals(2, result.model.officialLines.size());
         assertEquals(result.model.lines.get(0), result.model.officialLines.get(0));
         assertNull(result.model.officialLines.get(1));
+    }
+    @Test
+    public void bracketedAdlibKeepsFollowingNativeAndModelIndicesAligned() {
+        String raw = "[00:00.000]<00:00.000>Opening<00:01.000>\n"
+                + "[01:31.440]<01:31.440>[so simple and clean]<01:36.110>\n"
+                + "[01:36.660]<01:36.660>The daily things like this<01:40.290>\n"
+                + "[01:40.290]<01:40.290>and that and what is what<01:41.880>";
+        String display = OplusLyricNormalizer.normalizeForOfficialList(raw);
+        NativeLyricModelAssembler.AssemblyResult result = assembler().assemble(
+                raw, true, display, true, "");
+        io.github.andrealtb.lockscreenlyrics.render.OfficialLyricDataset nativeRows =
+                result.model.officialDataset;
+
+        assertEquals(result.model.officialLines.size(), nativeRows.size());
+        assertEquals(5, nativeRows.size());
+        WordLine daily = result.model.findActiveLine(97_945L);
+        assertEquals("The daily things like this", daily.text);
+        assertEquals(2, result.model.adapterIndexOfLine(daily));
+        assertEquals(daily, result.model.lineAtBoundRow(2, nativeRows.textAt(2),
+                nativeRows.timeMillisAt(2)));
     }
 }
