@@ -114,6 +114,7 @@ public final class OfficialLyricFrameResolverTest {
         model.officialLines.clear();
         model.officialLines.add(firstLyric);
         model.officialLines.add(null);
+        model.addOfficialDisplayAlias(0, "song title - artist");
 
         resolver.resolveInto(
                 model,
@@ -144,6 +145,49 @@ public final class OfficialLyricFrameResolverTest {
         assertNull(selection.line);
         assertNull(selection.translationLine);
         assertEquals("none", selection.matchReason);
+    }
+
+    @Test
+    public void ordinaryRowCannotImpersonateAnExplicitOpeningAlias() {
+        WordLine previous = line(125_910L, "When we are older you'll understand");
+        WordLine actual = line(130_200L, "It's enough when I say so");
+        WordLyricModel model = model(previous, actual);
+        resolver.resolveInto(model, actual.normalizedText, 0, 0, previous, previous,
+                130_200L, false, "", -1L, selection);
+        assertSame(actual, selection.line);
+        assertEquals("near-main", selection.matchReason);
+    }
+
+    @Test
+    public void openingAliasOnlyAuthorizesItsRecordedText() {
+        WordLine first = line(670L, "first lyric");
+        WordLyricModel model = model(first);
+        model.addOfficialDisplayAlias(0, "song title - artist");
+        resolver.resolveInto(model, "unrelated title", 0, 0, first, first,
+                700L, false, "", -1L, selection);
+        assertNull(selection.line);
+    }
+
+    @Test
+    public void boundRowTimeDisambiguatesRepeatedTextWithShiftedSlots() {
+        WordLine first = line(55_030L, "When we are older you'll understand");
+        WordLine skipped = line(120_480L, "But does that mean I have to walk on water?");
+        WordLine repeated = line(125_910L, "When we are older you'll understand");
+        WordLyricModel model = model(first, skipped, repeated);
+        WordLine bound = model.lineAtBoundRow(1, repeated.normalizedText, 125_910L);
+        resolver.resolveInto(model, repeated.normalizedText, 1, 1, bound, first,
+                55_030L, true, "", -1L, selection);
+        assertSame(repeated, selection.line);
+        assertEquals("indexed-main", selection.matchReason);
+    }
+
+    @Test
+    public void boundTimeOverridesSameTextAtAnEarlierSlot() {
+        WordLine first = line(55_030L, "repeat");
+        WordLine second = line(125_910L, "repeat");
+        WordLyricModel model = model(first, second);
+        assertSame(second, model.lineAtBoundRow(0, "repeat", 125_910L));
+        assertNull(model.lineAtBoundRow(0, "foreign song", 125_910L));
     }
 
     private static WordLyricModel model(WordLine... lines) {

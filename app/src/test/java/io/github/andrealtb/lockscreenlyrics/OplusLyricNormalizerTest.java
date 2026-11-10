@@ -1,6 +1,10 @@
 package io.github.andrealtb.lockscreenlyrics;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+
+import io.github.andrealtb.lockscreenlyrics.render.OfficialLyricDataset;
+import io.github.andrealtb.lockscreenlyrics.render.WordLyricRenderSupport;
 
 import org.junit.Test;
 
@@ -189,4 +193,42 @@ public final class OplusLyricNormalizerTest {
                 + "[00:16.000]" + LyricTextSanitizer.ZERO_WIDTH_SPACE + "", normalized);
     }
 
+    @Test
+    public void bracketOnlyLyricDoesNotDisappearFromNativeRows() {
+        String source = "[00:00.000]Opening\n"
+                + "[01:31.440][so simple and clean]\n"
+                + "[01:36.660]The daily things like this\n"
+                + "[01:40.290]and that and what is what";
+        // This mirrors the verified native parser: consecutive [] groups are all consumed,
+        // including a non-time group, so the unescaped bracket-only lyric is lost.
+        assertEquals(3, OfficialLyricDataset.fromDisplaySource(source).size());
+
+        String normalized = OplusLyricNormalizer.normalizeForOfficialList(source);
+        OfficialLyricDataset nativeRows = OfficialLyricDataset.fromDisplaySource(normalized);
+        assertEquals(5, nativeRows.size()); // Four lyrics plus the existing tail spacer.
+        assertEquals(91_440L, nativeRows.timeMillisAt(1));
+        assertEquals("[so simple and clean]",
+                WordLyricRenderSupport.normalizeLine(nativeRows.textAt(1)));
+        assertEquals(96_660L, nativeRows.timeMillisAt(2));
+        assertEquals("The daily things like this", nativeRows.textAt(2));
+        assertEquals("and that and what is what", nativeRows.textAt(3));
+    }
+
+    @Test
+    public void leadingBracketAnnotationRemainsPartOfTheDisplayedText() {
+        String normalized = OplusLyricNormalizer.normalizeForOfficialList(
+                "[00:01.000][echo] Sing again");
+        OfficialLyricDataset nativeRows = OfficialLyricDataset.fromDisplaySource(normalized);
+        assertEquals("[echo] Sing again",
+                WordLyricRenderSupport.normalizeLine(nativeRows.textAt(0)));
+    }
+
+    @Test
+    public void bracketProtectionIsInvisibleAndNormalizationIsIdempotent() {
+        String normalized = OplusLyricNormalizer.normalizeForOfficialList(
+                "[00:01.000]<00:01.000>[echo]<00:02.000>");
+        assertTrue(normalized.startsWith("[00:01.000]"
+                + LyricTextSanitizer.ZERO_WIDTH_SPACE + "[echo]"));
+        assertEquals(normalized, OplusLyricNormalizer.normalizeForOfficialList(normalized));
+    }
 }

@@ -45,7 +45,8 @@ public final class OfficialLyricFrameResolver {
                 && translationLine == null
                 && indexedLine != null
                 && adapterPosition >= 0
-                && model.lineAtOfficialIndex(adapterPosition) == indexedLine) {
+                && model.lineAtOfficialIndex(adapterPosition) == indexedLine
+                && model.matchesOfficialDisplayAlias(adapterPosition, normalizedText)) {
             // A verified opening title/artist credit may deliberately reuse the first real word
             // line. The official TextView still contains the credit text, so text matching cannot
             // select it; the explicit official-slot mapping is the authorization to draw it.

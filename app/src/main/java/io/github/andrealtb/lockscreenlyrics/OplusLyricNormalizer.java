@@ -96,7 +96,14 @@ final class OplusLyricNormalizer {
         if (out.length() > 0) {
             out.append('\n');
         }
-        out.append('[').append(formatLrcTime(timeMillis)).append(']').append(text);
+        out.append('[').append(formatLrcTime(timeMillis)).append(']');
+        // The native LRC parser consumes every consecutive leading [] group, even a non-time
+        // lyric such as [so simple and clean]. Stop its tag scan without changing visible text
+        // or adding/removing a row; the custom renderer already removes this ignorable marker.
+        if (text.charAt(0) == '[') {
+            out.append(LyricTextSanitizer.ZERO_WIDTH_SPACE);
+        }
+        out.append(text);
     }
 
     private static void appendTailSpacerLyricLine(

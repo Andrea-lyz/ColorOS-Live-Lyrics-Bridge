@@ -5596,11 +5596,25 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (textView == null) {
             return "";
         }
-        CharSequence value = textView.getText();
+        // A retained/recycled TextView can still expose another row's text while the native
+        // adapter's committed dataset and real bind owner are already known. Match and measure
+        // the immutable bound row, not that mutable string. No ownership is inferred from text.
+        LyricRenderTransactions.RowBinding binding = readyLyricRowBinding(
+                textView, currentWordLyricModel);
+        CharSequence value = binding == null ? textView.getText() : binding.text();
         if (value == null) {
             return "";
         }
         NormalizedTextSnapshot cached = normalizedLyricTextCache.get(textView);
+        if (binding != null && (cached == null || cached.source != value)
+                && !TextUtils.equals(textView.getText(), value)) {
+            StructuredBridgeLog.debugTransition(
+                    BridgeDebugArea.RENDERER, BridgeEvents.RENDER_STATE_CHANGED,
+                    () -> "action=bound-row-text-recovered, adapterPosition=" + binding.position()
+                            + ", timeMs=" + binding.timeMillis()
+                            + ", boundChars=" + binding.text().length()
+                            + ", viewChars=" + textView.length());
+        }
         if (cached != null
                 && cached.source == value
                 && cached.length == value.length()
@@ -5620,6 +5634,20 @@ public final class LockscreenLyricsModule extends XposedModule {
                 textView,
                 new NormalizedTextSnapshot(value, value.length(), contentHash, normalized));
         return normalized;
+    }
+
+    private LyricRenderTransactions.RowBinding readyLyricRowBinding(
+            TextView textView, WordLyricModel model) {
+        return textView == null || model == null ? null : lyricRenderTransactions.readyRowBinding(
+                findContainingLyricsRecyclerView(textView), textView, model);
+    }
+
+    private WordLine indexedLineForBoundLyricRow(
+            TextView textView, WordLyricModel model, int adapterPosition, String normalizedText) {
+        LyricRenderTransactions.RowBinding binding = readyLyricRowBinding(textView, model);
+        return binding == null
+                ? model.lineAtAdapterIndexMatchingText(adapterPosition, normalizedText)
+                : model.lineAtBoundRow(binding.position(), normalizedText, binding.timeMillis());
     }
 
     private static int charSequenceContentHash(CharSequence value) {
@@ -8404,9 +8432,8 @@ public final class LockscreenLyricsModule extends XposedModule {
                 != LyricRenderTransactions.Status.READY) return LyricTextMatch.EMPTY;
 
         int adapterPosition = findValidLyricsRecyclerAdapterPosition(textView, model);
-        WordLine indexedLine = model.lineAtAdapterIndexMatchingText(
-                adapterPosition,
-                normalizedText);
+        WordLine indexedLine = indexedLineForBoundLyricRow(
+                textView, model, adapterPosition, normalizedText);
         boolean duplicateText = model.hasDuplicateRenderableText(normalizedText);
         int officialIndex = indexedLine == null
                 ? currentOfficialIndexForTextView(textView)
@@ -8482,9 +8509,8 @@ public final class LockscreenLyricsModule extends XposedModule {
                 && adapterPosition >= model.officialLines.size())) {
             adapterPosition = -1;
         }
-        WordLine indexedLine = model.lineAtAdapterIndexMatchingText(
-                adapterPosition,
-                normalizedText);
+        WordLine indexedLine = indexedLineForBoundLyricRow(
+                textView, model, adapterPosition, normalizedText);
         if (shouldSkipStrictOfficialAdapterSlot(model, adapterPosition, indexedLine, normalizedText)) {
             return null;
         }
@@ -8623,9 +8649,8 @@ public final class LockscreenLyricsModule extends XposedModule {
             return null;
         }
         int adapterPosition = findValidLyricsRecyclerAdapterPosition(textView, model);
-        WordLine indexedLine = model.lineAtAdapterIndexMatchingText(
-                adapterPosition,
-                normalizedText);
+        WordLine indexedLine = indexedLineForBoundLyricRow(
+                textView, model, adapterPosition, normalizedText);
         if (shouldSkipStrictOfficialAdapterSlot(model, adapterPosition, indexedLine, normalizedText)
                 || shouldSuppressDuplicateOfficialAdapterDraw(
                 model,
@@ -8826,7 +8851,8 @@ public final class LockscreenLyricsModule extends XposedModule {
         boolean matchesMain = WordLyricRenderSupport.matchesWordLineText(indexedLine, normalizedText);
         boolean matchesTranslation = !TextUtils.isEmpty(indexedLine.translation)
                 && indexedLine.normalizedTranslation().equals(normalizedText);
-        if (matchesMain || matchesTranslation) {
+        if (matchesMain || matchesTranslation
+                || model.matchesOfficialDisplayAlias(adapterPosition, normalizedText)) {
             return false;
         }
         maybeLogOfficialAdapterSuppression(

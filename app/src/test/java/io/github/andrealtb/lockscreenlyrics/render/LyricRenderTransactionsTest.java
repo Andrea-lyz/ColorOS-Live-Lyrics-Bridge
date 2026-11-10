@@ -219,6 +219,34 @@ public final class LyricRenderTransactionsTest {
         assertTrue(transactions.rowsForSurface(surface).contains(replacement));
     }
 
+    @Test public void readyBindingExposesItsImmutableNativeTimeAndText() {
+        readyA();
+        LyricRenderTransactions.RowBinding binding = transactions.readyRowBinding(surface, row, modelA);
+        assertNotNull(binding);
+        assertEquals(0, binding.position());
+        assertEquals(0L, binding.timeMillis());
+        assertEquals("Maroon", binding.text());
+        transactions.publish(modelB, datasetB);
+        assertNull(transactions.readyRowBinding(surface, row, modelB));
+        // A saved old snapshot never becomes the new row's text.
+        assertEquals("Maroon", binding.text());
+        dataset(datasetB);
+        assertNull(transactions.readyRowBinding(surface, row, modelB));
+        bind(row);
+        assertEquals("Anti-Hero", transactions.readyRowBinding(surface, row, modelB).text());
+    }
+
+    @Test public void retiredOrUnsupportedRowsCannotSupplyTextForRendering() {
+        readyA();
+        assertEquals(LyricRenderTransactions.RowStatus.RETIRED,
+                transactions.observeRowPosition(surface, row, -1, modelA));
+        assertNull(transactions.readyRowBinding(surface, row, modelA));
+        transactions.observeRowPosition(surface, row, 0, modelA);
+        assertNotNull(transactions.readyRowBinding(surface, row, modelA));
+        dataset(null);
+        assertNull(transactions.readyRowBinding(surface, row, modelA));
+    }
+
     private void readyA() {
         transactions.publish(modelA, datasetA);
         dataset(datasetA);
