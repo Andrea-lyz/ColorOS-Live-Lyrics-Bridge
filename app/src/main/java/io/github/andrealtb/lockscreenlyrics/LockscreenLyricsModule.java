@@ -117,6 +117,9 @@ public final class LockscreenLyricsModule extends XposedModule {
     private static final boolean LYRIC_VERBOSE_DIAGNOSTICS_ENABLED = false;
     private static final boolean LYRIC_PARSE_TRACE_ENABLED = false;
     private static final int LYRIC_PARSE_TRACE_CHUNK_SIZE = 3000;
+    // A cleanup change may replay the last SystemUI metadata only while it still describes the
+    // current track. This bounds a stale context that survived a vendor-side load failure.
+    private static final long SYSTEM_UI_METADATA_REPLAY_MAX_AGE_MS = 12L * 60L * 60L * 1000L;
     private static volatile String logProcessName = "unknown";
     private static volatile LyricUiConfig runtimeLyricUiConfig = LyricUiConfig.defaults();
     private static final String MODULE_PACKAGE = "io.github.andrealtb.lockscreenlyrics";
@@ -337,6 +340,9 @@ public final class LockscreenLyricsModule extends XposedModule {
     private volatile String lastSystemUiSongName = "";
     private volatile String lastSystemUiArtistName = "";
     private volatile String lastSystemUiAlbumName = "";
+    // SystemUI media id for the current track. Seedling exposes only title/artist, so this is
+    // the strong identity used to reject a same-name cover captured for another track.
+    private volatile String lastSystemUiMediaId = "";
     private volatile boolean systemUiHasOfficialLyric;
     private volatile SystemUiDexKitAdapter.Targets systemUiDexKitTargets;
     private final Object officialLyricsRecyclerCompatibilityLock = new Object();
@@ -357,6 +363,9 @@ public final class LockscreenLyricsModule extends XposedModule {
     /** Immersive controller entry resolved in the same DexKit pass as the media-model targets. */
     private volatile Method resolvedLyricPositionController;
     private volatile boolean lyricPositionControllerHooked;
+    private volatile boolean shortWindowDiagnosticsInstalled;
+    private volatile long lastShortWindowLambdaProbeAt;
+    private volatile long lastShortWindowModelProbeAt;
     // Monotonic guard for the vendor timed-lyric method; touched only on the SystemUI main thread.
     private WeakReference<View> timedLyricGuardRecycler = new WeakReference<>(null);
     private WeakReference<WordLyricModel> timedLyricGuardModel = new WeakReference<>(null);
@@ -1364,7 +1373,8 @@ public final class LockscreenLyricsModule extends XposedModule {
 
                 oplusMediaPolicyHooksInstalled = true;
                 infoAlways(BridgeDebugArea.BOOTSTRAP, BridgeEvents.HOOK_INSTALLED, "Hooked OPlus media policy bypass"
-                        + ", lyricSupportGate=" + (resolveLyricSupport != null));
+                        + ", lyricSupportGate=" + (resolveLyricSupport != null)
+                        + ", whitelistGetter=" + whitelistGetterLabel(targets));
             } catch (Throwable t) {
                 error("Failed to hook OPlus media policy bypass", t);
             }
@@ -2132,14 +2142,63 @@ public final class LockscreenLyricsModule extends XposedModule {
         Object owner = context == null ? null : context.owner.get();
         MediaMetadata metadata = context == null ? null : context.metadata.get();
         if (context == null
+                || context != latestSystemUiLyricLoadContext
                 || owner == null
                 || metadata == null
-                || !SystemUiDexKitAdapter.isReplayableMetadataChanged(context.refreshMethod)
+                || !SystemUiDexKitAdapter.isReplayableMetadataRefresh(context.refreshMethod)
                 || !TextUtils.equals(context.title, lastSystemUiSongName)
                 || !TextUtils.equals(context.artist, lastSystemUiArtistName)) {
             return false;
         }
+        if (!TextUtils.isEmpty(context.packageName)
+                && !TextUtils.isEmpty(currentLyricProviderPackage)
+                && !context.packageName.equals(currentLyricProviderPackage)) {
+            warn(
+                    LyricLogFormatter.Area.SETTINGS,
+                    "content-cleanup-reload-deferred",
+                    "SystemUI metadata context belongs to another package; keeping the local rebuild");
+            return false;
+        }
+        String liveTrackKey = payloadTrackKey(currentLyricProviderPayload);
+        if (!TextUtils.isEmpty(context.trackKey)
+                && !TextUtils.isEmpty(liveTrackKey)
+                && !context.trackKey.equals(liveTrackKey)) {
+            warn(
+                    LyricLogFormatter.Area.SETTINGS,
+                    "content-cleanup-reload-deferred",
+                    "SystemUI metadata context no longer matches the live track; keeping the local rebuild");
+            return false;
+        }
+        if (SystemClock.elapsedRealtime() - context.observedAtElapsedMillis
+                > SYSTEM_UI_METADATA_REPLAY_MAX_AGE_MS) {
+            warn(
+                    LyricLogFormatter.Area.SETTINGS,
+                    "content-cleanup-reload-deferred",
+                    "SystemUI metadata context is stale; keeping the local rebuild");
+            return false;
+        }
         try {
+            if (java.lang.reflect.Modifier.isStatic(context.refreshMethod.getModifiers())) {
+                if (!SystemUiDexKitAdapter.canInvokeMetadataScheduler(
+                        owner, context.refreshMethod, context.key)) {
+                    warn(
+                            LyricLogFormatter.Area.SETTINGS,
+                            "content-cleanup-reload-deferred",
+                            "SystemUI metadata scheduler is not eligible for this entry;"
+                                    + " keeping the local model rebuild");
+                    return false;
+                }
+                // Static scheduler: the receiver argument is ignored, owner is parameter 0.
+                SystemUiDexKitAdapter.invokeMetadataScheduler(
+                        context.refreshMethod, owner, context.key, metadata);
+                // The void scheduler only enqueues a vendor job; it does not prove that the
+                // official dataset was rebuilt. Keep the local model rebuild as the fallback.
+                info(
+                        BridgeDebugArea.BOOTSTRAP,
+                        "content-cleanup-reload-requested",
+                        "Requested SystemUI metadata reload; local model rebuild continues");
+                return false;
+            }
             context.refreshMethod.invoke(owner, context.key, metadata);
             return true;
         } catch (Throwable error) {
@@ -2711,6 +2770,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                     .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                     .intercept(this::onSystemUiLoadLyricInBg);
             installKuWoArtworkSnapshotHook(loadLyricInBg.getDeclaringClass());
+            installKuWoMediaDataArtworkCaptureHook(loadLyricInBg.getDeclaringClass());
             installKuWoSeedlingArtworkHook(classLoader);
             installSystemUiArtworkDiagnosticsHook(classLoader);
             installKuWoCarLyricMetadataHook(loadLyricInBg.getDeclaringClass(), targets.metadataChanged);
@@ -2847,6 +2907,86 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
     }
 
+    /**
+     * C17 removed the 2-argument metadata lookup. Capture the artwork that the live media-data
+     * pipeline already resolved (for example from the player's MediaSession) so the same-track
+     * Seedling repair keeps a valid source without rebuilding or downloading a cover.
+     */
+    private void installKuWoMediaDataArtworkCaptureHook(Class<?> ownerClass) {
+        try {
+            Method onMediaDataLoaded = null;
+            for (Method candidate : ownerClass.getDeclaredMethods()) {
+                if (!"onMediaDataLoaded".equals(candidate.getName())
+                        || candidate.getParameterCount() != 3) {
+                    continue;
+                }
+                Class<?>[] types = candidate.getParameterTypes();
+                if (types[0] == String.class
+                        && types[1] == String.class
+                        && "com.android.systemui.media.controls.shared.model.MediaData"
+                        .equals(types[2].getName())) {
+                    onMediaDataLoaded = candidate;
+                    break;
+                }
+            }
+            if (onMediaDataLoaded == null) {
+                warn(
+                        LyricLogFormatter.Area.SYSTEM_UI,
+                        "lyric-policy",
+                        "Skipped KuWo media-data artwork capture: onMediaDataLoaded not found");
+                return;
+            }
+            onMediaDataLoaded.setAccessible(true);
+            hook(onMediaDataLoaded)
+                    .setId(HOOK_ID_SYSTEMUI_ARTWORK_ICON + "-media-data")
+                    .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                    .intercept(this::onKuWoMediaDataArtworkLoaded);
+            infoAlways(BridgeDebugArea.BOOTSTRAP, BridgeEvents.HOOK_INSTALLED,
+                    "Hooked live media-data artwork capture for KuWo cover snapshot: "
+                            + onMediaDataLoaded.getDeclaringClass().getName());
+        } catch (Throwable t) {
+            warn(
+                    LyricLogFormatter.Area.SYSTEM_UI,
+                    "lyric-policy",
+                    "Failed to hook KuWo media-data artwork capture: " + t);
+        }
+    }
+
+    private Object onKuWoMediaDataArtworkLoaded(XposedInterface.Chain chain) throws Throwable {
+        Object result = chain.proceed();
+        try {
+            Object data = chain.getArg(2);
+            if (data == null
+                    || !KuWoMediaIdentityPolicy.isPlayerPackage(
+                    invokeStringGetter(data, "getPackageName"))) {
+                return result;
+            }
+            Object artwork = invokeNoArgByName(data, "getArtwork");
+            if (!(artwork instanceof Icon) || !isPlausibleKuWoCoverIcon((Icon) artwork)) {
+                return result;
+            }
+            Object mediaDataEx = invokeNoArgByName(data, "getMediaDataEx");
+            Object metadata = mediaDataEx == null
+                    ? null
+                    : invokeNoArgByName(mediaDataEx, "getMetadata");
+            if (metadata instanceof MediaMetadata) {
+                rememberKuWoArtworkSnapshots((MediaMetadata) metadata, (Icon) artwork);
+            } else {
+                rememberKuWoArtworkSnapshot(
+                        buildTrackKey(
+                                invokeStringGetter(data, "getSong"),
+                                invokeStringGetter(data, "getArtist")),
+                        (Icon) artwork);
+            }
+        } catch (Throwable t) {
+            warn(
+                    LyricLogFormatter.Area.SYSTEM_UI,
+                    "lyric-policy",
+                    "KuWo media-data artwork capture failed: " + t);
+        }
+        return result;
+    }
+
     private void installKuWoSeedlingArtworkHook(ClassLoader classLoader) {
         try {
             Class<?> dataClass = classLoader.loadClass(
@@ -2886,7 +3026,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 String artist = invokeStringGetter(data, "getArtist");
                 String trackKey = buildTrackKey(title, artist);
                 Icon incoming = chain.getArg(0) instanceof Icon ? (Icon) chain.getArg(0) : null;
-                Icon snapshot = peekKuWoArtworkSnapshot(trackKey);
+                Icon snapshot = peekKuWoArtworkSnapshot(trackKey, lastSystemUiMediaId);
                 if (KuWoCoverPolicy.shouldRepairSeedlingArtwork(
                         isPlausibleKuWoCoverIcon(incoming),
                         trackKey,
@@ -3105,7 +3245,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         try {
             Context context = currentApplicationContext();
             Class<?> managerClass = classLoader.loadClass(className);
-            Method loadMediaDataInBg = null;
+            Method entry = null;
             for (Method method : managerClass.getDeclaredMethods()) {
                 if ("loadMediaDataInBg".equals(method.getName())
                         && method.getParameterCount() == 4
@@ -3113,29 +3253,49 @@ public final class LockscreenLyricsModule extends XposedModule {
                         && method.getParameterTypes()[1] == StatusBarNotification.class
                         && method.getParameterTypes()[2] == String.class
                         && method.getParameterTypes()[3] == boolean.class) {
-                    loadMediaDataInBg = method;
+                    entry = method;
                     break;
                 }
             }
-            if (loadMediaDataInBg == null) {
+            if (entry == null) {
+                // C17 loads the same notification through onNotificationAddedEx; its second
+                // parameter is the same StatusBarNotification the handler already consumes.
+                entry = findDeclaredMethodOrNull(
+                        managerClass,
+                        "onNotificationAddedEx",
+                        String.class,
+                        StatusBarNotification.class);
+            }
+            if (entry == null) {
                 warn(
                         LyricLogFormatter.Area.SYSTEM_UI,
                         "lyric-policy",
-                        "Skipped KuWo car-lyric load hook: loadMediaDataInBg not found");
+                        "Skipped KuWo car-lyric load hook: no notification metadata entry");
                 return;
             }
-            loadMediaDataInBg.setAccessible(true);
-            hook(loadMediaDataInBg)
+            entry.setAccessible(true);
+            hook(entry)
                     .setId(HOOK_ID_MEDIA_DATA_LOAD_METADATA)
                     .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                     .intercept(this::onLegacyMediaDataLoad);
-            infoAlways(BridgeDebugArea.BOOTSTRAP, BridgeEvents.HOOK_INSTALLED, "Hooked legacy media data loader for KuWo car-lyric identity: "
-                    + managerClass.getName());
+            infoAlways(BridgeDebugArea.BOOTSTRAP, BridgeEvents.HOOK_INSTALLED, "Hooked notification media loader for KuWo car-lyric identity: "
+                    + managerClass.getName() + "#" + entry.getName());
         } catch (Throwable t) {
             warn(
                     LyricLogFormatter.Area.SYSTEM_UI,
                     "lyric-policy",
                     "Failed to hook legacy media data loader: " + t);
+        }
+    }
+
+    private static Method findDeclaredMethodOrNull(
+            Class<?> owner, String name, Class<?>... parameterTypes) {
+        try {
+            Method method = owner.getDeclaredMethod(name, parameterTypes);
+            method.setAccessible(true);
+            return method;
+        } catch (NoSuchMethodException ignored) {
+            return null;
         }
     }
 
@@ -3171,17 +3331,47 @@ public final class LockscreenLyricsModule extends XposedModule {
                 artist)) {
             return chain.proceed();
         }
-        extras.putParcelable(
+        if (metadata == null) {
+            return chain.proceed();
+        }
+        // Never rewrite the Notification object that the notification pipeline still owns.
+        // Clone the notification, copy its extras, and pass the cloned SBN to the vendor method.
+        Notification copiedNotification;
+        android.os.Parcel parcel = android.os.Parcel.obtain();
+        try {
+            nativeNotification.writeToParcel(parcel, 0);
+            parcel.setDataPosition(0);
+            copiedNotification = Notification.CREATOR.createFromParcel(parcel);
+        } finally {
+            parcel.recycle();
+        }
+        Bundle copiedExtras = copiedNotification.extras == null
+                ? new Bundle()
+                : new Bundle(copiedNotification.extras);
+        copiedExtras.putParcelable(
                 "android.mediaSession.metadata",
                 buildMetadataWithStableSystemUiIdentity(
                         metadata,
                         lastSystemUiSongName,
                         lastSystemUiArtistName));
-        nativeNotification.extras = extras;
+        copiedNotification.extras = copiedExtras;
+        StatusBarNotification replacement = new StatusBarNotification(
+                notification.getPackageName(),
+                notification.getOpPkg(),
+                notification.getId(),
+                notification.getTag(),
+                notification.getUid(),
+                0,
+                notification.getUserId(),
+                copiedNotification,
+                notification.getUser(),
+                notification.getPostTime());
+        Object[] replacementArgs = chain.getArgs().toArray(new Object[0]);
+        replacementArgs[1] = replacement;
         if (kuWoRuntime.takeCarLyricNormalizedLogOnce()) {
             info(BridgeDebugArea.MEDIA, BridgeEvents.DETAIL, "Normalized KuWo car-lyric identity before legacy media data load");
         }
-        return chain.proceed();
+        return chain.proceed(replacementArgs);
     }
 
     private Object onSystemUiKuWoArtworkLookup(XposedInterface.Chain chain) throws Throwable {
@@ -3308,8 +3498,19 @@ public final class LockscreenLyricsModule extends XposedModule {
                 icon);
     }
 
+    private void rememberKuWoArtworkSnapshot(String trackKey, Icon icon) {
+        if (TextUtils.isEmpty(trackKey) || icon == null) {
+            return;
+        }
+        kuWoRuntime.artwork().remember(trackKey, icon);
+    }
+
     private Icon peekKuWoArtworkSnapshot(String trackKey) {
         return kuWoRuntime.artwork().peek(trackKey);
+    }
+
+    private Icon peekKuWoArtworkSnapshot(String trackKey, String expectedStrongKey) {
+        return kuWoRuntime.artwork().peekIfStrongIdentity(trackKey, expectedStrongKey);
     }
 
     private void refreshLyricRenderingAfterModeChange(boolean active) {
@@ -3528,6 +3729,8 @@ public final class LockscreenLyricsModule extends XposedModule {
                     info(BridgeDebugArea.MEDIA, BridgeEvents.SESSION_REDUCED,
                             "Normalized KuWo car-lyric metadata identity for SystemUI load");
                 }
+                lastSystemUiMediaId = nullToEmpty(
+                        metadata.getString(MediaMetadata.METADATA_KEY_MEDIA_ID));
                 String lyricInfo = metadata.getString(OPLUS_LYRIC_INFO_KEY);
                 LyricInfoContract.NormalizedPayload originalPayload =
                         LyricInfoContract.parseLyricInfo(lyricInfo);
@@ -3542,6 +3745,10 @@ public final class LockscreenLyricsModule extends XposedModule {
                 SystemUiLoadLyricPolicy.Action loadAction =
                         SystemUiLoadLyricPolicy.decide(payload != null);
                 if (loadAction == SystemUiLoadLyricPolicy.Action.ACCEPT_PAYLOAD) {
+                    // Keep the pre-cleanup metadata for the settings replay. The vendor will run
+                    // this hook again, so it must see the original lyricInfo and apply the
+                    // current cleanup policy instead of re-cleaning an already cleaned input.
+                    MediaMetadata replayMetadata = metadata;
                     MediaMetadata effectiveMetadata = metadata;
                     if (SystemUiLoadLyricPolicy.shouldRewriteMetadataLyricInfo(
                             lyricInfo,
@@ -3573,10 +3780,11 @@ public final class LockscreenLyricsModule extends XposedModule {
                             rememberSystemUiLyricLoadContext(
                                     chain.getThisObject(),
                                     chain.getArg(0),
-                                    effectiveMetadata,
+                                    replayMetadata,
                                     packageName,
                                     title,
-                                    artist);
+                                    artist,
+                                    payloadTrackKey(payload));
                         }
                     }
                     if (committed) {
@@ -3597,7 +3805,8 @@ public final class LockscreenLyricsModule extends XposedModule {
                                     metadata,
                                     packageName,
                                     title,
-                                    artist);
+                                    artist,
+                                    buildTrackKey(title, artist));
                             clearCurrentLyricProvider(title, artist);
                         }
                     }
@@ -4030,6 +4239,8 @@ public final class LockscreenLyricsModule extends XposedModule {
         currentCleanupSnapshotDisplayLyric = "";
         currentCleanupSnapshotTitle = "";
         currentCleanupSnapshotArtist = "";
+        latestSystemUiLyricLoadContext = null;
+        lastSystemUiMediaId = "";
         mainHandler.post(() -> {
             if (currentWordLyricModel == null) deactivateSystemUiLyricModeAfterSurfaceHidden();
         });
@@ -4787,6 +4998,8 @@ public final class LockscreenLyricsModule extends XposedModule {
         clearCommittedLyricRenderModel();
         currentWordLyricModelSignature = "";
         currentWordLyricModelTrackKey = "";
+        latestSystemUiLyricLoadContext = null;
+        lastSystemUiMediaId = "";
         clearScreenTimeoutLyricEvidence();
         mainHandler.post(() -> {
             refreshTranslationActionViewVisibility();
@@ -7390,6 +7603,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         tryInstallLyricsRecyclerViewHook(pluginLoader);
         tryInstallKuWoPluginMediaModelHook(pluginLoader);
         tryInstallLyricPositionControllerHook(pluginLoader);
+        tryInstallShortWindowDiagnostics(pluginLoader);
     }
 
     private void activatePluginHookGeneration(ClassLoader pluginLoader) {
@@ -7410,6 +7624,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             oplusPluginKuWoTargets = null;
             resolvedLyricPositionController = null;
             lyricPositionControllerHooked = false;
+            shortWindowDiagnosticsInstalled = false;
             lyricDatasetHookAvailable = false;
             lyricAdapterBindHookClasses.clear();
             lyricRenderTransactions.clearBindings();
@@ -7462,8 +7677,10 @@ public final class LockscreenLyricsModule extends XposedModule {
                 // Captured before the media-model check so a model miss cannot drop it.
                 resolvedLyricPositionController = resolution.lyricPositionController;
                 if (resolution.lyricPositionController == null) {
-                    infoAlways(BridgeDebugArea.BOOTSTRAP, BridgeEvents.HOOK_FAILED,
-                            "Lyric position controller unresolved; timed lyric guard only: "
+                    // The legacy timed controller is optional. ColorOS 17 aligns through the
+                    // immersive entry instead, so this is not a whole-clock failure.
+                    infoAlways(BridgeDebugArea.BOOTSTRAP, BridgeEvents.DETAIL,
+                            "Legacy timed lyric controller absent; using entry/row-style alignment: "
                                     + resolution.lyricPositionControllerFailure);
                 }
                 targets = resolution.requireTargets();
@@ -7525,6 +7742,147 @@ public final class LockscreenLyricsModule extends XposedModule {
         } catch (Throwable t) {
             error("Failed to hook lyric position controller", t);
         }
+    }
+
+    /**
+     * Diagnostic-only F06 probe. It observes the immersive lyric transform and the model
+     * constructors without changing the emitted model. Enable the renderer debug area to see
+     * {@code short-window-probe}; the hook is PROTECTIVE and cannot alter the vendor result.
+     */
+    private void tryInstallShortWindowDiagnostics(ClassLoader pluginLoader) {
+        if (shortWindowDiagnosticsInstalled || pluginLoader == null) {
+            return;
+        }
+        try {
+            Class<?> lambda = pluginLoader.loadClass(
+                    "com.oplus.systemui.plugins.shared.template.section.media."
+                            + "MPImmersiveSectionViewModel$immersiveLyricsModel$2");
+            int hooks = 0;
+            for (Method method : lambda.getDeclaredMethods()) {
+                if (!"invoke".equals(method.getName()) || method.getParameterCount() != 3) {
+                    continue;
+                }
+                method.setAccessible(true);
+                XposedInterface.HookHandle handle = hook(method)
+                        .setId("short-window-probe-invoke-" + hooks)
+                        .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                        .intercept(this::onShortWindowProbeInvoke);
+                rememberPluginHookHandle(pluginLoader, handle);
+                hooks++;
+            }
+            Class<?> modelClass = pluginLoader.loadClass(
+                    "com.oplus.systemui.plugins.shared.template.section.model.media.h");
+            for (Constructor<?> constructor : modelClass.getDeclaredConstructors()) {
+                constructor.setAccessible(true);
+                XposedInterface.HookHandle handle = hook(constructor)
+                        .setId("short-window-probe-model-" + constructor.getParameterCount())
+                        .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
+                        .intercept(this::onShortWindowProbeModelBuilt);
+                rememberPluginHookHandle(pluginLoader, handle);
+                hooks++;
+            }
+            shortWindowDiagnosticsInstalled = hooks > 0;
+            if (hooks > 0) {
+                infoAlways(BridgeDebugArea.BOOTSTRAP, BridgeEvents.HOOK_INSTALLED,
+                        "Installed short-window diagnostics, hooks=" + hooks);
+            } else {
+                warn(LyricLogFormatter.Area.SYSTEM_UI, "short-window-probe",
+                        "Short-window diagnostics found no hook targets");
+            }
+        } catch (Throwable t) {
+            warn(LyricLogFormatter.Area.SYSTEM_UI, "short-window-probe",
+                    "Short-window diagnostics unavailable: " + t);
+        }
+    }
+
+    private Object onShortWindowProbeInvoke(XposedInterface.Chain chain) throws Throwable {
+        try {
+            Object triple = chain.getArg(1);
+            boolean kotlinTriple = triple != null
+                    && "kotlin.Triple".equals(triple.getClass().getName());
+            String accessor = kotlinTriple
+                    ? firstNoArgMethodName(triple, "getFirst", "a", "d")
+                    : null;
+            if (accessor == null) {
+                maybeLogShortWindowProbe(
+                        "lambda-invoke", "triple-unavailable", -1, triple, false);
+            } else {
+                Object first = invokeNoArgByName(triple, accessor);
+                Object lyricModel = readFieldOrMissing(first, "p");
+                String lines;
+                if (lyricModel == PROBE_FIELD_MISSING) {
+                    lines = "model-unreadable";
+                } else if (lyricModel == null) {
+                    lines = "model-null";
+                } else {
+                    lines = describeProbeLines(readFieldOrMissing(lyricModel, "a"));
+                }
+                maybeLogShortWindowProbe("lambda-invoke", lines, -1, first, false);
+            }
+        } catch (Throwable ignored) {
+            // Diagnostics never own the vendor result.
+        }
+        return chain.proceed();
+    }
+
+    private Object onShortWindowProbeModelBuilt(XposedInterface.Chain chain) throws Throwable {
+        Object result = chain.proceed();
+        try {
+            Object model = chain.getThisObject();
+            Object lines = readFieldOrMissing(model, "a");
+            int index = readIntField(model, "b", -1);
+            int arity = chain.getArgs().size();
+            maybeLogShortWindowProbe(
+                    "model-ctor/" + arity, describeProbeLines(lines), index, model, true);
+        } catch (Throwable ignored) {
+            // Diagnostics never own the vendor result.
+        }
+        return result;
+    }
+
+    /**
+     * A null list is the vendor's empty model ({@code h()} delegates to {@code h(null,-1)}),
+     * so it must be reported instead of being filtered out as an unreadable probe.
+     */
+    private static String describeProbeLines(Object lines) {
+        if (lines == PROBE_FIELD_MISSING) {
+            return "unreadable";
+        }
+        if (lines == null) {
+            return "null";
+        }
+        if (lines instanceof List) {
+            return "count=" + ((List<?>) lines).size();
+        }
+        return "type=" + lines.getClass().getSimpleName();
+    }
+
+    /**
+     * Diagnostic-only F06 probe. It observes the immersive lyric transform and the model
+     * constructors without changing the emitted model. Per-stage throttling plus
+     * {@link StructuredBridgeLog#debugTransition} preserves the input and output stages of one
+     * transform; the shared structured-log throttle would otherwise drop the second stage.
+     */
+    private void maybeLogShortWindowProbe(
+            String stage, String lines, int index, Object owner, boolean modelStage) {
+        long now = SystemClock.elapsedRealtime();
+        if (modelStage) {
+            if (now - lastShortWindowModelProbeAt < 1_000L) {
+                return;
+            }
+            lastShortWindowModelProbeAt = now;
+        } else {
+            if (now - lastShortWindowLambdaProbeAt < 1_000L) {
+                return;
+            }
+            lastShortWindowLambdaProbeAt = now;
+        }
+        StructuredBridgeLog.debugTransition(BridgeDebugArea.RENDERER, "short-window-probe",
+                () -> "stage=" + stage
+                        + ", lines=" + lines
+                        + ", index=" + index
+                        + ", owner=" + (owner == null ? "null" : owner.getClass().getSimpleName())
+                        + ", thread=" + Thread.currentThread().getName());
     }
 
     /**
@@ -7756,7 +8114,8 @@ public final class LockscreenLyricsModule extends XposedModule {
             if (!cardInvalid && !staticBitmapInvalid && !drawableInvalid) {
                 return false;
             }
-            Icon snapshot = peekKuWoArtworkSnapshot(buildTrackKey(title, artist));
+            Icon snapshot = peekKuWoArtworkSnapshot(
+                    buildTrackKey(title, artist), lastSystemUiMediaId);
             if (snapshot == null) {
                 logKuWoPluginAlbumArtSkip(title, artist, "no-snapshot");
                 return false;
@@ -10885,6 +11244,59 @@ public final class LockscreenLyricsModule extends XposedModule {
         return null;
     }
 
+    private static final Object PROBE_FIELD_MISSING = new Object();
+
+    /** Distinguishes a genuinely null field from a missing or unreadable field. */
+    private static Object readFieldOrMissing(Object target, String fieldName) {
+        if (target == null || TextUtils.isEmpty(fieldName)) {
+            return PROBE_FIELD_MISSING;
+        }
+        Class<?> current = target.getClass();
+        while (current != null) {
+            try {
+                Field field = current.getDeclaredField(fieldName);
+                field.setAccessible(true);
+                return field.get(target);
+            } catch (NoSuchFieldException ignored) {
+                current = current.getSuperclass();
+            } catch (Throwable ignored) {
+                return PROBE_FIELD_MISSING;
+            }
+        }
+        return PROBE_FIELD_MISSING;
+    }
+
+    /** Returns the first existing zero-argument accessor without invoking it. */
+    private static String firstNoArgMethodName(Object target, String... names) {
+        if (target == null || names == null) {
+            return null;
+        }
+        for (String name : names) {
+            if (hasNoArgMethod(target, name)) {
+                return name;
+            }
+        }
+        return null;
+    }
+
+    private static boolean hasNoArgMethod(Object target, String methodName) {
+        if (target == null || TextUtils.isEmpty(methodName)) {
+            return false;
+        }
+        Class<?> current = target.getClass();
+        while (current != null) {
+            try {
+                current.getDeclaredMethod(methodName);
+                return true;
+            } catch (NoSuchMethodException ignored) {
+                current = current.getSuperclass();
+            } catch (Throwable ignored) {
+                return false;
+            }
+        }
+        return false;
+    }
+
     @SuppressLint({"PrivateApi", "DiscouragedPrivateApi"})
     private static Context currentApplicationContext() {
         try {
@@ -13121,7 +13533,8 @@ public final class LockscreenLyricsModule extends XposedModule {
             MediaMetadata metadata,
             String packageName,
             String title,
-            String artist) {
+            String artist,
+            String trackKey) {
         if (owner == null
                 || !(keyArg instanceof String)
                 || metadata == null) {
@@ -13139,6 +13552,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 packageName,
                 title,
                 artist,
+                trackKey,
                 SystemClock.elapsedRealtime());
     }
 
@@ -13165,6 +13579,9 @@ public final class LockscreenLyricsModule extends XposedModule {
             if (candidate == null) {
                 candidate = method;
             }
+        }
+        if (candidate == null) {
+            candidate = SystemUiDexKitAdapter.findMetadataSchedulerEntry(ownerClass);
         }
         if (candidate == null) {
             if (!systemUiMetadataRefreshMethodUnavailableLogged) {
@@ -13401,6 +13818,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         final String packageName;
         final String title;
         final String artist;
+        final String trackKey;
         final long observedAtElapsedMillis;
 
         SystemUiLyricLoadContext(
@@ -13411,6 +13829,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 String packageName,
                 String title,
                 String artist,
+                String trackKey,
                 long observedAtElapsedMillis) {
             this.owner = new WeakReference<>(owner);
             this.refreshMethod = refreshMethod;
@@ -13419,6 +13838,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             this.packageName = nullToEmpty(packageName);
             this.title = nullToEmpty(title);
             this.artist = nullToEmpty(artist);
+            this.trackKey = nullToEmpty(trackKey);
             this.observedAtElapsedMillis = observedAtElapsedMillis;
         }
     }
@@ -14382,9 +14802,11 @@ public final class LockscreenLyricsModule extends XposedModule {
             state.translationGap = translationGap;
             state.translationMetricsTop = translationMetrics.top;
             state.translationAmount = translationAmount;
-            // Where drawTranslationPass puts the translation's outward font top.
-            // Unsung main text sinks toward it and must stop short of it.
-            charLiftFloorY = sourceHasTranslation ? top + mainHeight + translationGap : 0f;
+            // Only a visible translation constrains the lift. Follow the same slide
+            // as drawTranslationPass; a hidden translation must not reserve a phantom floor.
+            charLiftFloorY = CharLiftGeometry.translationFloorY(
+                    sourceHasTranslation, top + mainHeight, translationGap, translationAmount,
+                    dp(textView.getContext(), TRANSLATION_TOGGLE_SLIDE_DP));
             return true;
         }
 

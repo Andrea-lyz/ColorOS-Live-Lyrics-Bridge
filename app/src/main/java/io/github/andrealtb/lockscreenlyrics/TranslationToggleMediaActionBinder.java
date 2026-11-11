@@ -12,6 +12,7 @@ import android.os.SystemClock;
 import io.github.andrealtb.lockscreenlyrics.diagnostics.BridgeDebugArea;
 import io.github.andrealtb.lockscreenlyrics.diagnostics.StructuredBridgeLog;
 
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.ref.WeakReference;
@@ -48,6 +49,11 @@ final class TranslationToggleMediaActionBinder {
 
     private static final String TRANSLATION_ICON_RESOURCE_NAME = "ic_translation";
     private static final String SALT_DESKTOP_LYRIC_ACTION = "com.salt.music.desktop_lyrics";
+    private static final String MEDIA_ACTION_EX_CLASS =
+            "com.android.systemui.media.controls.models.player.OplusMediaActionEx";
+    private static final String MEDIA_ACTION_CLASS =
+            "com.android.systemui.media.controls.shared.model.MediaAction";
+    private static final String AOD_ICON_FIELD = "iconForAod";
 
     interface ActionIdReader {
         String read(Object mediaAction);
@@ -242,29 +248,9 @@ final class TranslationToggleMediaActionBinder {
         }
         try {
             ClassLoader loader = mediaButtonEx.getClass().getClassLoader();
-            Class<?> actionExClass = Class.forName(
-                    "com.android.systemui.media.controls.models.player.OplusMediaActionEx",
-                    true,
-                    loader);
-            Object actionEx = actionExClass.getDeclaredConstructor(
-                    boolean.class,
-                    Icon.class,
-                    android.net.Uri.class,
-                    boolean.class,
-                    Boolean.class,
-                    boolean.class,
-                    String.class).newInstance(
-                    false,
-                    translationIcon.icon,
-                    null,
-                    false,
-                    null,
-                    false,
-                    null);
-            Class<?> actionClass = Class.forName(
-                    "com.android.systemui.media.controls.shared.model.MediaAction",
-                    true,
-                    loader);
+            Class<?> actionExClass = Class.forName(MEDIA_ACTION_EX_CLASS, true, loader);
+            Object actionEx = createSyntheticActionEx(actionExClass, translationIcon.icon);
+            Class<?> actionClass = Class.forName(MEDIA_ACTION_CLASS, true, loader);
             Runnable click = () -> {
                 boolean before = host.isLyricInfoTranslationEnabled(packageName);
                 debug("synthetic translation action clicked, package="
@@ -292,6 +278,51 @@ final class TranslationToggleMediaActionBinder {
         }
     }
 
+    /**
+     * Resolves the C17 8-argument action layout first and the C16 7-argument layout second.
+     * The layouts share every parameter except the C17-only {@code Drawable iconForAod}; the
+     * trailing int overloads are synthetic Kotlin defaults and must never be used here.
+     */
+    static Constructor<?> resolveActionExConstructor(Class<?> actionExClass)
+            throws NoSuchMethodException {
+        try {
+            return actionExClass.getDeclaredConstructor(
+                    boolean.class,
+                    Icon.class,
+                    Drawable.class,
+                    android.net.Uri.class,
+                    boolean.class,
+                    Boolean.class,
+                    boolean.class,
+                    String.class);
+        } catch (NoSuchMethodException ignored) {
+            return actionExClass.getDeclaredConstructor(
+                    boolean.class,
+                    Icon.class,
+                    android.net.Uri.class,
+                    boolean.class,
+                    Boolean.class,
+                    boolean.class,
+                    String.class);
+        }
+    }
+
+    /**
+     * Builds the local translation action. It is clickable by construction: the first argument is
+     * {@code enabled}, not the user's translation preference. The preference stays in the
+     * presentation (label/alpha). A null AOD icon deliberately lets SystemUI fall back to the
+     * semantic icon supplied above.
+     */
+    static Object createSyntheticActionEx(Class<?> actionExClass, Object icon)
+            throws ReflectiveOperationException {
+        Constructor<?> constructor = resolveActionExConstructor(actionExClass);
+        constructor.setAccessible(true);
+        Object[] args = constructor.getParameterCount() == 8
+                ? new Object[]{true, icon, null, null, false, null, false, null}
+                : new Object[]{true, icon, null, false, null, false, null};
+        return constructor.newInstance(args);
+    }
+
     // OPlus models have mutable structural hashCode/equals; key snapshots by weak identity.
     private OriginalButton originalButton(Object button, List<?> actions) {
         for (int i = originalButtons.size() - 1; i >= 0; i--) {
@@ -303,6 +334,22 @@ final class TranslationToggleMediaActionBinder {
         OriginalButton original = new OriginalButton(button, actions);
         originalButtons.add(original);
         return original;
+    }
+
+    private static Field findField(Object target, String fieldName) {
+        if (target == null || fieldName == null) return null;
+        for (Class<?> type = target.getClass(); type != null; type = type.getSuperclass()) {
+            try {
+                Field field = type.getDeclaredField(fieldName);
+                field.setAccessible(true);
+                return field;
+            } catch (NoSuchFieldException ignored) {
+                // The field may be declared by a superclass.
+            } catch (Throwable ignored) {
+                return null;
+            }
+        }
+        return null;
     }
 
     private static final class OriginalButton {
@@ -332,6 +379,8 @@ final class TranslationToggleMediaActionBinder {
         final Object description;
         final Object drawable;
         final Object semanticIcon;
+        final boolean hasAodIcon;
+        final Object aodIcon;
         final int alpha;
 
         OriginalAction(Object target) {
@@ -339,7 +388,10 @@ final class TranslationToggleMediaActionBinder {
             runnable = invokeNoArgByName(target, "getAction");
             description = invokeNoArgByName(target, "getContentDescription");
             drawable = invokeNoArgByName(target, "getIcon");
-            semanticIcon = readFieldValue(invokeNoArgByName(target, "getMediaActionEx"), "icon");
+            Object mediaActionEx = invokeNoArgByName(target, "getMediaActionEx");
+            semanticIcon = readFieldValue(mediaActionEx, "icon");
+            hasAodIcon = findField(mediaActionEx, AOD_ICON_FIELD) != null;
+            aodIcon = hasAodIcon ? readFieldValue(mediaActionEx, AOD_ICON_FIELD) : null;
             alpha = drawable instanceof Drawable ? ((Drawable) drawable).getAlpha() : 255;
         }
 
@@ -348,7 +400,11 @@ final class TranslationToggleMediaActionBinder {
             tryInvokeOneArgByName(target, "setContentDescription", description);
             tryInvokeOneArgByName(target, "setIcon", drawable);
             if (drawable instanceof Drawable) ((Drawable) drawable).setAlpha(alpha);
-            writeFieldValue(invokeNoArgByName(target, "getMediaActionEx"), "icon", semanticIcon);
+            Object mediaActionEx = invokeNoArgByName(target, "getMediaActionEx");
+            writeFieldValue(mediaActionEx, "icon", semanticIcon);
+            if (hasAodIcon) {
+                writeFieldValue(mediaActionEx, AOD_ICON_FIELD, aodIcon);
+            }
         }
     }
 
@@ -551,7 +607,15 @@ final class TranslationToggleMediaActionBinder {
             if (!writeFieldValue(mediaActionEx, "icon", translationIcon.icon)) {
                 return false;
             }
-            return readFieldValue(mediaActionEx, "icon") == translationIcon.icon;
+            if (readFieldValue(mediaActionEx, "icon") != translationIcon.icon) {
+                return false;
+            }
+            // AOD prefers a separate Drawable when the vendor set one. Clearing it makes the
+            // native fallback load the translation semantic icon instead of the old favorite art.
+            if (findField(mediaActionEx, AOD_ICON_FIELD) != null) {
+                writeFieldValue(mediaActionEx, AOD_ICON_FIELD, null);
+            }
+            return true;
         } catch (Throwable t) {
             StructuredBridgeLog.error("Failed to load lyric translation icon: " + t, t);
             return false;

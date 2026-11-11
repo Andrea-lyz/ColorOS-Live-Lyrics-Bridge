@@ -54,4 +54,25 @@ public final class KuWoArtworkSnapshotStoreTest {
         assertNull(store.peek("a"));
         assertEquals("B", store.peek("b"));
     }
+
+    @Test
+    public void titleAliasCannotCrossMediaId() {
+        KuWoArtworkSnapshotStore<String> store = new KuWoArtworkSnapshotStore<>();
+        store.rememberKeys("id:A", "same-title|same-artist", "cover-A");
+
+        assertEquals("cover-A", store.peek("id:A"));
+        assertEquals("cover-A", store.peekIfStrongIdentity("id:A", "id:A"));
+        assertNull(store.peekIfStrongIdentity("same-title|same-artist", "id:B"));
+        assertEquals("cover-A", store.peekIfStrongIdentity(
+                "same-title|same-artist", "id:A"));
+    }
+
+    @Test
+    public void legacyTitleOnlyEntryRequiresNoStrongIdentity() {
+        KuWoArtworkSnapshotStore<String> store = new KuWoArtworkSnapshotStore<>();
+        store.remember("title|artist", "legacy");
+
+        assertNull(store.peekIfStrongIdentity("title|artist", "id:A"));
+        assertEquals("legacy", store.peekIfStrongIdentity("title|artist", ""));
+    }
 }

@@ -83,6 +83,7 @@ public final class DynamicArtworkRuntime {
         main.post(() -> {
             if (requestedCoverColorEnabled != enabled || coverColorEnabled == enabled) return;
             coverColorEnabled = enabled;
+            if (!enabled) for (Host host : hosts) host.invalidateCoverColorTargets();
             if (observing()) { refreshSource(); refreshHosts(); }
             else suspendObservations();
         });
@@ -93,8 +94,12 @@ public final class DynamicArtworkRuntime {
         if (!coverColorEnabled || android.os.Looper.myLooper() != main.getLooper()) return null;
         for (View node = lyric; node != null; node = node.getParent() instanceof View parent ? parent : null) {
             for (Host host : hosts) {
+                // The palette belongs to the current card model. Session readiness gates display
+                // replacement, not the glow color: C17 card/session titles can differ during live
+                // lyric updates, which keeps displayBinding in fallback while coverColor is valid.
                 if (host.root.get() != node || !host.attached || host.epoch != pluginEpoch.get()
-                        || !host.model.splitModel || host.displayBinding == null || !host.displayBinding.ready()) continue;
+                        || !host.model.splitModel) continue;
+                host.colorTargets.watch(lyric);
                 Host.Observation snapshot = host.pending;
                 if (snapshot != null && host.applied != null && snapshot.input() == host.input
                         && snapshot.surfaceEpoch() == host.surfaceVersion
@@ -773,6 +778,7 @@ public final class DynamicArtworkRuntime {
         final ArtworkPlaybackPolicy.Surface surface;
         final ArtworkTrace trace;
         final ArtworkHostProbe probe;
+        final ArtworkLyricColorTargets colorTargets = new ArtworkLyricColorTargets();
         ArtworkSessionRegistry.Binding displayBinding;
         ArtworkC17Access.Bound c17;
         WeakReference<android.graphics.drawable.Drawable> trackedDrawable = new WeakReference<>(null);
@@ -816,7 +822,15 @@ public final class DynamicArtworkRuntime {
             releaseInput();
         }
 
+        void invalidateCoverColorTargets() {
+            ViewGroup currentRoot = root.get();
+            colorTargets.invalidate(currentRoot);
+            if (currentRoot != null) currentRoot.postInvalidateOnAnimation();
+        }
+
         void releaseInput() {
+            invalidateCoverColorTargets();
+            colorTargets.clear();
             android.graphics.drawable.Drawable drawable = trackedDrawable.get();
             if (transition != null && drawable != null) transition.release(drawable);
             trackedDrawable = new WeakReference<>(null);
@@ -958,8 +972,7 @@ public final class DynamicArtworkRuntime {
                 if (latest == null || latest.input() != input || latest.surfaceEpoch() != surfaceVersion) return;
                 registry.observeHost(this, epoch, surfaceVersion, latest.card(), trace, binding -> {
                     displayBinding = binding;
-                    ViewGroup currentRoot = root.get();
-                    if (coverColorEnabled && currentRoot != null) currentRoot.postInvalidateOnAnimation();
+                    if (coverColorEnabled) invalidateCoverColorTargets();
                     updateDisplay();
                     probe.sample();
                     trace.state(
@@ -980,8 +993,7 @@ public final class DynamicArtworkRuntime {
                         || !java.util.Objects.equals(previous.card(), latest.card()))) {
                     trace.state("ARTWORK_COVER_COLOR", () -> "surface=" + surface + " source=primary80 available="
                             + (latest.coverColor() != null) + " bound=" + (displayBinding != null && displayBinding.ready()));
-                    ViewGroup currentRoot = root.get();
-                    if (currentRoot != null) currentRoot.postInvalidateOnAnimation();
+                    invalidateCoverColorTargets();
                 }
             });
         }

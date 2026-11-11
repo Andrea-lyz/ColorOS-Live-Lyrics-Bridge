@@ -171,6 +171,13 @@ public final class CharLiftGeometry {
         return half * smoothStep((float) elapsed / (float) finishMillis);
     }
 
+    /** Actual visible translation top; zero selects the canvas floor when it is hidden. */
+    public static float translationFloorY(
+            boolean hasTranslation, float mainBottom, float gap, float amount, float slide) {
+        if (!hasTranslation || amount <= 0.001f) return 0f;
+        return mainBottom + gap + Math.max(0f, slide) * (1f - Math.min(1f, amount));
+    }
+
     /**
      * Sink clamped so the sunk glyph keeps {@code minClearance} between its
      * bottom and the first thing below it — the translation row's glyphs, or
