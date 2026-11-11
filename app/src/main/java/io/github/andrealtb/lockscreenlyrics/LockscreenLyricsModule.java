@@ -3355,12 +3355,20 @@ public final class LockscreenLyricsModule extends XposedModule {
                         lastSystemUiSongName,
                         lastSystemUiArtistName));
         copiedNotification.extras = copiedExtras;
+        // getOpPkg() and getUid() are API 29+; below it keep the posting package and an
+        // unknown uid. The vendor path that reaches this hook only exists on C17.
+        String opPkg = notification.getPackageName();
+        int uid = 0;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            opPkg = notification.getOpPkg();
+            uid = notification.getUid();
+        }
         StatusBarNotification replacement = new StatusBarNotification(
                 notification.getPackageName(),
-                notification.getOpPkg(),
+                opPkg,
                 notification.getId(),
                 notification.getTag(),
-                notification.getUid(),
+                uid,
                 0,
                 notification.getUserId(),
                 copiedNotification,
