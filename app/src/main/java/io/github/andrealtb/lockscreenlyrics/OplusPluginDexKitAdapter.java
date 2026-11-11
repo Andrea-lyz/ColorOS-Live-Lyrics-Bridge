@@ -96,7 +96,8 @@ final class OplusPluginDexKitAdapter {
                                 bridge,
                                 classLoader,
                                 "StaticIcon",
-                                new String[] {"StaticIcon(icon=", ", iconModelForCard="}),
+                                new String[] {"StaticIcon(icon=", ", iconModelForCard="},
+                                new String[] {"StaticIcon(drawable=", ", iconModelForCard="}),
                         findSingleClass(
                                 bridge,
                                 classLoader,

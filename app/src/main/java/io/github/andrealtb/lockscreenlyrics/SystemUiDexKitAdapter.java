@@ -595,6 +595,104 @@ public final class SystemUiDexKitAdapter {
                 && hasParameterTypes(method, String.class, MediaMetadata.class);
     }
 
+    /**
+     * ColorOS 17 (PYB110-class builds) replaced the instance metadata entry with a static
+     * coroutine launcher: {@code access$updateMediaDataFromMetaData(impl, String, MediaMetadata)}.
+     * It is the only non-suspending way to request the vendor rebuild; a void return does not
+     * prove that the vendor actually scheduled or completed a job.
+     */
+    static boolean isMetadataScheduler(Method method) {
+        if (method == null
+                || !Modifier.isStatic(method.getModifiers())
+                || method.getReturnType() != void.class) {
+            return false;
+        }
+        Class<?>[] types = method.getParameterTypes();
+        return types.length == 3
+                && types[0] == method.getDeclaringClass()
+                && types[1] == String.class
+                && types[2] == MediaMetadata.class;
+    }
+
+    /** True for the legacy instance entry and for the C17 static scheduler. */
+    static boolean isReplayableMetadataRefresh(Method method) {
+        return isReplayableMetadataChanged(method) || isMetadataScheduler(method);
+    }
+
+    /** Resolves the unique C17 scheduler entry, or null when the build has none/ambiguous. */
+    static Method findMetadataSchedulerEntry(Class<?> owner) {
+        if (owner == null) {
+            return null;
+        }
+        Method match = null;
+        for (Method method : owner.getDeclaredMethods()) {
+            if (!isMetadataScheduler(method)) {
+                continue;
+            }
+            if (match != null) {
+                return null;
+            }
+            match = method;
+        }
+        if (match != null) {
+            match.setAccessible(true);
+        }
+        return match;
+    }
+
+    /**
+     * The C17 scheduler is guarded by {@code getMediaPlayerIndex(key) != -1}; with -1 the vendor
+     * silently does nothing. Check the same gate before reporting a replay as succeeded.
+     */
+    static boolean canInvokeMetadataScheduler(Object owner, Method method, String key) {
+        if (owner == null || method == null || key == null || !isMetadataScheduler(method)) {
+            return false;
+        }
+        Class<?>[] types = method.getParameterTypes();
+        if (!types[0].isInstance(owner)) {
+            return false;
+        }
+        Method index = findMethodByName(owner.getClass(), "getMediaPlayerIndex", String.class);
+        if (index == null) {
+            // Older variants have no public index helper; the vendor scheduler decides internally.
+            return true;
+        }
+        try {
+            index.setAccessible(true);
+            Object value = index.invoke(owner, key);
+            return value instanceof Number && ((Number) value).intValue() != -1;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    /**
+     * Invokes the C17 scheduler with the exact static argument order: owner is parameter 0, not
+     * the reflection receiver. Keeping this in one place makes the arity machine-checkable.
+     */
+    static void invokeMetadataScheduler(
+            Method method, Object owner, String key, MediaMetadata metadata)
+            throws ReflectiveOperationException {
+        if (!isMetadataScheduler(method)) {
+            throw new NoSuchMethodException("metadata_scheduler_shape");
+        }
+        method.invoke(null, owner, key, metadata);
+    }
+
+    private static Method findMethodByName(
+            Class<?> owner, String name, Class<?>... parameterTypes) {
+        for (Class<?> type = owner; type != null; type = type.getSuperclass()) {
+            try {
+                Method method = type.getDeclaredMethod(name, parameterTypes);
+                method.setAccessible(true);
+                return method;
+            } catch (NoSuchMethodException ignored) {
+                // Keep walking; the method may be declared by a superclass.
+            }
+        }
+        return null;
+    }
+
     static int metadataParameterIndex(Method method) {
         if (method == null) {
             return -1;

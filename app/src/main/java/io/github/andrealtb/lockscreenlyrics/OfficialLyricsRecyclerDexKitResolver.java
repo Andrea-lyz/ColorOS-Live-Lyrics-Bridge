@@ -14,6 +14,9 @@ import org.luckypray.dexkit.result.FieldUsingType;
 import org.luckypray.dexkit.result.MethodData;
 import org.luckypray.dexkit.result.UsingFieldData;
 
+import io.github.andrealtb.lockscreenlyrics.diagnostics.BridgeDebugArea;
+import io.github.andrealtb.lockscreenlyrics.diagnostics.StructuredBridgeLog;
+
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -21,6 +24,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /** Semantic fallback for SystemUIPlugin builds whose obfuscated field names are unknown. */
 final class OfficialLyricsRecyclerDexKitResolver {
@@ -33,6 +37,8 @@ final class OfficialLyricsRecyclerDexKitResolver {
             "media_card_lyrics_recycler_view_line_spacing";
     private static final String SCROLL_DURATION_RESOURCE =
             "lyrics_recycler_view_scroll_duration";
+    private static final ConcurrentHashMap<String, Long> PROBE_LAST_AT =
+            new ConcurrentHashMap<>();
 
     private static volatile boolean dexKitLoaded;
 
@@ -99,6 +105,10 @@ final class OfficialLyricsRecyclerDexKitResolver {
                 }
             }
 
+            probe("candidates", "spacing=" + fieldNames(spacingCandidates)
+                    + " duration=" + fieldNames(durationCandidates)
+                    + " scale=" + fieldNames(scaleCandidates)
+                    + " index=" + fieldNames(indexCandidates));
             spacingCandidates = narrowByResourceValue(
                     recycler,
                     preferFinalFields(spacingCandidates),
@@ -109,6 +119,10 @@ final class OfficialLyricsRecyclerDexKitResolver {
                     durationCandidates,
                     "integer",
                     SCROLL_DURATION_RESOURCE);
+            probe("narrowed", "spacing=" + fieldNames(spacingCandidates)
+                    + " duration=" + fieldNames(durationCandidates)
+                    + " scale=" + fieldNames(scaleCandidates)
+                    + " index=" + fieldNames(indexCandidates));
 
             FieldData index = unique(indexCandidates);
             Field indexField = index == null
@@ -118,6 +132,10 @@ final class OfficialLyricsRecyclerDexKitResolver {
             FieldData spacing = unique(spacingCandidates);
             FieldData duration = unique(durationCandidates);
             FieldData scale = unique(scaleCandidates);
+            probe("selected", "spacing=" + fieldName(spacing)
+                    + " duration=" + fieldName(duration)
+                    + " scale=" + fieldName(scale)
+                    + " index=" + fieldName(index));
             if (spacing == null || duration == null || scale == null) {
                 return new Resolution(null, indexField);
             }
@@ -320,6 +338,7 @@ final class OfficialLyricsRecyclerDexKitResolver {
         if (expectedValue == null) {
             return candidates;
         }
+        List<FieldData> before = new ArrayList<>(candidates);
         ArrayList<FieldData> matches = new ArrayList<>();
         for (FieldData candidate : candidates) {
             try {
@@ -335,7 +354,42 @@ final class OfficialLyricsRecyclerDexKitResolver {
                 // An unreadable candidate cannot be used safely.
             }
         }
+        probe("resource", resourceType + "/" + resourceName
+                + " expected=" + expectedValue
+                + " before=" + fieldNames(before)
+                + " after=" + fieldNames(matches));
         return matches;
+    }
+
+    /**
+     * Per-stage throttling keeps candidates, resource narrowing and selection in one resolution.
+     * The structured log's shared event throttle would otherwise drop later stages.
+     */
+    private static void probe(String stage, String detail) {
+        long now = android.os.SystemClock.elapsedRealtime();
+        Long previous = PROBE_LAST_AT.get(stage);
+        if (previous != null && now - previous < 1_500L) {
+            return;
+        }
+        PROBE_LAST_AT.put(stage, now);
+        StructuredBridgeLog.debugTransition(BridgeDebugArea.RENDERER, "recycler-binding-probe",
+                () -> "stage=" + stage + " | " + (detail == null ? "" : detail));
+    }
+
+    private static String fieldNames(List<FieldData> fields) {
+        if (fields == null || fields.isEmpty()) {
+            return "[]";
+        }
+        StringBuilder out = new StringBuilder("[");
+        for (int i = 0; i < fields.size(); i++) {
+            if (i > 0) out.append(',');
+            out.append(fields.get(i).getName());
+        }
+        return out.append(']').toString();
+    }
+
+    private static String fieldName(FieldData field) {
+        return field == null ? "null" : field.getName();
     }
 
     private static Integer readResourceValue(

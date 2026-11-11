@@ -223,9 +223,80 @@ public final class ArtworkCompatibilityResolver {
                 fields.add(field);
             }
         }
-        Field selected = ArtworkC17Roles.single(fields, field -> true, "album_art");
-        selected.setAccessible(true);
-        return selected;
+        if (fields.size() == 1) {
+            Field selected = fields.get(0);
+            selected.setAccessible(true);
+            return selected;
+        }
+        if (fields.isEmpty()) {
+            throw new NoSuchFieldException("album_art_missing");
+        }
+        // The toString reader also touches every other object property. Narrow by the
+        // MultiIcon type and then let the probe prove which of its fields owns the label.
+        Class<?> multiIcon = singleClass(
+                dex, loader, "MultiIconModel(staticIcon=", ", lottieIcon=");
+        List<Field> typed = new ArrayList<>();
+        for (Field field : fields) {
+            if (field.getType() == multiIcon) {
+                typed.add(field);
+            }
+        }
+        if (typed.size() == 1) {
+            Field selected = typed.get(0);
+            selected.setAccessible(true);
+            return selected;
+        }
+        if (typed.isEmpty()) {
+            throw new NoSuchFieldException("album_art_type_missing");
+        }
+        return probeAlbumArtField(info, typed, multiIcon);
+    }
+
+    /**
+     * Sets one candidate at a time to a distinctive MultiIcon probe and reads the exact
+     * {@code , albumArt=...} segment. Unlike a letter or declaration-order guess this follows
+     * the actual toString property association; ambiguity fails closed.
+     */
+    static Field probeAlbumArtField(Class<?> info, List<Field> candidates, Class<?> multiIcon)
+            throws ReflectiveOperationException {
+        Object probe = ArtworkModelAccess.newIdentityProbe(info);
+        Constructor<?> constructor = null;
+        for (Constructor<?> candidate : multiIcon.getDeclaredConstructors()) {
+            if (candidate.getParameterCount() == 2) {
+                constructor = candidate;
+                break;
+            }
+        }
+        if (constructor == null) {
+            throw new NoSuchFieldException("album_art_probe_ctor");
+        }
+        constructor.setAccessible(true);
+        Object sentinel = constructor.newInstance(null, null);
+        String value = String.valueOf(sentinel);
+        String marker = ", albumArt=";
+        String next = ", rotate=";
+        for (Field field : candidates) {
+            field.setAccessible(true);
+            try {
+                field.set(probe, sentinel);
+                String text = probe.toString();
+                int start = text.indexOf(marker);
+                int end = start < 0 ? -1 : text.indexOf(next, start + marker.length());
+                if (start >= 0 && end > start
+                        && value.equals(text.substring(start + marker.length(), end))) {
+                    return field;
+                }
+            } catch (Throwable ignored) {
+                // Try the next candidate; an unreadable field cannot be used safely.
+            } finally {
+                try {
+                    field.set(probe, null);
+                } catch (Throwable ignored) {
+                    // Best effort reset before the next candidate.
+                }
+            }
+        }
+        throw new NoSuchFieldException("album_art_probe_missing");
     }
 
     /**

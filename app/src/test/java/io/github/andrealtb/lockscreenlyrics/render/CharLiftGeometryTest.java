@@ -36,6 +36,31 @@ public final class CharLiftGeometryTest {
                     + "!";
 
     @Test
+    public void hiddenTranslationDoesNotClampLiftAgainstAnInvisibleLane() {
+        float floor = CharLiftGeometry.translationFloorY(true, 80f, 2f, 0f, 8f);
+        assertEquals(0f, floor, 0f);
+        assertEquals(8f, CharLiftGeometry.clampSink(8f, 79f, 120f, 1f), 0f);
+        // The old phantom floor at 82 allowed only two pixels of the requested eight.
+        assertEquals(2f, CharLiftGeometry.clampSink(8f, 79f, 82f, 1f), 0f);
+    }
+
+    @Test
+    public void absentTranslationSelectsCanvasEvenWhenTranslationToggleIsOn() {
+        assertEquals(0f, CharLiftGeometry.translationFloorY(false, 80f, 2f, 1f, 8f), 0f);
+    }
+
+    @Test
+    public void visibleTranslationKeepsItsClearanceAndTracksTheSlide() {
+        assertEquals(82f, CharLiftGeometry.translationFloorY(true, 80f, 2f, 1f, 8f), 0f);
+        assertEquals(86f, CharLiftGeometry.translationFloorY(true, 80f, 2f, 0.5f, 8f), 0f);
+    }
+
+    @Test
+    public void translationAtTheDrawThresholdIsNotAnObstacle() {
+        assertEquals(0f, CharLiftGeometry.translationFloorY(true, 80f, 2f, 0.001f, 8f), 0f);
+    }
+
+    @Test
     public void floatWeightMatchesSaltPlayersRaisedCosine() {
         for (float u = 0.01f; u < 1f; u += 0.01f) {
             float expected = (1f + (float) Math.cos(u * Math.PI)) * 0.5f;

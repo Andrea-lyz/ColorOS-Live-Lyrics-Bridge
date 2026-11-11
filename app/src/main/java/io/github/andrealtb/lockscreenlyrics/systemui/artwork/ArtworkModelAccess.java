@@ -83,9 +83,19 @@ public final class ArtworkModelAccess {
         return surface == ArtworkPlaybackPolicy.Surface.IMMERSIVE ? immersiveCardClass : cardClass;
     }
 
-    public static Map<String, Field> bindIdentityFields(Class<?> type, String marker)
-            throws ReflectiveOperationException {
+    /**
+     * Builds a synthetic DTO with unique strings and empty collections. Object properties stay
+     * null so a caller can set exactly one candidate and observe which label it occupies.
+     */
+    static Object newIdentityProbe(Class<?> type) throws ReflectiveOperationException {
         if (!Modifier.isFinal(type.getModifiers())) throw new IllegalArgumentException("model_not_final");
+        Constructor<?> constructor = identityConstructor(type);
+        Object[] arguments = identityArguments(constructor);
+        constructor.setAccessible(true);
+        return constructor.newInstance(arguments);
+    }
+
+    private static Constructor<?> identityConstructor(Class<?> type) {
         List<Constructor<?>> candidates = new ArrayList<>();
         for (Constructor<?> candidate : type.getDeclaredConstructors()) {
             if (!candidate.isSynthetic() && candidate.getParameterCount() >= 4
@@ -94,7 +104,10 @@ public final class ArtworkModelAccess {
                     && candidate.getParameterTypes()[1] == String.class) candidates.add(candidate);
         }
         if (candidates.size() != 1) throw new IllegalArgumentException("model_constructor_ambiguous");
-        Constructor<?> constructor = candidates.get(0);
+        return candidates.get(0);
+    }
+
+    private static Object[] identityArguments(Constructor<?> constructor) {
         Object[] arguments = new Object[constructor.getParameterCount()];
         Class<?>[] types = constructor.getParameterTypes();
         for (int index = 0; index < types.length; index++) {
@@ -108,8 +121,12 @@ public final class ArtworkModelAccess {
             else if (parameter.isPrimitive()) throw new IllegalArgumentException("model_primitive_unknown");
             // Nullable icon/intent/lyric DTOs remain null; a new mandatory property fails closed.
         }
-        constructor.setAccessible(true);
-        Object probe = constructor.newInstance(arguments);
+        return arguments;
+    }
+
+    public static Map<String, Field> bindIdentityFields(Class<?> type, String marker)
+            throws ReflectiveOperationException {
+        Object probe = newIdentityProbe(type);
         String text = probe.toString();
         if (!text.startsWith(marker) || text.length() > 4096) throw new IllegalArgumentException("model_marker");
         Map<String, Field> fields = new LinkedHashMap<>();

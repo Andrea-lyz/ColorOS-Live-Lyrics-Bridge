@@ -10,6 +10,7 @@ import static org.junit.Assert.assertTrue;
 import android.content.Context;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.Icon;
+import android.net.Uri;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -59,6 +60,48 @@ public class TranslationToggleMediaActionBinderTest {
 
     public static final class FakeMediaActionEx {
         Object icon;
+        Object iconForAod;
+    }
+
+    /** C16 action layout: no AOD Drawable. */
+    public static final class FakeActionEx7 {
+        final boolean enabled;
+        final Icon icon;
+        final Uri uri;
+
+        public FakeActionEx7(
+                boolean enabled,
+                Icon icon,
+                Uri uri,
+                boolean activity,
+                Boolean heart,
+                boolean standard,
+                String key) {
+            this.enabled = enabled;
+            this.icon = icon;
+            this.uri = uri;
+        }
+    }
+
+    /** C17 action layout: AOD Drawable inserted after the semantic Icon. */
+    public static final class FakeActionEx8 {
+        final boolean enabled;
+        final Icon icon;
+        final Drawable iconForAod;
+
+        public FakeActionEx8(
+                boolean enabled,
+                Icon icon,
+                Drawable iconForAod,
+                Uri uri,
+                boolean activity,
+                Boolean heart,
+                boolean standard,
+                String key) {
+            this.enabled = enabled;
+            this.icon = icon;
+            this.iconForAod = iconForAod;
+        }
     }
 
     public static final class FakeMediaButtonEx {
@@ -249,6 +292,59 @@ public class TranslationToggleMediaActionBinderTest {
 
         assertNull(both.action);
         assertEquals(0, host.toggleClicks);
+    }
+
+    @Test
+    public void actionExConstructorPrefersC17EightArgumentLayout() throws Exception {
+        assertEquals(8, TranslationToggleMediaActionBinder
+                .resolveActionExConstructor(FakeActionEx8.class)
+                .getParameterCount());
+        assertEquals(7, TranslationToggleMediaActionBinder
+                .resolveActionExConstructor(FakeActionEx7.class)
+                .getParameterCount());
+    }
+
+    @Test
+    public void unknownActionExLayoutFailsClosed() {
+        try {
+            TranslationToggleMediaActionBinder.resolveActionExConstructor(Object.class);
+            throw new AssertionError("expected NoSuchMethodException");
+        } catch (NoSuchMethodException expected) {
+            // No constructor means the synthetic action stays unavailable; the card is untouched.
+        }
+    }
+
+    @Test
+    public void syntheticActionIsEnabledAndLeavesAodFallbackNull() throws Exception {
+        Object c17 = TranslationToggleMediaActionBinder.createSyntheticActionEx(
+                FakeActionEx8.class, null);
+        assertTrue(((FakeActionEx8) c17).enabled);
+        assertNull(((FakeActionEx8) c17).iconForAod);
+
+        Object c16 = TranslationToggleMediaActionBinder.createSyntheticActionEx(
+                FakeActionEx7.class, null);
+        assertTrue(((FakeActionEx7) c16).enabled);
+    }
+
+    @Test
+    public void replacingFavoriteClearsAodArtAndRestoresItOnDisable() {
+        FakeMediaButton button = new FakeMediaButton();
+        FakeMediaAction action = new FakeMediaAction();
+        Object originalIcon = new Object();
+        Object originalAod = new Object();
+        action.ex.icon = originalIcon;
+        action.ex.iconForAod = originalAod;
+        button.ex.rule0CustomActions.add(action);
+        TranslationToggleMediaActionBinder binder = binder(new FakeHost());
+
+        binder.applyTranslationToggle("example", button, true, true, "example", 5, 120);
+        assertNull(action.ex.iconForAod);
+        Object appliedIcon = action.ex.icon;
+        assertNotNull(appliedIcon);
+
+        binder.applyTranslationToggle("example", button, false, false, "example", 5, 120);
+        assertSame(originalIcon, action.ex.icon);
+        assertSame(originalAod, action.ex.iconForAod);
     }
 
     @Test

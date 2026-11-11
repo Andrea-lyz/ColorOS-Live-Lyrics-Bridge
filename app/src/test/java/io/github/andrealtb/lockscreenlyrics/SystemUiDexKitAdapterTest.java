@@ -3,6 +3,7 @@ package io.github.andrealtb.lockscreenlyrics;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 import android.content.Context;
@@ -185,6 +186,40 @@ public class SystemUiDexKitAdapterTest {
                 String artist,
                 String packageName,
                 Object lyricData) {}
+    }
+
+    /** C17 PYB110-class static scheduler, with the same player-index gate as the vendor body. */
+    private static final class MetadataSchedulerShapes {
+        static Object lastSelf;
+        static String lastKey;
+        static MediaMetadata lastMetadata;
+
+        int getMediaPlayerIndex(String key) {
+            return 0;
+        }
+
+        static void access$updateMediaDataFromMetaData(
+                MetadataSchedulerShapes self, String key, MediaMetadata metadata) {
+            lastSelf = self;
+            lastKey = key;
+            lastMetadata = metadata;
+        }
+    }
+
+    private static final class MissingIndexSchedulerShapes {
+        static void access$updateMediaDataFromMetaData(
+                MissingIndexSchedulerShapes self, String key, MediaMetadata metadata) {
+        }
+    }
+
+    private static final class IneligibleIndexSchedulerShapes {
+        int getMediaPlayerIndex(String key) {
+            return -1;
+        }
+
+        static void access$updateMediaDataFromMetaData(
+                IneligibleIndexSchedulerShapes self, String key, MediaMetadata metadata) {
+        }
     }
 
     /** PYB110-style: the named instance method is gone and only the synthetic remains. */
@@ -383,6 +418,84 @@ public class SystemUiDexKitAdapterTest {
                 new String[]{"parseSaveXmlValue whiteList: ", "getRusWhiteList: cache is empty"});
         assertNull(matcher.getAnyOfMatchers());
         assertEquals(2, matcher.getUsingStringsMatcher().size());
+    }
+
+    @Test
+    public void metadataSchedulerAcceptsOnlyStaticOwnerPrefixedForm() throws Exception {
+        Method scheduler = method(
+                MetadataSchedulerShapes.class,
+                "access$updateMediaDataFromMetaData",
+                MetadataSchedulerShapes.class,
+                String.class,
+                MediaMetadata.class);
+        assertTrue(SystemUiDexKitAdapter.isMetadataScheduler(scheduler));
+        assertTrue(SystemUiDexKitAdapter.isReplayableMetadataRefresh(scheduler));
+        assertFalse(SystemUiDexKitAdapter.isMetadataScheduler(
+                method(MetadataShapes.class, "onMetaDataChanged", String.class, MediaMetadata.class)));
+        assertFalse(SystemUiDexKitAdapter.isMetadataScheduler(
+                method(
+                        SyntheticMetadataShapes.class,
+                        "access$onMetaDataChanged",
+                        SyntheticMetadataShapes.class,
+                        String.class,
+                        MediaMetadata.class,
+                        Object.class)));
+    }
+
+    @Test
+    public void metadataSchedulerResolutionHonoursPlayerIndexGate() throws Exception {
+        Method scheduler = method(
+                MetadataSchedulerShapes.class,
+                "access$updateMediaDataFromMetaData",
+                MetadataSchedulerShapes.class,
+                String.class,
+                MediaMetadata.class);
+        assertEquals(scheduler, SystemUiDexKitAdapter.findMetadataSchedulerEntry(MetadataSchedulerShapes.class));
+        assertTrue(SystemUiDexKitAdapter.canInvokeMetadataScheduler(
+                new MetadataSchedulerShapes(), scheduler, "key"));
+
+        Method ineligible = method(
+                IneligibleIndexSchedulerShapes.class,
+                "access$updateMediaDataFromMetaData",
+                IneligibleIndexSchedulerShapes.class,
+                String.class,
+                MediaMetadata.class);
+        assertFalse(SystemUiDexKitAdapter.canInvokeMetadataScheduler(
+                new IneligibleIndexSchedulerShapes(), ineligible, "key"));
+
+        Method noIndex = method(
+                MissingIndexSchedulerShapes.class,
+                "access$updateMediaDataFromMetaData",
+                MissingIndexSchedulerShapes.class,
+                String.class,
+                MediaMetadata.class);
+        assertTrue(SystemUiDexKitAdapter.canInvokeMetadataScheduler(
+                new MissingIndexSchedulerShapes(), noIndex, "key"));
+        assertTrue(SystemUiDexKitAdapter.isReplayableMetadataRefresh(
+                method(MetadataShapes.class, "onMetaDataChanged", String.class, MediaMetadata.class)));
+        assertFalse(SystemUiDexKitAdapter.isReplayableMetadataRefresh(
+                method(
+                        SyntheticMetadataShapes.class,
+                        "access$onMetaDataChanged",
+                        SyntheticMetadataShapes.class,
+                        String.class,
+                        MediaMetadata.class,
+                        Object.class)));
+    }
+
+    @Test
+    public void metadataSchedulerInvocationKeepsStaticArgumentOrder() throws Exception {
+        MetadataSchedulerShapes owner = new MetadataSchedulerShapes();
+        Method scheduler = method(
+                MetadataSchedulerShapes.class,
+                "access$updateMediaDataFromMetaData",
+                MetadataSchedulerShapes.class,
+                String.class,
+                MediaMetadata.class);
+        SystemUiDexKitAdapter.invokeMetadataScheduler(scheduler, owner, "entry-key", null);
+        assertSame(owner, MetadataSchedulerShapes.lastSelf);
+        assertEquals("entry-key", MetadataSchedulerShapes.lastKey);
+        assertNull(MetadataSchedulerShapes.lastMetadata);
     }
 
     @Test
