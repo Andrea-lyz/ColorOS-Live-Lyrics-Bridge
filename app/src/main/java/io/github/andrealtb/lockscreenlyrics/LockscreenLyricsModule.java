@@ -59,6 +59,7 @@ import io.github.andrealtb.lockscreenlyrics.render.LyricDrawLayoutEngine;
 import io.github.andrealtb.lockscreenlyrics.render.LyricTimingMode;
 import io.github.andrealtb.lockscreenlyrics.render.LyricsRecyclerGeometry;
 import io.github.andrealtb.lockscreenlyrics.render.OfficialLyricFrameResolver;
+import io.github.andrealtb.lockscreenlyrics.diagnostics.CompatibilityStatus;
 import io.github.andrealtb.lockscreenlyrics.render.OfficialLyricDataset;
 import io.github.andrealtb.lockscreenlyrics.render.LyricRenderTransactions;
 import io.github.andrealtb.lockscreenlyrics.render.WordLine;
@@ -755,6 +756,7 @@ public final class LockscreenLyricsModule extends XposedModule {
 
                 @Override
                 public void setRendererAodLowFrameRateMode(boolean enabled) {
+                    diagnosticAod = Boolean.toString(enabled);
                     officialLyricTextRenderer.setAodLowFrameRateMode(enabled);
                 }
 
@@ -769,7 +771,10 @@ public final class LockscreenLyricsModule extends XposedModule {
                     try {
                         boolean coverTraced = BridgePerfTrace.begin("CLL:lyricCoverGlowColor");
                         try {
-                            officialLyricTextRenderer.setCoverGlowColor(dynamicArtworkRuntime.coverColor(textView));
+                            Integer color = dynamicArtworkRuntime.coverColor(textView);
+                            officialLyricTextRenderer.setCoverGlowColor(color);
+                            CompatibilityStatus.global().palette(
+                                    textView, lyricUiConfig.glowFollowsCover, color != null);
                         } finally {
                             BridgePerfTrace.end(coverTraced);
                         }
@@ -992,8 +997,23 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
     };
 
+    private final String diagnosticProcessEpoch = java.util.UUID.randomUUID().toString();
+    private volatile String diagnosticFramework = "unknown";
+    private volatile int diagnosticApi = -1;
+    private volatile long diagnosticFrameworkProperties = -1L;
+    private volatile long diagnosticUiRevision = -1L;
+    private volatile String diagnosticAod = "unknown";
+
     @Override
     public void onModuleLoaded(ModuleLoadedParam param) {
+        try {
+            diagnosticFramework = getFrameworkName() + " / " + getFrameworkVersion()
+                    + " (" + getFrameworkVersionCode() + ")";
+            diagnosticApi = getApiVersion();
+            diagnosticFrameworkProperties = getFrameworkProperties();
+        } catch (RuntimeException | LinkageError ignored) {
+            // Observation failure must not change module/bootstrap behavior.
+        }
         String processName = param.getProcessName();
         if (param.isSystemServer()) {
             logProcessName = "system_server";
@@ -1021,6 +1041,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     public void onPackageReady(PackageReadyParam param) {
         String packageName = param.getPackageName();
         if (SYSTEMUI_PACKAGE.equals(packageName)) {
+            io.github.andrealtb.lockscreenlyrics.diagnostics.LoadedComponentFingerprints.global().observed("systemui", param.getClassLoader());
             dynamicArtworkRuntime.initializeSystemUi(param.getClassLoader());
             tryInstallPluginClassLoaderConstructorHook(param.getClassLoader());
             systemUiRuntimeBootstrap.initialize(param.getClassLoader());
@@ -2591,6 +2612,8 @@ public final class LockscreenLyricsModule extends XposedModule {
             LyricUiConfig config,
             String reason) {
         if (intent == null) return;
+        if (applied) diagnosticUiRevision = intent.getLongExtra(
+                LyricUiSettings.EXTRA_CONFIG_REVISION, -1L);
         ResultReceiver receiver = intent.getParcelableExtra(LyricUiSettings.EXTRA_RESULT_RECEIVER);
         if (receiver == null) return;
         Bundle result = new Bundle();
@@ -4238,6 +4261,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         currentLyricProviderPackage = "";
         lastSystemUiPackageSupported = false;
         systemUiHasOfficialLyric = false;
+        CompatibilityStatus.global().invalidateLyricObservations();
         currentWordLyricModel = null;
         clearCommittedLyricRenderModel();
         currentWordLyricModelSignature = "";
@@ -5002,6 +5026,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         currentLyricProviderPayload = null;
         currentLyricObservedTrackKey = "";
         systemUiHasOfficialLyric = false;
+        CompatibilityStatus.global().invalidateLyricObservations();
         currentWordLyricModel = null;
         clearCommittedLyricRenderModel();
         currentWordLyricModelSignature = "";
@@ -5361,6 +5386,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (!stillShowsTranslationToggle(view)) {
             forgetTranslationActionViewIfRebound(view);
             if (!isRememberedTranslationActionView(view)) {
+                CompatibilityStatus.global().forgetOwner(view);
                 return;
             }
         }
@@ -5368,6 +5394,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         // Before the immersive lyric surface is attached, leave the action at ColorOS' requested
         // visibility. Hiding it during the pre-bind phase can strand a recycled view INVISIBLE.
         if (!shouldManageTranslationActionViewVisibility()) {
+            CompatibilityStatus.global().forgetOwner(view);
             translationButtonDebug("skip translation view visibility management"
                     + ", state=" + describeTranslationButtonState()
                     + ", view=" + describeViewForLog(view));
@@ -5382,6 +5409,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 true, translationCount, userWantsButton)
                 && !PlayerTranslationTogglePolicy.shouldForceHideTrackedTranslationActionView(
                 true, translationCount, userWantsButton)) {
+            CompatibilityStatus.global().translationPending(view, userWantsButton);
             translationButtonDebug("leave translation view visibility during lyric-model gap"
                     + ", state=" + describeTranslationButtonState()
                     + ", view=" + describeViewForLog(view));
@@ -5404,6 +5432,8 @@ public final class LockscreenLyricsModule extends XposedModule {
                     + ", state=" + describeTranslationButtonState()
                     + ", view=" + describeViewForLog(view));
         }
+        CompatibilityStatus.global().translationButton(
+                view, userWantsButton, translationCount, targetVisibility == View.VISIBLE);
     }
 
     private void applyTranslationActionViewPresentation(View view) {
@@ -7133,6 +7163,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private int beginLyricTextBindEpoch(TextView textView) {
+        CompatibilityStatus.global().forgetOwner(textView);
         if (textView == null) {
             return -1;
         }
@@ -7600,6 +7631,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (!OplusPluginClassLoaderPolicy.isReady(pluginLoader)) {
             return;
         }
+        io.github.andrealtb.lockscreenlyrics.diagnostics.LoadedComponentFingerprints.global().observed("plugin", pluginLoader);
         dynamicArtworkRuntime.onPluginClassLoader(pluginLoader);
         synchronized (pluginHookGenerationLock) {
             if (readyPluginClassLoader.get() == pluginLoader) {
@@ -11452,6 +11484,8 @@ public final class LockscreenLyricsModule extends XposedModule {
                         } else if (LyricUiSettings.ACTION_REQUEST_MODULE_STATUS.equals(
                                 intent.getAction())) {
                             handleModuleStatusRequest(intent);
+                        } else if (LyricUiSettings.isDiagnosticAction(intent.getAction())) {
+                            handleShortDiagnostics(intent);
                         } else if (LyricUiSettings.ACTION_CONTENT_CLEANUP_CHANGED.equals(
                                 intent.getAction())) {
                             handleLyricContentCleanupChanged(receiverContext, intent);
@@ -11478,6 +11512,10 @@ public final class LockscreenLyricsModule extends XposedModule {
                 filter.addAction(LyricUiSettings.ACTION_PLAYER_TRANSLATION_SETTINGS_CHANGED);
                 filter.addAction(LyricUiSettings.ACTION_REQUEST_MEDIA_SNAPSHOT);
                 filter.addAction(LyricUiSettings.ACTION_REQUEST_MODULE_STATUS);
+                filter.addAction(LyricUiSettings.ACTION_DIAGNOSTIC_START);
+                filter.addAction(LyricUiSettings.ACTION_DIAGNOSTIC_MARK);
+                filter.addAction(LyricUiSettings.ACTION_DIAGNOSTIC_STOP);
+                filter.addAction(LyricUiSettings.ACTION_DIAGNOSTIC_SNAPSHOT);
                 filter.addAction(LyricUiSettings.ACTION_CONTENT_CLEANUP_CHANGED);
                 filter.addAction(LyricUiSettings.ACTION_DEBUG_SETTINGS_CHANGED);
                 filter.addAction(LyricUiSettings.ACTION_RESTART_SYSTEM_UI);
@@ -11670,6 +11708,13 @@ public final class LockscreenLyricsModule extends XposedModule {
         result.putString(LyricUiSettings.RESULT_PROCESS, logProcessName);
         result.putLong(LyricUiSettings.RESULT_MODULE_TIMESTAMP, System.currentTimeMillis());
         StructuredBridgeLog.config().putStatus(result);
+        io.github.andrealtb.lockscreenlyrics.diagnostics.BuildIdentity.putRuntimeStatus(
+                result, logProcessName, diagnosticProcessEpoch, diagnosticFramework,
+                diagnosticApi, diagnosticFrameworkProperties, diagnosticUiRevision);
+        result.putString("cll_observed_aod_low_frame_rate", diagnosticAod);
+        io.github.andrealtb.lockscreenlyrics.diagnostics.AodModeObservation.global().putStatus(result);
+        io.github.andrealtb.lockscreenlyrics.diagnostics.LoadedComponentFingerprints.global().putStatus(result);
+        CompatibilityStatus.global().putStatus(result);
         try {
             receiver.send(0, result);
         } catch (Throwable throwable) {
@@ -11679,6 +11724,43 @@ public final class LockscreenLyricsModule extends XposedModule {
                     "Could not answer module status request"
                             + " | error=" + throwable.getClass().getSimpleName());
         }
+    }
+
+    @SuppressWarnings("deprecation")
+    private void handleShortDiagnostics(Intent intent) {
+        if (intent == null || !LyricUiSettings.isDiagnosticAction(intent.getAction())) return;
+        ResultReceiver receiver = intent.getParcelableExtra(LyricUiSettings.EXTRA_RESULT_RECEIVER);
+        if (receiver == null) return;
+        io.github.andrealtb.lockscreenlyrics.diagnostics.ShortDiagnosticSession session =
+                io.github.andrealtb.lockscreenlyrics.diagnostics.ShortDiagnosticSession.global();
+        String status = "SNAPSHOT";
+        String expected = intent.getStringExtra(LyricUiSettings.EXTRA_DIAGNOSTIC_SESSION);
+        if (LyricUiSettings.ACTION_DIAGNOSTIC_START.equals(intent.getAction())) {
+            session.start(); status = "STARTED_OR_ALREADY_ACTIVE";
+            io.github.andrealtb.lockscreenlyrics.diagnostics.LoadedComponentFingerprints.global().collect();
+        } else if (LyricUiSettings.ACTION_DIAGNOSTIC_MARK.equals(intent.getAction())) {
+            status = session.mark(expected);
+        } else if (LyricUiSettings.ACTION_DIAGNOSTIC_STOP.equals(intent.getAction())) {
+            status = session.stop(expected);
+        }
+        Bundle runtime = new Bundle();
+        io.github.andrealtb.lockscreenlyrics.diagnostics.BuildIdentity.putRuntimeStatus(
+                runtime, logProcessName, diagnosticProcessEpoch, diagnosticFramework,
+                diagnosticApi, diagnosticFrameworkProperties, diagnosticUiRevision);
+        runtime.putString("cll_observed_aod_low_frame_rate", diagnosticAod);
+        io.github.andrealtb.lockscreenlyrics.diagnostics.AodModeObservation.global().putStatus(runtime);
+        StructuredBridgeLog.config().putStatus(runtime);
+        CompatibilityStatus.global().putStatus(runtime);
+        io.github.andrealtb.lockscreenlyrics.diagnostics.LoadedComponentFingerprints.global().putStatus(runtime);
+        LyricUiConfig config = lyricUiConfig;
+        runtime.putBoolean("diag_config_lineProgress", config.lineTimedProgressEnabled);
+        runtime.putBoolean("diag_config_translationProgress", config.translationProgressEnabled);
+        runtime.putBoolean("diag_config_charLift", config.charLiftEnabled);
+        runtime.putBoolean("diag_config_coverGlow", config.glowFollowsCover);
+        Bundle result = new Bundle(); result.putInt("schema", 1);
+        result.putString("sessionId", session.sessionId()); result.putString("status", status);
+        result.putString("diagnostic_json", session.summaryJson(runtime));
+        try { receiver.send(0, result); } catch (RuntimeException ignored) { }
     }
 
     @SuppressWarnings("deprecation")
@@ -12391,6 +12473,7 @@ public final class LockscreenLyricsModule extends XposedModule {
 
     private void clearWordLyricModelState(BridgeDebugArea area, String event, String message) {
         traceLyricModelState("cleared", currentWordLyricModel);
+        CompatibilityStatus.global().invalidateLyricObservations();
         currentWordLyricModel = null;
         clearCommittedLyricRenderModel();
         currentWordLyricModelSignature = "";
@@ -12405,6 +12488,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     private void publishWordLyricModel(
             WordLyricModel model, String signature, String payloadKey, long loadEpoch) {
         // Parsing/cache state may advance on the metadata worker. It is not render ownership.
+        if (currentWordLyricModel != model) CompatibilityStatus.global().invalidateLyricObservations();
         currentWordLyricModel = model;
         currentWordLyricModelSignature = signature;
         currentWordLyricModelTrackKey = payloadKey;
@@ -14047,7 +14131,12 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
 
         void setConfig(LyricUiConfig config) {
-            if (config == null || config.equals(uiConfig)) return;
+            if (config == null) return;
+            CompatibilityStatus.global().requested(CompatibilityStatus.Feature.COVER_GLOW, config.glowFollowsCover);
+            CompatibilityStatus.global().requested(CompatibilityStatus.Feature.CHAR_LIFT, config.charLiftEnabled);
+            CompatibilityStatus.global().requested(CompatibilityStatus.Feature.LINE_PROGRESS, config.lineTimedProgressEnabled);
+            CompatibilityStatus.global().requested(CompatibilityStatus.Feature.TRANSLATION_PROGRESS, config.translationProgressEnabled);
+            if (config.equals(uiConfig)) return;
             LyricUiConfig previous = uiConfig;
             uiConfig = config;
             palette = LyricUiPalette.from(config);
@@ -14094,6 +14183,12 @@ public final class LockscreenLyricsModule extends XposedModule {
             long now = SystemClock.elapsedRealtime();
             float currentAmount = currentAodLineFillTransitionAmount(now);
             this.aodLowFrameRateMode = aodLowFrameRateMode;
+            try {
+                io.github.andrealtb.lockscreenlyrics.diagnostics.AodModeObservation.global()
+                        .changed(aodLowFrameRateMode, now);
+            } catch (RuntimeException ignored) {
+                // Optional observation; never affects the renderer's mode switch.
+            }
             aodLineFillTransitionStartAmount = currentAmount;
             aodLineFillTransitionTargetAmount = aodLowFrameRateMode ? 1f : 0f;
             aodLineFillTransitionStartedAtMs =
@@ -15064,11 +15159,15 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
 
         private boolean shouldDrawTranslationProgress(WordLine line) {
-            return !aodLowFrameRateMode
+            boolean eligible = !aodLowFrameRateMode
                     && translationProgressEnabled
                     && line != null
                     && (line.timingMode != LyricTimingMode.LINE_TIMED
                     || lineTimedProgressEnabled);
+            CompatibilityStatus.global().progress(line, CompatibilityStatus.Feature.TRANSLATION_PROGRESS,
+                    translationProgressEnabled, eligible, aodLowFrameRateMode,
+                    line != null && line.timingMode == LyricTimingMode.LINE_TIMED && !lineTimedProgressEnabled);
+            return eligible;
         }
 
         private float resolveTranslationRevealProgress(
@@ -15109,7 +15208,10 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
 
         private boolean isLineTimedProgress(WordLine line) {
-            return line != null && line.timingMode == LyricTimingMode.LINE_TIMED && lineTimedProgressEnabled;
+            boolean eligible = line != null && line.timingMode == LyricTimingMode.LINE_TIMED && lineTimedProgressEnabled;
+            CompatibilityStatus.global().progress(line, CompatibilityStatus.Feature.LINE_PROGRESS,
+                    lineTimedProgressEnabled, eligible, false, false);
+            return eligible;
         }
 
         private float resolveLineTimedRevealProgress(WordLyricModel model, WordLine line, long position) {
@@ -15670,6 +15772,9 @@ public final class LockscreenLyricsModule extends XposedModule {
                     // so sinking underneath it would only ghost.
                     || fullLineOverlayAmount > 0.001f
                     || WordLyricRenderSupport.shouldUseTimestampHighlight(model, line)) {
+                CompatibilityStatus.global().liftBlocked(line, charLiftEnabled, charLiftUnavailable,
+                        aodLowFrameRateMode, line == null || TextUtils.isEmpty(text),
+                        line != null && line.timingMode == LyricTimingMode.LINE_TIMED && !lineTimedProgressEnabled);
                 return;
             }
             try {
@@ -15703,6 +15808,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 charLift.floorY = charLiftFloorY > 0f ? charLiftFloorY : canvasHeight;
                 charLift.minClearance = minClearance;
                 charLift.lineActive = true;
+                CompatibilityStatus.global().liftPrepared(line);
             } catch (RuntimeException error) {
                 StructuredBridgeLog.warn(
                         BridgeDebugArea.RENDERER,
@@ -16025,6 +16131,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                             segmentWidth,
                             revealWidth,
                             false);
+                    CompatibilityStatus.global().liftDrawn(line, charLiftUnavailable);
                 } else {
                     canvas.drawText(text, drawLine.start, drawLine.end, x, y, basePaint);
                 }

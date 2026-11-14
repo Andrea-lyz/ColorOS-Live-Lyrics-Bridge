@@ -10,6 +10,15 @@ final class LyricUiSettings {
             "io.github.andrealtb.lockscreenlyrics.action.REQUEST_MEDIA_SNAPSHOT";
     static final String ACTION_REQUEST_MODULE_STATUS =
             "io.github.andrealtb.lockscreenlyrics.action.REQUEST_MODULE_STATUS";
+    static final String ACTION_DIAGNOSTIC_START = "io.github.andrealtb.lockscreenlyrics.action.DIAGNOSTIC_START";
+    static final String ACTION_DIAGNOSTIC_MARK = "io.github.andrealtb.lockscreenlyrics.action.DIAGNOSTIC_MARK";
+    static final String ACTION_DIAGNOSTIC_STOP = "io.github.andrealtb.lockscreenlyrics.action.DIAGNOSTIC_STOP";
+    static final String ACTION_DIAGNOSTIC_SNAPSHOT = "io.github.andrealtb.lockscreenlyrics.action.DIAGNOSTIC_SNAPSHOT";
+    static final String EXTRA_DIAGNOSTIC_SESSION = "diagnostic_session";
+    static boolean isDiagnosticAction(String action) {
+        return ACTION_DIAGNOSTIC_START.equals(action) || ACTION_DIAGNOSTIC_MARK.equals(action)
+                || ACTION_DIAGNOSTIC_STOP.equals(action) || ACTION_DIAGNOSTIC_SNAPSHOT.equals(action);
+    }
     static final String ACTION_PLAYER_TRANSLATION_SETTINGS_CHANGED =
             "io.github.andrealtb.lockscreenlyrics.action.PLAYER_TRANSLATION_SETTINGS_CHANGED";
     static final String ACTION_CONTENT_CLEANUP_CHANGED =

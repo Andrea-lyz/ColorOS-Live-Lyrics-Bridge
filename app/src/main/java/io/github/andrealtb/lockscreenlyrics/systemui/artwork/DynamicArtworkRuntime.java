@@ -75,6 +75,7 @@ public final class DynamicArtworkRuntime {
     private final AtomicBoolean displayPosted = new AtomicBoolean();
     private boolean systemInstalled;
     private volatile boolean coverColorEnabled;
+    private volatile boolean diagnosticDisplayRequested;
     private volatile boolean requestedCoverColorEnabled;
 
     public void setCoverColorEnabled(boolean enabled) {
@@ -131,6 +132,9 @@ public final class DynamicArtworkRuntime {
     /** Starts or changes the playback for the effective config; presentation-only changes keep the decoder. */
     private void activate() {
         ArtworkPlaybackConfig next = testConfig != null ? testConfig : settings.playback();
+        diagnosticDisplayRequested = next.enabled();
+        io.github.andrealtb.lockscreenlyrics.diagnostics.CompatibilityStatus.global().requested(
+                io.github.andrealtb.lockscreenlyrics.diagnostics.CompatibilityStatus.Feature.DYNAMIC_ARTWORK, next.enabled());
         String source = testConfig != null ? "debug_test" : next.enabled() ? "settings" : "off";
         if (next.equals(active) && source.equals(activeSource)) return;
         if (playback != null && next.sameSession(active)) {
@@ -161,6 +165,8 @@ public final class DynamicArtworkRuntime {
             activeSource = "off";
             trace.state("ARTWORK_TEST_FALLBACK", () -> "reason=test_setup_failed errorType=" + ArtworkTrace.errorType(error));
         }
+        io.github.andrealtb.lockscreenlyrics.diagnostics.CompatibilityStatus.global().artworkLifecycle(
+                this, diagnosticDisplayRequested, diagnosticDisplayRequested && !displayEnabled);
         refreshHosts();
         if (observing()) refreshSource();
         else suspendObservations();
@@ -972,6 +978,9 @@ public final class DynamicArtworkRuntime {
                 if (latest == null || latest.input() != input || latest.surfaceEpoch() != surfaceVersion) return;
                 registry.observeHost(this, epoch, surfaceVersion, latest.card(), trace, binding -> {
                     displayBinding = binding;
+                    io.github.andrealtb.lockscreenlyrics.diagnostics.CompatibilityStatus.global().artworkBinding(
+                            this, diagnosticDisplayRequested, binding.ready(), displayEnabled,
+                            surface == ArtworkPlaybackPolicy.Surface.IMMERSIVE);
                     if (coverColorEnabled) invalidateCoverColorTargets();
                     updateDisplay();
                     probe.sample();

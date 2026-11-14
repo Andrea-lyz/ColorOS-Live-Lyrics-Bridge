@@ -8,6 +8,7 @@
 
     <queries>
         <package android:name="com.android.systemui" />
+        <package android:name="com.oplus.systemui.plugins" />
         <intent>
             <action android:name="io.github.andrealtb.artwork.action.BIND_PROVIDER" />
         </intent>
