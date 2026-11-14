@@ -143,7 +143,7 @@ public final class BridgeArchitectureGuardTest {
 
     private static final List<String> MANAGEMENT_ONLY_MARKERS = Arrays.asList(
             "HttpURLConnection", "HttpsURLConnection", "java.net.URL", "openConnection(",
-            "PackageInstaller");
+            "PackageInstaller", "ProcessBuilder(\"su\"");
 
     @Test
     public void composeManagementUiStaysOutOfHookAndRenderCode() throws Exception {

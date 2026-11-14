@@ -1,11 +1,17 @@
 package io.github.andrealtb.lockscreenlyrics.management
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import androidx.annotation.DrawableRes
+import androidx.appcompat.content.res.AppCompatResources
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -13,6 +19,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -26,8 +33,14 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import io.github.andrealtb.lockscreenlyrics.R
@@ -36,6 +49,7 @@ import io.github.andrealtb.lockscreenlyrics.management.catalog.CatalogState
 import io.github.andrealtb.lockscreenlyrics.management.catalog.RefreshOutcome
 import io.github.andrealtb.lockscreenlyrics.management.install.Operation
 import io.github.andrealtb.lockscreenlyrics.management.install.OperationFailure
+import io.github.andrealtb.lockscreenlyrics.management.root.RootState
 
 /** Marks every prototype page; sample values must never be read as device evidence. */
 @Composable
@@ -62,6 +76,8 @@ internal fun HomeContent(
     status: HomeStatus,
     state: HomeState,
     updatesAvailable: Int,
+    root: RootView,
+    onRequestRoot: () -> Unit,
     onRefreshStatus: () -> Unit,
     onContinueSetup: () -> Unit,
     onViewReasons: () -> Unit,
@@ -105,6 +121,26 @@ internal fun HomeContent(
                         ConfigObservation.UNKNOWN -> R.string.mgmt_check_unknown
                     }),
                 )
+                CheckRow(
+                    label = stringResource(R.string.mgmt_check_root),
+                    check = when {
+                        root.state == RootState.GRANTED && root.cliAvailable != false -> Check.OK
+                        root.state == RootState.DENIED || root.state == RootState.UNAVAILABLE ||
+                            root.cliAvailable == false -> Check.ATTENTION
+                        else -> Check.UNKNOWN
+                    },
+                    value = stringResource(when {
+                        root.state == RootState.GRANTED && root.cliAvailable == false -> R.string.mgmt_root_no_cli
+                        root.state == RootState.GRANTED -> R.string.mgmt_root_granted
+                        root.state == RootState.CHECKING -> R.string.mgmt_status_checking
+                        root.state == RootState.DENIED -> R.string.mgmt_root_denied
+                        root.state == RootState.UNAVAILABLE -> R.string.mgmt_root_unavailable
+                        else -> R.string.mgmt_root_not_requested
+                    }),
+                )
+                if (root.state == RootState.NOT_REQUESTED || root.state == RootState.DENIED) {
+                    Button(onClick = onRequestRoot) { Text(stringResource(R.string.mgmt_action_request_root)) }
+                }
                 OutlinedButton(
                     onClick = onRefreshStatus,
                     enabled = status.module != ModuleStatus.CHECKING,
@@ -243,11 +279,41 @@ internal fun StoreContent(
     }
 }
 
+private val ProviderIconSize = 40.dp
+
+/**
+ * The Provider's launcher icon. Adaptive icons are drawn through the platform drawable (with the
+ * device's icon mask); Compose's painterResource only handles plain vectors and bitmaps.
+ */
+@Composable
+private fun ProviderIcon(@DrawableRes iconRes: Int) {
+    val context = LocalContext.current
+    val px = with(LocalDensity.current) { ProviderIconSize.roundToPx() }
+    val bitmap: ImageBitmap? = remember(iconRes, px) {
+        if (iconRes == 0) null else runCatching {
+            AppCompatResources.getDrawable(context, iconRes)?.let { drawable ->
+                Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888).also { out ->
+                    drawable.setBounds(0, 0, px, px)
+                    drawable.draw(Canvas(out))
+                }.asImageBitmap()
+            }
+        }.getOrNull()
+    }
+    if (bitmap != null) {
+        Image(bitmap, contentDescription = null, modifier = Modifier.size(ProviderIconSize))
+    } else {
+        Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(ProviderIconSize),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
 @Composable
 private fun StoreCard(item: StoreItem, operation: Operation?, busy: Boolean, onAction: (StoreAction) -> Unit) {
     StatusCard {
         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s), verticalAlignment = Alignment.CenterVertically) {
-            Text(item.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            ProviderIcon(item.iconRes)
+            Text(if (item.nameRes != 0) stringResource(item.nameRes) else item.name,
+                style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
             KindLabel(item.kind)
         }
         val installed = item.installedVersion?.let { stringResource(R.string.mgmt_version_installed, it) }
@@ -258,12 +324,22 @@ private fun StoreCard(item: StoreItem, operation: Operation?, busy: Boolean, onA
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         StateNote(item)
+        item.enablement?.let { state ->
+            EnablementRow(state)
+            if (state.offersLsposedShortcut() && operation?.active != true) {
+                OutlinedButton(onClick = { onAction(StoreAction.OPEN_LSPOSED) }) {
+                    Text(stringResource(if (state == Enablement.ENABLED_NO_SCOPE) R.string.mgmt_action_lsposed_scope
+                        else R.string.mgmt_action_lsposed_enable))
+                }
+            }
+        }
         if (operation != null) OperationStatus(item, operation, onAction)
         // While any operation runs, no second download/update starts (one installer at a time).
         if (operation?.active == true) return@StatusCard
         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
             when (val action = item.primaryAction()) {
-                StoreAction.NONE, StoreAction.CANCEL, StoreAction.CONFIRM_INSTALL, StoreAction.ALLOW_INSTALLS -> Unit
+                StoreAction.NONE, StoreAction.CANCEL, StoreAction.CONFIRM_INSTALL, StoreAction.ALLOW_INSTALLS,
+                StoreAction.OPEN_LSPOSED -> Unit
                 StoreAction.DOWNLOAD ->
                     Button(onClick = { onAction(action) }, enabled = !busy) { Text(stringResource(action.labelRes())) }
                 StoreAction.UPDATE -> {
@@ -295,6 +371,25 @@ private fun StateNote(item: StoreItem) {
         StoreNote.INDEPENDENT -> Icons.Filled.CheckCircle to R.string.mgmt_state_independent
     }
     val color = if (note.isWarning) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s), verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, contentDescription = null, tint = color)
+        Text(stringResource(text), style = MaterialTheme.typography.bodyMedium, color = color)
+    }
+}
+
+/** LSPosed enable state of an installed module: a reminder, not proof that it runs. */
+@Composable
+private fun EnablementRow(state: Enablement) {
+    val (icon, text, color) = when (state) {
+        Enablement.CHECKING -> Triple(Icons.Filled.Info, R.string.mgmt_enable_checking, MaterialTheme.colorScheme.onSurfaceVariant)
+        Enablement.ENABLED -> Triple(Icons.Filled.CheckCircle, R.string.mgmt_enable_on, MaterialTheme.colorScheme.secondary)
+        Enablement.ENABLED_NO_SCOPE -> Triple(Icons.Filled.Warning, R.string.mgmt_enable_no_scope, MaterialTheme.colorScheme.error)
+        Enablement.NOT_ENABLED -> Triple(Icons.Filled.Warning, R.string.mgmt_enable_off, MaterialTheme.colorScheme.error)
+        Enablement.NO_ENDPOINT -> Triple(Icons.Filled.Info, R.string.mgmt_enable_no_endpoint, MaterialTheme.colorScheme.onSurfaceVariant)
+        Enablement.UNREACHABLE -> Triple(Icons.Filled.Info, R.string.mgmt_enable_unreachable, MaterialTheme.colorScheme.onSurfaceVariant)
+        Enablement.DIFFERENT_SIGNER -> Triple(Icons.Filled.Info, R.string.mgmt_enable_signer, MaterialTheme.colorScheme.onSurfaceVariant)
+        Enablement.UNKNOWN -> Triple(Icons.Filled.Info, R.string.mgmt_enable_unknown, MaterialTheme.colorScheme.onSurfaceVariant)
+    }
     Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s), verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, contentDescription = null, tint = color)
         Text(stringResource(text), style = MaterialTheme.typography.bodyMedium, color = color)
@@ -446,6 +541,7 @@ internal fun StoreAction.labelRes(): Int = when (this) {
     StoreAction.CANCEL -> R.string.mgmt_action_cancel
     StoreAction.CONFIRM_INSTALL -> R.string.mgmt_action_confirm_install
     StoreAction.ALLOW_INSTALLS -> R.string.mgmt_action_allow_installs
+    StoreAction.OPEN_LSPOSED -> R.string.mgmt_action_lsposed_enable
 }
 
 internal fun OperationFailure.messageRes(): Int = when (this) {

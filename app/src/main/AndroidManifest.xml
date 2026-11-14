@@ -27,6 +27,9 @@
          set and their supported players, mirrored from v5-provider-matrix.json. Read-only
          installed-state lookup and opening each plugin's own page; no QUERY_ALL_PACKAGES. -->
     <queries>
+        <!-- Standalone LSPosed manager apps, opened on a module page without root (plan §14.10). -->
+        <package android:name="org.matrix.vector.manager" />
+        <package android:name="org.lsposed.manager" />
         <package android:name="io.github.andrealtb.coloroslyrics.provider.salt" />
         <package android:name="io.github.andrealtb.coloroslyrics.provider.cone" />
         <package android:name="io.github.andrealtb.coloroslyrics.provider.kuwo" />

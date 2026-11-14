@@ -49,6 +49,10 @@ import io.github.andrealtb.lockscreenlyrics.management.catalog.CatalogState
 import io.github.andrealtb.lockscreenlyrics.management.install.Operation
 import io.github.andrealtb.lockscreenlyrics.management.install.StoreOperations
 import io.github.andrealtb.lockscreenlyrics.management.reminder.UpdateReminders
+import io.github.andrealtb.lockscreenlyrics.management.root.LsposedConfig
+import io.github.andrealtb.lockscreenlyrics.management.root.LsposedRead
+import io.github.andrealtb.lockscreenlyrics.management.root.RootAccess
+import io.github.andrealtb.lockscreenlyrics.management.root.RootState
 import android.Manifest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.mutableIntStateOf
@@ -73,6 +77,10 @@ class ManagementPreviewActivity : AppCompatActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private var statusQuery by mutableStateOf<StatusQuery>(StatusQuery.Pending)
     private var installed by mutableStateOf<Map<String, InstalledPackage>>(emptyMap())
+    private var enablement by mutableStateOf<Map<String, EnablementReport>>(emptyMap())
+    private var enablementJob: kotlinx.coroutines.Job? = null
+    private var root by mutableStateOf(RootView())
+    private val userId get() = android.os.Process.myUid() / 100_000
     private var catalog by mutableStateOf(CatalogView())
     /** Bumped for every request and on pause, so late replies and timeouts are ignored. */
     private var queryGeneration = 0
@@ -136,19 +144,22 @@ class ManagementPreviewActivity : AppCompatActivity() {
         setContent {
             ManagementTheme {
                 val packages = installed
+                val enabled = enablement
                 val view = catalog
                 val operations by StoreOperations.operations.collectAsState()
                 ManagementPrototype(
                     status = homeStatus(ModuleStatusQuery.installedBuildId(), statusQuery),
                     onRefreshStatus = ::queryStatus,
                     store = storeItems(ProviderDirectory.entries, view.state ?: CatalogState.Unavailable,
-                        Build.VERSION.SDK_INT) { packages[it] },
+                        Build.VERSION.SDK_INT, { enabled[it] }) { packages[it] },
                     catalog = view,
                     onRefreshCatalog = { refreshCatalog(automatic = false) },
                     onStoreOpened = { refreshCatalog(automatic = true) },
                     operations = operations,
                     reminders = reminders,
                     onRemindersChange = ::onRemindersChange,
+                    root = root,
+                    onRequestRoot = ::requestRoot,
                     openStoreRequests = openStoreRequests,
                     message = message,
                     onMessageShown = { message = null },
@@ -172,9 +183,59 @@ class ManagementPreviewActivity : AppCompatActivity() {
     }
 
     /** Read-only PackageManager lookup, limited by the manifest's directed <queries>. */
+    private var refreshJob: kotlinx.coroutines.Job? = null
+
     private fun refreshInstalled() {
-        lifecycleScope.launch {
+        // One refresh at a time: resume and a finished operation must not race two su checks.
+        refreshJob?.cancel()
+        refreshJob = lifecycleScope.launch {
             installed = withContext(Dispatchers.IO) { InstalledPackages.snapshot(packageManager, ProviderDirectory.entries) }
+            // Never prompts here: only a root grant the user asked for earlier is used.
+            if (RootAccess.requested(this@ManagementPreviewActivity)) {
+                val had = root.state == RootState.GRANTED
+                if (!had) root = root.copy(state = RootState.CHECKING)
+                root = root.copy(state = withContext(Dispatchers.IO) {
+                    RootAccess.check(applicationContext, prompt = false, previouslyGranted = had)
+                })
+            }
+            refreshEnablement()
+        }
+    }
+
+    /** The user's tap: the root manager (Magisk/KernelSU/APatch) may ask them. */
+    private fun requestRoot() {
+        root = root.copy(state = RootState.CHECKING)
+        lifecycleScope.launch {
+            root = root.copy(state = withContext(Dispatchers.IO) { RootAccess.check(applicationContext, prompt = true) })
+            refreshEnablement()
+        }
+    }
+
+    /**
+     * Asks each installed module whether LSPosed enabled it (on every resume, so returning from
+     * the LSPosed manager updates the cards). Sequential and off the main thread.
+     */
+    private fun refreshEnablement() {
+        enablementJob?.cancel()
+        val targets = ProviderDirectory.entries.filter { it.reportsEnablement() && installed.containsKey(it.applicationId) }
+        enablement = targets.associate { it.applicationId to (enablement[it.applicationId] ?: EnablementReport(Enablement.CHECKING)) }
+        enablementJob = lifecycleScope.launch {
+            // With root: what LSPosed itself has stored, read from a private copy of its config file.
+            if (root.state == RootState.GRANTED) {
+                val read = withContext(Dispatchers.IO) {
+                    LsposedConfig.read(applicationContext, targets.map { it.applicationId }, userId)
+                }
+                root = root.copy(cliAvailable = read is LsposedRead.Ok)
+                if (read is LsposedRead.Ok) {
+                    enablement = targets.associate { it.applicationId to read.snapshot.reportFor(it.applicationId) }
+                    return@launch
+                }
+            }
+            // Without root (or no CLI): each plugin's own report.
+            for (entry in targets) {
+                val report = withContext(Dispatchers.IO) { ProviderEnablementQuery.query(applicationContext, entry.applicationId) }
+                enablement = enablement + (entry.applicationId to report)
+            }
         }
     }
 
@@ -211,15 +272,38 @@ class ManagementPreviewActivity : AppCompatActivity() {
                 return null
             }
             StoreAction.ALLOW_INSTALLS -> Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))
+            StoreAction.OPEN_LSPOSED -> {
+                openLsposed(item)
+                return null
+            }
             StoreAction.NONE -> return null
-        } ?: return getString(R.string.mgmt_snackbar_cannot_open, item.name)
+        } ?: return getString(R.string.mgmt_snackbar_cannot_open, item.displayName(resources))
         return try {
             startActivity(intent)
             null
         } catch (notFound: ActivityNotFoundException) {
-            getString(R.string.mgmt_snackbar_cannot_open, item.name)
+            getString(R.string.mgmt_snackbar_cannot_open, item.displayName(resources))
         } catch (denied: SecurityException) {
-            getString(R.string.mgmt_snackbar_cannot_open, item.name)
+            getString(R.string.mgmt_snackbar_cannot_open, item.displayName(resources))
+        }
+    }
+
+    /** Opens the LSPosed manager on the module; the user flips the switch there themselves. */
+    private fun openLsposed(item: StoreItem) {
+        val name = item.displayName(resources)
+        lifecycleScope.launch {
+            val opened = withContext(Dispatchers.IO) {
+                LsposedConfig.openModule(applicationContext, item.applicationId, userId, root.state == RootState.GRANTED)
+            }
+            // LSPosed 2.2.1 opens on its home page, not the module (PJZ110), so always say where to go.
+            if (opened) {
+                message = getString(R.string.mgmt_lsposed_opened, name)
+            } else {
+                message = getString(
+                    if (root.state == RootState.GRANTED) R.string.mgmt_lsposed_open_failed else R.string.mgmt_lsposed_open_needs_root,
+                    name,
+                )
+            }
         }
     }
 
@@ -305,6 +389,8 @@ internal fun ManagementPrototype(
     operations: Map<String, Operation>,
     reminders: RemindersView,
     onRemindersChange: (Boolean) -> Unit,
+    root: RootView,
+    onRequestRoot: () -> Unit,
     openStoreRequests: Int,
     message: String?,
     onMessageShown: () -> Unit,
@@ -366,6 +452,8 @@ internal fun ManagementPrototype(
                         status = status,
                         state = SampleData.home,
                         updatesAvailable = store.updatesAvailable,
+                        root = root,
+                        onRequestRoot = onRequestRoot,
                         onRefreshStatus = onRefreshStatus,
                         onContinueSetup = showNothingDone,
                         onViewReasons = { tab = ManagementTab.STATUS },

@@ -31,16 +31,22 @@ internal fun storeItems(
     entries: List<DirectoryEntry>,
     catalog: CatalogState,
     deviceSdk: Int,
+    enablementOf: (String) -> EnablementReport? = { null },
     installedOf: (String) -> InstalledPackage?,
 ): StoreProjection {
     val current = catalog as? CatalogState.Current
     val catalogEntries = current?.catalog?.entries.orEmpty()
+    val installedHosts = entries.flatMap { it.hostPackages }.filter { installedOf(it) != null }.toSet()
     val items = entries.map { e ->
         val installed = installedOf(e.applicationId)
+        val report = if (installed != null && e.reportsEnablement()) enablementOf(e.applicationId) else null
         val entry = catalogEntries.firstOrNull { it.providerId == e.module && it.applicationId == e.applicationId }
         StoreItem(
             id = e.module,
             name = e.name,
+            nameRes = e.nameRes,
+            iconRes = e.iconRes,
+            enablement = report?.let { it.state.forCard(it, e, installedHosts) },
             applicationId = e.applicationId,
             kind = e.kind,
             entry = e.entry,

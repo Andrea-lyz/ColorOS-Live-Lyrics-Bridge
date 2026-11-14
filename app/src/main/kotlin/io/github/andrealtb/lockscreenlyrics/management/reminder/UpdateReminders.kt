@@ -20,6 +20,7 @@ import io.github.andrealtb.lockscreenlyrics.management.ProviderDirectory
 import io.github.andrealtb.lockscreenlyrics.management.StoreItem
 import io.github.andrealtb.lockscreenlyrics.management.StoreRuntime
 import io.github.andrealtb.lockscreenlyrics.management.catalog.RefreshOutcome
+import io.github.andrealtb.lockscreenlyrics.management.displayName
 import io.github.andrealtb.lockscreenlyrics.management.storeItems
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
@@ -108,7 +109,8 @@ internal object UpdateReminders {
         val installed = InstalledPackages.snapshot(app.packageManager, ProviderDirectory.entries)
         val items = storeItems(ProviderDirectory.entries, state, Build.VERSION.SDK_INT) { installed[it] }.items
         val previous = prefs(app).getStringSet(KEY_ANNOUNCED, emptySet()).orEmpty()
-        val notice = planNotice(announceableUpdates(items), previous)
+        val updates = announceableUpdates(items).map { it.copy(name = it.displayName(app.resources)) }
+        val notice = planNotice(updates, previous)
         // Without notification permission nothing is announced, so nothing is remembered either.
         if (notice.names.isNotEmpty() && !notificationsAllowed(app)) return false
         show(app, notice)

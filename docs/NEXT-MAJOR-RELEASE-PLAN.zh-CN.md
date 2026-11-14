@@ -974,6 +974,110 @@ E 系列（第 15 节）不单列里程碑：E-0 随 M1，E-1/E-2 在 C-04/C-05 
 
 仍未覆盖：后台提醒的实际调度与通知显示（测试目录中没有本机旧版本可提醒）；签名冲突、空间不足、系统拦截等失败分支；正式目录（`store-catalog` 分支、正式密钥签名、jsDelivr/raw 镜像）的端到端流程；其他 ColorOS 型号与 Android 版本。
 
+### 14.9 商店正式名称与 LSPosed 启用状态提醒（2026-11-14，本地，未提交）
+
+分支：Bridge `feat/m3-store-names`（基于 `60679b1`），Providers `feat/m3-module-status`（基于 `358d9aa`）。
+
+**正式名称（用户要求）：** 商店卡片、提示和更新通知改用“<播放器正式名> Provider”，中英文分开（例如 洛雪音乐 Provider / LX Music Provider、光锥音乐 Provider / ConePlayer Provider、汽水音乐 Provider / Soda Music Provider）；播放器名本身是英文的中英一致（Salt Player、Poweramp、Metrolist、Apple Music、Spotify、Readify）。矩阵里的 `displayName` 短名不变（发布资产文件名依赖它）；各插件自身的应用名（桌面/LSPosed 中显示）未改，需要时随下一轮 Provider 发版统一。`StoreNamesTest` 检查 15 项都有不重复的正式名且中英文都以“ Provider”结尾。
+
+**启用状态提醒（用户要求：只作引导提醒，不证明 Hook 已在播放器中运行）：**
+
+- Providers 新增 `provider-module-status` 库（只依赖 libxposed service，不进入 Hook 路径）。它把 `ModuleStatusProvider` 合并进每个模块的 Manifest，authority 为 `<applicationId>.cll.module-status`，`call("status")` 返回协议 1：`connected`（LSPosed 是否已把服务交给本模块 App 进程）、`apiVersion`，以及 `scope`（仅 connected 时返回）。调用方必须与本模块签名相同（`checkSignatures(callingUid, myUid)`），否则抛 SecurityException。模块进程刚被这次调用拉起时，最多等 1.5 秒服务到达；只读，不改配置，不记录调用方或 scope。
+  - 12 个用 `settings102` 的专用插件：`ProviderModuleApplication` 把已有的服务回调同时转给 `ModuleStatus`（libxposed 只允许一个 listener）。
+  - 通用播放器 Provider、Readify：在各自 Application.onCreate 调用 `ModuleStatus.register()`。
+  - 动态封面不是 LSPosed 模块，不适用。
+  - **这些插件都需要发新版本**，用户才会在商店里看到状态；旧版本显示“这个版本的插件还不支持”。
+- Bridge：对已安装的 LSPosed 插件逐个查询（每次回到管理页都重查，从 LSPosed 管理器返回即可看到变化），卡片显示：已启用 / 未启用（引导去 LSPosed 启用并勾选播放器）/ 已启用但作用域里没有勾选本机已安装的支持播放器（只对专用插件，且本机装了支持的播放器时）/ 插件版本不支持或被系统限制 / 签名与 Bridge 不同 / 无法检测。查不到时从不显示为“未启用”。
+- **依据与假设：** 判定依赖“LSPosed 只为已启用模块的 App 进程连接服务”。这一点来自 libxposed 的服务模型，**尚未在设备上用“关闭模块”验证**，见下方清单。ColorOS 的“关联启动”限制可能阻止 Bridge 拉起插件进程，此时显示“被系统限制”。
+
+**本地验证：** Providers `testV5Matrix assembleV5MatrixDebug` 通过（新模块 4 项测试），14 个插件 Debug APK 的合并 Manifest 都含该 provider；Bridge 1019 tests / 0 fail / 6 skip（新增 `ProviderEnablementTest` 3 项、`StoreNamesTest` 2 项），Debug 与 R8 通过。
+
+**设备测试候选：** `artifacts/m3-enablement-20261114/`
+- `Bridge-M3-enablement-test-debug.apk`（`77e4145c…`）：带 §14.8 测试目录信任，Debug 证书 `5a6fd43f…`。
+- `Salt-Provider-enablement-debug.apk`（`5460d06a…`）：Salt Provider 1.1.2（versionCode 8）Debug 构建，同一 Debug 证书，含状态接口。只有同签名才能查询，所以真机验证用 Debug 版 Salt；若设备上现有 Salt 是正式签名，覆盖安装会被系统拒绝，**不得为此卸载或清数据**。
+
+**设备检查清单：**
+1. 商店卡片名称为正式中文名（切到英文后为英文名）。
+2. Salt（Debug 新版）在 LSPosed 中**已启用**并勾选 Salt Player：卡片显示“已在 LSPosed 中启用”。
+3. 在 LSPosed 中**取消启用** Salt 模块后返回管理页：显示“未在 LSPosed 中启用…”。（验证“未启用时服务不连接”这一假设。注意：Salt 插件进程若仍在运行，可能还持有之前的连接；若显示仍为已启用，请在系统设置里“强行停止”Salt Provider 后再回到管理页，并告诉我是哪种情况。）
+4. 重新启用但取消勾选 Salt Player（本机已装 Salt Player 时）：显示“作用域里没有勾选本机已安装的播放器”。之后恢复原设置。
+5. 商店装的 LX 1.2.1（v4.5.4 正式版，无接口）：显示“这个版本的插件还不支持…”。
+
+**§14.9 设备结果（2026-11-14，PJZ110，用户实测）：**
+- 冷启动时卡片一直显示“无法检测”：ColorOS 不允许 Bridge 拉起插件进程（关联启动限制）。先打开插件调试页再返回后，显示“已启用”。
+- 在 LSPosed 中禁用 Salt Provider 后，只要插件进程还在，就仍显示“已启用”；**强行停止**插件后才显示“未启用”。说明 LSPosed 只在插件进程启动时连接服务，不会断开正在运行的进程。
+- 结论：插件自报只能作为没有 Root 时的退路。用户不满意这个效果，决定改用 Root 读取（见 §14.10）。
+
+### 14.10 Root 只读 LSPosed 状态、首页 Root 状态与“去 LSPosed”跳转（2026-11-14，本地，未提交）
+
+**用户决定：**
+- Bridge 申请 Root，只用来**读取** LSPosed 中各插件的启用状态与作用域；首页显示 Root 状态；以后做进引导教程（M5）。
+- 不自动启用插件、不写 LSPosed 配置。曾讨论过“安装后用 Root 默认打开 LSP 开关”，因有绕过 LSPosed 确认、改坏配置、依赖内部格式的风险，已放弃。
+- 改为提供跳转按钮，直接打开 LSPosed 管理器中对应模块的详情页，由用户自己一步打开开关。
+
+**新边界（取代“Bridge 不使用 Root”）：**
+- Root 只在普通 App 进程（`management/root`）中使用，且只做两件事：用 `su -c cat` 把 LSPosed 的配置文件复制进 Bridge 私有缓存读取，以及启动 LSPosed 管理器。
+- 不运行 LSPosed 自带的命令行工具，不打开原文件写入，不改任何启用状态或作用域。
+- 架构守卫新增 `ProcessBuilder("su"`，它只能出现在 management 包内。
+
+**r3 设备结果与改道（2026-11-14）：**
+- r3 按 JingMatrix/Vector 源码去找 `cli`，设备上显示“没有找到 LSPosed 命令行工具”。
+- 经用户授权在设备上只读检查：装的是 lsposed.zip 一支的 **LSPosed v2.2.1 (7941)**，模块目录 `zygisk_lsposed`，作者 “LSPosed Developers”，自带的工具叫 `lspctl`。它的帮助里写明“不是稳定的控制协议……不要基于它构建 App 或无人值守的集成”，所以**用户决定不用自带工具，改为读取本地配置文件**。
+- 用户授权的检查中，把 `modules_config.db`（含 WAL）复制到电脑上，只看了表结构和我们插件的行，看完即删除。该版本的表结构：
+  - `modules(module_pkg_name, apk_path)`
+  - `modules_state(module_pkg_name, user_id, enabled, scope_request_blocked)`
+  - `scope(module_pkg_name, app_pkg_name, user_id)`
+  - 数据库为 WAL 模式，设备上没有 `sqlite3`。
+- 另外拉取了 `manager.apk`、`daemon.apk`，但字符串已混淆，看不出启动方式；设备上的临时副本已删除。
+- 跳转写法在设备上执行成功（系统接受，没有报错）：`am start -n com.android.shell/.BugreportWarningActivity -c org.lsposed.manager.LAUNCH_MANAGER -d module://<pkg>:<user>`。打开的是主页还是模块页，待用户确认。
+
+**实现（r4）：**
+- `RootAccess`：只有用户点“授权 Root”时才执行 `su -c id -u`，可能触发 Magisk/KernelSU/APatch 弹窗。之后每次回到管理页静默复查已授权状态，不主动弹窗。状态：未请求 / 已授权 / 被拒绝或超时 / 未检测到 su。stderr 一律丢弃。
+- `LsposedConfig`：
+  - 先用 `su -c cat` 复制 `/data/adb/lspd/config/modules_config.db-wal`，再复制主文件（单个文件最大 32 MiB），都放进 `cacheDir/lspd-read`。
+  - 用 Android SQLite 打开这份私有副本（以读写方式打开，好让 SQLite 回放 WAL）；按表结构识别两种布局：2.2.x 的 `modules_state` 和 1.x/Vector 的 `modules.mid/enabled`。
+  - 只用参数化查询读取被问到的我们插件、当前 Android 用户的行；读完立即删除整个副本目录。
+  - 在 LSPosed 中登记过但没有状态行时，视为“未启用”；没登记时视为“未知”。布局不认识时不猜测。
+- 商店：已授权 Root 且读到配置时，以 LSPosed 配置为准，禁用或启用后回到管理页立即反映；否则退回 §14.9 的插件自报。“未启用”“作用域没勾选”“无法检测”的卡片有“去 LSPosed 启用 / 去 LSPosed 勾选播放器”按钮。跳转时先尝试独立安装的管理器 App（不需要 root），否则用上面验证过的 root 写法；打不开时提示手动打开 LSPosed 并找到该模块。
+- 首页状态卡有“Root 权限”一行和“授权 Root”按钮；读不到配置时说明原因，并已改用插件自报。
+
+**M5 引导教程要求（记录，未实现）：** 引导中加入一步“授权 Root（只读查看 LSPosed 状态）”，说明用途和“不会修改任何设置”。拒绝也不影响其他步骤，之后可从首页再授权。插件安装完成后，引导到“去 LSPosed 启用”。
+
+**本地验证：** Bridge 1023 tests / 0 fail / 6 skip（`LsposedConfigTest` 4 项：识别两种布局并拒绝未知布局、状态行到启用状态的映射、`id -u` 判定），Debug 与 R8 通过。Android SQLite 读取副本这一步只能在设备上验证。
+
+**设备候选：** `artifacts/m3-enablement-20261114/Bridge-M3-root-db-test-debug-r4.apk`（`bb0de514…`，含 §14.8 测试目录信任）。
+
+**设备检查清单：**
+1. 首页：r3 已授权过 Root，应直接显示“已授权”。若显示“没能读取 LSPosed 配置”，告诉我。
+2. 商店：Salt 卡片显示“已在 LSPosed 中启用”。在 LSPosed 中禁用 Salt Provider 后直接回到 Bridge，**不强行停止**，应立刻显示“未在 LSPosed 中启用”。
+3. 点“去 LSPosed 启用”：应打开 LSPosed 管理器并停在 Salt Provider 模块页（或其作用域页）；打开开关后返回，应显示“已启用”。
+4. 取消勾选 Salt Player：显示“作用域里没有勾选…”，按钮为“去 LSPosed 勾选播放器”。之后恢复原设置。
+5. LX（正式签名、v4.5.4 无状态接口）：有 Root 时也应正确显示启用与否，说明不再依赖插件版本。
+
+**r4 设备结果（2026-11-14，用户实测）：**
+- Root 显示已授权。从 LSPosed 返回后，LX 正确显示启用状态，说明 Root 读取配置可行。
+- 但一次从 LSPosed 返回时，静默复查 Root 失败，商店退回插件自报，显示“无法检测”；重新点授权后正常。具体原因（超时还是拒绝）没有日志，unknown。
+- 跳转打开的是 LSPosed **主页**，没有定位到模块页；这一支 2.2.1 对 `module://` 链接的处理方式未知。
+
+**r5（本地）：** 静默复查最多试 3 次（每次 10 秒，间隔 1 秒）；如果本页面之前已授权、且失败全是超时，不降级。刷新任务串行，避免回到页面与操作完成时同时发起两个 su。跳转成功后提示“在‘模块’里找到 X，打开开关后返回”。1023 tests / 0 fail / 6 skip，R8 通过；候选 `Bridge-M3-root-db-test-debug-r5.apk`（`8290aa2a…`，含新任务启动管理器）。模块页定位需要在设备上再做几次 `am start` 试验。
+
+**跳转结论（2026-11-14，用户在 PJZ110 上实测）：**
+- 设备上另外装有独立的管理器 App `org.lsposed.manager`。它的 `MainActivity` 对外开放，但 Manifest 里没有声明任何可接收的链接。
+- 用户执行 `am start -n org.lsposed.manager/.ui.activity.MainActivity -d module://<pkg>:0 -f 0x10008000`（在新任务里启动）后，仍然停在**主页**。所以 2.2.1 不支持从外部定位到某个模块页。
+- r4 用的是桌面启动的 Intent，管理器已在后台时只会被调到前台。r5 改为在新任务里启动它（仍附带 `module://` 链接，以后的版本如果支持就会生效）。打开后一律提示“在‘模块’里找到 X，打开开关后返回”。没有独立管理器时，用 root 的寄生方式打开，结果同样是主页。
+- **r5 设备结果：** 用户从 LSPosed 模块页右下角 ▷ 进入 Bridge 后点跳转，看到的仍是之前那一页（Bridge 的模块页），不是主页。原因：管理器进程还活着，会恢复最后显示的页面。
+- **r6（用户提议）：** 已授权 Root 时，先 `su -c am force-stop org.lsposed.manager`，再用 `NEW_TASK | MULTIPLE_TASK` 在独立任务里打开。这只停掉管理器的界面进程，框架守护进程独立运行、不受影响；Bridge 页面留在原来的任务里，按返回仍能回到 Bridge。没有 Root 时保持 r5 的做法。候选 `Bridge-M3-root-db-test-debug-r6.apk`（`08a36d8d…`），1023 tests / 0 fail / 6 skip，R8 通过。
+- **r6 设备结果（用户实测）：** 第 1–3 项全部通过：从 ▷ 进入后跳转打开的是 LSPosed 主页；打开开关并返回后，卡片立刻更新；Root 一直显示“已授权”。
+
+### 14.11 商店列表显示各插件图标（2026-11-14，本地，未提交）
+
+- 用户要求在商店列表中显示各插件的图标。图标沿用插件自身的启动图标，也就是目标播放器的官方图标（AGENTS“模块图标使用目标播放器官方 launcher 资源”）。
+- 做法：从 Providers 仓库各模块的 `res` 复制出启动图标，改名为 `store_icon_<id>`（及 `_fg` / `_bg` / `_bmp`），放进 Bridge 的 `res/drawable*` 和 `values/store_icons.xml`。只复制前景和背景，不复制单色层。Cone 和 Poweramp 的位图只复制 xxxhdpi 一档；通用 Provider 用它清单里的 `provider_launcher` 位图。每个 XML 都注明了来源模块。
+- 不联网取图，也不读已安装插件的图标，所以没安装的插件同样有图标。代价是插件以后改图标时，Bridge 要跟着重新复制一次。
+- `DirectoryEntry` 和 `StoreItem` 新增了 `iconRes`；卡片标题左边显示 40dp 的图标。自适应图标通过平台 Drawable 绘制，套用设备的图标形状。Readify 插件本身用的是系统播放图标，所以商店里显示一个通用的播放图标。
+- 本地验证：Bridge 1024 tests / 0 fail / 6 skip（`StoreNamesTest` 新增一项：只有 Readify 没有专属图标，其余各不相同），Debug 与 R8 通过；已确认 APK 内含 32 个 `store_icon` 资源。
+- 设备候选：`artifacts/m3-enablement-20261114/Bridge-M3-store-icons-test-debug-r7.apk`（`61ef122d…`，含 §14.8 测试目录信任）。已经当次授权 adb 安装，**用户设备确认没有问题**（图标一致、形状、清晰度、深色模式）。
+
 ## 15. 主线五：代码结构与性能治理（E 系列）
 
 > 状态：**仅分析与方案，未落任何代码**；第 15.8 节 D11–D15 已于 2026-11-14 由用户确认按推荐采用。落档日期：2026-11-14。本节是用户在 M1 期间追加的第五条主线：在下一大版本内完整治理 Bridge 的代码结构与性能，重点拆分 `LockscreenLyricsModule.java`。

@@ -1,5 +1,10 @@
 package io.github.andrealtb.lockscreenlyrics.management
 
+import android.content.res.Resources
+import androidx.annotation.DrawableRes
+import androidx.annotation.StringRes
+import io.github.andrealtb.lockscreenlyrics.R
+
 /**
  * Management UI state (plan §8.4 U-01). Live, read-only: the home status card (reply from the
  * Bridge inside SystemUI, see [homeStatus]) and the store (PackageManager facts projected onto the
@@ -52,6 +57,8 @@ internal enum class StoreAction {
     CONFIRM_INSTALL,
     /** Open the system "install unknown apps" page for this App. */
     ALLOW_INSTALLS,
+    /** Open the LSPosed manager on this module's page (root, or a standalone manager). */
+    OPEN_LSPOSED,
 }
 
 internal data class StoreItem(
@@ -67,7 +74,17 @@ internal data class StoreItem(
     /** versionName of the catalog entry, when there is one. */
     val catalogVersion: String? = null,
     val availability: Availability = Availability.NO_CATALOG,
+    /** Formal localized store name; 0 falls back to [name]. */
+    @StringRes val nameRes: Int = 0,
+    /** The Provider's own launcher icon, copied into the Bridge; 0 = generic icon. */
+    @DrawableRes val iconRes: Int = 0,
+    /** LSPosed enable state for installed modules; null when not applicable or not asked. */
+    val enablement: Enablement? = null,
 )
+
+/** The name shown to people: the formal localized store name when there is one. */
+internal fun StoreItem.displayName(resources: Resources): String =
+    if (nameRes != 0) resources.getString(nameRes) else name
 
 internal enum class Check { OK, ATTENTION, UNKNOWN }
 
@@ -166,37 +183,45 @@ internal fun List<StoreItem>.filteredBy(filter: StoreFilter): List<StoreItem> = 
  */
 internal data class DirectoryEntry(
     val module: String,
+    /** Short ASCII name, matching the matrix displayName (asset names, logs). */
     val name: String,
     val applicationId: String,
     val kind: ProviderKind,
     val entry: ProviderEntry,
     val hostPackages: List<String>,
+    /** Formal store name, localized: "<official player name> Provider". */
+    @StringRes val nameRes: Int,
+    /**
+     * Copy of the Provider's launcher icon (the target player's official artwork, see
+     * `res/drawable/store_icon_*`); 0 when the Provider has none of its own (Readify).
+     */
+    @DrawableRes val iconRes: Int = 0,
 )
 
 internal object ProviderDirectory {
     private const val P = "io.github.andrealtb.coloroslyrics.provider."
-    private fun dedicated(module: String, name: String, id: String, vararg hosts: String) =
-        DirectoryEntry(module, name, P + id, ProviderKind.DEDICATED, ProviderEntry.DEBUG_PAGE, hosts.toList())
+    private fun dedicated(module: String, name: String, nameRes: Int, iconRes: Int, id: String, vararg hosts: String) =
+        DirectoryEntry(module, name, P + id, ProviderKind.DEDICATED, ProviderEntry.DEBUG_PAGE, hosts.toList(), nameRes, iconRes)
 
     val entries: List<DirectoryEntry> = listOf(
-        dedicated("player-salt", "Salt", "salt", "com.salt.music"),
-        dedicated("player-cone", "Cone", "cone", "ink.trantor.coneplayer", "ink.trantor.coneplayer.gp"),
-        dedicated("kuwo-music", "KuWo", "kuwo", "cn.kuwo.player"),
-        dedicated("player-lx", "LX", "lx", "cn.toside.music.mobile", "com.lxwalnut.music.mobile"),
-        dedicated("player-poweramp", "Poweramp", "poweramp", "com.maxmpz.audioplayer"),
-        dedicated("player-metrolist", "Metrolist", "metrolist", "com.metrolist.music"),
-        dedicated("player-kugou", "KuGou", "kugou", "com.kugou.android", "com.kugou.android.lite"),
-        dedicated("player-qq", "QQ", "qq", "com.tencent.qqmusic"),
-        dedicated("player-netease", "NetEase", "netease", "com.netease.cloudmusic", "com.hihonor.cloudmusic"),
-        dedicated("player-apple", "Apple", "apple", "com.apple.android.music"),
-        dedicated("player-spotify", "Spotify", "spotify", "com.spotify.music"),
-        dedicated("player-qishui", "QiShui", "qishui", "com.luna.music"),
+        dedicated("player-salt", "Salt", R.string.store_name_salt, R.drawable.store_icon_salt, "salt", "com.salt.music"),
+        dedicated("player-cone", "Cone", R.string.store_name_cone, R.drawable.store_icon_cone, "cone", "ink.trantor.coneplayer", "ink.trantor.coneplayer.gp"),
+        dedicated("kuwo-music", "KuWo", R.string.store_name_kuwo, R.drawable.store_icon_kuwo, "kuwo", "cn.kuwo.player"),
+        dedicated("player-lx", "LX", R.string.store_name_lx, R.drawable.store_icon_lx, "lx", "cn.toside.music.mobile", "com.lxwalnut.music.mobile"),
+        dedicated("player-poweramp", "Poweramp", R.string.store_name_poweramp, R.drawable.store_icon_poweramp, "poweramp", "com.maxmpz.audioplayer"),
+        dedicated("player-metrolist", "Metrolist", R.string.store_name_metrolist, R.drawable.store_icon_metrolist, "metrolist", "com.metrolist.music"),
+        dedicated("player-kugou", "KuGou", R.string.store_name_kugou, R.drawable.store_icon_kugou, "kugou", "com.kugou.android", "com.kugou.android.lite"),
+        dedicated("player-qq", "QQ", R.string.store_name_qq, R.drawable.store_icon_qq, "qq", "com.tencent.qqmusic"),
+        dedicated("player-netease", "NetEase", R.string.store_name_netease, R.drawable.store_icon_netease, "netease", "com.netease.cloudmusic", "com.hihonor.cloudmusic"),
+        dedicated("player-apple", "Apple", R.string.store_name_apple, R.drawable.store_icon_apple, "apple", "com.apple.android.music"),
+        dedicated("player-spotify", "Spotify", R.string.store_name_spotify, R.drawable.store_icon_spotify, "spotify", "com.spotify.music"),
+        dedicated("player-qishui", "QiShui", R.string.store_name_qishui, R.drawable.store_icon_qishui, "qishui", "com.luna.music"),
         DirectoryEntry("player-readify", "Readify", P + "readify", ProviderKind.DEDICATED,
-            ProviderEntry.INFO_PAGE, listOf("com.readin.app")),
+            ProviderEntry.INFO_PAGE, listOf("com.readin.app"), R.string.store_name_readify),
         DirectoryEntry("universal-provider", "Universal", P + "universal", ProviderKind.UNIVERSAL,
-            ProviderEntry.LAUNCHER, emptyList()),
+            ProviderEntry.LAUNCHER, emptyList(), R.string.store_name_universal, R.drawable.store_icon_universal),
         DirectoryEntry("artwork-provider-am", "Dynamic Artwork", "io.github.andrealtb.artwork.am",
-            ProviderKind.ARTWORK, ProviderEntry.LAUNCHER, emptyList()),
+            ProviderKind.ARTWORK, ProviderEntry.LAUNCHER, emptyList(), R.string.store_name_artwork, R.drawable.store_icon_artwork),
     )
 }
 

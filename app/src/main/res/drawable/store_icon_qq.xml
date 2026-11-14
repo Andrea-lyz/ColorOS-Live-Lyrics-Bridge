@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Copied from ColorOS-Live-Lyrics-Providers/player-qq (the Provider's launcher icon, the target player's official artwork) for the Bridge store list. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/store_icon_qq_bg" />
+    <foreground android:drawable="@drawable/store_icon_qq_fg" />
+</adaptive-icon>
