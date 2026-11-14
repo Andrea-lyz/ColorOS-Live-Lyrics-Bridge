@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "catalogRevision": 3,
+  "issuedAtEpochSeconds": 1794614400,
+  "expiresAtEpochSeconds": 1810166400,
+  "channel": "stable",
+  "trustedHosts": ["github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com"],
+  "entries": [
+    {
+      "providerId": "player-salt",
+      "kind": "dedicated-lyrics",
+      "applicationId": "io.github.andrealtb.coloroslyrics.provider.salt",
+      "versionName": "1.1.2",
+      "versionCode": 8,
+      "minSdk": 27,
+      "minStoreProtocol": 1,
+      "sourceCommit": "215b0c9e8add8e2886f4913171e989cc6f9e7f73",
+      "releaseNotes": "TEST FIXTURE ONLY.\n不是正式发布。",
+      "artifact": {
+        "urls": ["https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Providers/releases/download/player-salt-v1.1.2/ColorOS-Live-Lyrics-Provider-Salt-v1.1.2.apk"],
+        "bytes": 1690035,
+        "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "signerSha256": ["ff38544ba21922c35989097fe6f2ad0bda434b4d0bb611e016d51d7862d36195"]
+      }
+    },
+    {
+      "providerId": "universal-provider",
+      "kind": "universal-lyrics",
+      "applicationId": "io.github.andrealtb.coloroslyrics.provider.universal",
+      "versionName": "1.1.3",
+      "versionCode": 5,
+      "minSdk": 27,
+      "minStoreProtocol": 1,
+      "sourceCommit": "215b0c9e8add8e2886f4913171e989cc6f9e7f73",
+      "artifact": {
+        "urls": ["https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Providers/releases/download/universal-provider-v1.1.3/ColorOS-Live-Lyrics-Provider-Universal-v1.1.3.apk"],
+        "bytes": 1491991,
+        "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "signerSha256": ["ff38544ba21922c35989097fe6f2ad0bda434b4d0bb611e016d51d7862d36195"]
+      }
+    }
+  ]
+}

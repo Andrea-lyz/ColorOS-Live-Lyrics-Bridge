@@ -835,6 +835,46 @@ E 系列（第 15 节）不单列里程碑：E-0 随 M1，E-1/E-2 在 C-04/C-05 
 - **Bridge Release：** 按第 6.2 节不再附 Provider APK；动态封面的分发方式（目前 `bridge-release`）在 M2 中改为同样走 Providers 仓库的独立 tag，具体以 M2 实施为准。
 - **与 D2 的关系：** 不变（受保护 Environment、P-256、180 天）。
 
+### 14.6 M2 第一刀：目录签名格式、客户端验签与签名工具（2026-11-14，本地）
+
+> 状态：**本地实现与测试通过，未接入 UI、网络或安装流程，未上设备，未提交**。正式目录密钥尚未生成，生产信任集为空。
+
+**格式（D2）：** 信封 `envelopeVersion`=1、`keyId`、`algorithm`=`ECDSA_P256_SHA256`、`payload`（目录 JSON 原始 UTF-8 字节的 base64）、`signature`（DER）。签名内容为 `CLL-CATALOG-V1
+` + payload 字节；客户端先验签，再只解析已签字节，不依赖 JSON 规范化。payload schema 1 在第 6.3 节草案基础上落为：`catalogRevision`、`issuedAtEpochSeconds`/`expiresAtEpochSeconds`、`channel`、`trustedHosts`、`entries[]`（`providerId` 即矩阵 `module`、`kind`、`applicationId`、`versionName`、`versionCode`、`minSdk`、`minStoreProtocol`、`sourceCommit`、可选 `releaseNotes`、`artifact{urls[], bytes, sha256, signerSha256[]}`）。`scopePolicy`、`supportedHosts`、`requires` 等留待 M3/M4 需要时以新字段加入（未知字段忽略）。
+
+**Bridge（分支 `feat/m2-catalog-verification`）：** 新增 `management/catalog/`，纯 JVM，无 Android/网络/存储/Hook 依赖：
+
+- `CatalogVerifier`：整份拒绝，不存在“部分可信”。拒绝原因：过大、信封格式/版本/算法、未知 keyId、签名错误、payload 非 UTF-8/非 JSON、schema、渠道不是 stable、有效期非法或超过 190 天、早于 issuedAt 超过 24 小时、revision 降序（ROLLBACK）、同 revision 不同内容（REVISION_CONFLICT）、条目字段非法或为 0/占位、URL 非纯 https 或主机不在已签 `trustedHosts`、签名证书不在客户端内置集合、重复条目。过期超过 24 小时仍接受但标 `EXPIRED`（调用方据此只显示已安装状态、阻止安装/更新）。数字只接受整数类型，不接受 org.json 会自动转换的字符串或小数。
+- `CatalogTrust`：生产目录公钥表为空（待在受保护 Environment 生成主用 + 备用两把后填入）；只接受 P-256（按群阶校验）；内置正式 APK 证书与 `bridge-release-contract.json` 由测试绑定。
+- `ArtifactCheck`：流式测量大小与 SHA-256（超限即停），以及包名/versionCode/签名者核对；签名者必须全部在条目允许集合内。从 APK 读取包信息的 Android 适配留到 M3。
+- `entry.supportedBy()`：要求更新商店协议的条目照常列出但不可安装。
+
+**Providers（分支 `feat/m2-catalog-tooling`）：** 新增 `scripts/catalog/`：`catalog-envelope.mjs`（与客户端同一套规则，签名前校验并用派生公钥自检）、`sign-catalog.mjs`（私钥来自 `--key` 或 secret `CLL_CATALOG_SIGNING_KEY`，不覆盖已有输出）、`verify-catalog.mjs`、`README.zh-CN.md`、测试与夹具。夹具使用标明 TEST-ONLY 的一次性密钥；Bridge 只复制公钥与签出的信封，证明 Node 签名与 Kotlin 验签字节一致。
+
+**本地验证：** Bridge `:app:testDebugUnitTest :app:assembleDebug` 通过，976 tests / 0 fail / 6 skip（新增 `CatalogVerifierTest` 15 项、`ArtifactCheckTest` 4 项，均未跳过；设置了 `CLL_PROVIDER_MATRIX`）。Providers `node --test scripts/catalog/catalog-envelope.test.mjs` 7 项通过（Node 24）。新代码尚无运行时调用方，未单独跑 R8。
+
+**已知差异：** JVM 上的 org.json 对重复键报错，Android 平台 org.json 后者覆盖前者；签名覆盖原始字节且签名工具只输出 `JSON.stringify` 结果（不会有重复键），因此不影响真实性，记录备查。
+
+**M2 第二刀（2026-11-14，本地，未提交）：** Providers `scripts/catalog/` 新增 `catalog-payload.mjs`、`apk-facts.mjs`、`build-catalog-payload.mjs` 与测试。由矩阵和实际 APK 生成下一版目录：包名、版本、minSdk 读 `aapt2 dump badging`，签名者读 `apksigner`，大小与 SHA-256 直接计算；必须与矩阵一致、只由正式证书签名；在已验签的上一版目录上生成，revision 加 1，其余条目原样保留；已发布 versionCode 不能降低或换字节重发，无变化时拒绝新 revision；另提供只续期的 `renewPayload`。下载地址为 `github.com/<repo>/releases/download/<providerId>-v<versionName>/<文件名>`。
+
+- 本地验证：Node 测试 14 项通过（目录信封 7 + 生成 7）。用本机 `logs/release-lsp-4.5.4/` 的 4.5.4 **正式签名** APK 端到端跑通“读 APK → 生成 → 测试密钥签名 → 验签”，Salt 1.1.2/8 与动态封面 1.0.6/10 的大小与 SHA-256 与文件一致。
+- 按规则被拒绝的实例：4.5.4 公开的 Universal 是 1.1.2/4，矩阵已升到 1.1.3/5，因此拒绝；M1 的 debug 签名 Salt 拒绝；同内容重发拒绝；被篡改的上一版目录验签失败并拒绝。
+- 未覆盖：没有在 CI 中运行；没有接入任何发布 workflow；正式目录密钥仍未生成。
+
+**M2 第三刀（2026-11-14，本地，未提交，未在 GitHub 运行）：** Providers 新增 `.github/workflows/provider-store-release.yml`、`release/catalog-trust.json`（只含公钥，目前为空）、`scripts/catalog/resolve-release-tag.mjs`、`generate-catalog-key.mjs` 与测试；`build-catalog-payload`/`verify-catalog` 支持 `--trust`，信任文件与 Bridge 都用 base64 SPKI 格式存公钥。
+
+- 触发：`main` 上的 tag `<module>-v<versionName>`，必须与矩阵版本一致；`providers-v*` 旧套件 tag 排除。
+- build：要求 tag 指向的提交在 main 上；跑目录工具测试与整份 `testV5Matrix`（共享代码，第 9.1 节），动态封面另跑自身测试与协议镜像；正式签名构建单模块，只收一个 APK，按目录规则核对身份与证书。
+- publish：创建不可覆盖的 Release（仅 1 个 APK + `.sha256`），再从公开地址下载核对 SHA-256。
+- promote：受保护 Environment `provider-catalog`（审批 + `CLL_CATALOG_SIGNING_KEY` + 变量 `CLL_CATALOG_KEY_ID`）；以重新下载到的已发布字节为数据源，验签 `store-catalog` 分支上的当前目录后生成并签名下一版，普通 push 到 `store-catalog:catalog/stable.json`；全局串行。客户端读取地址预定为 jsDelivr `gh/<repo>@store-catalog/catalog/stable.json`，`raw.githubusercontent.com` 回退（jsDelivr 对分支有缓存延迟，revision 单调保证不会回退）。
+- 本地验证：Node 测试 17 项通过；workflow YAML 能解析（本机无 actionlint）；在临时仓库模拟了“首次建 `store-catalog` 孤儿分支 → 再次快进晋级”的 git 步骤，并据此把检出改为 `worktree add -B`；`generate-catalog-key.mjs` 拒绝 `test-` 前缀、拒绝写入仓库目录、不覆盖已有文件。
+- Bridge 新增测试把 `CatalogTrust` 的生产公钥与正式证书绑定到 Providers `release/catalog-trust.json`（两边目前都为空公钥表、同一证书）；Bridge 977 tests / 0 fail / 6 skip，Debug 构建通过。
+- **未覆盖：** workflow 从未在 GitHub 上运行；Environment、secret、变量、正式密钥均未创建（需用户操作，见工具 README）；`store-catalog` 分支不存在；Release 说明与目录说明的模板未定。
+
+**M2 第 ③ 项（2026-11-14，本地，未提交）：** 用户已在本机生成正式目录密钥对 `cll-catalog-2026a`（主用）与 `cll-catalog-2026b`（离线备用），并已在 GitHub 上建好 Environment `provider-catalog`、secret 与变量（用户转述，agent 未登录 GitHub 核对）。两把公钥（base64 SPKI，P-256）已填入 Providers `release/catalog-trust.json` 与 Bridge `CatalogTrust.PRODUCTION_CATALOG_KEYS`，与用户贴出的生成输出逐字一致，绑定测试通过。生产信任集不再为空，测试夹具（`test-only-2026`）仍被生产信任拒绝。未用正式私钥签出任何目录。Bridge 977 tests / 0 fail / 6 skip，Node 17 项通过。
+
+**M2 后续切片（未开始）：** ④ 随 Bridge 打包签名快照与“最后接受 revision”的持久化；⑤ 拆分 Bridge Release 契约中随附 Provider APK 的旧校验（第 9.1 节）。
+
 ## 15. 主线五：代码结构与性能治理（E 系列）
 
 > 状态：**仅分析与方案，未落任何代码**；第 15.8 节 D11–D15 已于 2026-11-14 由用户确认按推荐采用。落档日期：2026-11-14。本节是用户在 M1 期间追加的第五条主线：在下一大版本内完整治理 Bridge 的代码结构与性能，重点拆分 `LockscreenLyricsModule.java`。
