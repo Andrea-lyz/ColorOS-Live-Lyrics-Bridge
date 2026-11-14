@@ -1078,6 +1078,34 @@ E 系列（第 15 节）不单列里程碑：E-0 随 M1，E-1/E-2 在 C-04/C-05 
 - 本地验证：Bridge 1024 tests / 0 fail / 6 skip（`StoreNamesTest` 新增一项：只有 Readify 没有专属图标，其余各不相同），Debug 与 R8 通过；已确认 APK 内含 32 个 `store_icon` 资源。
 - 设备候选：`artifacts/m3-enablement-20261114/Bridge-M3-store-icons-test-debug-r7.apk`（`61ef122d…`，含 §14.8 测试目录信任）。已经当次授权 adb 安装，**用户设备确认没有问题**（图标一致、形状、清晰度、深色模式）。
 
+### 14.12 首个正式商店发布准备：洛雪音乐 Provider 1.2.2（2026-11-14，本地，未提交、未发布）
+
+**选择：** 用户同意以 LX 首发。其余 13 个 Provider 跟随各自下一次版本更新发布；有 Root 时启用状态不依赖插件版本。
+
+**Providers 分支 `release/lx-store-1.2.2` = `270c540`（已提交，未推送）：**
+- 从 `d534e5c` 开出，cherry-pick 模块状态接口为 `be58f3b`。所以相对 `main` 包含 `215b0c9`（M1 诊断与启动失败放行）、`d534e5c`（目录工具与发布 workflow）、`be58f3b`。**不含 `358d9aa`**：它把动态封面改为商店分发，只能在 schema 2 的 Bridge 5.0 发布前进入 `main`，否则 4.x 套件发布校验会失败。
+- `270c540`：LX 升到 1.2.2 (5)（`player-lx/build.gradle.kts` 与矩阵同步），新增 `release/notes/player-lx/1.2.2.md`（中英双语），更新 `scripts/catalog/README.zh-CN.md` 的 GitHub 就绪清单。
+- `resolve-release-tag` 对 `player-lx-v1.2.2` 解析为 `ColorOS-Live-Lyrics-Provider-LX-v1.2.2.apk`、`:player-lx:assembleRelease`。
+
+**本地验证：** `testV5Matrix assembleV5MatrixDebug :player-lx:minifyReleaseWithR8` 通过；目录工具测试 17/17；`validate-v5-release-contract.ps1` 通过。正式签名 APK 和目录生成只能在 workflow 中做（本地不碰正式签名与目录私钥）。Bridge 侧仓库名、分支、两把公钥与 Providers 一致（静态确认）。
+
+**GitHub 只读核对发现的阻塞（需用户在 GitHub 设置）：**
+1. 仓库级没有 `SIGNING_KEY` / `KEY_STORE_PASSWORD` / `ALIAS` / `KEY_PASSWORD`，构建任务会失败。
+2. Environment `provider-catalog` 没有必需审核人（D2 要求审批）。
+3. `provider-catalog` 启用了自定义部署规则但一条也没有，tag 触发的晋级会被拒绝；需允许 tag `*-v*`。
+
+**发布步骤（每步需用户当次授权）：** 推送分支并开 PR 合入 `main` → 在合入后的 `main` 提交上打 `player-lx-v1.2.2` 并推送 → workflow 构建、建 Release、复核下载 → 审批晋级，生成 `store-catalog` 的 revision 1。
+
+**设备验收（发布后）：** 用不含测试目录的 Bridge 构建刷新正式目录，下载安装 LX 1.2.2，查看启用状态；在洛雪中播放、切歌确认歌词正常。M1 的启动改动只在 Salt 上验证过，LX 与 Release/R8 组合尚无设备证据。
+
+**发布结果（2026-11-14，用户授权推送、合并、打 tag，并在 GitHub 上审批晋级）：**
+- PR #10 合入 `main`（`e277e2a`），打 `player-lx-v1.2.2`。用户按提示在 GitHub 补了 4 个签名 secret、Environment 审核人与 tag 规则。
+- 第 1 次运行：构建与正式签名通过，“Check APK identity”报 `no signer certificate in apksigner output`。PR #11（`d9b240f`）放宽解析并在失败时列出验证行；第 2 次运行显示原因：运行器的 **build-tools 37.0.0 apksigner 不再打印 `Signer #N certificate SHA-256 digest` 行**。PR #12（`ba6c1cb`）同时读 stdout/stderr，缺证书行时依次退回更旧的 apksigner，并在 workflow 中安装 build-tools 36.1.0。每次修复前确认该 tag 尚无 Release，再移动 tag。
+- 第 3 次运行在“Matrix tests”因依赖解析失败（Maven Central 上存在的 `jsr305:3.0.2` 等报 Could not find），判断为临时问题，同一提交重跑失败任务后通过。
+- **已发布：** Release `player-lx-v1.2.2`，附件 `ColorOS-Live-Lyrics-Provider-LX-v1.2.2.apk`（160090 字节，SHA-256 `1219a197…501f5`）与 `.sha256`；本地复核包名、1.2.2 (5)、minSdk 27、唯一签名者 `ff38544b…`。
+- **目录：** `store-catalog` 分支 `35a1909`，revision 1，`cll-catalog-2026a` 签名，1 个条目（LX，`sourceCommit` `ba6c1cb`），`verify-catalog.mjs` 验签通过；git、raw.githubusercontent.com、jsDelivr 三处字节相同。
+- **设备候选：** `artifacts/m3-enablement-20261114/Bridge-M3-prod-catalog-debug-r8.apk`（`0f0d9caf…`，基于 `bf6837c`；`STORE_TEST_TRUST=false`、不内置目录，只信任正式密钥）。已经当次授权 adb 安装，**用户设备确认全部通过**（PJZ110）：刷新正式目录、LX 显示 1.2.1 → 1.2.2 可更新、下载校验与 ColorOS 安装、启用状态（Root 路径）、在洛雪中播放与切歌歌词正常。M3 的正式目录端到端链路由此闭合；LX 也是 M1 启动改动在 Salt 之外、Release/R8 下的第一份设备证据。
+
 ## 15. 主线五：代码结构与性能治理（E 系列）
 
 > 状态：**仅分析与方案，未落任何代码**；第 15.8 节 D11–D15 已于 2026-11-14 由用户确认按推荐采用。落档日期：2026-11-14。本节是用户在 M1 期间追加的第五条主线：在下一大版本内完整治理 Bridge 的代码结构与性能，重点拆分 `LockscreenLyricsModule.java`。
