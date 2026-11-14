@@ -164,6 +164,13 @@ public final class BridgeDebugSettingsActivity extends SettingsBaseActivity {
         statusCard.addView(restartHint, matchWrap());
         content.addView(statusCard, marginBottom(dp(12)));
 
+        // M0 prototype entry (5.0 plan §8.4 U-01). App-side Activity only; sample data.
+        Button managementPrototype = button(getString(R.string.mgmt_debug_entry));
+        removeButtonShadow(managementPrototype);
+        managementPrototype.setOnClickListener(view -> startActivity(new Intent(this,
+                io.github.andrealtb.lockscreenlyrics.management.ManagementPreviewActivity.class)));
+        content.addView(managementPrototype, marginBottom(dp(12)));
+
         Button save = button(getString(R.string.debug_save));
         styleGoldButton(save);
         removeButtonShadow(save);

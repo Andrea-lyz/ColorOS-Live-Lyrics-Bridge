@@ -45,19 +45,7 @@ import java.util.Locale;
 abstract class SettingsBaseActivity extends AppCompatActivity {
     @Override
     protected void attachBaseContext(Context newBase) {
-        super.attachBaseContext(applySettingsLocale(newBase));
-    }
-
-    /** Applies the persisted settings-page locale (default: Chinese) to this activity. */
-    private static Context applySettingsLocale(Context base) {
-        String tag = base.getSharedPreferences(LyricUiSettings.PREFERENCES_NAME, MODE_PRIVATE)
-                .getString(LyricUiSettings.PREF_SETTINGS_LOCALE, null);
-        if (tag == null || tag.isEmpty()) return base;
-        Locale locale = Locale.forLanguageTag(tag);
-        if (locale == null || locale.getLanguage().isEmpty()) return base;
-        Configuration configuration = new Configuration(base.getResources().getConfiguration());
-        configuration.setLocale(locale);
-        return base.createConfigurationContext(configuration);
+        super.attachBaseContext(SettingsLocaleContext.wrap(newBase));
     }
 
     /** Toggles the settings-page language between Chinese and English and rebuilds the page. */

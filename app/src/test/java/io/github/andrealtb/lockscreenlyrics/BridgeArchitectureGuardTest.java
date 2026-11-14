@@ -111,11 +111,66 @@ public final class BridgeArchitectureGuardTest {
                 .map(java.nio.file.Path::toFile)
                 .collect(Collectors.toList())) {
             String source = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+            // 5.0 plan §10: the ordinary-App management store may name the official Provider
+            // set (and the manifest may declare directed <queries> for it). Hook, bootstrap and
+            // render code may not, and every other v4 transport marker stays forbidden everywhere.
+            boolean managementUi = file.getPath().contains(File.separator + "lockscreenlyrics"
+                    + File.separator + "management" + File.separator);
+            if (file.getName().equals("AndroidManifest.xml")) {
+                source = source.replaceAll("(?s)<queries>.*?</queries>", "");
+            }
             for (String marker : FORBIDDEN_V4_MARKERS) {
+                if (managementUi && marker.equals(PROVIDER_APPLICATION_ID_MARKER)) {
+                    continue;
+                }
                 assertFalse(file + " contains forbidden Phase 5 marker " + marker,
                         source.contains(marker));
             }
         }
+    }
+
+    private static final String PROVIDER_APPLICATION_ID_MARKER =
+            "io.github.andrealtb.coloroslyrics.provider.";
+
+    /**
+     * Compose/Kotlin management UI (5.0 plan §8.4) lives only in the management package. The
+     * same APK is loaded into SystemUI, so no other source may reference Compose, the
+     * management package, or start its Activity from Hook, bootstrap or render code.
+     */
+    /** Ordinary-App settings Activities allowed to open the management UI (never Hook code). */
+    private static final List<String> MANAGEMENT_UI_ENTRY_POINTS = Arrays.asList(
+            "BridgeDebugSettingsActivity.java");
+
+    @Test
+    public void composeManagementUiStaysOutOfHookAndRenderCode() throws Exception {
+        File main = locateFromProject("app/src/main");
+        assumeTrue("app/src/main is visible to unit tests", main.isDirectory());
+        String managementDir = File.separator + "lockscreenlyrics" + File.separator
+                + "management" + File.separator;
+        int managementSources = 0;
+        for (File file : Files.walk(main.toPath())
+                .filter(Files::isRegularFile)
+                .map(java.nio.file.Path::toFile)
+                .filter(f -> f.getName().endsWith(".java") || f.getName().endsWith(".kt"))
+                .collect(Collectors.toList())) {
+            if (file.getPath().contains(managementDir)) {
+                managementSources++;
+                continue;
+            }
+            String source = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+            assertFalse(file + " references Compose outside the management UI",
+                    source.contains("androidx.compose"));
+            if (MANAGEMENT_UI_ENTRY_POINTS.contains(file.getName())) {
+                continue;
+            }
+            assertFalse(file + " references the management UI package",
+                    source.contains("io.github.andrealtb.lockscreenlyrics.management")
+                            || source.contains("ManagementPreviewActivity"));
+        }
+        assertTrue("management UI sources expected under app/src/main", managementSources > 0);
+        assertFalse("Xposed entry must stay the Java module class",
+                readProjectFile("app/src/main/resources/META-INF/xposed/java_init.list")
+                        .contains("management"));
     }
 
     @Test

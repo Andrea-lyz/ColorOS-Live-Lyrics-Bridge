@@ -284,4 +284,57 @@
         <item>你的人生将开启新的章节</item>
         <item>失去铸就你前行的路</item>
     </string-array>
+    <string name="management_preview_title">管理界面预览</string>
+    <string name="mgmt_tab_home">首页</string>
+    <string name="mgmt_tab_store">商店</string>
+    <string name="mgmt_tab_appearance">外观</string>
+    <string name="mgmt_tab_status">状态</string>
+    <string name="mgmt_sample_banner">样例数据：不代表本机真实状态，按钮不会安装、更新或授权。</string>
+    <string name="mgmt_check_config">设置应用</string>
+    <string name="mgmt_check_unknown">未知</string>
+    <string name="mgmt_action_continue_setup">继续设置</string>
+    <string name="mgmt_action_view_reasons">查看原因</string>
+    <string name="mgmt_action_open_store">进入商店</string>
+    <string name="mgmt_filter_suitable">适合我的播放器</string>
+    <string name="mgmt_filter_all">全部</string>
+    <string name="mgmt_filter_installed">已安装</string>
+    <string name="mgmt_filter_updates">更新</string>
+    <string name="mgmt_kind_dedicated">专用</string>
+    <string name="mgmt_kind_universal">通用</string>
+    <string name="mgmt_kind_artwork">动态封面</string>
+    <string name="mgmt_state_signature">签名与商店版本不同，无法直接覆盖安装</string>
+    <string name="mgmt_state_independent">在它自己的应用里设置</string>
+    <string name="mgmt_action_download">下载</string>
+    <string name="mgmt_action_update">更新</string>
+    <string name="mgmt_snackbar_prototype">原型：没有执行任何操作</string>
+    <string name="mgmt_store_empty">这个筛选下没有插件</string>
+    <string name="mgmt_appearance_body">外观设置暂时仍使用原来的页面。</string>
+    <string name="mgmt_appearance_open">打开外观设置</string>
+    <string name="mgmt_status_body">状态与诊断页还没有做原型，目前请在调试页查看。</string>
+    <string name="mgmt_debug_entry">管理界面原型（样例数据）</string>
+    <plurals name="mgmt_onboarding_remaining"><item quantity="other">还有 %1$d 步设置未完成</item></plurals>
+    <plurals name="mgmt_features_attention"><item quantity="other">%1$d 项功能未生效</item></plurals>
+    <plurals name="mgmt_updates_available"><item quantity="other">%1$d 个插件有更新</item></plurals>
+    <string name="mgmt_check_module">模块状态</string>
+    <string name="mgmt_check_systemui">SystemUI 加载状态</string>
+    <string name="mgmt_systemui_current">已加载当前安装的版本</string>
+    <string name="mgmt_systemui_outdated">仍在运行旧版本，重启手机后生效</string>
+    <string name="mgmt_home_banner">状态卡是本机实时查询结果；下方卡片和商店仍是样例数据。</string>
+    <string name="mgmt_status_checking">正在查询…</string>
+    <string name="mgmt_module_running">已在系统界面中运行</string>
+    <string name="mgmt_module_no_response">系统界面没有回应：模块可能未启用、作用域没有勾选系统界面，或启用后还没有重启手机</string>
+    <string name="mgmt_config_applied">系统界面已应用它启动后收到的最近一次设置</string>
+    <string name="mgmt_config_not_pushed">系统界面启动后还没收到过设置推送，正在使用启动时读取的设置</string>
+    <string name="mgmt_action_refresh">重新检查</string>
+    <string name="mgmt_store_banner">安装状态为本机实时读取；商店目录尚未接入，暂不能下载或检查更新。</string>
+    <string name="mgmt_store_no_catalog">商店目录尚未接入，暂不能检查更新</string>
+    <string name="mgmt_version_installed">已安装 %1$s</string>
+    <string name="mgmt_version_not_installed">未安装</string>
+    <string name="mgmt_host_missing">本机未检测到支持的播放器</string>
+    <string name="mgmt_state_no_debug_switch">这个插件没有调试开关，打开的是它的模块信息页</string>
+    <string name="mgmt_action_debug">调试</string>
+    <string name="mgmt_action_module_info">模块信息</string>
+    <string name="mgmt_action_open">打开</string>
+    <string name="mgmt_snackbar_no_catalog">商店目录尚未接入，暂不能下载或更新</string>
+    <string name="mgmt_snackbar_cannot_open">无法打开 %1$s 的页面</string>
 </resources>

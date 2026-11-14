@@ -284,4 +284,57 @@
         <item>你的人生将开启新的章节</item>
         <item>失去铸就你前行的路</item>
     </string-array>
+    <string name="management_preview_title">Management preview</string>
+    <string name="mgmt_tab_home">Home</string>
+    <string name="mgmt_tab_store">Store</string>
+    <string name="mgmt_tab_appearance">Appearance</string>
+    <string name="mgmt_tab_status">Status</string>
+    <string name="mgmt_sample_banner">Sample data: not this device\'s real state. Buttons do not install, update or grant anything.</string>
+    <string name="mgmt_check_config">Settings applied</string>
+    <string name="mgmt_check_unknown">Unknown</string>
+    <string name="mgmt_action_continue_setup">Continue setup</string>
+    <string name="mgmt_action_view_reasons">See why</string>
+    <string name="mgmt_action_open_store">Open store</string>
+    <string name="mgmt_filter_suitable">For my players</string>
+    <string name="mgmt_filter_all">All</string>
+    <string name="mgmt_filter_installed">Installed</string>
+    <string name="mgmt_filter_updates">Updates</string>
+    <string name="mgmt_kind_dedicated">Dedicated</string>
+    <string name="mgmt_kind_universal">Universal</string>
+    <string name="mgmt_kind_artwork">Artwork</string>
+    <string name="mgmt_state_signature">Signed differently from the store version; cannot update in place</string>
+    <string name="mgmt_state_independent">Set up in its own app</string>
+    <string name="mgmt_action_download">Download</string>
+    <string name="mgmt_action_update">Update</string>
+    <string name="mgmt_snackbar_prototype">Prototype: nothing was done</string>
+    <string name="mgmt_store_empty">No plugins in this filter</string>
+    <string name="mgmt_appearance_body">Appearance settings still use the existing page.</string>
+    <string name="mgmt_appearance_open">Open appearance settings</string>
+    <string name="mgmt_status_body">The status page is not prototyped yet. Use the debug page for now.</string>
+    <string name="mgmt_debug_entry">Management UI prototype (sample data)</string>
+    <plurals name="mgmt_onboarding_remaining"><item quantity="one">%1$d setup step left</item><item quantity="other">%1$d setup steps left</item></plurals>
+    <plurals name="mgmt_features_attention"><item quantity="one">%1$d feature is not active</item><item quantity="other">%1$d features are not active</item></plurals>
+    <plurals name="mgmt_updates_available"><item quantity="one">%1$d plugin update</item><item quantity="other">%1$d plugin updates</item></plurals>
+    <string name="mgmt_check_module">Module status</string>
+    <string name="mgmt_check_systemui">System UI load status</string>
+    <string name="mgmt_systemui_current">Running the installed version</string>
+    <string name="mgmt_systemui_outdated">Still running an older version; restart the phone to apply</string>
+    <string name="mgmt_home_banner">The status card is a live check on this phone; the cards below and the store are still sample data.</string>
+    <string name="mgmt_status_checking">Checking…</string>
+    <string name="mgmt_module_running">Running in System UI</string>
+    <string name="mgmt_module_no_response">System UI did not respond: the module may be disabled, System UI may be missing from its scope, or the phone has not been restarted since enabling it</string>
+    <string name="mgmt_config_applied">System UI applied the latest settings it received since it started</string>
+    <string name="mgmt_config_not_pushed">System UI has not received settings since it started and uses the ones it read at startup</string>
+    <string name="mgmt_action_refresh">Check again</string>
+    <string name="mgmt_store_banner">Installed state is read live from this phone. The store catalog is not connected yet, so downloads and update checks are unavailable.</string>
+    <string name="mgmt_store_no_catalog">The store catalog is not connected yet, so updates cannot be checked</string>
+    <string name="mgmt_version_installed">Installed %1$s</string>
+    <string name="mgmt_version_not_installed">Not installed</string>
+    <string name="mgmt_host_missing">No supported player found on this phone</string>
+    <string name="mgmt_state_no_debug_switch">This plugin has no debug switch; this opens its module info page</string>
+    <string name="mgmt_action_debug">Debug</string>
+    <string name="mgmt_action_module_info">Module info</string>
+    <string name="mgmt_action_open">Open</string>
+    <string name="mgmt_snackbar_no_catalog">The store catalog is not connected yet; downloads and updates are unavailable</string>
+    <string name="mgmt_snackbar_cannot_open">Could not open the %1$s page</string>
 </resources>

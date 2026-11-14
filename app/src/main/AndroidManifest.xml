@@ -14,6 +14,44 @@
         </intent>
     </queries>
 
+    <!-- Management UI store (5.0 plan §6.4): directed visibility for the official Provider
+         set and their supported players, mirrored from v5-provider-matrix.json. Read-only
+         installed-state lookup and opening each plugin's own page; no QUERY_ALL_PACKAGES. -->
+    <queries>
+        <package android:name="io.github.andrealtb.coloroslyrics.provider.salt" />
+        <package android:name="io.github.andrealtb.coloroslyrics.provider.cone" />
+        <package android:name="io.github.andrealtb.coloroslyrics.provider.kuwo" />
+        <package android:name="io.github.andrealtb.coloroslyrics.provider.lx" />
+        <package android:name="io.github.andrealtb.coloroslyrics.provider.poweramp" />
+        <package android:name="io.github.andrealtb.coloroslyrics.provider.metrolist" />
+        <package android:name="io.github.andrealtb.coloroslyrics.provider.kugou" />
+        <package android:name="io.github.andrealtb.coloroslyrics.provider.qq" />
+        <package android:name="io.github.andrealtb.coloroslyrics.provider.netease" />
+        <package android:name="io.github.andrealtb.coloroslyrics.provider.apple" />
+        <package android:name="io.github.andrealtb.coloroslyrics.provider.spotify" />
+        <package android:name="io.github.andrealtb.coloroslyrics.provider.qishui" />
+        <package android:name="io.github.andrealtb.coloroslyrics.provider.readify" />
+        <package android:name="io.github.andrealtb.coloroslyrics.provider.universal" />
+        <package android:name="io.github.andrealtb.artwork.am" />
+        <package android:name="com.salt.music" />
+        <package android:name="ink.trantor.coneplayer" />
+        <package android:name="ink.trantor.coneplayer.gp" />
+        <package android:name="cn.kuwo.player" />
+        <package android:name="cn.toside.music.mobile" />
+        <package android:name="com.lxwalnut.music.mobile" />
+        <package android:name="com.maxmpz.audioplayer" />
+        <package android:name="com.metrolist.music" />
+        <package android:name="com.kugou.android" />
+        <package android:name="com.kugou.android.lite" />
+        <package android:name="com.tencent.qqmusic" />
+        <package android:name="com.netease.cloudmusic" />
+        <package android:name="com.hihonor.cloudmusic" />
+        <package android:name="com.apple.android.music" />
+        <package android:name="com.spotify.music" />
+        <package android:name="com.luna.music" />
+        <package android:name="com.readin.app" />
+    </queries>
+
     <application
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -69,6 +107,12 @@
             android:theme="@style/Theme.LockscreenLyrics"
             android:parentActivityName=".LyricUiSettingsActivity"
             android:windowSoftInputMode="adjustResize" />
+        <!-- M0 Compose integration check; not exported and no launcher entry yet. -->
+        <activity
+            android:name=".management.ManagementPreviewActivity"
+            android:exported="false"
+            android:label="@string/management_preview_title"
+            android:theme="@style/Theme.LockscreenLyrics" />
         <activity
             android:name=".BridgeDebugSettingsActivity"
             android:exported="false"

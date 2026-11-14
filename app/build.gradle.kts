@@ -1,5 +1,9 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 val releaseStoreFilePath = providers.environmentVariable("SIGNING_STORE_FILE").orNull
@@ -45,6 +49,9 @@ android {
     buildFeatures {
         // The module references BuildConfig from injected runtime code.
         buildConfig = true
+        // Management UI only; Hook/bootstrap/render code must not reference Compose
+        // (enforced by BridgeArchitectureGuardTest).
+        compose = true
     }
 
     signingConfigs {
@@ -91,6 +98,12 @@ android {
     }
 }
 
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
+    }
+}
+
 dependencies {
     implementation(project(":artwork-contract"))
     compileOnly(project(":libxposed-api-stubs"))
@@ -99,6 +112,11 @@ dependencies {
     implementation("com.mocharealm.accompanist:lyrics-core-jvm:0.4.7")
     implementation("org.jetbrains.kotlin:kotlin-stdlib:2.3.0")
     implementation("org.luckypray:dexkit:2.2.0")
+    implementation(platform("androidx.compose:compose-bom:2025.12.01"))
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-core")
+    implementation("androidx.activity:activity-compose:1.9.2")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.16.1")
     testImplementation("org.json:json:20260522")

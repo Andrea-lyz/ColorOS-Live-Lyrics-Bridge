@@ -580,7 +580,7 @@ E 系列（第 15 节）不单列里程碑：E-0 随 M1，E-1/E-2 在 C-04/C-05 
 | --- | --- | --- |
 | D1 商店托管位置与地区可达性 | 官方 HTTPS 对象存储/CDN，版本化不可变对象 | 域名、运营权限、费用/可达性和恢复方案待确定；不以“GitHub artifacts 能下载”代替生产方案 |
 | D2 目录签名与密钥 | 独立目录签名公钥固定、APK 证书单独校验 | 最低 SDK 算法支持、轮换、过期/时钟偏差与反重放需测试 |
-| D3 Bridge 管理入口 | 推荐新增唯一 Bridge 桌面入口，框架模块设置进入同一首页 | UI 原型确认；通用/封面独立入口不动 |
+| D3 Bridge 管理入口 | **用户已确认（2026-11-14）**：新增 Bridge 桌面入口，设置中可选隐藏桌面入口；框架模块设置进入同一首页；管理面四入口为首页 / 商店 / 外观 / 状态 | 隐藏后仍须能从 LSPosed 模块设置进入；通用/封面独立入口不动；桌面入口在首页接入真实状态后再上线，不把样例页放上桌面 |
 | D4 框架支持矩阵 | libxposed 102.0.0 现有依赖起步，按实际能力验证 | requestScope 的框架交互/启用前置条件不可猜；不把 scope 请求等同静默启用模块 |
 | D5 静态 scope 迁移 | 专用模块逐项动态策略；Universal/Bridge 保持独立静态 | 不仅改文本；验证 convention、APK metadata、旧授权保留与 ProcessPolicy |
 | D6 更新提醒 | 手动/打开检查，用户选择后台通知 | ColorOS 后台限制不可保证实时，不新增默认常驻服务 |
@@ -623,6 +623,117 @@ E 系列（第 15 节）不单列里程碑：E-0 随 M1，E-1/E-2 在 C-04/C-05 
 - [Material Components for Android 官方说明](<https://github.com/material-components/material-components-android#readme>)：Views 库已进入维护模式，新功能方向转向 Compose，因此新管理面不再以旧库作为长期扩展底座。
 - [Material Components 1.14.0 说明](<https://github.com/material-components/material-components-android/releases/tag/1.14.0>)：已有 Expressive 主题/样式，可作为既有 Views 的过渡参考，不据此推导同名 Compose API 在任意版本均稳定可用。
 - 用户确认的是“Compose Material 3 + 适量 Expressive + 旧 Views 渐进迁移”的方向，不等于确认了最终视觉稿、依赖版本或同意重写歌词业务；这些仍须按 M0/M5/M6 验收。
+
+### 14.3 M0 Compose 接入验证（2026-11-14，本地）
+
+状态：**本地构建与测试通过；未在设备上打开过该页面；未提交**（分支 `feat/m0-compose-integration`，基于 `c572437`）。这是 U-01 的“工具链验证”部分，首页/商店原型尚未开始。
+
+冻结的依赖组合（候选，待原型阶段复核）：
+
+| 项 | 版本 | 说明 |
+| --- | --- | --- |
+| AGP / Gradle | 8.13.2 / 9.2.0 | 不变；不做 AGP 9 迁移 |
+| Kotlin Android 插件、Compose 编译器插件 | 2.3.20 | 与 Providers 仓库相同 |
+| Compose BOM | 2025.12.01 | 实际解析 `compose.ui` 1.10.0、`androidx.core` 1.16.0；material3 1.4.0（稳定版；Expressive 组件主要在 1.5 预发布线，原型阶段再核对） |
+| activity-compose | 1.9.2 | 刻意不用 1.12.x：其 AAR 要求 compileSdk 36 |
+| compileSdk / targetSdk / minSdk | 35 / 35 / 26 | 均不变；构建期 AAR 元数据检查通过 |
+| Kotlin jvmTarget | 17 | 与既有 Java 17 一致 |
+
+改动范围：
+
+- 根 `build.gradle.kts` 声明两个 Kotlin 插件；`app/build.gradle.kts` 应用插件、打开 `buildFeatures.compose`、加入 BOM/ui/material3/activity-compose。
+- 新增 `app/src/main/kotlin/.../management/ManagementPreviewActivity.kt`：固定浅色 `MaterialTheme(lightColorScheme())`、edge-to-edge + `Scaffold` padding，只显示一段注明“样例、不显示真实状态”的文字。Manifest 中 `exported=false`，**目前没有任何入口**，用户还打不开它。它直接继承 `AppCompatActivity`：既有 `SettingsBaseActivity` 是包内可见的 Java 类，统一语言/窗口处理留给原型阶段决定。
+- 字符串新增中英文各两条；没有改 `LyricUiConfig`、偏好通道、Hook、渲染或 AOD 代码。
+- 架构守卫 `BridgeArchitectureGuardTest.composeManagementUiStaysOutOfHookAndRenderCode`：`management` 包以外的任何源码不得引用 `androidx.compose`、`management` 包或该 Activity；Xposed 入口 `java_init.list` 不得指向 `management`。同一 APK 会被加载进 SystemUI，这条守卫保证 Compose 只在普通 App 进程里被引用。
+
+本地验证：
+
+- `writeSourceIdentityReport :app:testDebugUnitTest :app:assembleDebug`：944 tests / 0 fail / 6 skip（新增守卫 1 项）。
+- `:app:minifyReleaseWithR8`：通过（未打包、未签名正式 Release；`ManagementPreviewActivity` 类名保留在 R8 输出中）。
+- 体积，与基线提交 `c572437` 在临时 worktree 中用相同任务对比：R8 后 dex 2,400,096 → 3,364,904 字节（约 +0.92 MiB、+40%）；新增原生库 `libandroidx.graphics.path.so` 四个 ABI 合计约 37 KB；Debug APK 8.9 MB → 17.3 MB（Debug 不做压缩，不代表发布体积）。正式签名 APK 的最终增量未测。
+- sourceDigest `4d4e64ca…`（287 输入，dirty）。
+
+未覆盖 / 待原型阶段：真机打开 Compose 页面、冷启动与内存、大字体/TalkBack、正式签名 + R8 下的入口可达性；material3 稳定版可用的 Expressive API 清单；Compose 页面是否沿用 `SettingsBaseActivity` 的语言与窗口处理。
+
+### 14.4 M0 首页与商店原型（2026-11-14，本地，待用户看外观）
+
+状态：**本地构建与测试通过；尚未在设备上打开；未提交**（同分支 `feat/m0-compose-integration`）。按 U-01 要求只做“首页 + 商店列表”，全部为样例数据，用来确认视觉密度、主操作、状态文字、大字体和导航。
+
+实现：
+
+- 入口：Bridge 调试页新增按钮“管理界面原型（样例数据）”，打开 `ManagementPreviewActivity`。不加桌面图标（D3 待原型评审），不改 LSP 模块设置入口。
+- 导航：四个顶级入口“首页 / 商店 / 外观 / 状态”，带文字和图标；窗口宽度 ≥ 600dp 时改为左侧 navigation rail，内容最大宽度 840dp。宽度判断目前用 `screenWidthDp`，没有引入 adaptive/WindowSizeClass 库。
+- 首页：运行构建是否一致、设置是否应用（图标 + 文字，不只靠颜色）、“还有 N 步设置未完成 → 继续设置”、“N 项功能未生效 → 查看原因”（跳到状态页）、“N 个插件有更新 → 进入商店”。
+- 商店：筛选“适合我的播放器 / 全部 / 已安装 / 更新”；卡片显示名称、专用/通用/动态封面标签、对应播放器、已安装与最新版本、异常说明（签名不同、未检测到播放器、通用/封面“在它自己的应用里设置”）。每张卡最多一个主操作：未安装→下载，有更新→更新，专用已安装→继续配置；签名不同和通用/封面已是最新时**不提供按钮**，也不提供清数据。样例覆盖全部 4 种安装状态和 3 种类型。
+- 外观：一张卡片打开现有 `LyricUiSettingsActivity`，不复制任何外观配置。状态：占位文字，诊断仍在调试页。
+- 所有页面顶部有“样例数据”横幅；任何下载/更新/继续设置按钮只弹出“原型：没有执行任何操作”。
+- 主题：固定浅色，颜色取自现有 `res/values/colors.xml`（主色琥珀 `settings_primary_deep` 配深色文字、辅色青色、背景与卡片同设置页），间距集中为 4/8/12/16/24dp tokens。系统字体，无动态取色、无深色模式、无 Expressive 组件（material3 1.4.0 稳定版）。
+- 语言：抽出 `SettingsLocaleContext`，Views 设置页与 Compose 页面共用同一个语言偏好；`SettingsBaseActivity` 改为调用它，行为不变。
+- 页面状态只有选中的页签和筛选（`rememberSaveable`），旋转/重建后保留；没有任何外部操作会因重组重复执行。
+- 架构守卫改为：`management` 包以外只有 `BridgeDebugSettingsActivity` 这一个普通 App 页面可以打开它，且仍不得引用 Compose。
+
+本地验证：
+
+- `writeSourceIdentityReport :app:testDebugUnitTest :app:assembleDebug :app:minifyReleaseWithR8`：949 tests / 0 fail / 6 skip（新增 `PrototypeModelTest` 5 项：主操作映射、通用/封面不在商店配置、签名不同无操作、筛选语义、样例覆盖）。没有 Compose UI/截图测试（需要额外测试依赖，留到 U-02）。
+- R8 后 dex 3,806,068 字节：比 14.3 的 Compose 空页 +0.44 MB，比接入 Compose 前的基线 2,400,096 字节合计约 +1.41 MB。Debug APK 23.9 MB（未压缩，含完整 material-icons-core）。
+- 候选：`artifacts/m0-prototype-20261114/Bridge-v4.5.4-M0-prototype-debug.apk`，SHA-256 `98488fed…831775e7`，Debug 证书 `5a6fd43f…`，sourceDigest `3f177baa…`。
+
+自查（按 material-3 十类，仅源码阅读，未上设备；不打分）：颜色均用主题角色且成对使用，主按钮为琥珀底深色字；排版只用主题字级；形状用主题 shapes；层级靠卡片与背景的明暗差，没有阴影；组件均为官方 Material 3；布局有最大宽度和 rail；导航四入口；动效只有组件默认；无障碍上图标都有文字伴随（图标 `contentDescription` 为空，由文字承担），触控尺寸用组件默认 48dp，**大字体、TalkBack、对比度未在设备上检查**；主题固定浅色。
+
+请用户在设备上确认（需当次授权安装）：
+
+1. 从调试页进入原型，四个页签能切换，返回键回到调试页。
+2. 首页与商店的信息密度、按钮主次、状态文字是否清楚；样例横幅是否足够醒目。
+3. 系统字体放大到最大后有无截断或重叠。
+4. 中文/英文切换（设置页语言开关）后原型跟随。
+5. 旋转或分屏后页签与筛选保留。
+6. 主色琥珀 + 青色辅色与现有设置页是否一致、是否需要调整。
+7. 是否同意以“首页 / 商店 / 外观 / 状态”四入口作为 5.0 管理面结构，以及是否新增桌面入口（D3）。
+
+**用户设备反馈（2026-11-14，PJZ110，候选 `98488fed…`）：**
+
+| 项 | 结果 |
+| --- | --- |
+| 1 进入、切换、返回 | 通过 |
+| 2 信息密度与内容 | 要求首页显示**当前模块状态**与 **SystemUI 加载状态**（文字 + 图标）→ 已改，见下 |
+| 3 最大字体 | 无截断、无重叠 |
+| 4 中英文切换 | 原型跟随 |
+| 5 旋转 / 分屏 | 页签与筛选保留 |
+| 6 配色 | 与现有设置页一致 |
+| 7 结构与入口 | 同意四入口结构；**要新增桌面图标，并在设置中可选隐藏桌面入口**（D3 已定） |
+
+大字体、TalkBack 与实际对比度中，只有“最大字体无截断”有用户证据；TalkBack 与对比度仍未检查。
+
+**按反馈修改（r2，本地）：** 首页状态卡改为三行，各自图标 + 文字：模块状态（已启用且作用域含系统界面 / 未启用或缺作用域 / 未知）、SystemUI 加载状态（已加载当前版本 / 仍在运行旧版本需重启 / 尚未加载 / 未知：没有回应）、设置应用。删除原“运行构建”一行（被 SystemUI 加载状态取代）。样例刻意显示“仍在运行旧版本”以展示警告样式。新增 `PrototypeModelTest` 1 项：已安装未加载、未加载都算“需要处理”，未知不算正常。950 tests / 0 fail / 6 skip，Debug 与 R8 通过；候选 `artifacts/m0-prototype-20261114/Bridge-v4.5.4-M0-prototype-r2-debug.apk`（`901b4999…`），sourceDigest `bca57c08…`。仍是样例数据，**尚未接入真实状态**；未上设备。
+
+**首页状态卡接入真实状态（r3，本地，2026-11-14）：** 只有首页状态卡改为实时；首页其余卡片与商店仍是样例，首页横幅改为“状态卡是本机实时查询结果；下方卡片和商店仍是样例数据”。
+
+- 数据来源：新增 App 侧 `ModuleStatusQuery`（Java），发送调试页已在用的只读 `ACTION_REQUEST_MODULE_STATUS` 广播到 SystemUI，读取回包中的注入构建 `cll_runtime_build_id` 与已应用设置 revision `cll_ui_config_revision`，并核对回包进程为 `com.android.systemui`。已安装构建取本 App 进程的 `BuildConfig.BUILD_ID`（即已安装 APK）。不新增任何 SystemUI 侧代码。
+- 判定（`homeStatus`，纯函数）：
+  - 查询中 → 三行都显示“正在查询…”。
+  - 2.5 秒无回包或发送失败 → 模块状态“系统界面没有回应：可能未启用、作用域没有勾选系统界面，或启用后还没重启”（警告），另两行未知。App 进程读不到框架的启用/作用域状态，所以**不会显示“未启用”**。
+  - 有回包 → 模块状态“已在系统界面中运行”；构建相同为“已加载当前安装的版本”，不同为“仍在运行旧版本，重启手机后生效”（警告），任一侧缺失为未知；设置 revision ≥ 0 为“已应用它启动后收到的最近一次设置”，-1 为“启动后还没收到过设置推送，正在使用启动时读取的设置”（中性，不算失败）。
+- 时机：每次 `onResume` 重新查询（从 LSPosed 返回或重启后能刷新），另有“重新检查”按钮；暂停时作废未完成的请求，迟到回包和超时都不会覆盖新结果。
+- 已知局限：设置行只能说明 SystemUI 启动后是否收到过推送，不能证明“你刚才那次修改”已生效（App 侧不保存最近一次发送的 revision）；需要逐次回执时再加持久化。
+- 本地验证：954 tests / 0 fail / 6 skip（`PrototypeModelTest` 现为 10 项，新增查询中、无回包、构建相同/不同、构建缺失、启动后未推送 5 项），Debug 与 R8 通过。候选 `artifacts/m0-prototype-20261114/Bridge-v4.5.4-M0-prototype-r3-live-status-debug.apk`（`4c98f6ad…`），sourceDigest `f991bfe2…`。未上设备。
+- 设备上预期：覆盖安装 r3 后不重启，SystemUI 仍运行此前加载的构建，首页应显示“仍在运行旧版本”；重启后应变为“已加载当前安装的版本”。在 LSPosed 中关闭模块并重启后应显示“没有回应”。
+- **用户设备确认（2026-11-14，r3 `4c98f6ad…` 由 agent 经当次授权 adb 安装）**：三项均通过——未重启时显示“仍在运行旧版本”，重启后“已加载当前安装的版本”，在 LSPosed 关闭模块并重启后显示“没有回应”。
+
+**商店接入真实安装状态与打开按钮（r4，本地，2026-11-14，按用户要求）：**
+
+- 用户要求：所有专用插件加“调试”按钮，进入各自的调试页、各自开启 debug；通用歌词与动态封面加“打开”按钮，直接跳到各自主页。
+- 商店列表改为官方 15 项（`ProviderDirectory`，与 `v5-provider-matrix.json` 一致），安装状态与版本由本机 PackageManager 实时读取，“适合我的播放器”按矩阵中的宿主包是否已安装判断。样例商店数据已删除。
+- 按钮：
+  - 专用插件已安装 →“调试”，打开该插件自己导出的 `MAIN + INFO` 页（即 LSPosed 打开的那一页），debug 开关在插件页内由用户自己切换；商店不读写任何插件配置。12 个专用插件是调试页。
+  - **Readify 例外**：它的 INFO 页只有模块信息和只读运行诊断，没有调试开关，所以按钮写“模块信息”，卡片注明原因。
+  - 通用歌词、动态封面已安装 →“打开”，使用其桌面启动入口。
+  - 未安装 →“下载”，提示“商店目录尚未接入”；“更新”筛选显示“目录未接入，暂不能检查更新”。签名不同、有更新这两种状态需要目录，暂不产生。
+  - 打不开（页面不存在、无权限）时提示“无法打开 X 的页面”，不崩溃。
+- 包可见性：Manifest 新增一段定向 `<queries>`，列出 15 个插件包与 17 个宿主播放器包；不使用 `QUERY_ALL_PACKAGES`。
+- 架构守卫按第 10 节重划：Provider applicationId 只允许出现在 `management` 包与 Manifest 的 `<queries>` 中；Hook/bootstrap/render 代码仍禁止，其他 v4 transport 标记全局禁止不变。
+- 新增 `ProviderDirectoryContractTest`：目录与 Providers 矩阵逐项相同（模块、包名、宿主包），Manifest `<queries>` 覆盖全部插件与宿主。构建在替换盘符下看不到相邻仓库时需通过环境变量 `CLL_PROVIDER_MATRIX` 指定矩阵路径，否则该测试跳过；本次已指定并通过。
+- 本地验证：957 tests / 0 fail / 6 skip，Debug 与 R8 通过（R8 dex 3,816,736 字节）。候选 `artifacts/m0-prototype-20261114/Bridge-v4.5.4-M0-prototype-r4-store-debug.apk`（`0d00b3dc…`），sourceDigest `8af97562…`。未上设备。
+- **用户设备确认（2026-11-14，r4 `0d00b3dc…`，agent 经当次授权 adb 安装）**：安装状态与版本、专用插件“调试”进入各自调试页、通用歌词/动态封面“打开”、筛选与返回均通过；Readify 卡片在“全部”中可见（“适合我的播放器”因本机未装宿主不显示，符合设计）。**M0 首页/商店原型由用户确认通过。**
 
 ## 15. 主线五：代码结构与性能治理（E 系列）
 
