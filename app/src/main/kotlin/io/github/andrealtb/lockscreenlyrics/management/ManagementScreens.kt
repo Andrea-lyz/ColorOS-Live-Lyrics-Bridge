@@ -329,6 +329,13 @@ private fun CatalogCard(catalog: CatalogView, unrecognizedEntries: Int, onRefres
     val current = catalog.state as? CatalogState.Current
     val headline = catalog.headline()
     StatusCard {
+        if (StoreRuntime.testCatalogTrust) {
+            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                Text(stringResource(R.string.mgmt_catalog_test_trust), style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error)
+            }
+        }
         CheckRow(
             label = stringResource(R.string.mgmt_catalog_label),
             check = when (headline) {

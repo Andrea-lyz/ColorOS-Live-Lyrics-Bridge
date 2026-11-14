@@ -27,6 +27,9 @@ val releaseVersionName = providers.gradleProperty("releaseTag")
         withoutLeadingV.ifBlank { defaultVersionName }
     }
     .orElse(defaultVersionName)
+// Device testing of the store only (5.0 plan §14.8): a debug build may additionally trust the
+// TEST-ONLY catalog key. Release builds never do (release source set has no test keys).
+val storeTestCatalog = providers.gradleProperty("cllStoreTestCatalog").map { it == "true" }.orElse(false)
 val hasReleaseSigningConfig = listOf(
     releaseStoreFilePath,
     releaseStorePassword,
@@ -77,7 +80,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            buildConfigField("boolean", "STORE_TEST_TRUST", storeTestCatalog.get().toString())
+        }
         release {
+            buildConfigField("boolean", "STORE_TEST_TRUST", "false")
             if (hasReleaseSigningConfig) {
                 signingConfig = signingConfigs.getByName("release")
             }

@@ -5,6 +5,7 @@ import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.SystemClock
+import io.github.andrealtb.lockscreenlyrics.BuildConfig
 import io.github.andrealtb.lockscreenlyrics.management.catalog.BundledCatalogSnapshot
 import io.github.andrealtb.lockscreenlyrics.management.catalog.CatalogRefresher
 import io.github.andrealtb.lockscreenlyrics.management.catalog.CatalogState
@@ -13,6 +14,8 @@ import io.github.andrealtb.lockscreenlyrics.management.catalog.CatalogTrust
 import io.github.andrealtb.lockscreenlyrics.management.catalog.CatalogVerifier
 import io.github.andrealtb.lockscreenlyrics.management.catalog.FileCatalogPersistence
 import io.github.andrealtb.lockscreenlyrics.management.catalog.RefreshResult
+import io.github.andrealtb.lockscreenlyrics.management.catalog.StoreTestTrust
+import java.io.File
 import io.github.andrealtb.lockscreenlyrics.management.net.UrlConnectionHttpsTransport
 
 /**
@@ -28,12 +31,22 @@ internal object StoreRuntime {
     private var store: CatalogStore? = null
     private var lastRemoteCheckElapsed = Long.MIN_VALUE
 
+    /**
+     * Debug build made with `-PcllStoreTestCatalog=true`: also trusts the TEST-ONLY key and keeps
+     * its revision floor in a separate directory, so a test catalog can never block the real one.
+     */
+    val testCatalogTrust: Boolean = BuildConfig.STORE_TEST_TRUST && StoreTestTrust.keys.isNotEmpty()
+
     private fun store(context: Context): CatalogStore = store ?: run {
         val app = context.applicationContext
-        CatalogStore(
-            CatalogVerifier(CatalogTrust.production()),
-            FileCatalogPersistence.forApp(app),
-        ) { BundledCatalogSnapshot.read(app) }.also { store = it }
+        val production = CatalogTrust.production()
+        val trust = if (!testCatalogTrust) production else CatalogTrust(
+            production.catalogKeys + StoreTestTrust.keys.mapValues { (_, spki) -> CatalogTrust.decodeP256PublicKey(spki) },
+            production.releaseSignerSha256,
+        )
+        val persistence = if (testCatalogTrust) FileCatalogPersistence(File(app.noBackupFilesDir, "store-test"))
+        else FileCatalogPersistence.forApp(app)
+        CatalogStore(CatalogVerifier(trust), persistence) { BundledCatalogSnapshot.read(app) }.also { store = it }
     }
 
     fun load(context: Context): CatalogState = synchronized(lock) { store(context).load(nowEpochSeconds()) }

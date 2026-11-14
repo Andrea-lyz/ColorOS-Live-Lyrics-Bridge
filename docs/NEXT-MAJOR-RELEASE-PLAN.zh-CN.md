@@ -893,7 +893,7 @@ E 系列（第 15 节）不单列里程碑：E-0 随 M1，E-1/E-2 在 C-04/C-05 
 
 **M2 剩余：** 所有切片均已在本地完成；workflow 均未在 GitHub 运行，首个正式目录尚未发布。下一步为 M3（商店安装更新：已安装发现、下载、PackageInstaller、恢复、更新提醒），届时接入 `CatalogStore` 与 `ArtifactCheck`。
 
-### 14.7 M3：目录接入商店、下载校验、安装事务与后台更新提醒（2026-11-14，本地，未提交）
+### 14.7 M3：目录接入商店、下载校验、安装事务与后台更新提醒（2026-11-14，本地，已提交 `2516ad2`）
 
 分支：Bridge `feat/m3-store-install`（基于 `e242f60`）。Providers 未改。
 
@@ -941,6 +941,38 @@ E 系列（第 15 节）不单列里程碑：E-0 随 M1，E-1/E-2 在 C-04/C-05 
 本地验证：同一组 Gradle 任务通过，1012 tests / 0 fail / 6 skip（新增 `UpdateNoticeTest` 3 项）；R8 dex 3,941,028 字节（比第二刀 +39,568）；合并后的 Manifest 已确认含两项新权限与该服务。**未覆盖：** 任务调度、通知显示、权限申请、点通知跳到商店页都没在设备上运行；ColorOS 对后台任务的限制（例如未加入自启动白名单时可能长期不执行）是 unknown。
 
 **M3 剩余：** 首个正式目录发布后的设备验收（下载、安装确认、授权往返、取消、被杀后恢复、后台提醒）。功能切片已全部在本地实现。
+
+### 14.8 M3 真机测试点：TEST-ONLY 目录（2026-11-14，本地，未提交；用户设备确认通过）
+
+目的：正式目录发布前，在真机上走完一次真实的“下载 → 校验 → 系统安装 → 回读”。不推送、不打 tag、不用正式私钥。
+
+- 分支 Bridge `feat/m3-store-device-test`（基于 `2516ad2`）。
+- 只在 Debug 且构建时设置 Gradle 属性 `cllStoreTestCatalog=true`（Windows 下用环境变量 `ORG_GRADLE_PROJECT_cllStoreTestCatalog=true`，因为 `dev.cmd` 会拆开 `=`）时，`BuildConfig.STORE_TEST_TRUST` 为 true，商店额外信任 Providers 仓库里公开的 TEST-ONLY 目录公钥 `test-only-2026`。该公钥只在 `app/src/debug` 源集中；`app/src/release` 的同名对象为空。Release 构建即使带着该属性也固定为 false，已确认 R8 后的 Release dex 中没有该 keyId。`StoreTestTrustTest` 2 项检查 release 源集为空、debug 密钥就是测试夹具密钥且不是正式密钥。
+- 测试构建的 revision 下限另存在 `noBackupFilesDir/store-test`，测试目录永远不会挡住正式目录。商店目录卡片顶部会显示红色“测试构建”警告。
+- 测试目录（`artifacts/m3-store-test-20261114/test-stable.json`，revision 1，30 天有效，payload SHA-256 `d7cbc44a…`）用 TEST-ONLY 私钥签名，Providers 的 `verify-catalog.mjs` 用测试公钥验证通过、用 `release/catalog-trust.json` 验证被拒（unknown keyId）。只有两个条目，都指向 Bridge 仓库 **v4.5.4 正式 Release 中已存在的资产**（正式证书 `ff38544b…`，本地用 apksigner 核对过）：
+  - LX Provider 1.2.1（versionCode 4，145,290 字节，`6b84d229…`）
+  - QiShui Provider 1.1.2（versionCode 4，169,277 字节，`9cbc021a…`）
+  
+  下载会经过 github.com → release-assets 主机的重定向，正好覆盖白名单逐跳检查。
+- 候选：`artifacts/m3-store-test-20261114/Bridge-M3-store-test-debug.apk`，SHA-256 `18645c6b…`，Debug 证书 `5a6fd43f…`（与设备上 r4 相同，可直接覆盖安装）。嵌入的 `assets/catalog/stable.json` 与测试目录逐字节相同。构建后已从 `app/build/generated/catalogSnapshot` 删除测试快照，之后的普通构建不会带上它。
+- 本地验证：1014 tests / 0 fail / 6 skip，测试版 Debug 构建通过；带属性的 Release R8 构建通过且不含测试密钥。
+
+**设备检查清单（需用户当次授权安装 Bridge；两个 Provider 由用户在商店里自己点安装）：**
+
+1. 商店页：红色“测试构建”警告；目录卡显示“第 1 版（随 Bridge 内置），签名已验证”；LX、QiShui 显示“未安装 · 商店 x.y”和“下载”按钮；其余插件显示“商店目录中暂无这个插件”，已安装的仍显示原来的打开/调试按钮。
+2. “检查更新”：正式镜像上还没有目录，预期显示“网络检查失败，继续使用现有目录”，测试目录保持可用。
+3. 点 LX“下载”：进度、核对，然后：
+   - 若 Bridge 尚未获“安装未知应用”授权：卡片显示“去允许安装”；跳到系统设置允许后返回，应自动继续；不允许则不再弹出。
+   - 出现系统（ColorOS）安装确认：取消一次 → 卡片显示“已取消”，再点下载应直接复用已校验文件（不重新下载）。
+   - 再次确认安装 → “已安装 1.2.1，并核对了版本与签名”和 LSPosed 提示；卡片变为已安装并出现“调试”按钮。
+4. 在安装确认界面按返回或切走后回到商店：应显示“等待你确认”，“打开安装确认”能重新打开，“取消”能结束。
+5. （可选）点 QiShui 下载、在安装确认出现时从最近任务划掉 Bridge，再打开商店：应显示“安装过程被中断，可以重试”，不会自动再弹第二个安装。
+6. 后台提醒开关：打开时请求通知权限（Android 13+）；拒绝后开关保持关闭。由于测试目录里没有本机已安装的旧版本，这一步不会产生更新通知，只验证开关与权限。
+7. 测试结束后，LX/QiShui 插件是否卸载由用户决定（未在 LSPosed 启用时不会影响任何播放器）。
+
+**用户设备确认（2026-11-14，PJZ110 `f05be72a`，候选 `18645c6b…`，agent 经当次授权 `adb install -r`）：第 1–6 项全部通过。** 即：测试构建警告与内置目录显示正确；正式镜像无目录时显示网络失败且测试目录仍可用；LX 的下载、校验、“安装未知应用”授权往返、ColorOS 安装确认中取消后复用已校验文件、确认安装后回读版本与签名均通过；退出确认后可重新打开或取消；进程被划掉后显示中断且未再次发起安装；提醒开关的通知权限申请与拒绝处理正确。
+
+仍未覆盖：后台提醒的实际调度与通知显示（测试目录中没有本机旧版本可提醒）；签名冲突、空间不足、系统拦截等失败分支；正式目录（`store-catalog` 分支、正式密钥签名、jsDelivr/raw 镜像）的端到端流程；其他 ColorOS 型号与 Android 版本。
 
 ## 15. 主线五：代码结构与性能治理（E 系列）
 

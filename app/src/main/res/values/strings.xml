@@ -385,4 +385,5 @@
     <string name="mgmt_reminder_notifications_off">通知已被关闭，收不到提醒。可以在系统设置里为 Bridge 打开通知。</string>
     <string name="mgmt_reminder_permission_denied">没有通知权限，后台提醒保持关闭</string>
     <string name="mgmt_reminder_channel">插件更新</string>
+    <string name="mgmt_catalog_test_trust">测试构建：同时信任 TEST-ONLY 目录密钥，仅用于真机测试，不是正式商店。</string>
 </resources>

@@ -385,4 +385,5 @@
     <string name="mgmt_reminder_notifications_off">Notifications are turned off, so no reminder can appear. Turn them on for the Bridge in system settings.</string>
     <string name="mgmt_reminder_permission_denied">No notification permission; background reminders stay off</string>
     <string name="mgmt_reminder_channel">Plugin updates</string>
+    <string name="mgmt_catalog_test_trust">Test build: also trusts the TEST-ONLY catalog key. For device testing only; not the real store.</string>
 </resources>
