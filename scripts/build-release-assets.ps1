@@ -100,9 +100,7 @@ $resolvedProviderRoot = Resolve-AbsolutePath $ProviderRepoRoot
 $resolvedBuildTools = Resolve-AbsolutePath $BuildToolsDir
 
 $bridgeContractPath = Join-Path $RepoRoot 'release\bridge-release-contract.json'
-$providerContractPath = Join-Path $resolvedProviderRoot 'release\v5-provider-matrix.json'
 $bridgeContract = Get-Content -LiteralPath $bridgeContractPath -Raw | ConvertFrom-Json
-$providerContract = Get-Content -LiteralPath $providerContractPath -Raw | ConvertFrom-Json
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 & (Join-Path $RepoRoot 'scripts\validate-release-contract.ps1') -ProviderRepoRoot $resolvedProviderRoot
@@ -119,16 +117,14 @@ foreach ($tool in @($aapt2, $apksigner, $zipalign)) {
     Assert-ReleaseAsset (Test-Path -LiteralPath $tool -PathType Leaf) "Android build tool is missing: $tool"
 }
 
-$artworkProvider = @($providerContract.artworkProviders)[0]
-$expectedApkNames = @([string]$bridgeContract.bridgeAsset) + @(
-    $providerContract.providers | ForEach-Object { [string]$_.asset }
-) + @([string]$artworkProvider.asset)
+# Schema 2: the Bridge Release carries only the Bridge APK; Provider and artwork APKs are
+# published by the Provider store (one immutable Release per Provider tag).
+$expectedApkNames = @([string]$bridgeContract.bridgeAsset)
 $incomingApks = @(Get-ChildItem -LiteralPath $resolvedInputDir -File -Filter '*.apk')
 Assert-ReleaseAsset ($incomingApks.Count -eq $bridgeContract.totalApkCount) "expected $($bridgeContract.totalApkCount) incoming APKs, found $($incomingApks.Count)"
 Assert-ReleaseAsset (-not (Compare-Object ($incomingApks.Name | Sort-Object) ($expectedApkNames | Sort-Object))) 'incoming APK names differ from contract'
 
 $assetRecords = @()
-$providerOutputPaths = @()
 $expectedCertificate = ([string]$bridgeContract.releaseCertificateSha256).ToLowerInvariant()
 
 function Verify-And-StageApk {
@@ -193,65 +189,18 @@ $bridgeAssetArguments = @{
 }
 Verify-And-StageApk @bridgeAssetArguments | Out-Null
 
-foreach ($provider in @($providerContract.providers)) {
-    $providerAssetArguments = @{
-        AssetName = [string]$provider.asset
-        ExpectedApplicationId = [string]$provider.applicationId
-        ExpectedVersionName = [string]$provider.versionName
-        ExpectedVersionCode = [int]$provider.versionCode
-        Kind = 'provider-apk'
-        Module = [string]$provider.module
-    }
-    $providerOutputPaths += Verify-And-StageApk @providerAssetArguments
-}
-
-Assert-ReleaseAsset ($providerOutputPaths.Count -eq $bridgeContract.providerApkCount) 'Provider APK count changed while staging'
-
-# A standalone app outside the lyric matrix: published next to the bundle, never inside it.
-$artworkAssetArguments = @{
-    AssetName = [string]$artworkProvider.asset
-    ExpectedApplicationId = [string]$artworkProvider.applicationId
-    ExpectedVersionName = [string]$artworkProvider.versionName
-    ExpectedVersionCode = [int]$artworkProvider.versionCode
-    Kind = 'artwork-provider-apk'
-    Module = [string]$artworkProvider.module
-}
-Verify-And-StageApk @artworkAssetArguments | Out-Null
-$bundlePath = Join-Path $resolvedOutputDir ([string]$bridgeContract.providerBundleAsset)
-Compress-Archive -LiteralPath $providerOutputPaths -DestinationPath $bundlePath -CompressionLevel Optimal
-
-$bundle = [System.IO.Compression.ZipFile]::OpenRead($bundlePath)
-try {
-    $entries = @($bundle.Entries | Where-Object { -not [string]::IsNullOrWhiteSpace($_.Name) })
-    Assert-ReleaseAsset ($entries.Count -eq $bridgeContract.providerApkCount) 'Provider bundle entry count differs'
-    Assert-ReleaseAsset (-not (Compare-Object ($entries.FullName | Sort-Object) ((@($providerContract.providers).asset) | Sort-Object))) 'Provider bundle entries differ from contract'
-    Assert-ReleaseAsset (@($entries | Where-Object { $_.FullName -ne $_.Name }).Count -eq 0) 'Provider bundle must contain top-level APKs only'
-} finally {
-    $bundle.Dispose()
-}
-
-$bundleFile = Get-Item -LiteralPath $bundlePath
-$assetRecords += [ordered]@{
-    type = 'provider-bundle'
-    module = $null
-    name = $bundleFile.Name
-    applicationId = $null
-    versionName = $bridgeContract.suiteVersion
-    versionCode = $null
-    bytes = $bundleFile.Length
-    sha256 = Get-Sha256Lower $bundlePath
-    certificateSha256 = $null
-}
-
 $manifest = [ordered]@{
-    schema = 1
+    schema = 2
     batch = $Batch
     suiteVersion = $bridgeContract.suiteVersion
     releaseTag = $bridgeContract.releaseTag
     lspTag = $bridgeContract.lspTag
     bridgeCommit = $BridgeCommit
     providerCommit = $ProviderCommit
+    # The Provider matrix commit the Bridge directory/trust tests were bound to; no Provider
+    # APK is part of this release.
     providerSourceTag = $bridgeContract.providersSourceTag
+    providerDistribution = $bridgeContract.providerDistribution
     releaseCertificateSha256 = $expectedCertificate
     generatedAtUtc = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     assets = $assetRecords

@@ -1,6 +1,10 @@
 param(
     [string] $RepoRoot = (Split-Path -Parent $PSScriptRoot),
-    [string] $ProviderRepoRoot = ''
+    [string] $ProviderRepoRoot = '',
+    # Legacy preview path (preview.yml / artwork-provider-candidate.yml) still attaches the
+    # pinned Universal and artwork preview APKs and checks their versions against that pinned
+    # Provider checkout. Formal releases no longer carry Provider APKs (schema 2, plan §9.1).
+    [switch] $PreviewProviders
 )
 
 $ErrorActionPreference = 'Stop'
@@ -27,7 +31,7 @@ $scope = @(
         Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
 )
 
-Assert-Contract ($contract.schema -eq 1) 'unsupported bridge contract schema'
+Assert-Contract ($contract.schema -eq 2) 'unsupported bridge contract schema'
 Assert-Contract ($contract.suiteVersion -match '^\d+\.\d+\.\d+$') 'suiteVersion must be SemVer'
 Assert-Contract ($contract.releaseTag -eq "v$($contract.suiteVersion)") 'releaseTag must match suiteVersion'
 Assert-Contract ($contract.lspTag -eq "$($contract.versionCode)-$($contract.suiteVersion)") 'lspTag must match versionCode and suiteVersion'
@@ -43,10 +47,14 @@ for ($index = 0; $index -lt $expectedScope.Count; $index++) {
     Assert-Contract ($scope[$index] -eq $expectedScope[$index]) "Bridge scope differs at index $index"
 }
 
-Assert-Contract ($contract.providerApkCount -eq 14) 'release must contain exactly 14 Provider APKs'
-Assert-Contract ($contract.artworkProviderApkCount -eq 1) 'release must contain exactly one artwork Provider APK'
-Assert-Contract ($contract.totalApkCount -eq (1 + $contract.providerApkCount + $contract.artworkProviderApkCount)) 'totalApkCount must equal Bridge, Providers, and the artwork Provider'
-Assert-Contract ($contract.totalReleaseAssetCount -eq ($contract.totalApkCount + 3)) 'asset count must include APKs, bundle, checksums, and manifest'
+# Schema 2: Provider and artwork APKs are published by the Provider store
+# (ColorOS-Live-Lyrics-Providers provider-store-release.yml), one tag per Provider.
+Assert-Contract ($contract.providerDistribution -eq 'provider-store') 'Provider APKs must be distributed by the Provider store'
+foreach ($retired in @('providerBundleAsset', 'providerApkCount', 'artworkProviderApkCount')) {
+    Assert-Contract ($null -eq $contract.PSObject.Properties[$retired]) "retired suite field must not return: $retired"
+}
+Assert-Contract ($contract.totalApkCount -eq 1) 'Bridge release must contain only the Bridge APK'
+Assert-Contract ($contract.totalReleaseAssetCount -eq ($contract.totalApkCount + 2)) 'asset count must be the Bridge APK, checksums, and manifest'
 
 $previewArtwork = $contract.previewArtworkProvider
 Assert-Contract ($null -ne $previewArtwork) 'preview artwork Provider section is missing'
@@ -81,7 +89,6 @@ $forbiddenApkAscii = @($contract.forbiddenApkAscii)
 Assert-Contract ($forbiddenApkAscii.Count -ge 20) 'forbidden APK string set is incomplete'
 Assert-Contract (($forbiddenApkAscii | Select-Object -Unique).Count -eq $forbiddenApkAscii.Count) 'forbidden APK strings contain duplicates'
 Assert-Contract ($contract.bridgeAsset -eq "ColorOS-Live-Lyrics-Bridge-v$($contract.suiteVersion).apk") 'Bridge asset name differs from suite version'
-Assert-Contract ($contract.providerBundleAsset -eq "ColorOS-Live-Lyrics-Providers-v$($contract.suiteVersion).zip") 'Provider bundle name differs from suite version'
 
 $requiredDocumentation = @(
     'README.md',
@@ -121,27 +128,30 @@ if (-not [string]::IsNullOrWhiteSpace($ProviderRepoRoot)) {
     & $providerScript -RepoRoot $ProviderRepoRoot
 
     $providerContract = Get-Content -LiteralPath $providerContractPath -Raw | ConvertFrom-Json
-    Assert-Contract ($providerContract.suiteVersion -eq $contract.suiteVersion) 'Bridge and Provider suite versions differ'
     Assert-Contract ($providerContract.sourceTag -eq $contract.providersSourceTag) 'Provider source tag differs'
-    Assert-Contract (@($providerContract.providers).Count -eq $contract.providerApkCount) 'Provider count differs'
-    Assert-Contract ($providerContract.bundleAsset -eq $contract.providerBundleAsset) 'Provider bundle asset differs'
 
+    # Identity only: Provider versions are released independently and no longer lock-step
+    # with the Bridge version (plan §9.1).
     $providerArtwork = @($providerContract.artworkProviders)
     Assert-Contract ($providerArtwork.Count -eq 1) 'Provider matrix must declare exactly one artwork Provider'
     Assert-Contract ([string]$providerArtwork[0].module -eq [string]$previewArtwork.module) 'artwork Provider module differs between contracts'
     Assert-Contract ([string]$providerArtwork[0].applicationId -eq [string]$previewArtwork.applicationId) 'artwork Provider applicationId differs between contracts'
-    Assert-Contract ([string]$providerArtwork[0].versionName -eq [string]$previewArtwork.versionName) 'artwork Provider versionName differs between contracts'
-    Assert-Contract ([int]$providerArtwork[0].versionCode -eq [int]$previewArtwork.versionCode) 'artwork Provider versionCode differs between contracts'
-    Assert-Contract ([string]$providerArtwork[0].asset -eq [string]$previewArtwork.asset) 'artwork Provider asset differs between contracts'
-    Assert-Contract ([string]$providerArtwork[0].distribution -eq 'bridge-release') 'artwork Provider must ship with the Bridge release'
-    if ($null -ne $previewUniversal) {
-        $providerUniversal = @($providerContract.providers | Where-Object { $_.module -eq $previewUniversal.module })
-        Assert-Contract ($providerUniversal.Count -eq 1) 'Provider matrix must contain exactly one Universal module'
-        foreach ($property in @('applicationId', 'versionName', 'versionCode')) {
-            Assert-Contract ([string]$providerUniversal[0].$property -ceq [string]$previewUniversal.$property) "Universal $property differs between contracts"
+
+    if ($PreviewProviders) {
+        Assert-Contract ([string]$providerArtwork[0].versionName -eq [string]$previewArtwork.versionName) 'artwork Provider versionName differs between contracts'
+        Assert-Contract ([int]$providerArtwork[0].versionCode -eq [int]$previewArtwork.versionCode) 'artwork Provider versionCode differs between contracts'
+        Assert-Contract ([string]$providerArtwork[0].asset -eq [string]$previewArtwork.asset) 'artwork Provider asset differs between contracts'
+        if ($null -ne $previewUniversal) {
+            $providerUniversal = @($providerContract.providers | Where-Object { $_.module -eq $previewUniversal.module })
+            Assert-Contract ($providerUniversal.Count -eq 1) 'Provider matrix must contain exactly one Universal module'
+            foreach ($property in @('applicationId', 'versionName', 'versionCode')) {
+                Assert-Contract ([string]$providerUniversal[0].$property -ceq [string]$previewUniversal.$property) "Universal $property differs between contracts"
+            }
+            Assert-Contract ((@($providerUniversal[0].scopes) -join ',') -ceq (@($previewUniversal.scopes) -join ',')) 'Universal scope differs between contracts'
         }
-        Assert-Contract ((@($providerUniversal[0].scopes) -join ',') -ceq (@($previewUniversal.scopes) -join ',')) 'Universal scope differs between contracts'
+    } else {
+        Assert-Contract ([string]$providerArtwork[0].distribution -eq 'provider-store') 'artwork Provider must be distributed by the Provider store'
     }
 }
 
-Write-Output "Bridge release contract is valid: $($contract.releaseTag), versionCode=$($contract.versionCode), providers=$($contract.providerApkCount)."
+Write-Output "Bridge release contract is valid: $($contract.releaseTag), versionCode=$($contract.versionCode), assets=$($contract.totalReleaseAssetCount), providers=$($contract.providerDistribution)."

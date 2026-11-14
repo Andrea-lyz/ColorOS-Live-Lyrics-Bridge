@@ -54,6 +54,14 @@ android {
         compose = true
     }
 
+    sourceSets {
+        getByName("main") {
+            // The release workflow writes the verified signed store catalog snapshot to
+            // catalog/stable.json here (5.0 plan §6.2/§14.6). Local builds have none.
+            assets.srcDir(layout.buildDirectory.dir("generated/catalogSnapshot").get().asFile)
+        }
+    }
+
     signingConfigs {
         if (hasReleaseSigningConfig) {
             create("release") {

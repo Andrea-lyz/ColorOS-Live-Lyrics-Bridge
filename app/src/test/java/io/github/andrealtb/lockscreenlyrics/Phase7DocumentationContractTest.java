@@ -59,8 +59,11 @@ public final class Phase7DocumentationContractTest {
 
         assertTrue(process.contains("Andrea-lyz/ColorOS-Live-Lyrics-Providers"));
         assertTrue(process.contains("mode=rc"));
-        assertTrue(process.contains("19"));
-        assertTrue(process.contains("ColorOS-Live-Lyrics-Dynamic-Artwork-Provider-v"));
+        // Bridge contract schema 2 (5.0 plan §9.1): the Bridge Release is three assets and
+        // Provider/artwork APKs go through the Provider store release instead.
+        assertTrue(process.contains("恰好 3 项"));
+        assertTrue(process.contains("provider-store-release.yml"));
+        assertTrue(process.contains("provider-store"));
         assertFalse(process.contains("Andrea-lyz/LyricProvider"));
         assertTrue(notes.contains("Character float-up"));
         assertTrue(notes.contains("libxposed API 102"));

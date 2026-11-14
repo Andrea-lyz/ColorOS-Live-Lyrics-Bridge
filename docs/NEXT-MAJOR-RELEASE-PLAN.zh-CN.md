@@ -873,7 +873,25 @@ E 系列（第 15 节）不单列里程碑：E-0 随 M1，E-1/E-2 在 C-04/C-05 
 
 **M2 第 ③ 项（2026-11-14，本地，未提交）：** 用户已在本机生成正式目录密钥对 `cll-catalog-2026a`（主用）与 `cll-catalog-2026b`（离线备用），并已在 GitHub 上建好 Environment `provider-catalog`、secret 与变量（用户转述，agent 未登录 GitHub 核对）。两把公钥（base64 SPKI，P-256）已填入 Providers `release/catalog-trust.json` 与 Bridge `CatalogTrust.PRODUCTION_CATALOG_KEYS`，与用户贴出的生成输出逐字一致，绑定测试通过。生产信任集不再为空，测试夹具（`test-only-2026`）仍被生产信任拒绝。未用正式私钥签出任何目录。Bridge 977 tests / 0 fail / 6 skip，Node 17 项通过。
 
-**M2 后续切片（未开始）：** ④ 随 Bridge 打包签名快照与“最后接受 revision”的持久化；⑤ 拆分 Bridge Release 契约中随附 Provider APK 的旧校验（第 9.1 节）。
+**M2 第 ⑤ 项：拆分 Bridge 发布契约（2026-11-14，本地，未提交）：** Bridge 分支 `feat/m2-split-release-contract`（基于 `6598dbd`），Providers 分支 `feat/m2-catalog-tooling` 追加一处未提交改动。
+
+- `bridge-release-contract.json` 升为 schema 2：删除 `providerBundleAsset`、`providerApkCount`、`artworkProviderApkCount`；新增 `providerDistribution = provider-store`；`totalApkCount = 1`、`totalReleaseAssetCount = 3`（Bridge APK、`release-assets-v<version>.json`、`SHA256SUMS`）。`suiteVersion` 字段名保留，含义即 Bridge 版本。
+- `validate-release-contract.ps1`：校验 schema 2、退役字段不得回归；跨仓库只核对动态封面模块身份，不再要求 Bridge 与 Provider 套件版本相同；正式模式要求矩阵中动态封面 `distribution = provider-store`。新增 `-PreviewProviders` 开关，供仍附带 Universal/动态封面预览 APK 的旧预览链路（`preview.yml`、`artwork-provider-candidate.yml`，本次只加该开关，未改其行为）保留原有版本对照。
+- `build-release-assets.ps1`：只接收并核对 Bridge APK，不再生成 Provider ZIP；manifest schema 2 记录 `providerDistribution` 与契约测试所绑定的 Provider commit。
+- `release.yml`：删除 `build-providers` 作业；Bridge 构建作业只读检出冻结的 Provider commit 并设置 `CLL_PROVIDER_MATRIX`，使商店目录与目录信任绑定测试在 CI 中真正运行而非跳过。
+- Providers 矩阵：动态封面 `distribution` 改为 `provider-store`。矩阵中的 `suiteVersion`、`bundleAsset` 与按套件命名的 `asset` 仍供旧的整矩阵构建 `android-release.yml` 使用，作为“定期全矩阵验证”保留（第 9.2 节），未改。
+- `RELEASE_PROCESS.md`：资产白名单、RC 步骤、复核步骤改为 3 项；新增第 12 节“Provider 商店发布”；写明合入顺序门禁。
+- 本地验证：正式模式与预览模式校验器均通过；用本机 4.5.4 正式签名 Bridge APK 跑新资产脚本，产出恰好 3 项、manifest schema 2。应拒绝的情况均被拒绝：输入多一个 Provider APK、对照 Providers `main`（仍为 `bridge-release`）的正式模式、契约重新出现 `providerApkCount`。当时以为 Bridge 单元测试只读取该契约的证书字段，未重跑 Gradle；第 ④ 项重跑时发现 `Phase7DocumentationContractTest` 仍按旧套件规则检查发布文档（要求出现 19 项与动态封面资产名）而失败，已改为检查新规则（“恰好 3 项”、`provider-store-release.yml`、`provider-store`）。
+- **合入顺序门禁：** schema 2 只能在 M3（商店可安装 Provider）之后进入正式发布；Providers 的矩阵改动须先进入其 `main`。README、安装教程与 LSPRepo 下载说明尚未改（第 9.2 节，留到 M6）。
+
+**M2 第 ④ 项：内置签名快照与 revision 持久化（2026-11-14，本地，未提交）：** 同在 Bridge 分支 `feat/m2-split-release-contract`。
+
+- `CatalogStore`（纯 JVM）：在“已持久化目录 / 本 Bridge 内置快照 / 远端新目录”中选用目录。每个候选都以持久化的 revision 下限验签，因此镜像或较旧的内置快照都不能让商店回退；下限只升不降，且先写入再使用。较新的内置快照（随 Bridge 升级带来）会抬高下限。持久化失败时不使用未落盘的新目录（`CatalogOffer.PersistFailed`）。过期目录可用于显示但 `installable = false`。
+- `FileCatalogPersistence`：单个 JSON 文件，放在 `noBackupFilesDir/store`（备份恢复不能重置或伪造下限），写临时文件后 `Files.move(ATOMIC_MOVE, REPLACE_EXISTING)` 替换；读取到损坏内容视为无。`BundledCatalogSnapshot` 读取 APK assets 中的 `catalog/stable.json`。两者尚无运行时调用方（M3 接入）。
+- 快照来源：正式私钥只在受保护 Environment 中，本地不签快照。`release.yml` 在构建 Bridge 前从冻结 Provider commit 所在仓库取 `store-catalog` 分支的当前目录，用 `catalog-trust.json` 验签后写入 `app/build/generated/catalogSnapshot/catalog/stable.json`；`app/build.gradle.kts` 把该目录加入 assets。正式发布缺快照即失败，RC 只警告。
+- 本地验证：Bridge 987 tests / 0 fail / 6 skip（新增 `CatalogStoreTest` 10 项），Debug 构建通过；放入测试快照后 APK 含 `assets/catalog/stable.json`，删除后重建即不含；release.yml 可解析。**未覆盖：** 快照嵌入步骤未在 GitHub 运行（`store-catalog` 分支尚不存在）；内置快照未在设备上读取过。
+
+**M2 剩余：** 所有切片均已在本地完成；workflow 均未在 GitHub 运行，首个正式目录尚未发布。下一步为 M3（商店安装更新：已安装发现、下载、PackageInstaller、恢复、更新提醒），届时接入 `CatalogStore` 与 `ArtifactCheck`。
 
 ## 15. 主线五：代码结构与性能治理（E 系列）
 

@@ -1,5 +1,5 @@
 {
-  "schema": 1,
+  "schema": 2,
   "suiteVersion": "4.5.4",
   "releaseTag": "v4.5.4",
   "versionCode": 149,
@@ -15,13 +15,11 @@
     "com.android.systemui"
   ],
   "bridgeAsset": "ColorOS-Live-Lyrics-Bridge-v4.5.4.apk",
-  "providerBundleAsset": "ColorOS-Live-Lyrics-Providers-v4.5.4.zip",
   "checksumsAsset": "SHA256SUMS",
   "assetManifest": "release-assets-v4.5.4.json",
-  "providerApkCount": 14,
-  "artworkProviderApkCount": 1,
-  "totalApkCount": 16,
-  "totalReleaseAssetCount": 19,
+  "providerDistribution": "provider-store",
+  "totalApkCount": 1,
+  "totalReleaseAssetCount": 3,
   "previewArtworkProvider": {
     "repository": "Andrea-lyz/ColorOS-Live-Lyrics-Providers",
     "ref": "efc377d127ec66f708d919a095a3f5685d899a5e",

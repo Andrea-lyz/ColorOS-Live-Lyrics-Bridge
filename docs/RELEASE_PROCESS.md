@@ -1,6 +1,8 @@
 # 正式发布流程
 
-适用范围：Bridge、14 个独立 Provider API 102 套件、动态封面 Provider 与 LSPosed mirror。
+适用范围：Bridge 与 LSPosed mirror。Provider 与动态封面 Provider 自 Bridge 发布契约 schema 2（5.0 计划 M2，§9.1）起由 Providers 仓库的商店发布流程独立发布，见第 12 节；Bridge Release 不再附带任何 Provider APK 或 ZIP。
+
+> **合入顺序门禁：** 契约 schema 2 只能在 Bridge 商店可以安装 Provider（M3）之后进入正式发布，否则用户将无处获取 Provider。Providers 矩阵中动态封面 `distribution = provider-store` 必须先进入 Providers `main`，否则正式模式校验会拒绝。
 版本号、资产名与数量以两仓库机器契约为准；下文以 4.5.0 为例。
 
 涉及仓库：
@@ -46,8 +48,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
 
 - Bridge versionName/versionCode、`v<version>` 与 LSP `<versionCode>-<version>` tag；
 - Provider source repository/main 与 metadata 阶段冻结的 commit SHA；
-- 14 个 module/applicationId/scope/内部版本，以及唯一的动态封面 Provider（`distribution = bridge-release`）；
-- 16 个 APK 与 19 项最终资产的精确数量；
+- `providerDistribution = provider-store`，以及 Providers 矩阵中唯一的动态封面 Provider（`distribution = provider-store`）；Provider 版本不再与 Bridge 版本锁步，Bridge 只核对模块身份；
+- 1 个 APK 与 3 项最终资产的精确数量；已退役字段（`providerBundleAsset`、`providerApkCount`、`artworkProviderApkCount`）不得重新出现；
 - 规范文件名、正式签名证书 SHA-256、固定 Android build-tools；
 - 最终 APK DEX 禁用字符串。
 
@@ -110,12 +112,11 @@ rc_number=<N>
 
 RC mode 必须：
 
-1. checkout Providers `main` 并记录解析后的不可变 Provider SHA；
+1. checkout Providers `main` 并记录解析后的不可变 Provider SHA；该 commit 只用于契约校验和 Bridge 商店目录/目录信任绑定测试（`CLL_PROVIDER_MATRIX`），不构建 Provider；
 2. Bridge 标准测试、release lint、正式签名 release 构建；
-3. Provider `testV5Matrix`、14 module release/R8，动态封面 Provider 单测、release lint 与 release 构建，均正式签名；
-4. 校验 16 APK 的 DEX 禁用字符串、包名、版本、证书和 zipalign，并校验动态封面协议镜像；
-5. 生成 14 APK Provider ZIP、asset manifest 和 `SHA256SUMS`；动态封面 Provider 作为独立资产，不进入 ZIP；
-6. 上传恰好 19 项 complete artifact；
+3. 校验 Bridge APK 的 DEX 禁用字符串、包名、版本、证书和 zipalign，并校验动态封面协议镜像；
+4. 生成 asset manifest 和 `SHA256SUMS`；
+5. 上传恰好 3 项 complete artifact；
 7. 跳过 publish job，不创建公开 Release。
 
 下载 complete artifact 后，再独立复算哈希并重跑 asset verifier。真机只测试该 batch；
@@ -145,7 +146,7 @@ RC mode 必须：
 1. Provider `main` 工作树必须干净，候选 commit 已推送。
 2. workflow 只从 `Andrea-lyz/ColorOS-Live-Lyrics-Providers` 的 `main` checkout，并在 metadata 阶段记录完整 commit SHA。
 3. 后续构建、打包和资产 manifest 只使用该 SHA；运行中 `main` 移动不影响本次 batch。
-4. 不在 Provider 仓库重复维护另一套 APK Release；APK 由 Bridge/LSP 协调 Release 交付。
+4. Provider APK 不随 Bridge/LSP Release 交付，由 Providers 仓库按 Provider 独立 tag 发布（第 12 节）。
 
 ## 8. LSPRepo metadata 先行
 
@@ -164,7 +165,7 @@ RC mode 必须：
 3. 在最终 Bridge commit 创建 `v<version>` 并推送。
 4. tag 事件自动进入 release mode；workflow 必须确认：
    - Bridge tag 等于契约 tag；
-   - Provider `main` 已解析为完整 commit SHA，且 Provider/Bridge 发布契约一致；
+   - Provider `main` 已解析为完整 commit SHA，且两份契约的模块身份与分发方式一致；
    - LSP tag 已存在；
    - `.github/release-notes/<version>.md` 已存在。
 5. publish job 创建 Bridge GitHub Release 与 LSP mirror Release。
@@ -174,25 +175,22 @@ workflow 拒绝覆盖已经存在的公开 Release。发布后修复使用新版
 
 ## 10. 正式资产白名单
 
-`4.5.0` 预期恰好 19 项：
+契约 schema 2 预期恰好 3 项（以 `<version>` 表示 Bridge 版本）：
 
-1. `ColorOS-Live-Lyrics-Bridge-v4.5.0.apk`
-2. 14 个 `ColorOS-Live-Lyrics-Provider-<Name>-v4.5.0.apk`
-3. `ColorOS-Live-Lyrics-Dynamic-Artwork-Provider-v<Provider 版本>.apk`
-4. `ColorOS-Live-Lyrics-Providers-v4.5.0.zip`
-5. `release-assets-v4.5.0.json`
-6. `SHA256SUMS`
+1. `ColorOS-Live-Lyrics-Bridge-v<version>.apk`
+2. `release-assets-v<version>.json`
+3. `SHA256SUMS`
 
-Provider ZIP 只能包含 14 个顶层歌词 Provider APK，不含动态封面 Provider、目录、debug/unsigned APK 或旧包名。
+4.5.4 及以前的公开 Release（16 APK / 19 项，含 Provider ZIP）属于历史归档，不覆盖、不删除资产。
 
 ## 11. 发布后独立复核
 
 1. 等待 workflow 结束，用 `gh run view` 核对每个 job；不能从轮询中推测成功。
-2. 分别从 Bridge 与 LSP Release 下载 19 项资产。
+2. 分别从 Bridge 与 LSP Release 下载 3 项资产。
 3. 比较两个 Release 的文件名、字节数和 SHA-256。
-4. 对 16 APK 重跑 package/version/certificate/zipalign 检查。
+4. 对 Bridge APK 重跑 package/version/certificate/zipalign 检查。
 5. 核对 Bridge tag、Provider `main` 的已冻结 SHA、LSP tag 与三个 commit。
-6. 用公开下载的 Bridge + 至少一个 Provider 做最后安装冒烟。
+6. 用公开下载的 Bridge + 至少一个从商店目录安装的 Provider 做最后安装冒烟。
 7. 将 run、commit、tag、哈希和设备结论写入对应版本发布台账（`docs/releases/v<version>.md`）。
 
 只有这些门禁全部关闭，才能将该版本标记为正式完成。
@@ -232,3 +230,13 @@ Provider ZIP 只能包含 14 个顶层歌词 Provider APK，不含动态封面 P
 用户明确要求保留预览 Release 并升级独立 Provider 时，可交付新版本附件；不重跑原预览发布或移动原 tag。先递增 Provider versionName/versionCode 并冻结源码，更新当前契约。使用 `artwork-provider-v<版本>` 构建 tag 触发 `artwork-provider-candidate.yml`，只生成受控签名候选资产，不自动发布。候选复用公开 Bridge/Universal APK，运行既有包名、版本、证书、scope、DEX 和 zipalign 校验。
 
 发布前备份原 Release 正文和全部附件，独立验证候选并确认保留 APK 的哈希未变；上传新版本 Provider、更新校验和与双语说明，验证公开下载后移除旧版本 Provider 附件。台账记录新 Provider SHA、构建 tag/run、公开哈希及设备证据。预览性质及正式 RC 门禁不变；同版本 APK 不覆盖。保留 APK 的实际来源以原发布台账为准，不能因当前契约更新而改写历史来源。
+
+## 12. Provider 商店发布（Providers 仓库）
+
+由 `ColorOS-Live-Lyrics-Providers/.github/workflows/provider-store-release.yml` 执行，说明见该仓库 `scripts/catalog/README.zh-CN.md`。要点：
+
+1. 先在矩阵中提升该 Provider 的 versionName/versionCode 并合入 `main`；在该 commit 上打 `<module>-v<versionName>`。
+2. workflow 跑整份矩阵测试，正式签名构建单模块，核对身份与证书，创建只含该 APK 与 `.sha256` 的不可覆盖 Release，并重新下载核对 SHA-256。
+3. 晋级在受保护 Environment `provider-catalog` 中由维护者审批后执行：验签当前目录，生成并签名下一版，普通 push 到 `store-catalog` 分支。
+4. Bridge 无需发新版即可通过目录发现该 Provider 更新；Bridge 内置的目录公钥与 Providers `release/catalog-trust.json` 由测试绑定。
+5. 打 tag、批准晋级同样属于发布操作，需要用户明确要求。

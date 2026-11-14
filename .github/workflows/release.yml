@@ -123,6 +123,16 @@ jobs:
       - name: Checkout Bridge
         uses: actions/checkout@v6
 
+      # Read-only: the store directory and catalog trust tests bind to this frozen matrix
+      # (they skip when it is not visible). No Provider APK is built here (contract schema 2).
+      - name: Checkout frozen Provider commit for contract tests
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ env.PROVIDERS_REPOSITORY }}
+          ref: ${{ needs.metadata.outputs.providers_sha }}
+          path: provider-source
+          token: ${{ secrets.PROVIDERS_REPO_TOKEN || github.token }}
+
       - name: Set up JDK 21
         uses: actions/setup-java@v5
         with:
@@ -142,6 +152,35 @@ jobs:
           set -euo pipefail
           printf '%s' '${{ secrets.SIGNING_KEY }}' | base64 --decode > "$RUNNER_TEMP/release.jks"
 
+      - name: Set up Node for catalog verification
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      # Bundles the current signed store catalog as the first-run snapshot and revision floor.
+      # It is verified with the pinned trust file first; a public release requires one, an RC
+      # without a published catalog yet only warns.
+      - name: Embed verified store catalog snapshot
+        shell: bash
+        env:
+          MODE: ${{ needs.metadata.outputs.mode }}
+        run: |
+          set -euo pipefail
+          trust=provider-source/release/catalog-trust.json
+          missing() {
+            if [ "$MODE" = "release" ]; then echo "::error::$1" >&2; exit 1; fi
+            echo "::warning::$1; building without a bundled catalog snapshot"
+            exit 0
+          }
+          [ -f "$trust" ] || missing "frozen Provider commit has no release/catalog-trust.json"
+          branch="$(node -p "require('./$trust').catalogBranch")"
+          path="$(node -p "require('./$trust').catalogPath")"
+          git -C provider-source fetch --no-tags --depth 1 origin "$branch" || missing "no $branch branch"
+          git -C provider-source show "FETCH_HEAD:$path" > "$RUNNER_TEMP/catalog-snapshot.json" || missing "no $path on $branch"
+          node provider-source/scripts/catalog/verify-catalog.mjs --envelope "$RUNNER_TEMP/catalog-snapshot.json" --trust "$trust"
+          mkdir -p app/build/generated/catalogSnapshot/catalog
+          cp "$RUNNER_TEMP/catalog-snapshot.json" app/build/generated/catalogSnapshot/catalog/stable.json
+
       - name: Test, lint, and build signed Bridge
         shell: bash
         env:
@@ -149,6 +188,7 @@ jobs:
           KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          CLL_PROVIDER_MATRIX: ${{ github.workspace }}/provider-source/release/v5-provider-matrix.json
         run: |
           set -euo pipefail
           chmod +x ./gradlew
@@ -179,86 +219,11 @@ jobs:
         shell: bash
         run: rm -f "$RUNNER_TEMP/release.jks"
 
-  build-providers:
-    name: Test and build signed Provider matrix and artwork Provider
-    needs: metadata
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout frozen Provider commit
-        uses: actions/checkout@v6
-        with:
-          repository: ${{ env.PROVIDERS_REPOSITORY }}
-          ref: ${{ needs.metadata.outputs.providers_sha }}
-          token: ${{ secrets.PROVIDERS_REPO_TOKEN || github.token }}
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: ${{ env.JAVA_VERSION }}
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
-
-      - name: Validate Provider release contract
-        shell: pwsh
-        run: ./scripts/validate-v5-release-contract.ps1
-
-      - name: Decode release keystore
-        shell: bash
-        run: |
-          set -euo pipefail
-          printf '%s' '${{ secrets.SIGNING_KEY }}' | base64 --decode > "$RUNNER_TEMP/release.jks"
-
-      - name: Test and build signed Provider matrix in one Gradle invocation
-        shell: bash
-        env:
-          RELEASE_STORE_FILE: ${{ runner.temp }}/release.jks
-          RELEASE_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
-          RELEASE_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          chmod +x ./gradlew
-          ./gradlew --no-daemon testV5Matrix assembleV5MatrixRelease \
-            :artwork-provider-am:testDebugUnitTest \
-            :artwork-provider-am:lintRelease \
-            :artwork-provider-am:assembleRelease \
-            --build-cache
-
-      - name: Collect canonical Provider assets
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          ./scripts/collect-v5-release-apks.ps1 -OutputDir ./out
-          $matrix = Get-Content -LiteralPath release/v5-provider-matrix.json -Raw | ConvertFrom-Json
-          $artwork = @($matrix.artworkProviders)[0]
-          $apks = @(Get-ChildItem -LiteralPath "$($artwork.module)/build/outputs/apk/release" -File -Filter '*.apk')
-          if ($apks.Count -ne 1) { throw "expected one artwork Provider release APK, found $($apks.Count)" }
-          Copy-Item -LiteralPath $apks[0].FullName -Destination (Join-Path ./out $artwork.asset)
-
-      - name: Upload Provider APKs
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ needs.metadata.outputs.batch }}-providers
-          path: |
-            out/*.apk
-            out/v5-provider-matrix.json
-          if-no-files-found: error
-          retention-days: 14
-          compression-level: 0
-
-      - name: Remove release keystore
-        if: always()
-        shell: bash
-        run: rm -f "$RUNNER_TEMP/release.jks"
-
   package:
-    name: Verify, inventory, and bundle RC assets
+    name: Verify and inventory RC assets
     needs:
       - metadata
       - build-bridge
-      - build-providers
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Bridge
@@ -272,7 +237,7 @@ jobs:
           path: provider-source
           token: ${{ secrets.PROVIDERS_REPO_TOKEN || github.token }}
 
-      - name: Download signed APK artifacts
+      - name: Download signed Bridge APK artifact
         uses: actions/download-artifact@v7
         with:
           pattern: ${{ needs.metadata.outputs.batch }}-*

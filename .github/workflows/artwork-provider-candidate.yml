@@ -43,7 +43,7 @@ jobs:
         run: |
           ./provider-source/scripts/verify-artwork-contract.ps1 -RepoRoot "$env:GITHUB_WORKSPACE/provider-source" -BridgeRepoRoot $env:GITHUB_WORKSPACE -Required
           ./provider-source/scripts/validate-v5-release-contract.ps1 -RepoRoot "$env:GITHUB_WORKSPACE/provider-source"
-          ./scripts/validate-release-contract.ps1 -ProviderRepoRoot "$env:GITHUB_WORKSPACE/provider-source"
+          ./scripts/validate-release-contract.ps1 -ProviderRepoRoot "$env:GITHUB_WORKSPACE/provider-source" -PreviewProviders
       - name: Decode signing key
         env:
           SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
