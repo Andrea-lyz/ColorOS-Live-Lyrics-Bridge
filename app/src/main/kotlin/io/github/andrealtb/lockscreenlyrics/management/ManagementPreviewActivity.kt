@@ -3,7 +3,7 @@ package io.github.andrealtb.lockscreenlyrics.management
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -29,6 +29,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,21 +45,55 @@ import io.github.andrealtb.lockscreenlyrics.LyricUiSettingsActivity
 import io.github.andrealtb.lockscreenlyrics.ModuleStatusQuery
 import io.github.andrealtb.lockscreenlyrics.R
 import io.github.andrealtb.lockscreenlyrics.SettingsLocaleContext
+import io.github.andrealtb.lockscreenlyrics.management.catalog.CatalogState
+import io.github.andrealtb.lockscreenlyrics.management.install.Operation
+import io.github.andrealtb.lockscreenlyrics.management.install.StoreOperations
+import io.github.andrealtb.lockscreenlyrics.management.reminder.UpdateReminders
+import android.Manifest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.mutableIntStateOf
+import android.net.Uri
+import android.provider.Settings
+import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
- * M0 management UI prototype (plan §8.1/§8.4 U-01). Live: the home status card (read-only reply
- * from the Bridge in SystemUI) and the store's installed state; other home cards are SAMPLE data
- * and there is no catalog, so nothing can be downloaded or updated. Ordinary App
- * process only; nothing in the Hook/bootstrap/render path may reference this package. No action
- * installs, updates or requests a scope.
+ * Management UI (plan §8.1/§8.4 U-01). Live: the home status card (read-only reply from the
+ * Bridge in SystemUI) and the store (installed packages projected onto the verified catalog, see
+ * [StoreRuntime]); the onboarding/feature home cards are SAMPLE data. Ordinary App process only;
+ * nothing in the Hook/bootstrap/render path may reference this package. No action requests a
+ * scope.
  */
 class ManagementPreviewActivity : AppCompatActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private var statusQuery by mutableStateOf<StatusQuery>(StatusQuery.Pending)
-    private var installedItems by mutableStateOf(storeItems(ProviderDirectory.entries) { null })
+    private var installed by mutableStateOf<Map<String, InstalledPackage>>(emptyMap())
+    private var catalog by mutableStateOf(CatalogView())
     /** Bumped for every request and on pause, so late replies and timeouts are ignored. */
     private var queryGeneration = 0
+    private var reminders by mutableStateOf(RemindersView())
+    /** Incremented when a notification asks to show the store. */
+    private var openStoreRequests by mutableIntStateOf(0)
+    private var message by mutableStateOf<String?>(null)
+
+    /** Asked only when the user turns reminders on (plan §6.4/§6.5), never on first open. */
+    private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            setReminders(true)
+        } else {
+            message = getString(R.string.mgmt_reminder_permission_denied)
+        }
+    }
+
+    companion object {
+        /** Set by the update reminder notification: open on the store tab. */
+        const val EXTRA_OPEN_STORE = "io.github.andrealtb.lockscreenlyrics.extra.OPEN_STORE"
+    }
 
     override fun attachBaseContext(newBase: Context) {
         // Same persisted language as the Views settings pages.
@@ -68,12 +103,55 @@ class ManagementPreviewActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        if (savedInstanceState == null && intent.getBooleanExtra(EXTRA_OPEN_STORE, false)) openStoreRequests++
+        UpdateReminders.ensureScheduled(this)
+        lifecycleScope.launch {
+            val state = withContext(Dispatchers.IO) { StoreRuntime.load(applicationContext) }
+            catalog = catalog.copy(state = state)
+        }
+        lifecycleScope.launch {
+            // Launch each system installer confirmation once, only while this screen is visible.
+            repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                StoreOperations.confirmation.collect { intent ->
+                    if (intent != null) {
+                        StoreOperations.confirmationLaunched()
+                        try {
+                            startActivity(intent)
+                        } catch (_: ActivityNotFoundException) {
+                        } catch (_: SecurityException) {
+                        }
+                    }
+                }
+            }
+        }
+        lifecycleScope.launch {
+            // An operation that finished changes what is installed.
+            var finished = emptySet<String>()
+            StoreOperations.operations.collect { ops ->
+                val now = ops.filterValues { it is Operation.Succeeded || it is Operation.Failed }.keys
+                if (now != finished) refreshInstalled()
+                finished = now
+            }
+        }
         setContent {
             ManagementTheme {
+                val packages = installed
+                val view = catalog
+                val operations by StoreOperations.operations.collectAsState()
                 ManagementPrototype(
                     status = homeStatus(ModuleStatusQuery.installedBuildId(), statusQuery),
                     onRefreshStatus = ::queryStatus,
-                    storeItems = installedItems,
+                    store = storeItems(ProviderDirectory.entries, view.state ?: CatalogState.Unavailable,
+                        Build.VERSION.SDK_INT) { packages[it] },
+                    catalog = view,
+                    onRefreshCatalog = { refreshCatalog(automatic = false) },
+                    onStoreOpened = { refreshCatalog(automatic = true) },
+                    operations = operations,
+                    reminders = reminders,
+                    onRemindersChange = ::onRemindersChange,
+                    openStoreRequests = openStoreRequests,
+                    message = message,
+                    onMessageShown = { message = null },
                     onStoreAction = ::runStoreAction,
                     onOpenAppearance = {
                         startActivity(Intent(this, LyricUiSettingsActivity::class.java))
@@ -88,18 +166,29 @@ class ManagementPreviewActivity : AppCompatActivity() {
         // Re-check after returning from LSPosed, a plugin page, an installer or a restart.
         queryStatus()
         refreshInstalled()
+        StoreOperations.reconcile(this)
+        reminders = RemindersView(UpdateReminders.isEnabled(this), UpdateReminders.notificationsAllowed(this))
+        StoreOperations.continueIfAllowed(this)
     }
 
     /** Read-only PackageManager lookup, limited by the manifest's directed <queries>. */
     private fun refreshInstalled() {
-        installedItems = storeItems(ProviderDirectory.entries) { packageName ->
-            try {
-                packageManager.getPackageInfo(packageName, 0).versionName ?: ""
-            } catch (missing: PackageManager.NameNotFoundException) {
-                null
-            } catch (unavailable: RuntimeException) {
-                null
-            }
+        lifecycleScope.launch {
+            installed = withContext(Dispatchers.IO) { InstalledPackages.snapshot(packageManager, ProviderDirectory.entries) }
+        }
+    }
+
+    /**
+     * Fetches the catalog mirrors. Opening the store checks at most every few minutes; the
+     * button always checks. The result is shown on the catalog card, never silently dropped.
+     */
+    private fun refreshCatalog(automatic: Boolean) {
+        if (catalog.refreshing || catalog.state == null) return
+        lifecycleScope.launch {
+            if (automatic && !withContext(Dispatchers.IO) { StoreRuntime.autoRefreshDue() }) return@launch
+            catalog = catalog.copy(refreshing = true)
+            val (result, state) = withContext(Dispatchers.IO) { StoreRuntime.refresh(applicationContext) }
+            catalog = CatalogView(state = state, refreshing = false, lastRefresh = result)
         }
     }
 
@@ -112,7 +201,16 @@ class ManagementPreviewActivity : AppCompatActivity() {
             StoreAction.OPEN_DEBUG, StoreAction.OPEN_INFO ->
                 Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_INFO).setPackage(item.applicationId)
             StoreAction.OPEN_APP -> packageManager.getLaunchIntentForPackage(item.applicationId)
-            StoreAction.DOWNLOAD, StoreAction.UPDATE -> return getString(R.string.mgmt_snackbar_no_catalog)
+            StoreAction.DOWNLOAD, StoreAction.UPDATE -> return startInstall(item)
+            StoreAction.CANCEL -> {
+                StoreOperations.cancel(this, item.id)
+                return null
+            }
+            StoreAction.CONFIRM_INSTALL -> {
+                StoreOperations.reopenConfirmation()
+                return null
+            }
+            StoreAction.ALLOW_INSTALLS -> Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))
             StoreAction.NONE -> return null
         } ?: return getString(R.string.mgmt_snackbar_cannot_open, item.name)
         return try {
@@ -123,6 +221,37 @@ class ManagementPreviewActivity : AppCompatActivity() {
         } catch (denied: SecurityException) {
             getString(R.string.mgmt_snackbar_cannot_open, item.name)
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.getBooleanExtra(EXTRA_OPEN_STORE, false)) openStoreRequests++
+    }
+
+    private fun onRemindersChange(enabled: Boolean) {
+        if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !UpdateReminders.notificationsAllowed(this)
+        ) {
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+            return
+        }
+        setReminders(enabled)
+    }
+
+    private fun setReminders(enabled: Boolean) {
+        UpdateReminders.setEnabled(this, enabled)
+        reminders = RemindersView(enabled, UpdateReminders.notificationsAllowed(this))
+    }
+
+    /** Starts download → verify → install for the item's entry in the current, fresh catalog. */
+    private fun startInstall(item: StoreItem): String? {
+        val current = catalog.state as? CatalogState.Current
+        val entry = current?.catalog?.entries?.firstOrNull { it.providerId == item.id && it.applicationId == item.applicationId }
+        if (current == null || !current.installable || entry == null || item.availability != Availability.AVAILABLE) {
+            return getString(R.string.mgmt_snackbar_not_installable)
+        }
+        return if (StoreOperations.start(this, entry, current.catalog.trustedHosts)) null
+        else getString(R.string.mgmt_snackbar_busy)
     }
 
     override fun onPause() {
@@ -169,7 +298,16 @@ private const val RAIL_MIN_WIDTH_DP = 600
 internal fun ManagementPrototype(
     status: HomeStatus,
     onRefreshStatus: () -> Unit,
-    storeItems: List<StoreItem>,
+    store: StoreProjection,
+    catalog: CatalogView,
+    onRefreshCatalog: () -> Unit,
+    onStoreOpened: () -> Unit,
+    operations: Map<String, Operation>,
+    reminders: RemindersView,
+    onRemindersChange: (Boolean) -> Unit,
+    openStoreRequests: Int,
+    message: String?,
+    onMessageShown: () -> Unit,
     onStoreAction: (StoreItem, StoreAction) -> String?,
     onOpenAppearance: () -> Unit,
 ) {
@@ -181,6 +319,16 @@ internal fun ManagementPrototype(
     val nothingDone = stringResource(R.string.mgmt_snackbar_prototype)
     val showNothingDone: () -> Unit = { scope.launch { snackbar.showSnackbar(nothingDone) } }
     val useRail = LocalConfiguration.current.screenWidthDp >= RAIL_MIN_WIDTH_DP
+    LaunchedEffect(openStoreRequests) { if (openStoreRequests > 0) tab = ManagementTab.STORE }
+    LaunchedEffect(message) {
+        if (message != null) {
+            onMessageShown()
+            snackbar.showSnackbar(message)
+        }
+    }
+    // Also re-runs once the first catalog load finishes; the callee throttles network checks.
+    val catalogLoaded = catalog.state != null
+    LaunchedEffect(tab, catalogLoaded) { if (tab == ManagementTab.STORE && catalogLoaded) onStoreOpened() }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -217,13 +365,20 @@ internal fun ManagementPrototype(
                     ManagementTab.HOME -> HomeContent(
                         status = status,
                         state = SampleData.home,
+                        updatesAvailable = store.updatesAvailable,
                         onRefreshStatus = onRefreshStatus,
                         onContinueSetup = showNothingDone,
                         onViewReasons = { tab = ManagementTab.STATUS },
                         onOpenStore = { tab = ManagementTab.STORE },
                     )
                     ManagementTab.STORE -> StoreContent(
-                        items = storeItems,
+                        items = store.items,
+                        unrecognizedEntries = store.unrecognizedEntries,
+                        catalog = catalog,
+                        onRefreshCatalog = onRefreshCatalog,
+                        operations = operations,
+                        reminders = reminders,
+                        onRemindersChange = onRemindersChange,
                         filter = filter,
                         onFilterChange = { filter = it },
                         onAction = { item, action ->

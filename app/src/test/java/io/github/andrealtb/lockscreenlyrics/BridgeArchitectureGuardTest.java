@@ -141,6 +141,10 @@ public final class BridgeArchitectureGuardTest {
     private static final List<String> MANAGEMENT_UI_ENTRY_POINTS = Arrays.asList(
             "BridgeDebugSettingsActivity.java");
 
+    private static final List<String> MANAGEMENT_ONLY_MARKERS = Arrays.asList(
+            "HttpURLConnection", "HttpsURLConnection", "java.net.URL", "openConnection(",
+            "PackageInstaller");
+
     @Test
     public void composeManagementUiStaysOutOfHookAndRenderCode() throws Exception {
         File main = locateFromProject("app/src/main");
@@ -160,6 +164,12 @@ public final class BridgeArchitectureGuardTest {
             String source = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
             assertFalse(file + " references Compose outside the management UI",
                     source.contains("androidx.compose"));
+            // Store networking and package installation (5.0 plan §6.4) are management-only;
+            // the INTERNET permission must never be exercised from SystemUI/system code.
+            for (String marker : MANAGEMENT_ONLY_MARKERS) {
+                assertFalse(file + " uses " + marker + " outside the management UI",
+                        source.contains(marker));
+            }
             if (MANAGEMENT_UI_ENTRY_POINTS.contains(file.getName())) {
                 continue;
             }

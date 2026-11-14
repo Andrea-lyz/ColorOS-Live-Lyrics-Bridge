@@ -5,6 +5,15 @@
 
     <uses-permission android:name="io.github.andrealtb.lockscreenlyrics.permission.CHANGE_LYRIC_UI_SETTINGS" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Provider store catalog and APK downloads (5.0 plan §6.2). Used only by the ordinary
+         App process; Hook code in system/SystemUI never opens connections (architecture guard). -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Store installs go through a PackageInstaller session the user confirms (plan §6.4). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Optional update reminder (plan §6.5): asked only when the user turns it on; the
+         persisted daily job needs boot completion to survive a reboot. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <queries>
         <package android:name="com.android.systemui" />
@@ -141,5 +150,12 @@
                 <action android:name="io.github.andrealtb.universallyrics.action.PLAYER_BINDINGS_CHANGED" />
             </intent-filter>
         </receiver>
+        <receiver
+            android:name=".management.install.InstallStatusReceiver"
+            android:exported="false" />
+        <service
+            android:name=".management.reminder.UpdateCheckJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
     </application>
 </manifest>

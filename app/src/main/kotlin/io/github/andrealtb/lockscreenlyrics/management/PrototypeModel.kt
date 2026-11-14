@@ -1,17 +1,35 @@
 package io.github.andrealtb.lockscreenlyrics.management
 
 /**
- * M0 prototype UI state (plan §8.4 U-01). Live, read-only: the home status card (reply from the
- * Bridge inside SystemUI, see [homeStatus]) and the store's installed state (PackageManager, see
- * [storeItems]). Still SAMPLE: the other home cards. There is no catalog yet, so nothing can be
- * downloaded or updated, and no action installs, updates or requests a scope.
+ * Management UI state (plan §8.4 U-01). Live, read-only: the home status card (reply from the
+ * Bridge inside SystemUI, see [homeStatus]) and the store (PackageManager facts projected onto the
+ * verified catalog, see [storeItems]). Still SAMPLE: the onboarding/feature home cards. No action
+ * here requests a scope.
  */
 internal enum class ManagementTab { HOME, STORE, APPEARANCE, STATUS }
 
 internal enum class ProviderKind { DEDICATED, UNIVERSAL, ARTWORK }
 
-/** UPDATE_AVAILABLE and SIGNATURE_MISMATCH need the catalog and are not produced yet. */
-internal enum class InstallState { NOT_INSTALLED, INSTALLED, UPDATE_AVAILABLE, SIGNATURE_MISMATCH }
+/**
+ * Installed state against the verified catalog (plan §6.5). Without a catalog entry an installed
+ * plugin is only ever INSTALLED; the other states need the entry's versionCode and signers.
+ */
+internal enum class InstallState { NOT_INSTALLED, INSTALLED, UPDATE_AVAILABLE, LOCAL_NEWER, SIGNATURE_MISMATCH }
+
+/** Whether the catalog lets this client install the entry right now (see [storeItems]). */
+internal enum class Availability {
+    AVAILABLE,
+    /** No verified catalog (no snapshot in a local build, nothing fetched yet). */
+    NO_CATALOG,
+    /** The catalog has expired: display only, no installs or updates (§6.2). */
+    CATALOG_EXPIRED,
+    /** The catalog has no entry for this plugin (or it names a different package). */
+    NOT_IN_CATALOG,
+    /** The entry needs a newer store protocol than this Bridge speaks. */
+    NEEDS_NEWER_BRIDGE,
+    /** The entry's minSdk is above this phone's Android version. */
+    UNSUPPORTED_SDK,
+}
 
 internal enum class StoreFilter { SUITABLE, ALL, INSTALLED, UPDATES }
 
@@ -26,7 +44,15 @@ internal enum class ProviderEntry {
 }
 
 /** The one primary action a card offers; failures stay visible instead of hiding behind it. */
-internal enum class StoreAction { DOWNLOAD, UPDATE, OPEN_DEBUG, OPEN_INFO, OPEN_APP, NONE }
+internal enum class StoreAction {
+    DOWNLOAD, UPDATE, OPEN_DEBUG, OPEN_INFO, OPEN_APP, NONE,
+    /** Operation controls (see install.Operation): stop a download / abandon a waiting session. */
+    CANCEL,
+    /** Reopen the system installer confirmation the user backed out of. */
+    CONFIRM_INSTALL,
+    /** Open the system "install unknown apps" page for this App. */
+    ALLOW_INSTALLS,
+}
 
 internal data class StoreItem(
     val id: String,
@@ -38,6 +64,9 @@ internal data class StoreItem(
     val installState: InstallState,
     /** At least one supported player package is installed (always false for non-dedicated). */
     val hostDetected: Boolean,
+    /** versionName of the catalog entry, when there is one. */
+    val catalogVersion: String? = null,
+    val availability: Availability = Availability.NO_CATALOG,
 )
 
 internal enum class Check { OK, ATTENTION, UNKNOWN }
@@ -103,19 +132,18 @@ internal fun homeStatus(installedBuildId: String?, query: StatusQuery): HomeStat
 
 private fun isKnownBuildId(id: String?) = !id.isNullOrBlank() && id != "unknown"
 
-/** Home cards below the live status card; still sample data. */
+/** Home cards below the live status card; onboarding and features are still sample data. */
 internal data class HomeState(
     val onboardingRemaining: Int,
     val featuresNeedingAttention: Int,
-    val updatesAvailable: Int,
 )
 
 internal fun StoreItem.primaryAction(): StoreAction = when (installState) {
-    InstallState.NOT_INSTALLED -> StoreAction.DOWNLOAD
-    InstallState.UPDATE_AVAILABLE -> StoreAction.UPDATE
-    // A different signer cannot be updated in place; never offer a one-tap data wipe.
-    InstallState.SIGNATURE_MISMATCH -> StoreAction.NONE
-    InstallState.INSTALLED -> openAction()
+    InstallState.NOT_INSTALLED -> if (availability == Availability.AVAILABLE) StoreAction.DOWNLOAD else StoreAction.NONE
+    InstallState.UPDATE_AVAILABLE -> if (availability == Availability.AVAILABLE) StoreAction.UPDATE else openAction()
+    // A different signer cannot be updated in place; never offer a one-tap data wipe. The
+    // plugin's own page still opens (e.g. a locally built debug Provider).
+    InstallState.SIGNATURE_MISMATCH, InstallState.LOCAL_NEWER, InstallState.INSTALLED -> openAction()
 }
 
 /** Opening an installed plugin's own page; also offered next to an update. */
@@ -172,26 +200,9 @@ internal object ProviderDirectory {
     )
 }
 
-/** Projects the directory onto what this device reports; [versionOf] returns null when absent. */
-internal fun storeItems(entries: List<DirectoryEntry>, versionOf: (String) -> String?): List<StoreItem> =
-    entries.map { e ->
-        val version = versionOf(e.applicationId)
-        StoreItem(
-            id = e.module,
-            name = e.name,
-            applicationId = e.applicationId,
-            kind = e.kind,
-            entry = e.entry,
-            installedVersion = version,
-            installState = if (version == null) InstallState.NOT_INSTALLED else InstallState.INSTALLED,
-            hostDetected = e.kind == ProviderKind.DEDICATED && e.hostPackages.any { versionOf(it) != null },
-        )
-    }
-
 internal object SampleData {
     val home = HomeState(
         onboardingRemaining = 2,
         featuresNeedingAttention = 1,
-        updatesAvailable = 1,
     )
 }

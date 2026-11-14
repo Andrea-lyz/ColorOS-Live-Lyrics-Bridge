@@ -893,6 +893,55 @@ E 系列（第 15 节）不单列里程碑：E-0 随 M1，E-1/E-2 在 C-04/C-05 
 
 **M2 剩余：** 所有切片均已在本地完成；workflow 均未在 GitHub 运行，首个正式目录尚未发布。下一步为 M3（商店安装更新：已安装发现、下载、PackageInstaller、恢复、更新提醒），届时接入 `CatalogStore` 与 `ArtifactCheck`。
 
+### 14.7 M3：目录接入商店、下载校验、安装事务与后台更新提醒（2026-11-14，本地，未提交）
+
+分支：Bridge `feat/m3-store-install`（基于 `e242f60`）。Providers 未改。
+
+**第一刀：目录投影与远端刷新**
+
+- `StoreProjection.kt`（纯函数 `storeItems`）把内置目录（`ProviderDirectory`）投影到本机与已验签目录。只有 `providerId` 和 `applicationId` 都与内置目录一致的条目才算数，目录不能把已知插件指向别的包；本 Bridge 不认识的条目只计数（“需要更新 Bridge 后才能显示”）。
+- 安装状态按各插件自己的 versionCode 判定：未安装 / 已安装 / 有更新 / 本机更新 / 签名不同。本机签名（只取当前签名，不含轮换历史）不全在条目允许集合内、或读不到，都判为签名不同，不提供更新。
+- 是否可下载（`Availability`）：无目录、目录过期（只读）、目录中没有、需要更新 Bridge（`minStoreProtocol`）、系统版本过低（`minSdk`）时都不提供下载/更新按钮。签名不同和本机更新时仍可打开插件自己的页面（例如本地 debug 构建的 Provider），但不提供覆盖安装或清数据。
+- 首页“N 个插件有更新”改为实时计数，为 0 时不显示。
+- `CatalogRefresher` 与 `CatalogSources`：从 jsDelivr 和 raw GitHub 两个镜像获取 `store-catalog` 分支上的 `catalog/stable.json`，每个响应都交给 `CatalogStore`，保留最高的有效 revision。镜像落后（ROLLBACK）算“已是最新”；一个镜像成功即不报其他镜像的失败。地址与 Providers `release/catalog-trust.json` 的分支/路径由测试绑定。
+- `HttpsTransport`：只允许 `https`、默认端口、无 userinfo；不自动跟随重定向，每一跳都检查主机白名单；错误信息只写主机，不写路径或 query。目录响应超过 256 KiB 即停止。
+- `StoreRuntime`：进程内唯一的目录存储，所有读写串行，避免两个页面同时改 revision 下限。打开商店时最多每 10 分钟自动检查一次，另有“检查更新”按钮。
+- 商店顶部原“样例数据”横幅改为目录卡片：目录版本、来源（随 Bridge 内置 / 本机保存 / 刚从网络获取）、是否过期、最近一次检查的结果（含被拒原因）。
+
+**第二刀：下载、校验与 PackageInstaller 事务（`management/install`）**
+
+- `ApkDownloader`：下载到 App 私有缓存 `cacheDir/provider-store` 的 `.part` 文件，按条目大小限制流式计算 SHA-256；大小与摘要都与签名目录一致后才改名为 `<providerId>-<versionCode>.apk`。按目录顺序尝试镜像，坏镜像会换下一个；取消、空间不足、内容不符时删除半成品。已校验过的缓存文件可直接复用（例如用户在安装确认里取消后重试）。
+- 交给安装器前用 `getPackageArchiveInfo` 读取包名、versionCode 和签名，经 `ArtifactCheck.checkPackage` 核对；读不出或不一致都删除文件，不进入安装器。
+- `StoreOperations`：进程级、一次只运行一个操作，Activity 重建不会重复发起。未获“安装未知应用”授权时停在“需要授权”，按钮打开系统设置；返回后若已允许则继续，未允许不会再次弹出。
+- 安装使用 `PackageInstaller` 会话（`MODE_FULL_INSTALL`，Android 12 起显式 `USER_ACTION_REQUIRED`，始终由用户确认）。状态由不导出的 `InstallStatusReceiver` 接收：
+  - `STATUS_PENDING_USER_ACTION` 显示“等待你确认”，不算成功也不算失败；确认界面只在管理页可见时启动一次，用户退出后可以“重新打开”或“取消”（放弃会话）。
+  - 失败分别显示：取消、签名冲突/降级、不兼容、空间不足、被系统拦截、安装包无效、其他。
+  - `STATUS_SUCCESS` 之后还要回读 PackageManager，versionCode 必须等于条目，签名必须在允许集合内，才显示“已安装并核对”；否则显示“安装器报告完成，但未核对到”。专用插件成功后提示去 LSPosed 启用并勾选播放器（scope 自请求属于 M4）。
+- 会话记录（`InstallRecordFile`，`noBackupFilesDir/store/install-session.json`）在提交前写入。App 被杀后重新打开时 `reconcile`：已装上则补记成功；会话还在但确认界面已丢失，则放弃会话并显示“被中断，可重试”；会话不在且没装上同样显示中断。**从不对同一记录提交第二个会话。**
+- 权限：Manifest 新增 `INTERNET` 与 `REQUEST_INSTALL_PACKAGES`，只供普通 App 进程使用；架构守卫新增：`HttpURLConnection`、`HttpsURLConnection`、`java.net.URL`、`openConnection(`、`PackageInstaller` 只允许出现在 `management` 包内。这取代了动态封面方案中“Bridge 不加 INTERNET”的旧约束（第 2 节表格已列明 5.0 需要网络与安装权限）；Hook 路径仍不联网。
+- 后台任务里出现意外运行时异常时，操作显示“安装失败”，不会让 App 崩溃；重定向地址格式错误按网络错误处理。
+
+**本地验证：** `writeSourceIdentityReport :app:testDebugUnitTest :app:assembleDebug :app:minifyReleaseWithR8` 通过，1009 tests / 0 fail / 6 skip。新增 `StoreProjectionTest` 7 项、`CatalogRefresherTest` 6 项、`InstallFlowTest` 9 项（下载/镜像回退/缓存复用/取消、安装器状态映射、成功回读、reconcile、记录文件），`PrototypeModelTest` 按新规则调整为 11 项，架构守卫新增上述标记。R8 dex 3,901,460 字节（比 r4 +84,724）。合并后的 Manifest 已确认含两项新权限与 `exported=false` 的接收器。
+
+**未覆盖 / 待设备：**
+
+- 正式目录尚未发布（`store-catalog` 分支不存在），本地 Debug 构建也没有内置快照，所以设备上目前只会显示“没有可用目录”，点“检查更新”会得到网络失败。**真实的下载与安装要等首个正式目录发布之后才能在设备上验证**；在那之前可验证的只有目录卡片、无目录状态和已安装状态。
+- PackageInstaller 全流程、ColorOS 安装确认界面、“安装未知应用”授权往返、取消/返回、进程被杀后的 reconcile、`getPackageArchiveInfo` 在各 Android 版本上能否读到签名：均未在设备上运行。读不到签名时会按失败处理（不安装），如在某版本上出现需要再评估。
+- 没有 Compose UI 测试；下载未做断点续传。
+
+**第三刀：后台更新提醒（同分支，本地，未提交）**
+
+- `management/reminder/UpdateReminders.kt`：商店页新增“后台检查插件更新”开关，**默认关闭**。开启时，Android 13 起才申请通知权限（只在用户打开开关时申请，拒绝后开关保持关闭并提示）；关闭时取消任务、撤下通知并清除已提醒记录。
+- 调度：`JobScheduler` 周期任务，约 24 小时一次、6 小时浮动窗口，要求有网络，持久化（为此新增 `RECEIVE_BOOT_COMPLETED`）。实际执行时间由 ColorOS 决定，**不承诺实时到达**；没有镜像响应时交给系统按指数退避重试。打开管理页时若任务丢失会补建。未引入 WorkManager 依赖。
+- 每次检查：刷新目录（与前台同一个串行化的 `StoreRuntime`），读取本机安装状态，只提醒“可安装、签名一致、本机较旧”的更新（签名不同、本机较新、目录过期都不提醒）。
+- 去重（纯函数 `planNotice`）：同一插件的同一版本只响铃一次；已提醒过的更新只静默刷新已显示的通知，用户划掉后不再重发；该插件出现更新的版本时再提醒；更新装好后从通知中去掉，全部没有时撤下通知。没有通知权限时不记“已提醒”，以后获得权限仍能提醒。
+- 通知只打开管理页的商店页（`EXTRA_OPEN_STORE`），**不会自动下载或安装**。偏好存在独立的 `provider_store` SharedPreferences，不进入 LyricUiConfig；提醒失败不影响任何歌词功能。
+- Manifest 新增 `POST_NOTIFICATIONS`、`RECEIVE_BOOT_COMPLETED` 与不导出的 `UpdateCheckJobService`（`BIND_JOB_SERVICE`）。
+
+本地验证：同一组 Gradle 任务通过，1012 tests / 0 fail / 6 skip（新增 `UpdateNoticeTest` 3 项）；R8 dex 3,941,028 字节（比第二刀 +39,568）；合并后的 Manifest 已确认含两项新权限与该服务。**未覆盖：** 任务调度、通知显示、权限申请、点通知跳到商店页都没在设备上运行；ColorOS 对后台任务的限制（例如未加入自启动白名单时可能长期不执行）是 unknown。
+
+**M3 剩余：** 首个正式目录发布后的设备验收（下载、安装确认、授权往返、取消、被杀后恢复、后台提醒）。功能切片已全部在本地实现。
+
 ## 15. 主线五：代码结构与性能治理（E 系列）
 
 > 状态：**仅分析与方案，未落任何代码**；第 15.8 节 D11–D15 已于 2026-11-14 由用户确认按推荐采用。落档日期：2026-11-14。本节是用户在 M1 期间追加的第五条主线：在下一大版本内完整治理 Bridge 的代码结构与性能，重点拆分 `LockscreenLyricsModule.java`。

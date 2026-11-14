@@ -18,18 +18,24 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import io.github.andrealtb.lockscreenlyrics.R
+import io.github.andrealtb.lockscreenlyrics.management.catalog.CatalogSource
+import io.github.andrealtb.lockscreenlyrics.management.catalog.CatalogState
+import io.github.andrealtb.lockscreenlyrics.management.catalog.RefreshOutcome
+import io.github.andrealtb.lockscreenlyrics.management.install.Operation
+import io.github.andrealtb.lockscreenlyrics.management.install.OperationFailure
 
 /** Marks every prototype page; sample values must never be read as device evidence. */
 @Composable
@@ -55,6 +61,7 @@ internal fun SampleBanner(modifier: Modifier = Modifier, text: Int = R.string.mg
 internal fun HomeContent(
     status: HomeStatus,
     state: HomeState,
+    updatesAvailable: Int,
     onRefreshStatus: () -> Unit,
     onContinueSetup: () -> Unit,
     onViewReasons: () -> Unit,
@@ -132,17 +139,15 @@ internal fun HomeContent(
                 )
             }
         }
-        item {
-            ActionCard(
-                text = pluralStringResource(
-                    R.plurals.mgmt_updates_available,
-                    state.updatesAvailable,
-                    state.updatesAvailable,
-                ),
-                action = stringResource(R.string.mgmt_action_open_store),
-                primary = false,
-                onAction = onOpenStore,
-            )
+        if (updatesAvailable > 0) {
+            item {
+                ActionCard(
+                    text = pluralStringResource(R.plurals.mgmt_updates_available, updatesAvailable, updatesAvailable),
+                    action = stringResource(R.string.mgmt_action_open_store),
+                    primary = false,
+                    onAction = onOpenStore,
+                )
+            }
         }
     }
 }
@@ -193,6 +198,12 @@ private fun ActionCard(text: String, action: String, primary: Boolean, onAction:
 @Composable
 internal fun StoreContent(
     items: List<StoreItem>,
+    unrecognizedEntries: Int,
+    catalog: CatalogView,
+    onRefreshCatalog: () -> Unit,
+    operations: Map<String, Operation>,
+    reminders: RemindersView,
+    onRemindersChange: (Boolean) -> Unit,
     filter: StoreFilter,
     onFilterChange: (StoreFilter) -> Unit,
     onAction: (StoreItem, StoreAction) -> Unit,
@@ -204,7 +215,8 @@ internal fun StoreContent(
         contentPadding = PaddingValues(Spacing.l),
         verticalArrangement = Arrangement.spacedBy(Spacing.m),
     ) {
-        item { SampleBanner(text = R.string.mgmt_store_banner) }
+        item { CatalogCard(catalog, unrecognizedEntries, onRefreshCatalog) }
+        item { ReminderCard(reminders, onRemindersChange) }
         item {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
                 items(StoreFilter.entries.toList()) { option ->
@@ -218,40 +230,44 @@ internal fun StoreContent(
         }
         if (visible.isEmpty()) {
             item {
-                Text(stringResource(if (filter == StoreFilter.UPDATES) R.string.mgmt_store_no_catalog
+                Text(stringResource(if (filter == StoreFilter.UPDATES) R.string.mgmt_store_no_updates
                     else R.string.mgmt_store_empty),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+        val busy = operations.values.any { it.active }
         items(visible, key = { it.id }) { item ->
-            StoreCard(item = item, onAction = { onAction(item, it) })
+            StoreCard(item = item, operation = operations[item.id], busy = busy, onAction = { onAction(item, it) })
         }
     }
 }
 
 @Composable
-private fun StoreCard(item: StoreItem, onAction: (StoreAction) -> Unit) {
+private fun StoreCard(item: StoreItem, operation: Operation?, busy: Boolean, onAction: (StoreAction) -> Unit) {
     StatusCard {
         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s), verticalAlignment = Alignment.CenterVertically) {
             Text(item.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
             KindLabel(item.kind)
         }
+        val installed = item.installedVersion?.let { stringResource(R.string.mgmt_version_installed, it) }
+            ?: stringResource(R.string.mgmt_version_not_installed)
         Text(
-            text = item.installedVersion?.let { stringResource(R.string.mgmt_version_installed, it) }
-                ?: stringResource(R.string.mgmt_version_not_installed),
+            text = item.catalogVersion?.let { stringResource(R.string.mgmt_version_with_latest, installed, it) } ?: installed,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         StateNote(item)
+        if (operation != null) OperationStatus(item, operation, onAction)
+        // While any operation runs, no second download/update starts (one installer at a time).
+        if (operation?.active == true) return@StatusCard
         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
             when (val action = item.primaryAction()) {
-                StoreAction.NONE -> Unit
-                // No catalog yet: offered so the state is visible, answered with a clear message.
+                StoreAction.NONE, StoreAction.CANCEL, StoreAction.CONFIRM_INSTALL, StoreAction.ALLOW_INSTALLS -> Unit
                 StoreAction.DOWNLOAD ->
-                    OutlinedButton(onClick = { onAction(action) }) { Text(stringResource(action.labelRes())) }
+                    Button(onClick = { onAction(action) }, enabled = !busy) { Text(stringResource(action.labelRes())) }
                 StoreAction.UPDATE -> {
-                    Button(onClick = { onAction(action) }) { Text(stringResource(action.labelRes())) }
+                    Button(onClick = { onAction(action) }, enabled = !busy) { Text(stringResource(action.labelRes())) }
                     OutlinedButton(onClick = { onAction(item.openAction()) }) {
                         Text(stringResource(item.openAction().labelRes()))
                     }
@@ -267,27 +283,103 @@ private fun StoreCard(item: StoreItem, onAction: (StoreAction) -> Unit) {
 
 @Composable
 private fun StateNote(item: StoreItem) {
-    val note: Pair<ImageVector, String>? = when {
-        item.installState == InstallState.SIGNATURE_MISMATCH ->
-            Icons.Filled.Warning to stringResource(R.string.mgmt_state_signature)
-        item.kind == ProviderKind.DEDICATED && !item.hostDetected ->
-            Icons.Filled.Info to stringResource(R.string.mgmt_host_missing)
-        item.installState == InstallState.INSTALLED && item.entry == ProviderEntry.INFO_PAGE ->
-            Icons.Filled.Info to stringResource(R.string.mgmt_state_no_debug_switch)
-        item.installState == InstallState.INSTALLED && item.kind != ProviderKind.DEDICATED ->
-            Icons.Filled.CheckCircle to stringResource(R.string.mgmt_state_independent)
-        else -> null
+    val note = item.note() ?: return
+    val (icon, text) = when (note) {
+        StoreNote.SIGNATURE_MISMATCH -> Icons.Filled.Warning to R.string.mgmt_state_signature
+        StoreNote.LOCAL_NEWER -> Icons.Filled.Info to R.string.mgmt_state_local_newer
+        StoreNote.NOT_IN_CATALOG -> Icons.Filled.Info to R.string.mgmt_state_not_in_catalog
+        StoreNote.NEEDS_NEWER_BRIDGE -> Icons.Filled.Info to R.string.mgmt_state_needs_bridge
+        StoreNote.UNSUPPORTED_SDK -> Icons.Filled.Info to R.string.mgmt_state_unsupported_sdk
+        StoreNote.HOST_MISSING -> Icons.Filled.Info to R.string.mgmt_host_missing
+        StoreNote.NO_DEBUG_SWITCH -> Icons.Filled.Info to R.string.mgmt_state_no_debug_switch
+        StoreNote.INDEPENDENT -> Icons.Filled.CheckCircle to R.string.mgmt_state_independent
     }
-    note ?: return
-    val warning = item.installState == InstallState.SIGNATURE_MISMATCH
+    val color = if (note.isWarning) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
     Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s), verticalAlignment = Alignment.CenterVertically) {
-        Icon(
-            note.first,
-            contentDescription = null,
-            tint = if (warning) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+        Icon(icon, contentDescription = null, tint = color)
+        Text(stringResource(text), style = MaterialTheme.typography.bodyMedium, color = color)
+    }
+}
+
+/** Opt-in background reminder (plan §6.5); it only notifies and never installs. */
+@Composable
+private fun ReminderCard(reminders: RemindersView, onChange: (Boolean) -> Unit) {
+    StatusCard {
+        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.m), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                Text(stringResource(R.string.mgmt_reminder_title), style = MaterialTheme.typography.titleSmall)
+                Text(stringResource(R.string.mgmt_reminder_body), style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Switch(checked = reminders.enabled, onCheckedChange = onChange)
+        }
+        if (reminders.enabled && !reminders.notificationsAllowed) {
+            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                Text(stringResource(R.string.mgmt_reminder_notifications_off), style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error)
+            }
+        }
+    }
+}
+
+/** Where the store's data comes from and whether it may install; never hidden (plan §6.2). */
+@Composable
+private fun CatalogCard(catalog: CatalogView, unrecognizedEntries: Int, onRefresh: () -> Unit) {
+    val current = catalog.state as? CatalogState.Current
+    val headline = catalog.headline()
+    StatusCard {
+        CheckRow(
+            label = stringResource(R.string.mgmt_catalog_label),
+            check = when (headline) {
+                CatalogHeadline.FRESH -> Check.OK
+                CatalogHeadline.EXPIRED, CatalogHeadline.NONE -> Check.ATTENTION
+                CatalogHeadline.LOADING -> Check.UNKNOWN
+            },
+            value = if (current == null) {
+                stringResource(if (headline == CatalogHeadline.LOADING) R.string.mgmt_catalog_loading else R.string.mgmt_catalog_none)
+            } else {
+                val source = stringResource(
+                    when (current.source) {
+                        CatalogSource.BUNDLED -> R.string.mgmt_catalog_source_bundled
+                        CatalogSource.PERSISTED -> R.string.mgmt_catalog_source_saved
+                        CatalogSource.REMOTE -> R.string.mgmt_catalog_source_remote
+                    },
+                )
+                val base = stringResource(R.string.mgmt_catalog_revision, current.catalog.revision, source)
+                if (headline == CatalogHeadline.EXPIRED) base + "\n" + stringResource(R.string.mgmt_catalog_expired) else base
+            },
         )
-        Text(note.second, style = MaterialTheme.typography.bodyMedium,
-            color = if (warning) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+        val refresh = if (catalog.refreshing) {
+            R.string.mgmt_catalog_refreshing
+        } else {
+            when (catalog.lastRefresh?.outcome) {
+                null -> null
+                RefreshOutcome.UPDATED -> R.string.mgmt_catalog_refresh_updated
+                RefreshOutcome.UP_TO_DATE -> R.string.mgmt_catalog_refresh_current
+                RefreshOutcome.REJECTED -> R.string.mgmt_catalog_refresh_rejected
+                RefreshOutcome.PERSIST_FAILED -> R.string.mgmt_catalog_refresh_not_saved
+                RefreshOutcome.NETWORK_FAILED -> R.string.mgmt_catalog_refresh_network
+            }
+        }
+        if (refresh != null) {
+            val text = if (refresh == R.string.mgmt_catalog_refresh_rejected) {
+                stringResource(refresh, catalog.lastRefresh?.rejection?.name?.lowercase() ?: "?")
+            } else {
+                stringResource(refresh)
+            }
+            Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (unrecognizedEntries > 0) {
+            Text(
+                pluralStringResource(R.plurals.mgmt_catalog_unrecognized, unrecognizedEntries, unrecognizedEntries),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        OutlinedButton(onClick = onRefresh, enabled = !catalog.refreshing && headline != CatalogHeadline.LOADING) {
+            Text(stringResource(R.string.mgmt_catalog_refresh))
+        }
     }
 }
 
@@ -344,4 +436,65 @@ internal fun StoreAction.labelRes(): Int = when (this) {
     StoreAction.OPEN_DEBUG -> R.string.mgmt_action_debug
     StoreAction.OPEN_INFO -> R.string.mgmt_action_module_info
     StoreAction.OPEN_APP, StoreAction.NONE -> R.string.mgmt_action_open
+    StoreAction.CANCEL -> R.string.mgmt_action_cancel
+    StoreAction.CONFIRM_INSTALL -> R.string.mgmt_action_confirm_install
+    StoreAction.ALLOW_INSTALLS -> R.string.mgmt_action_allow_installs
+}
+
+internal fun OperationFailure.messageRes(): Int = when (this) {
+    OperationFailure.NETWORK -> R.string.mgmt_fail_network
+    OperationFailure.CONTENT_MISMATCH -> R.string.mgmt_fail_content
+    OperationFailure.IDENTITY_MISMATCH -> R.string.mgmt_fail_identity
+    OperationFailure.STORAGE -> R.string.mgmt_fail_storage
+    OperationFailure.CANCELLED -> R.string.mgmt_fail_cancelled
+    OperationFailure.CONFLICT -> R.string.mgmt_fail_conflict
+    OperationFailure.INCOMPATIBLE -> R.string.mgmt_fail_incompatible
+    OperationFailure.BLOCKED -> R.string.mgmt_fail_blocked
+    OperationFailure.INVALID -> R.string.mgmt_fail_invalid
+    OperationFailure.INTERRUPTED -> R.string.mgmt_fail_interrupted
+    OperationFailure.NOT_VERIFIED -> R.string.mgmt_fail_not_verified
+    OperationFailure.OTHER -> R.string.mgmt_fail_other
+}
+
+/** Progress and outcome of this card's store operation, with its own controls. */
+@Composable
+private fun OperationStatus(item: StoreItem, operation: Operation, onAction: (StoreAction) -> Unit) {
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    when (operation) {
+        is Operation.Downloading -> {
+            val fraction = if (operation.total > 0) (operation.downloaded.toFloat() / operation.total).coerceIn(0f, 1f) else 0f
+            Text(stringResource(R.string.mgmt_op_downloading, (fraction * 100).toInt()),
+                style = MaterialTheme.typography.bodyMedium, color = muted)
+            LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth())
+            OutlinedButton(onClick = { onAction(StoreAction.CANCEL) }) { Text(stringResource(R.string.mgmt_action_cancel)) }
+        }
+        Operation.Verifying, Operation.Installing -> {
+            Text(stringResource(if (operation == Operation.Verifying) R.string.mgmt_op_verifying else R.string.mgmt_op_installing),
+                style = MaterialTheme.typography.bodyMedium, color = muted)
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
+        Operation.WaitingForUser -> {
+            Text(stringResource(R.string.mgmt_op_waiting), style = MaterialTheme.typography.bodyMedium, color = muted)
+            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
+                Button(onClick = { onAction(StoreAction.CONFIRM_INSTALL) }) { Text(stringResource(R.string.mgmt_action_confirm_install)) }
+                OutlinedButton(onClick = { onAction(StoreAction.CANCEL) }) { Text(stringResource(R.string.mgmt_action_cancel)) }
+            }
+        }
+        Operation.NeedsInstallPermission -> {
+            Text(stringResource(R.string.mgmt_op_permission), style = MaterialTheme.typography.bodyMedium, color = muted)
+            Button(onClick = { onAction(StoreAction.ALLOW_INSTALLS) }) { Text(stringResource(R.string.mgmt_action_allow_installs)) }
+        }
+        is Operation.Succeeded -> {
+            Text(stringResource(R.string.mgmt_op_succeeded, operation.versionName),
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
+            if (item.kind == ProviderKind.DEDICATED) {
+                Text(stringResource(R.string.mgmt_op_next_steps_dedicated), style = MaterialTheme.typography.bodyMedium, color = muted)
+            }
+        }
+        is Operation.Failed -> Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+            Text(stringResource(operation.failure.messageRes()), style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error)
+        }
+    }
 }

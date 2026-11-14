@@ -12,8 +12,9 @@ class PrototypeModelTest {
         hostDetected: Boolean = true,
         entry: ProviderEntry = if (kind == ProviderKind.DEDICATED) ProviderEntry.DEBUG_PAGE else ProviderEntry.LAUNCHER,
         id: String = "${kind.name}-${state.name}-$hostDetected-${entry.name}",
+        availability: Availability = Availability.AVAILABLE,
     ) = StoreItem(id, id, "pkg.$id", kind, entry,
-        if (state == InstallState.NOT_INSTALLED) null else "1", state, hostDetected)
+        if (state == InstallState.NOT_INSTALLED) null else "1", state, hostDetected, availability = availability)
 
     @Test fun installedPluginsOpenTheirOwnPage() {
         assertEquals(StoreAction.OPEN_DEBUG, item(ProviderKind.DEDICATED, InstallState.INSTALLED).primaryAction())
@@ -30,9 +31,21 @@ class PrototypeModelTest {
         assertEquals(StoreAction.OPEN_DEBUG, update.openAction())
     }
 
-    @Test fun signatureMismatchOffersNoInstallOrWipeAction() {
+    @Test fun signatureMismatchAndLocalNewerOnlyOpenThePluginsOwnPage() {
         for (kind in ProviderKind.entries) {
-            assertEquals(StoreAction.NONE, item(kind, InstallState.SIGNATURE_MISMATCH).primaryAction())
+            for (state in listOf(InstallState.SIGNATURE_MISMATCH, InstallState.LOCAL_NEWER)) {
+                val it = item(kind, state)
+                assertEquals(it.openAction(), it.primaryAction())
+            }
+        }
+    }
+
+    @Test fun downloadAndUpdateNeedAnInstallableCatalogEntry() {
+        for (availability in Availability.entries.filter { it != Availability.AVAILABLE }) {
+            assertEquals(StoreAction.NONE,
+                item(ProviderKind.DEDICATED, InstallState.NOT_INSTALLED, availability = availability).primaryAction())
+            assertEquals(StoreAction.OPEN_DEBUG,
+                item(ProviderKind.DEDICATED, InstallState.UPDATE_AVAILABLE, availability = availability).primaryAction())
         }
     }
 
@@ -46,28 +59,6 @@ class PrototypeModelTest {
         assertEquals(listOf(update, notInstalled, universal), all.filteredBy(StoreFilter.SUITABLE))
         assertEquals(listOf(update, universal), all.filteredBy(StoreFilter.INSTALLED))
         assertEquals(listOf(update), all.filteredBy(StoreFilter.UPDATES))
-    }
-
-    @Test fun storeItemsReflectOnlyWhatThePackageManagerReports() {
-        val installed = mapOf(
-            "io.github.andrealtb.coloroslyrics.provider.salt" to "1.1.2",
-            "com.salt.music" to "12.3",
-            "io.github.andrealtb.coloroslyrics.provider.universal" to "1.1.3",
-        )
-        val items = storeItems(ProviderDirectory.entries) { installed[it] }.associateBy { it.id }
-        val salt = items.getValue("player-salt")
-        assertEquals(InstallState.INSTALLED, salt.installState)
-        assertEquals("1.1.2", salt.installedVersion)
-        assertTrue(salt.hostDetected)
-        val qq = items.getValue("player-qq")
-        assertEquals(InstallState.NOT_INSTALLED, qq.installState)
-        assertFalse(qq.hostDetected)
-        // Independent apps never count as "has a host"; they are suitable by kind instead.
-        assertFalse(items.getValue("universal-provider").hostDetected)
-        // No catalog: nothing is ever reported as having an update or a foreign signature.
-        assertTrue(items.values.none {
-            it.installState == InstallState.UPDATE_AVAILABLE || it.installState == InstallState.SIGNATURE_MISMATCH
-        })
     }
 
     @Test fun readifyOpensItsInfoPageBecauseItHasNoDebugSwitch() {
