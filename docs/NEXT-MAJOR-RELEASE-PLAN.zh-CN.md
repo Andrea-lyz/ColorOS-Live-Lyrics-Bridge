@@ -2320,6 +2320,80 @@ E-2b 到 E-2d 都读写入口类的实例状态或调用 `hook()`，不能只靠
 
 **结果：** 用户安装候选 `309c2636…`、重启 SystemUI 后，设备冒烟 1–5 项通过（2026-11-15）。
 
+### 15.8.15 E-5b 实施记录：播放时钟与 reset guard 外移（2026-11-15，已提交，未推送）
+
+**分支：** Bridge `feat/e5b-playback-clock`（基于 `e29b83b`）。这是修订刀序的第三刀。
+
+**移动了什么：** 以下状态并入已有的 `SystemUiPlaybackController`，它成为**唯一写入者**：
+- 14 个字段：
+  - 播放时钟：是否在播、速度、上次计算位置及其时刻、上次状态；
+  - `playbackClockTrackKey`；
+  - 切歌 reset guard 的开始与截止时间；
+  - seedling 活动行提示（时间与观察时刻）；
+  - 4 个日志节流时间戳。
+- 原样移入 5 个方法：
+  - `clearSeedlingActiveLyricHint`、`extendLyricTrackPositionResetGuard`、`shouldIgnoreStalePlaybackPositionAfterTrackReset`；
+  - 两个日志方法 `maybeLogSeedlingPlaybackState`、`maybeLogIgnoredStalePlaybackPositionAfterTrackReset`。
+- 新增 9 个提交方法：
+  - `setPlaybackClockTrackKey`、`clearPlaybackClockTrackKey`、`resetPlaybackPosition`；
+  - `startTrackResetGuard`、`armTrackResetGuard`、`claimTrackResetLog`；
+  - `commitStalePlaybackState`、`commitPlaybackState`、`noteSeedlingActiveLine`。
+- Host 不变：仍是 E-5a 的 5 个方法，没有新增。
+
+**两阶段写入的落地方式（与第 15.8.12 节设计等价，形式更小）：**
+- 设计里写的是 `plan()` 返回一个计划对象、`commit(plan)` 写入。
+- 实施时发现不需要新类型：判定部分本来就只读字段、不写字段，原样留在入口类即可。
+  - 判定包括：过期位置判断、重播判断及其连带动作（清活动行、清渲染目标、开始 handoff）、平滑、活动位置、跳变判断。
+- 写入部分改为在原位置调用控制器的提交方法：
+  - 过期分支调用 `commitStalePlaybackState`；
+  - 主分支的 if 链加上随后的状态写入，调用 `commitPlaybackState`。
+- 执行顺序与原来逐句一致。
+- `estimatePlaybackPositionMillis` 按设计留在组合根：Provider 快照 → 时钟 → 模型提示行，时钟字段经前缀读取。
+
+**入口类的 5 处有意改写**（只换调用位置；常量、条件、日志文字不变）：
+
+| 方法 | 改写 |
+| --- | --- |
+| `acceptCurrentLyricProvider` | `playbackClockTrackKey = next` → `setPlaybackClockTrackKey(next)` |
+| `resetSystemUiPlaybackPositionForTrackChange` | 清时钟键 → `clearPlaybackClockTrackKey()`；位置复位两句 → `resetPlaybackPosition(now)`；guard 开始 → `startTrackResetGuard(now)`；guard 截止 → `armTrackResetGuard(now)`；日志节流 → `claimTrackResetLog(now)`。中间的活动行、Recycler 写入（属 E-7b、E-6c）位置不变 |
+| `rememberSystemUiPlaybackState`（5 参） | 过期分支 5 句 → `commitStalePlaybackState(state, speed, now)`；主分支 if 链与随后的 state 写入 → `commitPlaybackState(state, speed, computedPosition, nextPosition)` |
+| `rememberSeedlingActiveLyric` | 两句 → `noteSeedlingActiveLine(line.timeMillis, SystemClock.elapsedRealtime())` |
+| `rememberLyricsRecyclerTargetIndex` | 两句 → `noteSeedlingActiveLine(line.timeMillis, now)` |
+
+**其余访问：**
+- 时钟字段的约 40 处读取（渲染热路径、AOD、Recycler、日志）改为 `playbackController.` 前缀。
+- 移动脚本断言入口类不再对这些字段赋值，也不再出现这些字段的裸名。
+- 入口类放宽了 3 个常量和 2 个静态函数的 `private`：
+  - 常量 `LYRIC_VERBOSE_DIAGNOSTICS_ENABLED`、`SYSTEMUI_TRACK_RESET_POSITION_GUARD_MS`、`SYSTEMUI_TRACK_RESET_STALE_POSITION_MS`；
+  - 静态函数 `isPlaybackStateInMotion`、`isFiniteNonZero`。
+
+**未做（留给后续刀）：**
+- 设计中的 `onTrackReset` 事件化（时钟、活动行、Recycler 依次复位）随 E-7b、E-6c 做。现在复位方法仍在入口类，只是时钟部分改为调用控制器。
+- 时钟读取仍是字段直读。改为只读查询（`isPlaying()` 等）留到 E-5d。
+
+**证据：**
+- 方法体比对（`--strip playbackController. --strip this:: --strip playbackController::`）：
+  - 5 个移动后一致；
+  - 改动 5 个，正好是上表 5 个方法；
+  - 0 个删除；
+  - 新增 9 个提交方法。
+- 三份基线不变。
+- 入口类预算下调：11,911 → 11,797 行，字段 289 → 275，方法 456 → 451。
+- `verify-build-identity` 通过（372 个输入）。
+- 本地 1056 tests / 0 fail / 6 skip，Debug 与 R8 通过。
+
+**候选：** `artifacts/e5b-playback-clock-20261115/Bridge-E5b-clock-debug-r1.apk`（`128325b7…`）。
+
+**设备冒烟（重启 SystemUI；逐字歌词）：**
+1. 播放中逐字推进与原唱同步，没有整体提前或落后。
+2. 暂停时歌词停在当前字；继续后从原处接着走。
+3. 拖动进度条到中间或开头，歌词跳到对应行，之后继续同步。
+4. 快速连续切歌 3–5 次：每首都从头开始，不会带着上一首的进度（reset guard）。
+5. 同一首歌播完后单曲循环重播：歌词回到第一行，没有卡在最后一行。
+6. AOD 下低帧率显示的进度与亮屏一致，回到亮屏后不跳。
+
+**结果：** 用户安装候选 `128325b7…`、重启 SystemUI 后，设备冒烟 1–6 项通过（2026-11-15）。
+
 ### 15.9 未覆盖
 
 - **Providers 仓库**的结构与性能没有做同等盘点。若要纳入“完整优化”，需要另做一次基线（13 个专用模块的 Hooker、`provider-core`、Universal），本节不对其作任何结论。

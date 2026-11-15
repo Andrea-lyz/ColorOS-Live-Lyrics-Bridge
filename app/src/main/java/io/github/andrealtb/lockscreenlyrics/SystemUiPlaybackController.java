@@ -23,9 +23,10 @@ import java.util.List;
  * player, the single bound playback callback with its epoch and session-token checks, and the
  * binding lock. Moved verbatim from {@code LockscreenLyricsModule}; no method body changed.
  *
- * <p>Playback-state ingestion (the clock, the track-reset guard, position-jump observation) stays
- * in the entry class for now: it also drives the official-lyric handoff, renderer targets and the
- * recycler, which later E-5 steps and E-6/E-7 move.
+ * <p>E-5b (plan §15.8.12): this class is also the only writer of the playback clock, the
+ * track-reset guard and the seedling active-line hint. The entry class still decides what a
+ * PlaybackState means (stale / restart / smoothing / jump) and runs the side effects; it then
+ * commits the clock here in the order it used to assign the fields inline.
  */
 final class SystemUiPlaybackController {
     /** What the controller hands to, or asks of, the rest of the SystemUI runtime. */
@@ -48,6 +49,20 @@ final class SystemUiPlaybackController {
     private long nextSystemUiPlaybackControllerEpoch;
     private volatile long lastPlaybackControllerDiscoveryElapsedMs = -1L;
     private volatile String lastPlaybackControllerDiscoveryPackage = "";
+    volatile long lastComputedPositionMs = -1L;
+    volatile long lastComputedPositionElapsedMs = -1L;
+    volatile long lastSeedlingActiveLineTimeMs = -1L;
+    volatile long lastSeedlingActiveLineObservedAtMs = -1L;
+    private volatile long lastSeedlingPlaybackStateLogAt;
+    private volatile long lastLyricTrackPositionResetLogAt;
+    volatile long lyricTrackPositionResetGuardUntilElapsedMs;
+    private volatile long lastStalePlaybackPositionIgnoredLogAt;
+    volatile String playbackClockTrackKey = "";
+    volatile boolean lastPlaybackIsPlaying = true;
+    volatile float lastPlaybackSpeed = 1f;
+    volatile int lastSystemUiPlaybackState = -1;
+    private volatile int lastLoggedSystemUiPlaybackState = -100;
+    private volatile long lyricTrackPositionResetGuardStartedAtElapsedMs = -1L;
 
     SystemUiPlaybackController(Host host, Handler mainHandler) {
         this.host = host;
@@ -280,5 +295,149 @@ final class SystemUiPlaybackController {
         } catch (Throwable ignored) {
             // Released sessions may already have removed the callback.
         }
+    }
+
+    // ---- E-5b: playback clock, track-reset guard and seedling hint (single writer) ----
+
+    void setPlaybackClockTrackKey(String trackKey) {
+        playbackClockTrackKey = trackKey;
+    }
+
+    void clearPlaybackClockTrackKey() {
+        playbackClockTrackKey = "";
+    }
+
+    /** Track reset: the visual clock restarts at 0, running only if playback was running. */
+    void resetPlaybackPosition(long now) {
+        lastComputedPositionMs = 0L;
+        lastComputedPositionElapsedMs = lastPlaybackIsPlaying
+                ? now
+                : -1L;
+    }
+
+    void startTrackResetGuard(long now) {
+        lyricTrackPositionResetGuardStartedAtElapsedMs = now;
+    }
+
+    void armTrackResetGuard(long now) {
+        lyricTrackPositionResetGuardUntilElapsedMs =
+                now + SYSTEMUI_TRACK_RESET_POSITION_GUARD_MS;
+    }
+
+    /** Throttles the track-reset log to one line per 1.5 s; true when this call may log. */
+    boolean claimTrackResetLog(long now) {
+        if (now - lastLyricTrackPositionResetLogAt >= 1_500L) {
+            lastLyricTrackPositionResetLogAt = now;
+            return true;
+        }
+        return false;
+    }
+
+    /** A stale position after a track reset: keep play state and speed, pin the clock to 0. */
+    void commitStalePlaybackState(int state, float speed, long now) {
+        lastPlaybackIsPlaying = isPlaybackStateInMotion(state) && isFiniteNonZero(speed);
+        lastPlaybackSpeed = isFiniteNonZero(speed) ? speed : 0f;
+        lastComputedPositionMs = 0L;
+        lastComputedPositionElapsedMs = now;
+        lastSystemUiPlaybackState = state;
+    }
+
+    /** Commits an accepted PlaybackState (positions already smoothed by the caller). */
+    void commitPlaybackState(int state, float speed, long computedPosition, long nextPosition) {
+        if (isPlaybackStateInMotion(state) && isFiniteNonZero(speed) && computedPosition >= 0) {
+            lastPlaybackIsPlaying = true;
+            lastPlaybackSpeed = speed;
+            lastComputedPositionMs = computedPosition;
+            lastComputedPositionElapsedMs = SystemClock.elapsedRealtime();
+        } else if (state >= 0) {
+            lastPlaybackIsPlaying = false;
+            lastPlaybackSpeed = speed;
+            lastComputedPositionMs = nextPosition;
+            lastComputedPositionElapsedMs = -1L;
+        } else if (computedPosition >= 0) {
+            lastComputedPositionMs = computedPosition;
+            lastComputedPositionElapsedMs = SystemClock.elapsedRealtime();
+        }
+        lastSystemUiPlaybackState = state;
+    }
+
+    void noteSeedlingActiveLine(long lineTimeMs, long observedAtMs) {
+        lastSeedlingActiveLineTimeMs = lineTimeMs;
+        lastSeedlingActiveLineObservedAtMs = observedAtMs;
+    }
+
+    void extendLyricTrackPositionResetGuard() {
+        long now = SystemClock.elapsedRealtime();
+        if (lyricTrackPositionResetGuardStartedAtElapsedMs < 0L
+                || now > lyricTrackPositionResetGuardUntilElapsedMs) {
+            lyricTrackPositionResetGuardStartedAtElapsedMs = now;
+        }
+        lyricTrackPositionResetGuardUntilElapsedMs = Math.max(
+                lyricTrackPositionResetGuardUntilElapsedMs,
+                now + SYSTEMUI_TRACK_RESET_POSITION_GUARD_MS);
+    }
+
+    boolean shouldIgnoreStalePlaybackPositionAfterTrackReset(
+            int state,
+            long previousPosition,
+            long storedPosition,
+            long computedPosition,
+            long lastPositionUpdateTime,
+            long now) {
+        if (!isPlaybackStateInMotion(state)
+                || now > lyricTrackPositionResetGuardUntilElapsedMs
+                || previousPosition < 0
+                || previousPosition > 1_000L) {
+            return false;
+        }
+        if (LockscreenIntegrationPolicy.isFreshPlaybackPositionAfterTrackReset(
+                lastPositionUpdateTime,
+                lyricTrackPositionResetGuardStartedAtElapsedMs)) {
+            return false;
+        }
+        long candidatePosition = Math.max(storedPosition, computedPosition);
+        return candidatePosition >= SYSTEMUI_TRACK_RESET_STALE_POSITION_MS;
+    }
+
+    void clearSeedlingActiveLyricHint() {
+        lastSeedlingActiveLineTimeMs = -1L;
+        lastSeedlingActiveLineObservedAtMs = -1L;
+    }
+
+    void maybeLogSeedlingPlaybackState(int state, long storedPosition, long computedPosition, float speed) {
+        if (!isLyricVerboseDiagnosticsEnabled()) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (!LYRIC_VERBOSE_DIAGNOSTICS_ENABLED
+                && state == lastLoggedSystemUiPlaybackState
+                && now - lastSeedlingPlaybackStateLogAt < 5_000L) {
+            return;
+        }
+        lastLoggedSystemUiPlaybackState = state;
+        lastSeedlingPlaybackStateLogAt = now;
+        info(BridgeDebugArea.MEDIA, BridgeEvents.SESSION_REDUCED, "Seedling playback state=" + state
+                + ", playing=" + lastPlaybackIsPlaying
+                + ", storedPosition=" + storedPosition
+                + ", computedPosition=" + computedPosition
+                + ", speed=" + speed);
+    }
+
+    void maybeLogIgnoredStalePlaybackPositionAfterTrackReset(
+            long storedPosition,
+            long computedPosition,
+            long previousPosition) {
+        if (!isLyricLayoutDiagnosticsEnabled()) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (!LYRIC_VERBOSE_DIAGNOSTICS_ENABLED && now - lastStalePlaybackPositionIgnoredLogAt < 1_500L) {
+            return;
+        }
+        lastStalePlaybackPositionIgnoredLogAt = now;
+        info(BridgeDebugArea.MEDIA, BridgeEvents.SESSION_REDUCED, "Ignored stale SystemUI playback position after track reset, previousPosition="
+                + previousPosition
+                + ", storedPosition=" + storedPosition
+                + ", computedPosition=" + computedPosition);
     }
 }

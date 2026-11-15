@@ -123,7 +123,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             "native-v5-systemui-owner-r6-track-reset";
     // Runtime debug is off by default. Enable it from the settings Debug page, or with
     // log.tag.LockscreenLyrics=DEBUG. Release and debug APKs share the same default.
-    private static final boolean LYRIC_VERBOSE_DIAGNOSTICS_ENABLED = false;
+    static final boolean LYRIC_VERBOSE_DIAGNOSTICS_ENABLED = false;
     private static final boolean LYRIC_PARSE_TRACE_ENABLED = false;
     private static final int LYRIC_PARSE_TRACE_CHUNK_SIZE = 3000;
     // A cleanup change may replay the last SystemUI metadata only while it still describes the
@@ -208,9 +208,9 @@ public final class LockscreenLyricsModule extends XposedModule {
             LyricTimingTuningConstants.Aod.HANDOFF_REDRAW_DELAYS_MS;
     private static final long SYSTEMUI_LYRIC_ROW_REBIND_WINDOW_MS =
             LyricTimingTuningConstants.OfficialLyric.SYSTEMUI_LYRIC_ROW_REBIND_WINDOW_MS;
-    private static final long SYSTEMUI_TRACK_RESET_POSITION_GUARD_MS =
+    static final long SYSTEMUI_TRACK_RESET_POSITION_GUARD_MS =
             LyricTimingTuningConstants.OfficialLyric.SYSTEMUI_TRACK_RESET_POSITION_GUARD_MS;
-    private static final long SYSTEMUI_TRACK_RESET_STALE_POSITION_MS =
+    static final long SYSTEMUI_TRACK_RESET_STALE_POSITION_MS =
             LyricTimingTuningConstants.OfficialLyric.SYSTEMUI_TRACK_RESET_STALE_POSITION_MS;
     // Text-only line updates do not need a 60 Hz invalidation loop. Word-timed progress and
     // active row visual transitions still retain the display-rate path below.
@@ -294,15 +294,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     private static final Map<String, Long> officialAdapterSuppressionLogTimes =
             new ConcurrentHashMap<>();
     private volatile long lastActiveRefreshLogAt;
-    private volatile long lastSeedlingPlaybackStateLogAt;
-    private volatile long lastComputedPositionMs = -1L;
-    private volatile long lastComputedPositionElapsedMs = -1L;
-    private volatile long lastSeedlingActiveLineTimeMs = -1L;
-    private volatile long lastSeedlingActiveLineObservedAtMs = -1L;
-    private volatile long lastLyricTrackPositionResetLogAt;
-    private volatile long lyricTrackPositionResetGuardUntilElapsedMs;
     private volatile long lastSystemUiTrackIdentityChangedAtElapsedMs;
-    private volatile long lastStalePlaybackPositionIgnoredLogAt;
     private volatile long lastTransientLyricInfoMissLogAt;
     private volatile boolean lastSystemUiPackageSupported;
     private volatile String currentLyricProviderPackage = "";
@@ -310,11 +302,6 @@ public final class LockscreenLyricsModule extends XposedModule {
     private volatile String currentLyricObservedTrackKey = "";
     private final SystemUiLyricPublicationGate systemUiLyricPublicationGate =
             new SystemUiLyricPublicationGate();
-    private volatile String playbackClockTrackKey = "";
-    private volatile boolean lastPlaybackIsPlaying = true;
-    private volatile float lastPlaybackSpeed = 1f;
-    private volatile int lastSystemUiPlaybackState = -1;
-    private volatile int lastLoggedSystemUiPlaybackState = -100;
     private volatile String lastSystemUiSongName = "";
     private volatile String lastSystemUiArtistName = "";
     private volatile String lastSystemUiAlbumName = "";
@@ -448,7 +435,6 @@ public final class LockscreenLyricsModule extends XposedModule {
     private volatile long adaptiveLineTimedLagObservedAtElapsedMs = -1L;
     private volatile int lyricRecyclerSettleOfficialIndex = -1;
     private volatile long lyricRecyclerSettleUntilElapsedMs;
-    private volatile long lyricTrackPositionResetGuardStartedAtElapsedMs = -1L;
     private volatile long lastOfficialLyricIndexObservedAtElapsedMs = -1L;
     private volatile long officialRowScaleAnimationSuppressUntilElapsedMs;
     private volatile boolean lyricsRecyclerHookInstallAttempted;
@@ -773,7 +759,7 @@ public final class LockscreenLyricsModule extends XposedModule {
 
                 @Override
                 public boolean isLastPlaybackPlaying() {
-                    return lastPlaybackIsPlaying;
+                    return playbackController.lastPlaybackIsPlaying;
                 }
 
                 @Override
@@ -3406,7 +3392,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         boolean nativeClockTrackChanged = LockscreenIntegrationPolicy
                 .shouldResetNativePlaybackClock(
                         isNativeV5Payload(payload),
-                        playbackClockTrackKey,
+                        playbackController.playbackClockTrackKey,
                         nextClockTrackKey);
         if (nativeClockTrackChanged || isLyricPayloadTrackChanged(previousPayload, payload)) {
             resetSystemUiPlaybackPositionForLyricTrackChange(payload);
@@ -3418,7 +3404,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
         currentLyricObservedTrackKey = buildTrackKey(observedTitle, observedArtist);
         if (isNativeV5Payload(payload) && !TextUtils.isEmpty(nextClockTrackKey)) {
-            playbackClockTrackKey = nextClockTrackKey;
+            playbackController.setPlaybackClockTrackKey(nextClockTrackKey);
         }
         String packageName = !TextUtils.isEmpty(observedPackage)
                 ? observedPackage
@@ -3568,43 +3554,27 @@ public final class LockscreenLyricsModule extends XposedModule {
         // session generation. Invalidate the previous payload binding here so returning
         // to the same cached song starts a fresh visual clock instead of inheriting the
         // intermediate track's elapsed offset.
-        playbackClockTrackKey = "";
-        clearSeedlingActiveLyricHint();
+        playbackController.clearPlaybackClockTrackKey();
+        playbackController.clearSeedlingActiveLyricHint();
         clearActiveRendererTargets();
         activeRendererWordLine = null;
         activeLyricLine = "";
         activeLyricLineTimeMs = -1L;
         long now = SystemClock.elapsedRealtime();
-        lastComputedPositionMs = 0L;
-        lastComputedPositionElapsedMs = lastPlaybackIsPlaying
-                ? now
-                : -1L;
+        playbackController.resetPlaybackPosition(now);
         lastLyricsRecyclerIndex = 0;
         resetAdaptiveLineTimedRecyclerFollow();
         lastPrimedLyricsRecyclerView = new WeakReference<>(null);
         lastPrimedLyricsRecyclerIndex = -1;
-        lyricTrackPositionResetGuardStartedAtElapsedMs = now;
+        playbackController.startTrackResetGuard(now);
         lastOfficialLyricIndexObservedAtElapsedMs = -1L;
-        lyricTrackPositionResetGuardUntilElapsedMs =
-                now + SYSTEMUI_TRACK_RESET_POSITION_GUARD_MS;
-        if (now - lastLyricTrackPositionResetLogAt >= 1_500L) {
-            lastLyricTrackPositionResetLogAt = now;
+        playbackController.armTrackResetGuard(now);
+        if (playbackController.claimTrackResetLog(now)) {
             info(BridgeDebugArea.MEDIA, BridgeEvents.SESSION_REDUCED,
                     "Reset SystemUI lyric playback position after " + reason
                             + ", track=" + SensitiveFieldRedactor.trackHash(
                             buildTrackKey(title, artist)));
         }
-    }
-
-    private void extendLyricTrackPositionResetGuard() {
-        long now = SystemClock.elapsedRealtime();
-        if (lyricTrackPositionResetGuardStartedAtElapsedMs < 0L
-                || now > lyricTrackPositionResetGuardUntilElapsedMs) {
-            lyricTrackPositionResetGuardStartedAtElapsedMs = now;
-        }
-        lyricTrackPositionResetGuardUntilElapsedMs = Math.max(
-                lyricTrackPositionResetGuardUntilElapsedMs,
-                now + SYSTEMUI_TRACK_RESET_POSITION_GUARD_MS);
     }
 
     private static String findPlayerPackageInArgs(List<Object> args) {
@@ -3904,19 +3874,15 @@ public final class LockscreenLyricsModule extends XposedModule {
             long lastPositionUpdateTime) {
         long previousPosition = estimatePlaybackPositionMillis();
         long now = SystemClock.elapsedRealtime();
-        if (shouldIgnoreStalePlaybackPositionAfterTrackReset(
+        if (playbackController.shouldIgnoreStalePlaybackPositionAfterTrackReset(
                 state,
                 previousPosition,
                 storedPosition,
                 computedPosition,
                 lastPositionUpdateTime,
                 now)) {
-            lastPlaybackIsPlaying = isPlaybackStateInMotion(state) && isFiniteNonZero(speed);
-            lastPlaybackSpeed = isFiniteNonZero(speed) ? speed : 0f;
-            lastComputedPositionMs = 0L;
-            lastComputedPositionElapsedMs = now;
-            lastSystemUiPlaybackState = state;
-            maybeLogIgnoredStalePlaybackPositionAfterTrackReset(
+            playbackController.commitStalePlaybackState(state, speed, now);
+            playbackController.maybeLogIgnoredStalePlaybackPositionAfterTrackReset(
                     storedPosition,
                     computedPosition,
                     previousPosition);
@@ -3928,14 +3894,14 @@ public final class LockscreenLyricsModule extends XposedModule {
                 previousPosition,
                 computedPosition);
         if (likelyTrackRestart) {
-            clearSeedlingActiveLyricHint();
+            playbackController.clearSeedlingActiveLyricHint();
             clearActiveRendererTargets();
             activeRendererWordLine = null;
             beginOfficialLyricTrackHandoff("playback position reset");
         }
         long rawComputedPosition = computedPosition;
         computedPosition = LockscreenIntegrationPolicy.smoothPlayingPosition(
-                lastSystemUiPlaybackState,
+                playbackController.lastSystemUiPlaybackState,
                 state,
                 previousPosition,
                 computedPosition,
@@ -3948,22 +3914,8 @@ public final class LockscreenLyricsModule extends XposedModule {
                             + ", acceptedPosition=" + computedPosition);
         }
         long nextPosition = storedPosition >= 0 ? storedPosition : computedPosition;
-        if (isPlaybackStateInMotion(state) && isFiniteNonZero(speed) && computedPosition >= 0) {
-            lastPlaybackIsPlaying = true;
-            lastPlaybackSpeed = speed;
-            lastComputedPositionMs = computedPosition;
-            lastComputedPositionElapsedMs = SystemClock.elapsedRealtime();
-        } else if (state >= 0) {
-            lastPlaybackIsPlaying = false;
-            lastPlaybackSpeed = speed;
-            lastComputedPositionMs = nextPosition;
-            lastComputedPositionElapsedMs = -1L;
-        } else if (computedPosition >= 0) {
-            lastComputedPositionMs = computedPosition;
-            lastComputedPositionElapsedMs = SystemClock.elapsedRealtime();
-        }
-        lastSystemUiPlaybackState = state;
-        maybeLogSeedlingPlaybackState(state, nextPosition, computedPosition, speed);
+        playbackController.commitPlaybackState(state, speed, computedPosition, nextPosition);
+        playbackController.maybeLogSeedlingPlaybackState(state, nextPosition, computedPosition, speed);
         long activePosition = resolvePlaybackStateActivePosition(
                 state,
                 nextPosition,
@@ -4005,33 +3957,11 @@ public final class LockscreenLyricsModule extends XposedModule {
                 LYRIC_PLAYBACK_POSITION_JUMP_MS);
     }
 
-    private boolean shouldIgnoreStalePlaybackPositionAfterTrackReset(
-            int state,
-            long previousPosition,
-            long storedPosition,
-            long computedPosition,
-            long lastPositionUpdateTime,
-            long now) {
-        if (!isPlaybackStateInMotion(state)
-                || now > lyricTrackPositionResetGuardUntilElapsedMs
-                || previousPosition < 0
-                || previousPosition > 1_000L) {
-            return false;
-        }
-        if (LockscreenIntegrationPolicy.isFreshPlaybackPositionAfterTrackReset(
-                lastPositionUpdateTime,
-                lyricTrackPositionResetGuardStartedAtElapsedMs)) {
-            return false;
-        }
-        long candidatePosition = Math.max(storedPosition, computedPosition);
-        return candidatePosition >= SYSTEMUI_TRACK_RESET_STALE_POSITION_MS;
-    }
-
-    private static boolean isPlaybackStateInMotion(int state) {
+    static boolean isPlaybackStateInMotion(int state) {
         return state == 3 || state == 4 || state == 5;
     }
 
-    private static boolean isFiniteNonZero(float speed) {
+    static boolean isFiniteNonZero(float speed) {
         return speed != 0f && !Float.isNaN(speed) && !Float.isInfinite(speed);
     }
 
@@ -4062,13 +3992,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (line == null) {
             return;
         }
-        lastSeedlingActiveLineTimeMs = line.timeMillis;
-        lastSeedlingActiveLineObservedAtMs = SystemClock.elapsedRealtime();
-    }
-
-    private void clearSeedlingActiveLyricHint() {
-        lastSeedlingActiveLineTimeMs = -1L;
-        lastSeedlingActiveLineObservedAtMs = -1L;
+        playbackController.noteSeedlingActiveLine(line.timeMillis, SystemClock.elapsedRealtime());
     }
 
     private void observeLyricsPlaybackPositionJump(
@@ -4095,7 +4019,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
         activeLyricLine = line.normalizedText;
         activeLyricLineTimeMs = line.timeMillis;
-        clearSeedlingActiveLyricHint();
+        playbackController.clearSeedlingActiveLyricHint();
         clearActiveRendererTargets();
         activeRendererWordLine = null;
         int targetAdapterIndex = model.adapterIndexOfLine(line);
@@ -4712,8 +4636,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 activeLyricLineTimeMs = line.timeMillis;
                 long now = SystemClock.elapsedRealtime();
                 lastOfficialLyricIndexObservedAtElapsedMs = now;
-                lastSeedlingActiveLineTimeMs = line.timeMillis;
-                lastSeedlingActiveLineObservedAtMs = now;
+                playbackController.noteSeedlingActiveLine(line.timeMillis, now);
                 TextView candidate = firstActiveLyricTextView();
                 if (candidate != null) {
                     scheduleActiveLyricRefresh(candidate, 33L);
@@ -6584,9 +6507,9 @@ public final class LockscreenLyricsModule extends XposedModule {
      * anchor and the module owns the rendered model; otherwise vendor timing is untouched.
      */
     private boolean isModuleLyricClockUsable() {
-        return lastPlaybackIsPlaying
-                && lastComputedPositionMs >= 0L
-                && lastComputedPositionElapsedMs >= 0L
+        return playbackController.lastPlaybackIsPlaying
+                && playbackController.lastComputedPositionMs >= 0L
+                && playbackController.lastComputedPositionElapsedMs >= 0L
                 && currentWordLyricModel != null
                 && !hasSentenceWindow();
     }
@@ -6606,7 +6529,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         long vendorPosition = ((Number) positionArg).longValue();
         long held = timedLyricGuardRecycler.get() == recyclerView && timedLyricGuardModel.get() == model
                 ? NativeLyricClockPolicy.heldPosition(
-                timedLyricGuardPosition, timedLyricGuardElapsedMs, now, lastPlaybackSpeed)
+                timedLyricGuardPosition, timedLyricGuardElapsedMs, now, playbackController.lastPlaybackSpeed)
                 : -1L;
         long guarded = NativeLyricClockPolicy.timedLyricPosition(
                 vendorPosition,
@@ -7606,7 +7529,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             activeRendererWordLine = line;
             scheduleActiveLyricRefresh(
                     textView,
-                    lastPlaybackIsPlaying ? ACTIVE_LYRIC_FRAME_DELAY_MS : 500L);
+                    playbackController.lastPlaybackIsPlaying ? ACTIVE_LYRIC_FRAME_DELAY_MS : 500L);
         }
         int lineIndex = model.indexOfLine(line);
         WordLine focusAnchor = resolveFocusAnchorLine(model, activeLine, position);
@@ -8009,12 +7932,12 @@ public final class LockscreenLyricsModule extends XposedModule {
 
     private WordLine recentSeedlingActiveLine(WordLyricModel model) {
         if (model == null
-                || lastSeedlingActiveLineTimeMs < 0L
-                || lastSeedlingActiveLineObservedAtMs < 0L
-                || SystemClock.elapsedRealtime() - lastSeedlingActiveLineObservedAtMs > 6_000L) {
+                || playbackController.lastSeedlingActiveLineTimeMs < 0L
+                || playbackController.lastSeedlingActiveLineObservedAtMs < 0L
+                || SystemClock.elapsedRealtime() - playbackController.lastSeedlingActiveLineObservedAtMs > 6_000L) {
             return null;
         }
-        return model.findLineAtTime(lastSeedlingActiveLineTimeMs);
+        return model.findLineAtTime(playbackController.lastSeedlingActiveLineTimeMs);
     }
 
     private WordLine resolvePlaybackActiveLyricLine(WordLyricModel model, long position) {
@@ -8065,7 +7988,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 model.indexOfLine(officialLine),
                 model.indexOfLine(playbackLine),
                 model.isBeforeFirstProgressStart(position),
-                SystemClock.elapsedRealtime() <= lyricTrackPositionResetGuardUntilElapsedMs)) {
+                SystemClock.elapsedRealtime() <= playbackController.lyricTrackPositionResetGuardUntilElapsedMs)) {
             return officialLine;
         }
         return playbackLine;
@@ -8135,7 +8058,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (screenTimeout.screenTimeoutPausedByScreenOff
                 || screenTimeout.screenTimeoutPausedByUserPresent
                 || !hasSupportedSystemUiPlayer()
-                || !lastPlaybackIsPlaying) {
+                || !playbackController.lastPlaybackIsPlaying) {
             return;
         }
         if (!surfaceMode.systemUiLyricModeKeepAwakeActive) {
@@ -9069,10 +8992,10 @@ public final class LockscreenLyricsModule extends XposedModule {
 
     private long resolveActiveLyricRefreshDelay(long delayMillis, WordLine currentLine) {
         long boundedDelayMillis = Math.max(16L, Math.min(delayMillis, 600L));
-        if (lastPlaybackIsPlaying && isAodLowFrameRateLyricMode()) {
+        if (playbackController.lastPlaybackIsPlaying && isAodLowFrameRateLyricMode()) {
             return Math.max(boundedDelayMillis, AOD_ACTIVE_LYRIC_REFRESH_DELAY_MS);
         }
-        if (lastPlaybackIsPlaying
+        if (playbackController.lastPlaybackIsPlaying
                 && boundedDelayMillis <= ACTIVE_LYRIC_FRAME_DELAY_MS
                 && !requiresDisplayRateActiveLyricRefresh(currentLine)) {
             return ACTIVE_LYRIC_STATIC_FRAME_DELAY_MS;
@@ -9084,7 +9007,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             long resolvedDelayMillis,
             WordLine currentLine) {
         return lyricUiConfig.maxRefreshRateHz > 0
-                && lastPlaybackIsPlaying
+                && playbackController.lastPlaybackIsPlaying
                 && !isAodLowFrameRateLyricMode()
                 && resolvedDelayMillis <= ACTIVE_LYRIC_FRAME_DELAY_MS
                 && requiresDisplayRateActiveLyricRefresh(currentLine);
@@ -9214,7 +9137,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             activeRendererWordLine = line;
             scheduleActiveLyricRefresh(
                     directTarget,
-                    lastPlaybackIsPlaying ? ACTIVE_LYRIC_FRAME_DELAY_MS : 500L,
+                    playbackController.lastPlaybackIsPlaying ? ACTIVE_LYRIC_FRAME_DELAY_MS : 500L,
                     line);
             return;
         }
@@ -9285,7 +9208,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             updated = invalidateRenderableVisibleLyricTextViews(candidates, model, position);
         }
         maybeLogActiveRefresh(position, line.text, candidates.size(), attached, visible, updated);
-        long nextDelay = !lastPlaybackIsPlaying
+        long nextDelay = !playbackController.lastPlaybackIsPlaying
                 ? 500L
                 : updated > 0
                 ? ACTIVE_LYRIC_FRAME_DELAY_MS
@@ -10465,7 +10388,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (replacingModel) {
             lyricModelReplacementInProgress = true;
             beginOfficialLyricTrackHandoff("publishing replacement lyric model");
-            extendLyricTrackPositionResetGuard();
+            playbackController.extendLyricTrackPositionResetGuard();
         }
         if (assembled.aliasesApplied > 0) {
             info(BridgeDebugArea.MEDIA, BridgeEvents.DETAIL,
@@ -10601,7 +10524,7 @@ public final class LockscreenLyricsModule extends XposedModule {
 
     private void resetCommittedLyricRendererState() {
         resetAdaptiveLineTimedRecyclerFollow();
-        clearSeedlingActiveLyricHint();
+        playbackController.clearSeedlingActiveLyricHint();
         clearActiveRendererTargets();
         activeRendererWordLine = null;
         activeLyricLine = "";
@@ -10962,15 +10885,15 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (snapshot != null && snapshot.snapshotPositionMillis >= 0L) {
             return snapshot.snapshotPositionMillis;
         }
-        long base = lastComputedPositionMs;
-        long elapsed = lastComputedPositionElapsedMs;
-        if (base >= 0 && (!lastPlaybackIsPlaying || elapsed < 0)) {
+        long base = playbackController.lastComputedPositionMs;
+        long elapsed = playbackController.lastComputedPositionElapsedMs;
+        if (base >= 0 && (!playbackController.lastPlaybackIsPlaying || elapsed < 0)) {
             return base;
         }
         if (base >= 0 && elapsed >= 0) {
             long delta = SystemClock.elapsedRealtime() - elapsed;
             if (delta >= 0) {
-                return Math.max(0L, base + (long) (lastPlaybackSpeed * delta));
+                return Math.max(0L, base + (long) (playbackController.lastPlaybackSpeed * delta));
             }
             return base;
         }
@@ -11193,7 +11116,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         lastTextViewDrawLogAt = now;
         WordLine wordLine = frame == null ? null : frame.line;
         info(BridgeDebugArea.PLAYER_SPECIAL, BridgeEvents.DETAIL, "Custom-drew official lyric TextView at position=" + (frame == null ? -1L : frame.position)
-                + ", playing=" + lastPlaybackIsPlaying
+                + ", playing=" + playbackController.lastPlaybackIsPlaying
                 + ", index=" + (frame == null ? -1 : frame.lineIndex)
                 + ", active=" + (frame != null && frame.active)
                 + ", focused=" + (frame != null && frame.focused)
@@ -11415,43 +11338,6 @@ public final class LockscreenLyricsModule extends XposedModule {
         info(BridgeDebugArea.AOD, BridgeEvents.SURFACE_STATE_CHANGED, "Force-aligned LyricsRecyclerView, reason=" + reason
                 + ", targetIndex=" + targetIndex
                 + ", recycler=" + describeViewForLog(recycler));
-    }
-
-    private void maybeLogSeedlingPlaybackState(int state, long storedPosition, long computedPosition, float speed) {
-        if (!isLyricVerboseDiagnosticsEnabled()) {
-            return;
-        }
-        long now = System.currentTimeMillis();
-        if (!LYRIC_VERBOSE_DIAGNOSTICS_ENABLED
-                && state == lastLoggedSystemUiPlaybackState
-                && now - lastSeedlingPlaybackStateLogAt < 5_000L) {
-            return;
-        }
-        lastLoggedSystemUiPlaybackState = state;
-        lastSeedlingPlaybackStateLogAt = now;
-        info(BridgeDebugArea.MEDIA, BridgeEvents.SESSION_REDUCED, "Seedling playback state=" + state
-                + ", playing=" + lastPlaybackIsPlaying
-                + ", storedPosition=" + storedPosition
-                + ", computedPosition=" + computedPosition
-                + ", speed=" + speed);
-    }
-
-    private void maybeLogIgnoredStalePlaybackPositionAfterTrackReset(
-            long storedPosition,
-            long computedPosition,
-            long previousPosition) {
-        if (!isLyricLayoutDiagnosticsEnabled()) {
-            return;
-        }
-        long now = System.currentTimeMillis();
-        if (!LYRIC_VERBOSE_DIAGNOSTICS_ENABLED && now - lastStalePlaybackPositionIgnoredLogAt < 1_500L) {
-            return;
-        }
-        lastStalePlaybackPositionIgnoredLogAt = now;
-        info(BridgeDebugArea.MEDIA, BridgeEvents.SESSION_REDUCED, "Ignored stale SystemUI playback position after track reset, previousPosition="
-                + previousPosition
-                + ", storedPosition=" + storedPosition
-                + ", computedPosition=" + computedPosition);
     }
 
     private void maybeLogActiveRefresh(
