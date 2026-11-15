@@ -2584,6 +2584,88 @@ E-2b 到 E-2d 都读写入口类的实例状态或调用 `hook()`，不能只靠
 - F-1、F-2 都是高风险区域，合并后单刀可能有 2,000–3,000 行变动。
 - 完成定义放宽后，入口类仍会比最初计划大得多，但每个状态都有明确 owner。
 
+### 15.8.20 F-1 实施记录：Recycler 与刷新（2026-11-15，已提交，未推送，设备已通过）
+
+**分支：** Bridge `feat/f1-recycler-refresh`（基于 `5f761c0`）。按第 15.8.19 节，一刀分三个子步骤分别提交，设备冒烟只在整刀结束时做一次。
+
+**为什么 Recycler 逻辑本身留在入口类：**
+- 按依赖闭包实测，Recycler 方法组约 83 个方法、1,840 行，对入口类的调用需要 23 个 Host 方法。
+- 去掉 Hook 回调与 installer 后仍需 22 个。真正能自洽成组的子集只有约 370 行。
+- 这些逻辑每一步都要调用渲染器、模型、handoff、刷新、模式，本质是跨 owner 编排。
+- 按第 15.8.19 节的完成定义，它们属于入口类的“编排”职责，所以 F-1 只把**状态**交给唯一写入者，把**无状态工具**移出。
+
+**F-1a `d372d94`：静态工具外移。**
+- 47 个 static 方法（约 700 行）及其 9 个反射缓存，原样移入 `LyricsRecyclerViews`。
+- 涵盖：Recycler 识别、adapter 与子项位置的反射、当前行读取、几何采样、缩放中心、槽高、可见性判断、View 视觉效果。
+- 调用方经静态导入，文字不变。
+- 方法体：47 个移动后一致，0 改动。
+- `RECYCLER` 区域的两个契约测试经 `BridgeSourceMap` 跟随，断言不变。
+
+**F-1b `883791f`：Recycler 位置与动画状态。**
+- `LyricsRecyclerState` 是以下 15 个字段的唯一写入者：
+  - 当前索引、primed 行；
+  - adaptive 跟随与滞后窗口；
+  - settle 窗口；
+  - 淡入 generation 与截止；
+  - 强制对齐 generation；
+  - 行缩放动画抑制；
+  - 切歌行重绑窗口；
+  - 上次官方索引观察时刻。
+- 4 个纯状态方法原样移入。入口类 7 个方法中的内联赋值，改为原位、同序的 11 个转换方法。
+- 方法体：
+  - 4 个移动后一致，7 个改动；
+  - 对 HEAD 只套用改写表后，与新方法体逐个相同。
+
+**F-1c `e96909d`：刷新调度状态。**
+- `ActiveLyricRefreshSchedule` 是以下 8 个字段的唯一写入者：
+  - 刷新 posted 标志、帧锚点；
+  - 显示节奏标志与行、节奏频率与下一帧截止；
+  - 模式重绑 generation 与 runnable。
+- 刷新 runnable、刷新过程本身留在入口类。
+- `consumeActiveLyricRefreshFrame` 把配置上限传给 `consumeFrame`，后者方法体 = 原方法体去掉读取配置的那一行。
+- 方法体：
+  - 1 个移动后一致，6 个改动；
+  - 其中 5 个只套用改写表后与 HEAD 相同，`consumeFrame` 已单独核对。
+
+**仍在入口类的 Recycler 状态（入口类是它们的唯一写入者，符合完成定义）：**
+- 各 Hook installer 的“已安装 / 已尝试”标志；
+- adapter 注册表、兼容 binding 缓存；
+- 被抑制的 alpha 表、timed lyric guard；
+- 若干日志节流。
+
+**证据（整刀）：**
+- 每个子步骤单独构建通过。
+- 三份基线不变。
+- 入口类预算：11,595 → 10,727 行，字段 265 → 235，方法 440 → 388。
+- `verify-build-identity` 通过（377 个输入）。
+- 本地 1056 tests / 0 fail / 6 skip，Debug 与 R8 通过。
+
+**候选：** `artifacts/f1-recycler-refresh-20261115/Bridge-F1-recycler-debug-r1.apk`（`6e7eb339…`）。
+
+**设备验证分工（第 15.8.19 节）：**
+- agent 经授权装包，并在用户重启 SystemUI 一次后只读 LSPosed 日志。
+- 用本次开机已有的 SystemUI 启动记录作基线，核对本模块各 `HOOK_INSTALLED` 计数一致、无新增 WARN / ERROR。
+- 用户只看画面，冒烟清单见下。
+
+**设备冒烟（只重启 SystemUI 一次；逐字歌词）：**
+1. 锁屏歌词出现，当前行逐字推进流畅，行距与对齐正常。
+2. 等几行自动换行：Recycler 平滑跟到当前行，不跳不抖。
+3. 切歌：新歌从第一行开始淡入，没有残留旧行，也不闪官方原始歌词。
+4. 拖动进度到中间：歌词立即跳到对应行并居中。
+5. 亮屏与 AOD 来回切两三次：每次都恢复到正确行，AOD 低帧率显示正常。
+6. 打开沉浸式歌词再返回：锁屏歌词正常。
+7. 在 App 里改一次“最高刷新率”或换一个预设：锁屏立即生效，推进仍流畅。
+
+**结果（2026-11-15）：**
+- **agent 自检（只读 LSPosed 日志）：** 用户重启 SystemUI 一次后，新进程（23:34:48）中本模块的三类 `HOOK_INSTALLED` 消息与基线（同次开机 22:55 的 E-5c 进程）逐字相同：
+  - plugin factory：`constructorHooks=0`；
+  - LyricsRecyclerView 运行时方法：`pivot=1, rowStyle=1, immersiveEntry=1, dataset=0, surfaceDraw=1`；
+  - adapter bind：`methods=2`。
+- 基线进程中 Recycler 那一行出现 2 次，原因是那次开机中途插件换过一代；新进程未换代，出现 1 次，不算差异。
+- 两边 WARN 都只有已知的 KuWo artwork 一条，ERROR 为 0。
+- 上一个进程的退出记录是重启按钮的 `SIGNALED 9`，LSPosed SafeMode 没有新增计数。
+- **用户设备冒烟：** 1–7 项通过。
+
 ### 15.9 未覆盖
 
 - **Providers 仓库**的结构与性能没有做同等盘点。若要纳入“完整优化”，需要另做一次基线（13 个专用模块的 Hooker、`provider-core`、Universal），本节不对其作任何结论。
