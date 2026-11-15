@@ -1550,7 +1550,7 @@ E-2b 到 E-2d 都读写入口类的实例状态或调用 `hook()`，不能只靠
 
 **设备结果：用户重启 SystemUI 后确认 1–6 项全部通过（2026-11-15）。**
 
-### 15.8.4 E-2b–d 调研结论与建议（2026-11-15，仅分析，未实现）
+### 15.8.4 E-2b–d 调研结论与建议（2026-11-15；E-2d1 已按此实施，见 15.8.5）
 
 基于 `76dc1a0` 的源码阅读与脚本统计。
 
@@ -1583,6 +1583,58 @@ E-2b 到 E-2d 都读写入口类的实例状态或调用 `hook()`，不能只靠
   - 黑名单播放器有卡片；
   - AOD 显示媒体；
   - 专用插件播放器显示歌词入口。
+
+### 15.8.5 E-2d1 实施记录：OPlus 放行 Hook 外移（2026-11-15，已提交，未推送）
+
+**分支：** Bridge `feat/e2d1-policy-hooks`，基于 `6d8fb99`。
+
+**先做的测试修正 `6d8fb99`（只改测试）：**
+- Hook 安装顺序基线原来按“类名.方法名”分组，与第 15.8.1 节“整方法搬到别的类不改变清单”的说法不符。
+- 现在改为只按方法名分组，回调接受任意接收者（`this::`、`owner::`、`Outer.this::`）。
+- 重新生成的清单只去掉了 `LockscreenLyricsModule.` 前缀，其余逐行相同。
+
+**新类 `OplusMediaPolicyHooks`（同包，包内可见）：**
+- 原样迁入 11 个方法：
+  - system_server：历史白名单安装与回调、媒体黑名单安装与回调、读取 manifest 选择加入；
+  - SystemUI：AOD 媒体面板白名单的安装、按方法 Hook 与回调；
+  - RUS 白名单、歌词入口、歌词支持门禁这三个回调。
+- 同时迁入它们独占的 9 个状态字段（安装标志、日志去重集合）和 7 个常量（服务类名、方法名、3 个 Hook ID、入口值 52）。
+- 通过 4 个方法的 `Host` 访问模块：`hook`、`info`、`infoAlways`、`error`。类内有同名的私有转发方法，所以迁入的方法体逐字不变。
+- 被入口类调用的 6 个方法去掉 `private`。
+- `synchronized (this)` 现在锁本对象而不是模块对象。这几段只保护各自的安装标志，不与入口类的其他同步块共享状态。
+
+**入口类的改动：**
+- `installOplusMediaPolicyBypassHooks` 留在入口类，因为它还安装翻译按钮的 pkg-actions Hook（属于 E-4）。它只把 3 个回调的接收者从 `this::` 改为 `oplusMediaPolicyHooks::`。
+- `onSystemServerStarting` 和 SystemUI 启动 Host 改为调用 `oplusMediaPolicyHooks.*`。
+- 新增一个持有 `OplusMediaPolicyHooks` 的字段，其 Host 是匿名类。
+- `isModuleManagedPlayerPackage`、`moduleManagedPlayerKind`、`readFieldValue` 去掉 `private`。
+
+**契约测试：**
+- `SystemUiLyricSupportGateContractTest` 的定位字符串去掉了 `private `，因为处理方法改为包内可见。断言本身未改。
+- 定位表中 OPLUS_POLICY 改为“新类 + 入口类”，SYSTEMUI_RUNTIME 加入新类。
+
+**证据：**
+- 方法体比对 `--base 6d8fb99 --strip oplusMediaPolicyHooks. --strip oplusMediaPolicyHooks:: --strip this::`：
+  - 11 个方法移动且一致，0 个改动；
+  - 新增 5 个方法：构造函数和 4 个一行转发；
+  - 不加 `--strip` 时只报出两处调用点。
+- 三份基线不变。
+- 入口类预算下调：13,882 → 13,605 行，字段 373 → 358，方法 565 → 554。
+- `verify-build-identity` 通过（364 个输入）。
+- 本地 1056 tests / 0 fail / 6 skip，Debug 与 R8 通过。
+
+**候选：** `artifacts/e2-cleanup-20261115/Bridge-E2d1-policy-debug-r1.apk`（`b04ae0b5…`）。
+
+**设备冒烟：**
+- 历史白名单和黑名单的 Hook 运行在 system_server 中，`onSystemServerStarting` 只在开机时执行，**所以必须重启手机**，单独重启 SystemUI 不够。
+- 重启后检查：
+  1. Salt 等历史白名单播放器有锁屏卡片，且暂停后仍留在历史中。
+  2. 被系统列入黑名单的播放器有卡片。
+  3. AOD 熄屏时显示媒体面板。
+  4. 专用插件播放器（如酷狗概念版）有歌词入口，并显示歌词。
+  5. 状态页正常。
+
+**设备结果：用户重启手机后确认 1–5 项全部通过（2026-11-15）。**
 
 ### 15.9 未覆盖
 

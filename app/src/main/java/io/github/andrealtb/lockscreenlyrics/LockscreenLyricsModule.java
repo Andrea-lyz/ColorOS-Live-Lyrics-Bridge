@@ -125,11 +125,6 @@ public final class LockscreenLyricsModule extends XposedModule {
     private static volatile LyricUiConfig runtimeLyricUiConfig = LyricUiConfig.defaults();
     private static final String MODULE_PACKAGE = "io.github.andrealtb.lockscreenlyrics";
     private static final String SYSTEMUI_PACKAGE = "com.android.systemui";
-    private static final String OPLUS_MEDIA_CONTROL_SERVICE_CLASS =
-            "com.android.server.media.OplusMediaControlService";
-    private static final String OPLUS_HISTORY_WHITELIST_METHOD =
-            "isInHistoryPlayInfoWhiteList";
-    private static final String OPLUS_MEDIA_BLACKLIST_METHOD = "isInMediaBlackList";
     private static final String OPLUS_PLUGIN_CLASS_LOADER_CLASS =
             "com.android.systemui.shared.plugins.OPlusPluginClassLoader";
     // ColorOS 17 SystemUI has no OPlusPluginClassLoader constructor: the factory builds the loader
@@ -183,12 +178,6 @@ public final class LockscreenLyricsModule extends XposedModule {
     private static final String HOOK_ID_UPDATE_PKG_ACTIONS_RULE = "oplus-media-update-pkg-actions-rule";
     private static final String HOOK_ID_TRANSLATION_TOGGLE_ACTION =
             "oplus-media-translation-toggle-action";
-    private static final String HOOK_ID_OPLUS_HISTORY_WHITELIST =
-            "oplus-media-history-whitelist-salt";
-    private static final String HOOK_ID_OPLUS_MEDIA_BLACKLIST =
-            "oplus-media-blacklist-bypass";
-    private static final String HOOK_ID_AOD_MEDIA_SUPPORT =
-            "oplus-aod-media-support";
     private static final String TRANSLATION_TOGGLE_ACTION =
             LyricInfoContract.ACTION_TOGGLE_TRANSLATION;
     private static final String TRANSLATION_PREFERENCES_NAME = LyricUiSettings.PREFERENCES_NAME;
@@ -200,7 +189,6 @@ public final class LockscreenLyricsModule extends XposedModule {
     private static final int TRANSLATION_ICON_FINGERPRINT_SIZE = 48;
     /** Action icons stay far below this; artwork/wallpaper bitmaps would need a full main-thread copy to reject. */
     private static final int TRANSLATION_ICON_MAX_BITMAP_PX = 512;
-    private static final int OPLUS_LYRIC_ENTRANCE_ALL = 52;
     private static final long SCREEN_TIMEOUT_USER_ACTIVITY_INTERVAL_MS =
             LyricTimingTuningConstants.ScreenTimeout.USER_ACTIVITY_INTERVAL_MS;
     private static final long SCREEN_TIMEOUT_WAKE_LOCK_LEASE_MS =
@@ -356,8 +344,6 @@ public final class LockscreenLyricsModule extends XposedModule {
     private volatile SystemUiLyricLoadContext latestSystemUiLyricLoadContext;
     private volatile Method systemUiMetadataRefreshMethod;
     private volatile boolean systemUiMetadataRefreshMethodUnavailableLogged;
-    private volatile boolean oplusLyricEntranceOverrideLogged;
-    private volatile boolean oplusLyricSupportGateLiftLogged;
     private final KuWoSystemUiRuntime kuWoRuntime = new KuWoSystemUiRuntime();
     private volatile boolean oplusPluginMediaModelHookInstalled;
     private volatile OplusPluginDexKitAdapter.Targets oplusPluginKuWoTargets;
@@ -372,18 +358,29 @@ public final class LockscreenLyricsModule extends XposedModule {
     private WeakReference<WordLyricModel> timedLyricGuardModel = new WeakReference<>(null);
     private long timedLyricGuardPosition = -1L;
     private long timedLyricGuardElapsedMs = -1L;
+    private final OplusMediaPolicyHooks oplusMediaPolicyHooks = new OplusMediaPolicyHooks(
+            new OplusMediaPolicyHooks.Host() {
+                @Override
+                public XposedInterface.HookBuilder hook(java.lang.reflect.Executable origin) {
+                    return LockscreenLyricsModule.this.hook(origin);
+                }
+
+                @Override
+                public void info(BridgeDebugArea area, String event, String message) {
+                    LockscreenLyricsModule.this.info(area, event, message);
+                }
+
+                @Override
+                public void infoAlways(BridgeDebugArea area, String event, String message) {
+                    LockscreenLyricsModule.this.infoAlways(area, event, message);
+                }
+
+                @Override
+                public void error(String message, Throwable throwable) {
+                    LockscreenLyricsModule.this.error(message, throwable);
+                }
+            });
     private volatile boolean oplusMediaPolicyHooksInstalled;
-    private volatile boolean oplusHistoryWhitelistHookInstalled;
-    private volatile boolean oplusMediaBlacklistHookInstalled;
-    private volatile boolean aodMediaSupportHookInstalled;
-    private final Set<String> loggedOplusHistoryIntegrationPackages =
-            ConcurrentHashMap.newKeySet();
-    private final Set<String> loggedOplusHistoryManifestFailures =
-            ConcurrentHashMap.newKeySet();
-    private final Set<String> loggedOplusBlacklistBypassPackages =
-            ConcurrentHashMap.newKeySet();
-    private final Set<String> loggedAodMediaSupportPackages =
-            ConcurrentHashMap.newKeySet();
     private volatile boolean translationToggleActionHookInstalled;
     private volatile boolean injectedTranslationToggleActionHookInstalled;
     private volatile boolean injectedTranslationToggleActionLogged;
@@ -887,7 +884,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                     new SystemUiRuntimeBootstrap.Host() {
                         @Override
                         public void installAodMediaSupportHooks(ClassLoader classLoader) {
-                            LockscreenLyricsModule.this.installAodMediaSupportHooks(classLoader);
+                            oplusMediaPolicyHooks.installAodMediaSupportHooks(classLoader);
                         }
 
                         @Override
@@ -1033,8 +1030,8 @@ public final class LockscreenLyricsModule extends XposedModule {
 
     @Override
     public void onSystemServerStarting(SystemServerStartingParam param) {
-        installOplusHistoryWhitelistHook(param.getClassLoader());
-        installOplusMediaBlacklistBypassHook(param.getClassLoader());
+        oplusMediaPolicyHooks.installOplusHistoryWhitelistHook(param.getClassLoader());
+        oplusMediaPolicyHooks.installOplusMediaBlacklistBypassHook(param.getClassLoader());
     }
 
     @Override
@@ -1096,234 +1093,15 @@ public final class LockscreenLyricsModule extends XposedModule {
         return LockscreenIntegrationPolicy.isSupportedSystemUiProcess(processName);
     }
 
-    private static boolean isModuleManagedPlayerPackage(String packageName) {
+    static boolean isModuleManagedPlayerPackage(String packageName) {
         if (TextUtils.isEmpty(packageName)) {
             return false;
         }
         return PlayerSystemUiPolicy.isHistoryPackage(packageName);
     }
 
-    private static String moduleManagedPlayerKind(String packageName) {
+    static String moduleManagedPlayerKind(String packageName) {
         return isModuleManagedPlayerPackage(packageName) ? "player" : "manifest";
-    }
-
-    @SuppressLint("PrivateApi") // LSPosed hook resolves the vendor SystemUI service by name.
-    private void installOplusHistoryWhitelistHook(ClassLoader classLoader) {
-        if (oplusHistoryWhitelistHookInstalled) {
-            return;
-        }
-        synchronized (this) {
-            if (oplusHistoryWhitelistHookInstalled) {
-                return;
-            }
-            try {
-                Class<?> serviceClass = classLoader.loadClass(
-                        OPLUS_MEDIA_CONTROL_SERVICE_CLASS);
-                Method whitelistMethod = serviceClass.getDeclaredMethod(
-                        OPLUS_HISTORY_WHITELIST_METHOD,
-                        String.class);
-                whitelistMethod.setAccessible(true);
-                hook(whitelistMethod)
-                        .setId(HOOK_ID_OPLUS_HISTORY_WHITELIST)
-                        .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
-                        .intercept(this::onOplusHistoryWhitelistLookup);
-                oplusHistoryWhitelistHookInstalled = true;
-                infoAlways(BridgeDebugArea.BOOTSTRAP, BridgeEvents.HOOK_INSTALLED, "Hooked OPlus media history integration");
-            } catch (ClassNotFoundException | NoSuchMethodException e) {
-                info(BridgeDebugArea.BOOTSTRAP, BridgeEvents.DETAIL, "OPlus media history whitelist hook is unavailable on this system");
-            } catch (Throwable t) {
-                error("Failed to hook OPlus media history whitelist", t);
-            }
-        }
-    }
-
-    private Object onOplusHistoryWhitelistLookup(
-            XposedInterface.Chain chain) throws Throwable {
-        Object originalResult = chain.proceed();
-        boolean alreadyWhitelisted = Boolean.TRUE.equals(originalResult);
-        if (alreadyWhitelisted) {
-            return originalResult;
-        }
-        Object packageNameArg = chain.getArg(0);
-        if (!(packageNameArg instanceof String)
-                || TextUtils.isEmpty((String) packageNameArg)) {
-            return originalResult;
-        }
-
-        String packageName = (String) packageNameArg;
-        boolean moduleManagedPackage = isModuleManagedPlayerPackage(packageName);
-        boolean manifestOptIn = !moduleManagedPackage
-                && isOplusHistoryIntegrationDeclared(
-                        chain.getThisObject(),
-                        packageName);
-        if (!LockscreenIntegrationPolicy.shouldEnableOplusHistoryIntegration(
-                false,
-                moduleManagedPackage,
-                manifestOptIn)) {
-            return originalResult;
-        }
-        if (loggedOplusHistoryIntegrationPackages.add(packageName)) {
-            info(BridgeDebugArea.MEDIA, BridgeEvents.DETAIL, "Accepted " + packageName + " into OPlus media history"
-                    + (moduleManagedPackage
-                    ? " via " + moduleManagedPlayerKind(packageName) + " integration"
-                    : " via manifest opt-in"));
-        }
-        return true;
-    }
-
-    @SuppressLint("PrivateApi") // LSPosed hook resolves the OPlus media control service by name.
-    private void installOplusMediaBlacklistBypassHook(ClassLoader classLoader) {
-        if (oplusMediaBlacklistHookInstalled) {
-            return;
-        }
-        synchronized (this) {
-            if (oplusMediaBlacklistHookInstalled) {
-                return;
-            }
-            try {
-                Class<?> serviceClass = classLoader.loadClass(
-                        OPLUS_MEDIA_CONTROL_SERVICE_CLASS);
-                Method blacklistMethod = serviceClass.getDeclaredMethod(
-                        OPLUS_MEDIA_BLACKLIST_METHOD,
-                        String.class);
-                blacklistMethod.setAccessible(true);
-                hook(blacklistMethod)
-                        .setId(HOOK_ID_OPLUS_MEDIA_BLACKLIST)
-                        .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
-                        .intercept(this::onOplusMediaBlackListLookup);
-                oplusMediaBlacklistHookInstalled = true;
-                infoAlways(BridgeDebugArea.BOOTSTRAP, BridgeEvents.HOOK_INSTALLED, "Hooked OPlus media blacklist bypass");
-            } catch (ClassNotFoundException | NoSuchMethodException e) {
-                info(BridgeDebugArea.BOOTSTRAP, BridgeEvents.DETAIL, "OPlus media blacklist bypass hook is unavailable on this system");
-            } catch (Throwable t) {
-                error("Failed to hook OPlus media blacklist bypass", t);
-            }
-        }
-    }
-
-    private Object onOplusMediaBlackListLookup(
-            XposedInterface.Chain chain) throws Throwable {
-        Object originalResult = chain.proceed();
-        boolean blacklisted = Boolean.TRUE.equals(originalResult);
-        if (!blacklisted) {
-            return originalResult;
-        }
-        Object packageNameArg = chain.getArg(0);
-        if (!(packageNameArg instanceof String)
-                || TextUtils.isEmpty((String) packageNameArg)) {
-            return originalResult;
-        }
-
-        String packageName = (String) packageNameArg;
-        boolean moduleManagedPackage = isModuleManagedPlayerPackage(packageName);
-        boolean manifestOptIn = !moduleManagedPackage
-                && isOplusHistoryIntegrationDeclared(
-                        chain.getThisObject(),
-                        packageName);
-        if (!LockscreenIntegrationPolicy.shouldEnableOplusHistoryIntegration(
-                false,
-                moduleManagedPackage,
-                manifestOptIn)) {
-            return originalResult;
-        }
-        if (loggedOplusBlacklistBypassPackages.add(packageName)) {
-            info(BridgeDebugArea.MEDIA, BridgeEvents.DETAIL, "Bypassed OPlus media blacklist for " + packageName
-                    + (moduleManagedPackage
-                    ? " via " + moduleManagedPlayerKind(packageName) + " integration"
-                    : " via manifest opt-in"));
-        }
-        return false;
-    }
-
-    private boolean isOplusHistoryIntegrationDeclared(
-            Object service,
-            String packageName) {
-        Object contextValue = readFieldValue(service, "mContext");
-        if (!(contextValue instanceof Context)) {
-            return false;
-        }
-
-        Context context = (Context) contextValue;
-        long identity = Binder.clearCallingIdentity();
-        try {
-            ApplicationInfo applicationInfo = context.getPackageManager()
-                    .getApplicationInfo(packageName, PackageManager.GET_META_DATA);
-            Bundle metadata = applicationInfo.metaData;
-            return metadata != null
-                    && metadata.getBoolean(
-                            LyricInfoContract.MANIFEST_METADATA_OPLUS_MEDIA_HISTORY,
-                            false);
-        } catch (PackageManager.NameNotFoundException ignored) {
-            return false;
-        } catch (Throwable t) {
-            if (loggedOplusHistoryManifestFailures.add(packageName)) {
-                error("Failed to read OPlus media history opt-in for " + packageName, t);
-            }
-            return false;
-        } finally {
-            Binder.restoreCallingIdentity(identity);
-        }
-    }
-
-    private void installAodMediaSupportHooks(ClassLoader classLoader) {
-        if (aodMediaSupportHookInstalled) {
-            return;
-        }
-        synchronized (this) {
-            if (aodMediaSupportHookInstalled) {
-                return;
-            }
-            try {
-                Class<?> companionClass = classLoader.loadClass(
-                        "com.oplusos.systemui.aod.mediapanel.AodMediaDataListener$Companion");
-                int hooked = 0;
-                hooked += hookAodMediaSupportMethod(companionClass, "isAodMediaSupport");
-                hooked += hookAodMediaSupportMethod(
-                        companionClass,
-                        "isAodMediaSupportWithoutFeature");
-                if (hooked > 0) {
-                    aodMediaSupportHookInstalled = true;
-                    infoAlways(BridgeDebugArea.BOOTSTRAP, BridgeEvents.HOOK_INSTALLED, "Hooked OPlus AOD media support whitelist, methods=" + hooked);
-                }
-            } catch (ClassNotFoundException e) {
-                info(BridgeDebugArea.AOD, BridgeEvents.AOD_TRANSITION, "OPlus AOD media support whitelist hook is unavailable on this system");
-            } catch (Throwable t) {
-                error("Failed to hook OPlus AOD media support whitelist", t);
-            }
-        }
-    }
-
-    private int hookAodMediaSupportMethod(Class<?> companionClass, String methodName)
-            throws NoSuchMethodException {
-        Method method = companionClass.getDeclaredMethod(methodName, String.class);
-        method.setAccessible(true);
-        hook(method)
-                .setId(HOOK_ID_AOD_MEDIA_SUPPORT + "-" + methodName)
-                .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
-                .intercept(this::onAodMediaSupportLookup);
-        return 1;
-    }
-
-    private Object onAodMediaSupportLookup(XposedInterface.Chain chain) throws Throwable {
-        Object result = chain.proceed();
-        if (Boolean.TRUE.equals(result)) {
-            return result;
-        }
-        Object packageNameArg = chain.getArg(0);
-        if (!(packageNameArg instanceof String)
-                || TextUtils.isEmpty((String) packageNameArg)) {
-            return result;
-        }
-
-        String packageName = (String) packageNameArg;
-        if (!isModuleManagedPlayerPackage(packageName)) {
-            return result;
-        }
-        if (loggedAodMediaSupportPackages.add(packageName)) {
-            info(BridgeDebugArea.AOD, BridgeEvents.AOD_TRANSITION, "Accepted " + packageName + " into OPlus AOD media panel whitelist"
-                    + " via " + moduleManagedPlayerKind(packageName) + " integration");
-        }
-        return true;
     }
 
     private boolean isCurrentLyricProviderPackage(String packageName) {
@@ -1351,7 +1129,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                     hook(getRusWhiteList)
                             .setId(HOOK_ID_RUS_GET_WHITE_LIST)
                             .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
-                            .intercept(this::onOplusMediaRusGetWhiteList);
+                            .intercept(oplusMediaPolicyHooks::onOplusMediaRusGetWhiteList);
                 } else {
                     Method mediaRusConfigWhiteListGetter = targets.mediaRusConfigWhiteListGetter;
                     if (mediaRusConfigWhiteListGetter != null) {
@@ -1359,7 +1137,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                         hook(mediaRusConfigWhiteListGetter)
                                 .setId(HOOK_ID_RUS_GET_WHITE_LIST)
                                 .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
-                                .intercept(this::onOplusMediaRusGetWhiteList);
+                                .intercept(oplusMediaPolicyHooks::onOplusMediaRusGetWhiteList);
                     } else {
                         warn(
                                 LyricLogFormatter.Area.SYSTEM_UI,
@@ -1374,14 +1152,14 @@ public final class LockscreenLyricsModule extends XposedModule {
                 hook(getLyricEntrance)
                         .setId(HOOK_ID_GET_LYRIC_ENTRANCE)
                         .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
-                        .intercept(this::onOplusMediaGetLyricEntrance);
+                        .intercept(oplusMediaPolicyHooks::onOplusMediaGetLyricEntrance);
 
                 Method resolveLyricSupport = targets.resolveLyricSupport;
                 if (resolveLyricSupport != null) {
                     hook(resolveLyricSupport)
                             .setId(HOOK_ID_RESOLVE_LYRIC_SUPPORT)
                             .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
-                            .intercept(this::onOplusMediaResolveLyricSupport);
+                            .intercept(oplusMediaPolicyHooks::onOplusMediaResolveLyricSupport);
                 }
 
                 Method updatePkgActionsRule = targets.updatePkgActionsRule;
@@ -1400,61 +1178,6 @@ public final class LockscreenLyricsModule extends XposedModule {
                 error("Failed to hook OPlus media policy bypass", t);
             }
         }
-    }
-
-    private Object onOplusMediaRusGetWhiteList(XposedInterface.Chain chain) throws Throwable {
-        Object result = chain.proceed();
-        if (result instanceof OplusMediaWhitelistBypassList) {
-            return result;
-        }
-        if (result instanceof List) {
-            return new OplusMediaWhitelistBypassList((List<?>) result);
-        }
-        return result;
-    }
-
-    private Object onOplusMediaGetLyricEntrance(XposedInterface.Chain chain) throws Throwable {
-        Object packageNameArg = chain.getArg(0);
-        String packageName = packageNameArg instanceof String ? (String) packageNameArg : "";
-        Object result = chain.proceed();
-        int original = result instanceof Number ? ((Number) result).intValue() : 0;
-        int overrideResult = 0;
-        if (original != 0) {
-            return result;
-        }
-        if (isModuleManagedPlayerPackage(packageName)) {
-            overrideResult = OPLUS_LYRIC_ENTRANCE_ALL;
-            if (!oplusLyricEntranceOverrideLogged) {
-                oplusLyricEntranceOverrideLogged = true;
-                info(BridgeDebugArea.MEDIA, BridgeEvents.DETAIL, "OPlus lyric entrance normalized: package=" + packageName
-                        + ", " + original + "->" + overrideResult);
-            }
-        }
-        return overrideResult;
-    }
-
-    /**
-     * Lifts the RUS lyricEnable gate for module-managed players only. lyricEnable 1 demands the
-     * player's own {@code oplus.media.config=1} metadata (built in for com.kugou.android.lite and
-     * com.gaana); these players get their lyrics from a Provider instead of that handshake. A
-     * vendor {@code true} is never changed.
-     */
-    private Object onOplusMediaResolveLyricSupport(XposedInterface.Chain chain) throws Throwable {
-        Object result = chain.proceed();
-        if (!Boolean.FALSE.equals(result)) {
-            return result;
-        }
-        Object packageNameArg = chain.getArg(0);
-        String packageName = packageNameArg instanceof String ? (String) packageNameArg : "";
-        if (!isModuleManagedPlayerPackage(packageName)) {
-            return result;
-        }
-        if (!oplusLyricSupportGateLiftLogged) {
-            oplusLyricSupportGateLiftLogged = true;
-            info(BridgeDebugArea.MEDIA, BridgeEvents.DETAIL, "OPlus lyric support gate lifted: package="
-                    + packageName);
-        }
-        return Boolean.TRUE;
     }
 
     private Object onOplusMediaUpdatePkgActionsRule(XposedInterface.Chain chain) throws Throwable {
@@ -11241,7 +10964,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         return value instanceof Boolean ? ((Boolean) value).booleanValue() : defaultValue;
     }
 
-    private static Object readFieldValue(Object target, String fieldName) {
+    static Object readFieldValue(Object target, String fieldName) {
         if (target == null || TextUtils.isEmpty(fieldName)) {
             return null;
         }

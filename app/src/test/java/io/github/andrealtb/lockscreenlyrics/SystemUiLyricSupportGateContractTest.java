@@ -24,7 +24,9 @@ public final class SystemUiLyricSupportGateContractTest {
     @Test
     public void onlyModuleManagedPlayersGetTheGateLifted() throws Exception {
         String module = BridgeSourceMap.read(BridgeSourceMap.Area.OPLUS_POLICY);
-        int handler = module.indexOf("private Object onOplusMediaResolveLyricSupport(");
+        // E-2d1: the handler moved to OplusMediaPolicyHooks and lost `private` (the installer in the
+        // entry class references it); the located body and the assertions are unchanged.
+        int handler = module.indexOf("Object onOplusMediaResolveLyricSupport(");
         int next = module.indexOf("private Object onOplusMediaUpdatePkgActionsRule(", handler);
         assertTrue(handler > 0 && next > handler);
         String body = module.substring(handler, next);

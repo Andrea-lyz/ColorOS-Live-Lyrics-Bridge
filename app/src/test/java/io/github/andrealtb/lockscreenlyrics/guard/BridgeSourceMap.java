@@ -50,6 +50,11 @@ public final class BridgeSourceMap {
         FILES.put(Area.RENDERER, Arrays.asList(SOURCE_ROOT + "OfficialLyricTextRenderer.java", ENTRY_CLASS));
         FILES.put(Area.SYSTEMUI_RUNTIME, Arrays.asList(ENTRY_CLASS, SOURCE_ROOT + "OfficialLyricTextRenderer.java"));
         FILES.put(Area.CONFIG_CONSUMERS, Arrays.asList(ENTRY_CLASS, SOURCE_ROOT + "OfficialLyricTextRenderer.java"));
+        // E-2d1 (2026-11-15): allow-list hooks moved to OplusMediaPolicyHooks; the translation
+        // pkg-actions handler stays in the entry until E-4.
+        FILES.put(Area.OPLUS_POLICY, Arrays.asList(SOURCE_ROOT + "OplusMediaPolicyHooks.java", ENTRY_CLASS));
+        FILES.put(Area.SYSTEMUI_RUNTIME, Arrays.asList(ENTRY_CLASS, SOURCE_ROOT + "OfficialLyricTextRenderer.java",
+                SOURCE_ROOT + "OplusMediaPolicyHooks.java"));
     }
 
     private BridgeSourceMap() {
