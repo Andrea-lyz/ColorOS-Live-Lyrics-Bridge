@@ -2453,6 +2453,137 @@ E-2b 到 E-2d 都读写入口类的实例状态或调用 `hook()`，不能只靠
 
 **结果：** 用户安装候选 `d2c1f728…`、重启 SystemUI 后，设备冒烟 1–5 项通过（2026-11-15）。
 
+### 15.8.17 E-5c 实施记录：插件 generation 外移（2026-11-15，已提交，未推送）
+
+**分支：** Bridge `feat/e5c-plugin-generation`（基于 `871c8c1`）。这是修订刀序的第五刀。
+
+**移动了什么：** 新类 `PluginHookGenerationManager`（同包、final、包内可见，无 Host），是以下状态的唯一写入者：
+- generation 锁；
+- 已就绪的插件 ClassLoader；
+- 当前 generation 的 ClassLoader；
+- 本 generation 的 Hook handle 列表。
+
+另外原样移入 `rememberPluginHookHandle`，新增 `markReady`、`activate` 两个方法。
+
+**入口类的 2 处有意改写：**
+- `onPluginClassLoaderReady`：加锁判重并记录就绪 loader 的语句块，改为 `if (!pluginGeneration.markReady(pluginLoader)) return;`。
+- `activatePluginHookGeneration`：原锁块的处理改为 `pluginGeneration.activate(pluginLoader, () -> { …各 installer 标志复位… })`：
+  - 判重、复制并清空 handle、切换 loader，这部分移入 `activate`；
+  - 各 installer 的“已安装 / 已尝试”标志复位语句原样放进回调，在**同一把锁内、同一位置**执行；
+  - 返回 `null` 表示 loader 已是当前 generation，入口类照原样提前返回；
+  - 之后的兼容缓存清理与旧 handle 的 unhook 仍在入口类，顺序不变。
+
+**说明：**
+- generation 锁对象随字段移入新类。入口类在 adapter bind Hook 缓存（`tryInstallLyricAdapterBindHook`）处仍锁同一个对象（经前缀访问），锁的身份与范围都不变。
+- 那些复位标志仍属各自的 installer（Recycler、位置控制器、短窗诊断、KuWo 插件），随 E-6c 与 KuWo 插件兼容那一步迁走。
+- **KuWo 插件兼容这次没有迁：**`tryInstallKuWoPluginMediaModelHook` 还会写位置控制器的解析结果 `resolvedLyricPositionController`，要和位置控制器的 owner 一起定，列为下一步。
+- `PluginClassLoaderFactoryHookContractTest` 断言的去重检查移到了新类。按 E-0 的设计，只把 `BridgeSourceMap` 的 `PLUGIN_COMPAT` 改为“入口类 + 新类”，断言一字未改。
+
+**证据：**
+- 方法体比对（`--strip pluginGeneration. --strip this::`）：
+  - 1 个移动后一致；
+  - 2 个改动，正好是上述 2 处；
+  - 0 个删除；
+  - 新增 2 个。
+- 三份基线不变。
+- 入口类预算下调：11,629 → 11,595 行，字段 268 → 265，方法 441 → 440。
+- `verify-build-identity` 通过（374 个输入）。
+- 本地 1056 tests / 0 fail / 6 skip，Debug 与 R8 通过。
+
+**候选：** `artifacts/e5c-plugin-generation-20261115/Bridge-E5c-plugin-debug-r1.apk`（`e332b7a4…`）。
+
+**设备冒烟（重启 SystemUI 即为插件重载场景）：**
+1. 重启 SystemUI 后，锁屏歌词正常出现并逐字推进（插件 Hook 在新 generation 上安装）。
+2. 再重启一次 SystemUI：歌词依旧正常，没有重复动画或双重绘制（旧 generation 的 Hook 已卸载）。
+3. 酷我音乐播放：锁屏卡片封面与歌词入口正常（KuWo 插件 Hook 随新 generation 重装）。
+4. 进度对齐正常，拖动后歌词跳到对应行（位置控制器 Hook 重装）。
+
+**结果：**
+- 第一次冒烟时，第 2 项（连续第二次重启 SystemUI）触发了 LSPosed 安全模式。
+- 只读核对 LSPosed 日志，原因是 `LSPosedService-SafeMode` 的累计计数：
+  - 本次开机内此前已计 3 次（11-14 14:46、11-14 17:19、11-15 07:06）；
+  - 22:47:41 那次重启距上次 SystemUI 启动仅 28 s，是第 4 次，达到阈值。
+- 两次重启之间的那个 SystemUI 加载本模块正常（插件 factory、Recycler、adapter bind 的 Hook 都已安装，无报错）。Android 的退出记录两次都是重启按钮的 `SIGNALED 9`，不是崩溃。
+- 用户重启手机后补测，1–4 项通过（2026-11-15）。
+- 教训：冒烟清单里的连续重启，两次之间要间隔 ≥ 1 分钟；一次开机内尽量少在短时间内连续重启 SystemUI。
+
+### 15.8.18 E 系列整体进度（2026-11-15，E-5c 之后）
+
+**入口类 `LockscreenLyricsModule.java`：**
+
+| | E-0 基线 | 现在 | 完成定义（第 15.2 节） |
+| --- | ---: | ---: | ---: |
+| 行数 | 17,989 | 11,595（−35.5%） | ≤ 1,500 |
+| 顶层字段 | 373 | 265 | ≤ 30 |
+| 方法 | 565 | 440 | — |
+| 内嵌类型 | 13 | 1 | 0 个业务类 |
+
+**已完成并经设备冒烟：**
+- E-0、E-1、E-2a、E-2c、E-2d1、E-3、E-4a、E-4b、E-5a、E-5b、E-6a、E-6b、E-7a、E-7b；
+- 加上 E-5 至 E-7 边界设计；
+- E-5c 待冒烟。
+- 新增 12 个承担职责的类，共约 7,200 行；另有 E-2a 移出的 10 个小值类型。
+- Bridge 上全部提交都在本地，没有推送。
+
+**剩余（按第 15.8.12 节修订刀序，规模为本节脚本口径的估计）：**
+
+| 刀 | 内容 | 估计规模 | 风险 |
+| --- | --- | ---: | --- |
+| E-5c2 | KuWo 插件兼容（插件 media model Hook、封面修复、歌词支持位），与位置控制器解析结果的 owner 一并确定 | 约 350 行 | 中 |
+| E-6c | Recycler 控制器与其 Hook installer：Recycler 回调、索引与 follow、行样式、沉浸入口、adapter bind；之后再迁刷新调度（cadence、runnable、模式重绑），即 E-7b 的后一半 | 约 2,100 + 900 行，预计拆 3–4 步 | 高 |
+| E-5d | 模型真值 `LyricModelStore` + `LyricPublicationPipeline`（加载 Hook、清理重放、`canCommit` 复核） | 约 2,800 行，预计拆 3 步 | 高 |
+| E-7c | `RuntimeConfigSnapshot`：设置广播只发布快照 | 约 800 行 | 中 |
+| E-8 | 收尾：未归类的日志、反射工具随 owner 分散（约 2,500 行）；按 Hook 面 / App 面分包，守卫改为按包判定；性能项（P-8 DexKit 缓存等）；入口类收敛到完成定义 | 余量 | 中 |
+
+- 按当前每刀的粒度，预计还需要 **约 10–14 刀**，每刀都需要一次设备冒烟。
+- 离完成定义还要减约 10,100 行，已完成部分约占总量的 39%。
+- 剩下的都是耦合最重的部分（模型、Recycler、刷新调度），单刀的规模和风险都会比前面大。
+
+### 15.8.19 加速方案（2026-11-15，用户已采纳）
+
+**用户要求：**
+- 剩余 10–14 刀太多，反复设备测试负担重；
+- 入口类不必追求极简：作为核心类，结构清晰即可，多几行没关系。
+
+**1. 完成定义改为“结构清晰”，不再卡行数（替代第 15.2 节第 1 条）：**
+- 入口类的职责收敛为三件事：
+  - **组合根**：创建各 owner 并接线；
+  - **Hook 胶水**：安装 Hook，回调里读参数，然后交给 owner；
+  - **跨 owner 编排**：按原顺序调用各 owner。
+- 按这三类分区排列，每区有一行注释说明；不再要求 ≤ 1,500 行 / ≤ 30 字段。
+- 保留的硬性条件：
+  - 每个可变字段只有一个写入者（第 15.2 节第 3 条）；
+  - 入口类预算只降不升（E-0 守卫继续生效）；
+  - 12 个契约测试经 `BridgeSourceMap` 定位，断言不改。
+- 预计入口类收敛到约 5,500–7,000 行（估计）。具体以每刀后的预算文件为准。
+
+**2. 剩余工作合并为 3 刀，每刀一次设备冒烟（替代第 15.8.18 节的 10–14 刀）：**
+
+| 刀 | 合并内容 | 设备冒烟覆盖 |
+| --- | --- | --- |
+| **F-1 Recycler 与刷新** | E-6c（Recycler 控制器、其 Hook installer、行样式、沉浸入口、adapter bind）+ E-7b 后半（刷新调度：cadence、runnable、模式重绑） | 逐字推进、对齐与行高、亮屏 / AOD 往返、沉浸入口、刷新率档位 |
+| **F-2 模型与发布** | E-5d（`LyricModelStore` + `LyricPublicationPipeline`，`canCommit` 复核）+ E-5c2（KuWo 插件兼容，连同位置控制器解析结果的 owner） | 快速切歌、同曲 metadata 更新、暂停 / seek、清理配置重放、酷我 |
+| **F-3 配置与收尾** | E-7c（`RuntimeConfigSnapshot`）+ E-8 的必要部分：日志与反射工具随 owner 分散，入口类按上面三类分区排版 | 设置页全部开关、播放器翻译设置、调试页诊断 |
+
+- 推迟到发布后、或书面放弃的项目：
+  - 根包按 Hook 面 / App 面分包（D15）；
+  - P-3 去锁；
+  - 第 15.4 节的性能候选，P-8 DexKit 缓存单独评估。
+- 理由：这些不影响“结构清晰”，又各需一轮设备验证。
+
+**3. 怎样在少测的同时不降低把握：**
+- **一刀之内仍按子步骤分别提交。** 每个子步骤各有方法体比对，有结构改写时再加“只套用改写规则后逐方法相同”的核对（E-7b 的做法）。设备冒烟只在整刀结束时做一次。设备失败时，可以按子步骤的提交二分定位或回退。
+- **我先做 Hook 自检，你只看画面。**
+  - 每刀装包、重启后，经授权只读 LSPosed 日志，核对本模块在 SystemUI 中的 `HOOK_INSTALLED` 各项计数，以及无 WARN / ERROR 新增。
+  - 以本次开机首个 SystemUI 的计数为基线对比。
+  - 这样“Hook 是否装上”这类检查不再占用你的冒烟项。
+- **冒烟清单控制在 8 项以内**，只保留肉眼才能判断的项目；每刀只需要重启 SystemUI 一次，不要求连续重启。
+
+**4. 代价与风险：**
+- 每刀更大。设备失败时的定位成本更高，可用子步骤提交缓解。
+- F-1、F-2 都是高风险区域，合并后单刀可能有 2,000–3,000 行变动。
+- 完成定义放宽后，入口类仍会比最初计划大得多，但每个状态都有明确 owner。
+
 ### 15.9 未覆盖
 
 - **Providers 仓库**的结构与性能没有做同等盘点。若要纳入“完整优化”，需要另做一次基线（13 个专用模块的 Hooker、`provider-core`、Universal），本节不对其作任何结论。

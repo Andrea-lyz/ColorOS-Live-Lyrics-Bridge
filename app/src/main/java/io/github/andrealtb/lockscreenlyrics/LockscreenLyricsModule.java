@@ -439,12 +439,6 @@ public final class LockscreenLyricsModule extends XposedModule {
     private volatile long officialRowScaleAnimationSuppressUntilElapsedMs;
     private volatile boolean lyricsRecyclerHookInstallAttempted;
     private volatile boolean pluginClassLoaderConstructorHookInstalled;
-    private final Object pluginHookGenerationLock = new Object();
-    private WeakReference<ClassLoader> activePluginClassLoader = new WeakReference<>(null);
-    // Last plugin loader whose early hooks ran; the constructor and factory entries may both fire.
-    private WeakReference<ClassLoader> readyPluginClassLoader = new WeakReference<>(null);
-    private final ArrayList<XposedInterface.HookHandle> activePluginHookHandles =
-            new ArrayList<>();
     private volatile boolean lyricsRecyclerSetCurrentUnavailable;
     private volatile boolean recyclerAdapterNotifyHookInstalled;
     private volatile boolean recyclerAdapterNotifyGuardUnavailableLogged;
@@ -734,6 +728,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 }
             });
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final PluginHookGenerationManager pluginGeneration = new PluginHookGenerationManager();
     private final LyricSurfaceHandoffController handoff = new LyricSurfaceHandoffController(
             () -> currentWordLyricModel);
     private final LyricSurfaceModeController surfaceMode = new LyricSurfaceModeController(
@@ -4999,7 +4994,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     private boolean tryInstallLyricAdapterBindHook(Object adapter) {
         if (adapter == null) return false;
         Class<?> adapterClass = adapter.getClass();
-        synchronized (pluginHookGenerationLock) {
+        synchronized (pluginGeneration.pluginHookGenerationLock) {
             Boolean installed = lyricAdapterBindHookClasses.get(adapterClass);
             if (installed != null) return installed;
             Class<?> baseClass = findRecyclerAdapterBaseClass(adapter);
@@ -5017,7 +5012,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                             .setId(HOOK_ID_LYRICS_RECYCLER + "-adapter-bind-" + count)
                             .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                             .intercept(this::onLyricsAdapterBindViewHolder);
-                    rememberPluginHookHandle(adapterClass.getClassLoader(), handle);
+                    pluginGeneration.rememberPluginHookHandle(adapterClass.getClassLoader(), handle);
                     count++;
                 } catch (Throwable failure) {
                     error("Failed to observe lyric adapter binding", failure);
@@ -6191,11 +6186,8 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
         io.github.andrealtb.lockscreenlyrics.diagnostics.LoadedComponentFingerprints.global().observed("plugin", pluginLoader);
         dynamicArtworkRuntime.onPluginClassLoader(pluginLoader);
-        synchronized (pluginHookGenerationLock) {
-            if (readyPluginClassLoader.get() == pluginLoader) {
-                return;
-            }
-            readyPluginClassLoader = new WeakReference<>(pluginLoader);
+        if (!pluginGeneration.markReady(pluginLoader)) {
+            return;
         }
         activatePluginHookGeneration(pluginLoader);
         tryInstallLyricsRecyclerViewHook(pluginLoader);
@@ -6208,14 +6200,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (pluginLoader == null) {
             return;
         }
-        ArrayList<XposedInterface.HookHandle> staleHandles;
-        synchronized (pluginHookGenerationLock) {
-            if (activePluginClassLoader.get() == pluginLoader) {
-                return;
-            }
-            staleHandles = new ArrayList<>(activePluginHookHandles);
-            activePluginHookHandles.clear();
-            activePluginClassLoader = new WeakReference<>(pluginLoader);
+        ArrayList<XposedInterface.HookHandle> staleHandles = pluginGeneration.activate(pluginLoader, () -> {
             lyricsRecyclerHookInstallAttempted = false;
             lyricsRecyclerSetCurrentUnavailable = false;
             oplusPluginMediaModelHookInstalled = false;
@@ -6226,6 +6211,9 @@ public final class LockscreenLyricsModule extends XposedModule {
             lyricDatasetHookAvailable = false;
             lyricAdapterBindHookClasses.clear();
             lyricRenderTransactions.clearBindings();
+        });
+        if (staleHandles == null) {
+            return;
         }
         synchronized (officialLyricsRecyclerCompatibilityLock) {
             officialLyricsRecyclerBindings.clear();
@@ -6237,28 +6225,6 @@ public final class LockscreenLyricsModule extends XposedModule {
                 handle.unhook();
             } catch (Throwable ignored) {
                 // The old plugin generation may already have been detached by SystemUI.
-            }
-        }
-    }
-
-    private void rememberPluginHookHandle(
-            ClassLoader pluginLoader,
-            XposedInterface.HookHandle handle) {
-        if (pluginLoader == null || handle == null) {
-            return;
-        }
-        boolean current;
-        synchronized (pluginHookGenerationLock) {
-            current = activePluginClassLoader.get() == pluginLoader;
-            if (current) {
-                activePluginHookHandles.add(handle);
-            }
-        }
-        if (!current) {
-            try {
-                handle.unhook();
-            } catch (Throwable ignored) {
-                // A newer loader already owns the plugin hooks.
             }
         }
     }
@@ -6302,7 +6268,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                                 + constructor.getParameterTypes().length)
                         .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                         .intercept(this::onKuWoPluginMediaModelBuilt);
-                rememberPluginHookHandle(pluginLoader, handle);
+                pluginGeneration.rememberPluginHookHandle(pluginLoader, handle);
                 hooked++;
             }
             if (hooked > 0) {
@@ -6332,7 +6298,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                     .setId(HOOK_ID_LYRICS_RECYCLER + "-controller-position")
                     .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                     .intercept(this::onLyricControllerPositionUpdate);
-            rememberPluginHookHandle(pluginLoader, handle);
+            pluginGeneration.rememberPluginHookHandle(pluginLoader, handle);
             lyricPositionControllerHooked = true;
             infoAlways(BridgeDebugArea.BOOTSTRAP, BridgeEvents.HOOK_INSTALLED,
                     "Hooked lyric position controller, method="
@@ -6365,7 +6331,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                         .setId("short-window-probe-invoke-" + hooks)
                         .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                         .intercept(this::onShortWindowProbeInvoke);
-                rememberPluginHookHandle(pluginLoader, handle);
+                pluginGeneration.rememberPluginHookHandle(pluginLoader, handle);
                 hooks++;
             }
             Class<?> modelClass = pluginLoader.loadClass(
@@ -6376,7 +6342,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                         .setId("short-window-probe-model-" + constructor.getParameterCount())
                         .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                         .intercept(this::onShortWindowProbeModelBuilt);
-                rememberPluginHookHandle(pluginLoader, handle);
+                pluginGeneration.rememberPluginHookHandle(pluginLoader, handle);
                 hooks++;
             }
             shortWindowDiagnosticsInstalled = hooks > 0;
@@ -6910,7 +6876,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                                 .setId(HOOK_ID_LYRICS_RECYCLER + "-surface-draw")
                                 .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                                 .intercept(this::onLyricsRecyclerDraw);
-                        rememberPluginHookHandle(pluginLoader, handle);
+                        pluginGeneration.rememberPluginHookHandle(pluginLoader, handle);
                         drawHooks++;
                     } else if ("setLyrics".equals(method.getName())
                             && method.getReturnType() == void.class
@@ -6921,7 +6887,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                                 .setId(HOOK_ID_LYRICS_RECYCLER + "-dataset-" + datasetHooks)
                                 .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                                 .intercept(this::onLyricsRecyclerSetLyrics);
-                        rememberPluginHookHandle(pluginLoader, handle);
+                        pluginGeneration.rememberPluginHookHandle(pluginLoader, handle);
                         datasetHooks++;
                     } else if (isLyricsRecyclerCurrentLyricMethod(method)) {
                         method.setAccessible(true);
@@ -6933,7 +6899,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                                         + method.getParameterTypes().length)
                                 .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                                 .intercept(this::onLyricsRecyclerSetCurrentLyric);
-                        rememberPluginHookHandle(pluginLoader, handle);
+                        pluginGeneration.rememberPluginHookHandle(pluginLoader, handle);
                         currentLyricHooks++;
                     } else if (isLyricsRecyclerScalePivotMethod(method)) {
                         method.setAccessible(true);
@@ -6943,7 +6909,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                                         + scalePivotHooks)
                                 .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                                 .intercept(this::onLyricsRecyclerPrepareScalePivot);
-                        rememberPluginHookHandle(pluginLoader, handle);
+                        pluginGeneration.rememberPluginHookHandle(pluginLoader, handle);
                         scalePivotHooks++;
                     } else if (OfficialLyricRowStyleMethodPolicy.matches(
                             method, lyricsRecyclerViewClass)) {
@@ -6954,7 +6920,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                                         + rowStyleHooks)
                                 .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                                 .intercept(this::onLyricsRecyclerRowStyleApplied);
-                        rememberPluginHookHandle(pluginLoader, handle);
+                        pluginGeneration.rememberPluginHookHandle(pluginLoader, handle);
                         rowStyleHooks++;
                     } else if (OfficialImmersiveLyricEntryPolicy.matches(
                             method, lyricsRecyclerViewClass)) {
@@ -6965,7 +6931,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                                         + immersiveEntryHooks)
                                 .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                                 .intercept(this::onLyricsRecyclerImmersiveEntry);
-                        rememberPluginHookHandle(pluginLoader, handle);
+                        pluginGeneration.rememberPluginHookHandle(pluginLoader, handle);
                         immersiveEntryHooks++;
                     }
                 }

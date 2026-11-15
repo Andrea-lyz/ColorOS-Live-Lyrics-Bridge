@@ -104,6 +104,15 @@ public final class BridgeSourceMap {
                 SOURCE_ROOT + "SystemUiPlaybackController.java", SOURCE_ROOT + "LyricViewRegistry.java",
                 SOURCE_ROOT + "LyricSurfaceModeController.java", SOURCE_ROOT + "LyricSurfaceHandoffController.java",
                 SOURCE_ROOT + "ActiveLyricState.java"));
+        // E-5c (2026-11-15): the plugin ClassLoader generation moved to PluginHookGenerationManager;
+        // the plugin ClassLoader hooks and KuWo plugin compatibility stay in the entry class.
+        FILES.put(Area.PLUGIN_COMPAT, Arrays.asList(ENTRY_CLASS, SOURCE_ROOT + "PluginHookGenerationManager.java"));
+        FILES.put(Area.SYSTEMUI_RUNTIME, Arrays.asList(ENTRY_CLASS, SOURCE_ROOT + "OfficialLyricTextRenderer.java",
+                SOURCE_ROOT + "OplusMediaPolicyHooks.java", SOURCE_ROOT + "ScreenTimeoutController.java",
+                SOURCE_ROOT + "TranslationActionViewTracker.java", SOURCE_ROOT + "TranslationActionController.java",
+                SOURCE_ROOT + "SystemUiPlaybackController.java", SOURCE_ROOT + "LyricViewRegistry.java",
+                SOURCE_ROOT + "LyricSurfaceModeController.java", SOURCE_ROOT + "LyricSurfaceHandoffController.java",
+                SOURCE_ROOT + "ActiveLyricState.java", SOURCE_ROOT + "PluginHookGenerationManager.java"));
     }
 
     private BridgeSourceMap() {
