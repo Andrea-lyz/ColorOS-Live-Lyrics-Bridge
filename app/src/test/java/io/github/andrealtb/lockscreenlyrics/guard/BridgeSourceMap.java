@@ -55,6 +55,10 @@ public final class BridgeSourceMap {
         FILES.put(Area.OPLUS_POLICY, Arrays.asList(SOURCE_ROOT + "OplusMediaPolicyHooks.java", ENTRY_CLASS));
         FILES.put(Area.SYSTEMUI_RUNTIME, Arrays.asList(ENTRY_CLASS, SOURCE_ROOT + "OfficialLyricTextRenderer.java",
                 SOURCE_ROOT + "OplusMediaPolicyHooks.java"));
+        // E-3 (2026-11-15): screen-timeout keep-awake moved to ScreenTimeoutController; no contract
+        // test reads it, but the runtime guard must cover the new file.
+        FILES.put(Area.SYSTEMUI_RUNTIME, Arrays.asList(ENTRY_CLASS, SOURCE_ROOT + "OfficialLyricTextRenderer.java",
+                SOURCE_ROOT + "OplusMediaPolicyHooks.java", SOURCE_ROOT + "ScreenTimeoutController.java"));
     }
 
     private BridgeSourceMap() {

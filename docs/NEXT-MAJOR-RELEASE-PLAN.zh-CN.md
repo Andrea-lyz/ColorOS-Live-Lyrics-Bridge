@@ -1814,6 +1814,73 @@ E-2b 到 E-2d 都读写入口类的实例状态或调用 `hook()`，不能只靠
 
 **设备结果：用户重启 SystemUI 后确认 1–3 项全部通过（2026-11-15）。**
 
+### 15.8.7 E-3 实施记录：屏幕超时外移（2026-11-15，已提交，未推送）
+
+**分支：** Bridge `feat/e3-screen-timeout`（基于 `3adb0f8`）。
+
+**移动了什么：** 新类 `ScreenTimeoutController`（同包、final、包内可见）接手智能屏幕超时的全部状态：
+- 26 个方法：
+  - WakeLock 获取、续租、释放；
+  - user-activity 脉冲；
+  - 自定义超时窗口；
+  - keyguard 状态缓存；
+  - 歌词证据窗口（可见 TextView 时间戳与模型宽限期）；
+  - 解锁后复核；
+  - 限频日志。
+- 16 个字段、1 个脉冲 `Runnable`、7 个 `SCREEN_TIMEOUT_*` 常量。
+- `Host` 接口只有 9 个方法：
+  - 4 个读取：歌词模式常亮标志、播放状态、是否有逐字模型、是否有官方歌词；
+  - `hasSupportedSystemUiPlayer`；
+  - `deactivateSystemUiLyricModeAfterSurfaceHidden`；
+  - `ensureScreenTimeoutReceiver`；
+  - `info`、`error`。
+- 主线程 `Handler` 由构造参数传入。
+
+**与计划不同：接收器留在入口类。**
+- SCREEN_OFF / SCREEN_ON / USER_PRESENT 接收器除了屏幕超时，还负责：
+  - AOD 低帧率模式；
+  - 亮灭屏 settle 窗口；
+  - 锁屏状态；
+  - 翻译按钮重绑。
+- 整体移过来会让屏幕超时控制器调用翻译与 AOD 代码，归属反而更乱。
+- 所以接收器原样留在入口类，其中屏幕超时的语句改为经 `screenTimeout.` 调用，执行顺序与原来逐句一致。
+- 接收器归属在 E-4（翻译 action）或 E-7 时再定。
+
+**访问点：**
+- 入口类对已移动成员的引用一律加 `screenTimeout.` 前缀，其余文字不变。
+- 入口类仍直接读写的控制器字段有 8 个：
+  - `screenTimeoutSmartEnabled`、`screenTimeoutCustomSeconds`（设置应用）；
+  - `screenTimeoutPausedByScreenOff`、`screenTimeoutPausedByUserPresent`（接收器、歌词模式激活、可见 TextView 记录、`isAodLowFrameRateLyricMode`）；
+  - `lastVisibleOfficialLyricTextViewAt`、`screenTimeoutLyricEvidenceGraceUntilElapsedMs`（可见证据、节流与模型宽限）；
+  - `screenTimeoutPowerManager`（AOD 判定）；
+  - `screenTimeoutKeyguardManager`（`isDeviceKeyguardLocked` 共用同一个缓存）。
+- 这些字段改成具名方法，留到“唯一写入组件”收口（完成定义第 3 条）时做，不混进这次纯移动。
+- 入口类为此放宽了 3 处 `private`：`TAG`、`currentApplicationContext()`、`applicationContextOf()`。
+
+**证据：**
+- 方法体比对（`--strip screenTimeout. --strip host.`）：
+  - 24 个移动后一致；
+  - 2 个改动，`hasScreenTimeoutWakeLockBaseConditions` 和 `maybeLogScreenTimeoutSkip`。改动只是把入口类字段读取换成 `host.` 调用，`(currentWordLyricModel != null)` 换成 `host.hasCurrentWordLyricModel()`，拼出的日志文字不变；
+  - 0 个删除；
+  - 新增 6 个，即控制器构造函数和 5 个同名转发。
+- 三份基线（Hook ID、日志 event、安装顺序）不变。
+- 入口类预算下调：13,481 → 13,114 行，字段 358 → 335，方法 546 → 520。
+- `BridgeSourceMap` 的 `SYSTEMUI_RUNTIME` 加入新文件。
+- `verify-build-identity` 通过（366 个输入）。
+- 本地 1056 tests / 0 fail / 6 skip，Debug 与 R8 通过。
+
+**候选：** `artifacts/e3-screen-timeout-20261115/Bridge-E3-screentimeout-debug-r1.apk`（`9ddde0dd…`）。
+
+**设备冒烟（重启 SystemUI；需要开启智能屏幕超时；高风险，必须通过才进下一刀）：**
+1. 锁屏逐字歌词播放中，屏幕超过系统灭屏时间后仍保持亮屏（续租）。
+2. 设置了自定义秒数时，到时后按系统超时正常灭屏。
+3. 按电源键灭屏后不会自己亮起；再亮屏回到锁屏，歌词与常亮都恢复。
+4. 解锁进入桌面后，按系统超时正常灭屏（解锁释放）。
+5. 锁屏上暂停播放，或切到无歌词的歌，之后按系统超时正常灭屏（条件失效释放）。
+6. 关闭智能屏幕超时后，锁屏按系统超时正常灭屏。
+
+**结果：** 用户安装候选 `9ddde0dd…`、重启 SystemUI 后，设备冒烟 1–6 项通过（2026-11-15）。
+
 ### 15.9 未覆盖
 
 - **Providers 仓库**的结构与性能没有做同等盘点。若要纳入“完整优化”，需要另做一次基线（13 个专用模块的 Hooker、`provider-core`、Universal），本节不对其作任何结论。

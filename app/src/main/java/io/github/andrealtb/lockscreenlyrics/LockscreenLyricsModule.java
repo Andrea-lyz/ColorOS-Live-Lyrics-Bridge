@@ -109,9 +109,11 @@ import io.github.libxposed.api.XposedInterface;
 import io.github.libxposed.api.XposedModule;
 
 import static io.github.andrealtb.lockscreenlyrics.LyricLogDescriptions.*;
+import static io.github.andrealtb.lockscreenlyrics.ScreenTimeoutController.SCREEN_TIMEOUT_MODEL_EVIDENCE_GRACE_MS;
+import static io.github.andrealtb.lockscreenlyrics.ScreenTimeoutController.SCREEN_TIMEOUT_VISIBLE_LYRIC_NOTE_THROTTLE_MS;
 
 public final class LockscreenLyricsModule extends XposedModule {
-    private static final String TAG = "LockscreenLyrics";
+    static final String TAG = "LockscreenLyrics";
     private static final String LYRIC_PARSE_TRACE_TAG = "LockscreenLyricsParse";
     private static final String LYRIC_RENDER_PIPELINE_REVISION =
             "native-v5-systemui-owner-r6-track-reset";
@@ -191,20 +193,6 @@ public final class LockscreenLyricsModule extends XposedModule {
     private static final int TRANSLATION_ICON_FINGERPRINT_SIZE = 48;
     /** Action icons stay far below this; artwork/wallpaper bitmaps would need a full main-thread copy to reject. */
     private static final int TRANSLATION_ICON_MAX_BITMAP_PX = 512;
-    private static final long SCREEN_TIMEOUT_USER_ACTIVITY_INTERVAL_MS =
-            LyricTimingTuningConstants.ScreenTimeout.USER_ACTIVITY_INTERVAL_MS;
-    private static final long SCREEN_TIMEOUT_WAKE_LOCK_LEASE_MS =
-            LyricTimingTuningConstants.ScreenTimeout.WAKE_LOCK_LEASE_MS;
-    private static final long SCREEN_TIMEOUT_VISIBLE_LYRIC_VIEW_MAX_AGE_MS =
-            LyricTimingTuningConstants.ScreenTimeout.VISIBLE_LYRIC_VIEW_MAX_AGE_MS;
-    private static final long SCREEN_TIMEOUT_MODEL_EVIDENCE_GRACE_MS =
-            LyricTimingTuningConstants.ScreenTimeout.MODEL_EVIDENCE_GRACE_MS;
-    private static final long SCREEN_TIMEOUT_USER_PRESENT_RECHECK_DELAY_MS =
-            LyricTimingTuningConstants.ScreenTimeout.USER_PRESENT_RECHECK_DELAY_MS;
-    private static final long SCREEN_TIMEOUT_KEYGUARD_STATE_CACHE_MS =
-            LyricTimingTuningConstants.ScreenTimeout.KEYGUARD_STATE_CACHE_MS;
-    private static final long SCREEN_TIMEOUT_VISIBLE_LYRIC_NOTE_THROTTLE_MS =
-            LyricTimingTuningConstants.ScreenTimeout.VISIBLE_LYRIC_NOTE_THROTTLE_MS;
     private static final long OFFICIAL_DRAW_FRAME_TRANSIENT_MISS_GRACE_MS =
             LyricTimingTuningConstants.OfficialLyric.DRAW_FRAME_TRANSIENT_MISS_GRACE_MS;
     private static final long SYSTEMUI_LYRIC_MODEL_HANDOFF_MAX_MS =
@@ -443,10 +431,6 @@ public final class LockscreenLyricsModule extends XposedModule {
             LyricUiSettings.DEFAULT_LINE_TIMED_PROGRESS_ENABLED;
     private volatile boolean lyricUiTranslationProgressEnabled =
             LyricUiSettings.DEFAULT_TRANSLATION_PROGRESS_ENABLED;
-    private volatile boolean screenTimeoutSmartEnabled =
-            LyricUiSettings.DEFAULT_SCREEN_TIMEOUT_ENABLED;
-    private volatile int screenTimeoutCustomSeconds =
-            LyricUiSettings.DEFAULT_SCREEN_TIMEOUT_SECONDS;
     private volatile LyricUiConfig lyricUiConfig = LyricUiConfig.defaults();
     private volatile LyricContentCleanupConfig lyricContentCleanupConfig =
             LyricContentCleanupConfig.defaults();
@@ -483,23 +467,9 @@ public final class LockscreenLyricsModule extends XposedModule {
             new WeakHashMap<>();
     private volatile long lastSystemUiLyricModeLogAt;
     private volatile long lastSystemUiLyricModeStateLogAt;
-    private volatile long lastScreenTimeoutLogAt;
-    private volatile long lastVisibleOfficialLyricTextViewAt;
-    private volatile boolean screenTimeoutUserActivityPulsePosted;
-    private volatile boolean screenTimeoutUserPresentRecheckPosted;
-    private volatile boolean screenTimeoutUserActivityFailureLogged;
-    private volatile boolean screenTimeoutPausedByScreenOff;
-    private volatile boolean screenTimeoutPausedByUserPresent;
-    private volatile long screenTimeoutLyricEvidenceGraceUntilElapsedMs;
-    private volatile long screenTimeoutKeepAwakeUntilElapsedMs;
     private volatile boolean aodLowFrameRateLyricMode;
     private BroadcastReceiver screenTimeoutReceiver;
     private volatile boolean screenTurnedOffForLockState;
-    private PowerManager.WakeLock screenTimeoutWakeLock;
-    private PowerManager screenTimeoutPowerManager;
-    private KeyguardManager screenTimeoutKeyguardManager;
-    private volatile boolean screenTimeoutKeyguardLockedCached;
-    private volatile long screenTimeoutKeyguardCacheUntilElapsedMs;
     private volatile int lastLyricsRecyclerIndex = -1;
     private volatile boolean adaptiveLineTimedRecyclerFollowActive;
     private volatile int lastAdaptiveLineTimedRecyclerAlignedIndex = -1;
@@ -851,6 +821,54 @@ public final class LockscreenLyricsModule extends XposedModule {
                 }
             });
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final ScreenTimeoutController screenTimeout = new ScreenTimeoutController(
+            new ScreenTimeoutController.Host() {
+                @Override
+                public boolean isSystemUiLyricModeKeepAwakeActive() {
+                    return systemUiLyricModeKeepAwakeActive;
+                }
+
+                @Override
+                public boolean isLastPlaybackPlaying() {
+                    return lastPlaybackIsPlaying;
+                }
+
+                @Override
+                public boolean hasCurrentWordLyricModel() {
+                    return currentWordLyricModel != null;
+                }
+
+                @Override
+                public boolean hasSystemUiOfficialLyric() {
+                    return systemUiHasOfficialLyric;
+                }
+
+                @Override
+                public boolean hasSupportedSystemUiPlayer() {
+                    return LockscreenLyricsModule.this.hasSupportedSystemUiPlayer();
+                }
+
+                @Override
+                public void deactivateSystemUiLyricModeAfterSurfaceHidden() {
+                    LockscreenLyricsModule.this.deactivateSystemUiLyricModeAfterSurfaceHidden();
+                }
+
+                @Override
+                public void ensureScreenTimeoutReceiver(Context context) {
+                    LockscreenLyricsModule.this.ensureScreenTimeoutReceiver(context);
+                }
+
+                @Override
+                public void info(BridgeDebugArea area, String event, String message) {
+                    LockscreenLyricsModule.this.info(area, event, message);
+                }
+
+                @Override
+                public void error(String message, Throwable throwable) {
+                    LockscreenLyricsModule.this.error(message, throwable);
+                }
+            },
+            mainHandler);
     private final Object systemUiPlaybackControllerLock = new Object();
     private PlaybackControllerBinding systemUiPlaybackControllerBinding;
     private long nextSystemUiPlaybackControllerEpoch;
@@ -971,29 +989,6 @@ public final class LockscreenLyricsModule extends XposedModule {
             return;
         }
         refreshActiveLyricTextView();
-    };
-    private final Runnable screenTimeoutUserActivityPulse = new Runnable() {
-        @Override
-        public void run() {
-            screenTimeoutUserActivityPulsePosted = false;
-            Context context = currentApplicationContext();
-            if (!hasScreenTimeoutWakeLockBaseConditions(context)) {
-                resetScreenTimeoutKeepAwakeWindow();
-                releaseScreenTimeoutWakeLock("conditions changed");
-                return;
-            }
-            if (!isScreenTimeoutKeepAwakeWindowActive()) {
-                releaseScreenTimeoutWakeLock("custom timeout elapsed");
-                maybeLogScreenTimeout("Stopped screen timeout keep-awake after custom timeout", true);
-                return;
-            }
-            PowerManager powerManager = screenTimeoutPowerManager;
-            if (powerManager != null) {
-                renewScreenTimeoutWakeLockLease(powerManager);
-                pulseScreenTimeoutUserActivity(powerManager, false);
-            }
-            scheduleScreenTimeoutUserActivityPulse();
-        }
     };
 
     private final String diagnosticProcessEpoch = java.util.UUID.randomUUID().toString();
@@ -2019,15 +2014,15 @@ public final class LockscreenLyricsModule extends XposedModule {
                 || lyricUiLineTimedProgressEnabled != lineTimedProgress
                 || lyricUiTranslationProgressEnabled != translationProgress;
         boolean screenTimeoutChanged =
-                screenTimeoutSmartEnabled != screenTimeoutEnabled
-                        || screenTimeoutCustomSeconds != sanitizedScreenTimeoutSeconds;
+                screenTimeout.screenTimeoutSmartEnabled != screenTimeoutEnabled
+                        || screenTimeout.screenTimeoutCustomSeconds != sanitizedScreenTimeoutSeconds;
         boolean changed = styleChanged || screenTimeoutChanged;
         lyricUiScrollScaleEnabled = scrollScale;
         lyricUiInactiveBlurEnabled = inactiveBlur;
         lyricUiLineTimedProgressEnabled = lineTimedProgress;
         lyricUiTranslationProgressEnabled = translationProgress;
-        screenTimeoutSmartEnabled = screenTimeoutEnabled;
-        screenTimeoutCustomSeconds = sanitizedScreenTimeoutSeconds;
+        screenTimeout.screenTimeoutSmartEnabled = screenTimeoutEnabled;
+        screenTimeout.screenTimeoutCustomSeconds = sanitizedScreenTimeoutSeconds;
         officialLyricTextRenderer.setStyleOptions(
                 scrollScale,
                 inactiveBlur,
@@ -2038,11 +2033,11 @@ public final class LockscreenLyricsModule extends XposedModule {
             return;
         }
         if (screenTimeoutChanged) {
-            resetScreenTimeoutKeepAwakeWindow();
-            if (screenTimeoutSmartEnabled) {
-                updateScreenTimeoutWakeLock(currentApplicationContext());
+            screenTimeout.resetScreenTimeoutKeepAwakeWindow();
+            if (screenTimeout.screenTimeoutSmartEnabled) {
+                screenTimeout.updateScreenTimeoutWakeLock(currentApplicationContext());
             } else {
-                releaseScreenTimeoutWakeLock("disabled by user");
+                screenTimeout.releaseScreenTimeoutWakeLock("disabled by user");
             }
         }
         if (layoutChanged) {
@@ -3352,7 +3347,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
         boolean changed = !systemUiLyricModeKeepAwakeActive;
         systemUiLyricModeKeepAwakeActive = true;
-        screenTimeoutPausedByUserPresent = false;
+        screenTimeout.screenTimeoutPausedByUserPresent = false;
         lastSystemUiLyricModeLogAt = SystemClock.elapsedRealtime();
         if (changed) {
             // Entering the page is not proof that every rebound row has a custom display list.
@@ -3369,7 +3364,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         } else {
             scheduleActiveLyricRefresh(ACTIVE_LYRIC_FRAME_DELAY_MS);
         }
-        updateScreenTimeoutWakeLock(currentApplicationContext());
+        screenTimeout.updateScreenTimeoutWakeLock(currentApplicationContext());
         return true;
     }
 
@@ -3388,12 +3383,12 @@ public final class LockscreenLyricsModule extends XposedModule {
             cancelLyricSurfaceReactivationCallbacks();
         }
         clearTrackedTranslationActionViews();
-        clearScreenTimeoutLyricEvidence();
+        screenTimeout.clearScreenTimeoutLyricEvidence();
         if (changed) {
             info(BridgeDebugArea.MEDIA, BridgeEvents.DETAIL, "Observed hidden lyric surface; stopping active lyric refresh");
             mainHandler.post(this::refreshTranslationActionViewVisibility);
         }
-        updateScreenTimeoutWakeLock(currentApplicationContext());
+        screenTimeout.updateScreenTimeoutWakeLock(currentApplicationContext());
     }
 
     private boolean retainLyricModeForTransientSurfaceMiss(String reason) {
@@ -3680,7 +3675,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private void restoreProviderWordLyricSurfaceAfterOfficialSuppression(String reason) {
-        screenTimeoutLyricEvidenceGraceUntilElapsedMs =
+        screenTimeout.screenTimeoutLyricEvidenceGraceUntilElapsedMs =
                 SystemClock.elapsedRealtime() + SCREEN_TIMEOUT_MODEL_EVIDENCE_GRACE_MS;
         mainHandler.post(() -> {
             restoreSuppressedLyricsRecyclerViews(false);
@@ -3749,10 +3744,10 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private boolean isAodLowFrameRateLyricMode() {
-        if (aodLowFrameRateLyricMode || screenTimeoutPausedByScreenOff) {
+        if (aodLowFrameRateLyricMode || screenTimeout.screenTimeoutPausedByScreenOff) {
             return true;
         }
-        PowerManager powerManager = screenTimeoutPowerManager;
+        PowerManager powerManager = screenTimeout.screenTimeoutPowerManager;
         return powerManager != null && !powerManager.isInteractive();
     }
 
@@ -3770,7 +3765,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (hasSentenceWindow()) return true;
         return LyricsRecyclerPolicy.shouldModulePosition(
                 aodLowFrameRateLyricMode,
-                isScreenInteractiveForWakeLock(),
+                screenTimeout.isScreenInteractiveForWakeLock(),
                 systemUiOwnsNativeLyricsRecycler());
     }
 
@@ -3947,14 +3942,14 @@ public final class LockscreenLyricsModule extends XposedModule {
 
     private void clearCurrentLyricProvider(String title, String artist) {
         if (shouldRetainLyricModelDuringTransientLyricInfoMiss(title, artist)) {
-            screenTimeoutLyricEvidenceGraceUntilElapsedMs =
+            screenTimeout.screenTimeoutLyricEvidenceGraceUntilElapsedMs =
                     SystemClock.elapsedRealtime() + SCREEN_TIMEOUT_MODEL_EVIDENCE_GRACE_MS;
             long now = SystemClock.elapsedRealtime();
             if (now - lastTransientLyricInfoMissLogAt >= 1_500L) {
                 lastTransientLyricInfoMissLogAt = now;
                 info(BridgeDebugArea.MEDIA, BridgeEvents.DETAIL, "Retained current SystemUI word lyric model during transient lyricInfo miss");
             }
-            updateScreenTimeoutWakeLock(currentApplicationContext());
+            screenTimeout.updateScreenTimeoutWakeLock(currentApplicationContext());
             return;
         }
         if (!TextUtils.isEmpty(title)
@@ -3991,7 +3986,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         });
         mainHandler.post(this::clearSystemUiPlaybackControllerBinding);
         mainHandler.post(this::refreshTranslationActionViewVisibility);
-        updateScreenTimeoutWakeLock(currentApplicationContext());
+        screenTimeout.updateScreenTimeoutWakeLock(currentApplicationContext());
     }
 
     private Object onSeedlingMediaBundle(XposedInterface.Chain chain) throws Throwable {
@@ -4381,7 +4376,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                     storedPosition,
                     computedPosition,
                     previousPosition);
-            updateScreenTimeoutWakeLock(currentApplicationContext());
+            screenTimeout.updateScreenTimeoutWakeLock(currentApplicationContext());
             return;
         }
         boolean likelyTrackRestart = isPlaybackStateInMotion(state)
@@ -4436,7 +4431,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (playbackPositionJump) {
             observeLyricsPlaybackPositionJump(previousPosition, activePosition);
         }
-        updateScreenTimeoutWakeLock(currentApplicationContext());
+        screenTimeout.updateScreenTimeoutWakeLock(currentApplicationContext());
     }
 
     private static long resolvePlaybackStateActivePosition(
@@ -4746,7 +4741,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         currentWordLyricModelTrackKey = "";
         latestSystemUiLyricLoadContext = null;
         lastSystemUiMediaId = "";
-        clearScreenTimeoutLyricEvidence();
+        screenTimeout.clearScreenTimeoutLyricEvidence();
         mainHandler.post(() -> {
             refreshTranslationActionViewVisibility();
             for (TextView textView : snapshotActiveTextViews()) {
@@ -4757,7 +4752,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         info(BridgeDebugArea.MEDIA, BridgeEvents.DETAIL,
                 "Cleared previous lyric model after track change, track="
                         + SensitiveFieldRedactor.trackHash(buildTrackKey(title, artist)));
-        updateScreenTimeoutWakeLock(currentApplicationContext());
+        screenTimeout.updateScreenTimeoutWakeLock(currentApplicationContext());
     }
 
     private Object onViewDetachedFromWindow(XposedInterface.Chain chain) throws Throwable {
@@ -6540,7 +6535,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (targetIndex < 0 || recycler == null || !recycler.isAttachedToWindow()) {
             return;
         }
-        boolean transitionSettled = isScreenInteractiveForWakeLock()
+        boolean transitionSettled = screenTimeout.isScreenInteractiveForWakeLock()
                 && !isAodLowFrameRateLyricMode()
                 && recycler.getVisibility() == View.VISIBLE
                 && recycler.getWidth() > 0
@@ -9178,8 +9173,8 @@ public final class LockscreenLyricsModule extends XposedModule {
             return;
         }
         if (systemUiLyricModeKeepAwakeActive
-                && !screenTimeoutPausedByUserPresent
-                && now - lastVisibleOfficialLyricTextViewAt
+                && !screenTimeout.screenTimeoutPausedByUserPresent
+                && now - screenTimeout.lastVisibleOfficialLyricTextViewAt
                 < SCREEN_TIMEOUT_VISIBLE_LYRIC_NOTE_THROTTLE_MS) {
             return;
         }
@@ -9190,16 +9185,16 @@ public final class LockscreenLyricsModule extends XposedModule {
             return;
         }
         rememberLyricsRecyclerView(recycler);
-        lastVisibleOfficialLyricTextViewAt = now;
-        if (screenTimeoutPausedByUserPresent
-                && isKeyguardShowingForScreenTimeout(textView.getContext())) {
-            screenTimeoutPausedByUserPresent = false;
-            maybeLogScreenTimeout(
+        screenTimeout.lastVisibleOfficialLyricTextViewAt = now;
+        if (screenTimeout.screenTimeoutPausedByUserPresent
+                && screenTimeout.isKeyguardShowingForScreenTimeout(textView.getContext())) {
+            screenTimeout.screenTimeoutPausedByUserPresent = false;
+            screenTimeout.maybeLogScreenTimeout(
                     "Resumed screen timeout keep-awake after visible lyric confirmed keyguard",
                     true);
         }
-        if (screenTimeoutPausedByScreenOff
-                || screenTimeoutPausedByUserPresent
+        if (screenTimeout.screenTimeoutPausedByScreenOff
+                || screenTimeout.screenTimeoutPausedByUserPresent
                 || !hasSupportedSystemUiPlayer()
                 || !lastPlaybackIsPlaying) {
             return;
@@ -9210,11 +9205,11 @@ public final class LockscreenLyricsModule extends XposedModule {
                     textView,
                     recycler,
                     "visible lyric TextView");
-            maybeLogScreenTimeout(
+            screenTimeout.maybeLogScreenTimeout(
                     "Inferred lockscreen lyric UI keep-awake from visible official lyric view",
                     false);
         }
-        updateScreenTimeoutWakeLock(textView.getContext());
+        screenTimeout.updateScreenTimeoutWakeLock(textView.getContext());
     }
 
     private boolean hasUsableLyricText(TextView textView) {
@@ -10295,7 +10290,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
         WordLyricModel model = currentWordLyricModel;
         if (model == null) {
-            updateScreenTimeoutWakeLock(currentApplicationContext());
+            screenTimeout.updateScreenTimeoutWakeLock(currentApplicationContext());
             return;
         }
 
@@ -10971,7 +10966,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     @SuppressLint({"PrivateApi", "DiscouragedPrivateApi"})
-    private static Context currentApplicationContext() {
+    static Context currentApplicationContext() {
         try {
             Class<?> activityThreadClass = Class.forName("android.app.ActivityThread");
             Method currentApplication = activityThreadClass.getDeclaredMethod("currentApplication");
@@ -10987,7 +10982,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         return null;
     }
 
-    private static Context applicationContextOf(Context context) {
+    static Context applicationContextOf(Context context) {
         if (context == null) {
             return null;
         }
@@ -11017,12 +11012,12 @@ public final class LockscreenLyricsModule extends XposedModule {
                     if (Intent.ACTION_SCREEN_OFF.equals(action)) {
                         setAodLowFrameRateLyricMode(true);
                         beginScreenStateLyricSettleWindow();
-                        invalidateScreenTimeoutKeyguardCache();
-                        resetScreenTimeoutKeepAwakeWindow();
-                        screenTimeoutPausedByScreenOff = true;
-                        screenTimeoutPausedByUserPresent = false;
-                        releaseScreenTimeoutWakeLock("screen off");
-                        maybeLogScreenTimeout("Paused screen timeout keep-awake after screen off", true);
+                        screenTimeout.invalidateScreenTimeoutKeyguardCache();
+                        screenTimeout.resetScreenTimeoutKeepAwakeWindow();
+                        screenTimeout.screenTimeoutPausedByScreenOff = true;
+                        screenTimeout.screenTimeoutPausedByUserPresent = false;
+                        screenTimeout.releaseScreenTimeoutWakeLock("screen off");
+                        screenTimeout.maybeLogScreenTimeout("Paused screen timeout keep-awake after screen off", true);
                         screenTurnedOffForLockState = true;
                         infoAlways(BridgeDebugArea.PLAYER_SPECIAL, BridgeEvents.TRANSLATION_ACTION_REBIND,
                                 "Keyguard locked screen off, requesting rebind for " + currentTranslationPreferencePackage());
@@ -11039,13 +11034,13 @@ public final class LockscreenLyricsModule extends XposedModule {
                     if (Intent.ACTION_SCREEN_ON.equals(action)) {
                         setAodLowFrameRateLyricMode(false);
                         beginScreenStateLyricSettleWindow();
-                        invalidateScreenTimeoutKeyguardCache();
-                        if (screenTimeoutPausedByScreenOff) {
-                            maybeLogScreenTimeout("Resumed screen timeout keep-awake after screen on", true);
+                        screenTimeout.invalidateScreenTimeoutKeyguardCache();
+                        if (screenTimeout.screenTimeoutPausedByScreenOff) {
+                            screenTimeout.maybeLogScreenTimeout("Resumed screen timeout keep-awake after screen on", true);
                         }
-                        screenTimeoutPausedByScreenOff = false;
-                        screenTimeoutPausedByUserPresent = false;
-                        updateScreenTimeoutWakeLock(receiverContext);
+                        screenTimeout.screenTimeoutPausedByScreenOff = false;
+                        screenTimeout.screenTimeoutPausedByUserPresent = false;
+                        screenTimeout.updateScreenTimeoutWakeLock(receiverContext);
                         // Check if device is actually locked (handles delay-lock window where screen was turned on before keyguard locked)
                         if (!isDeviceKeyguardLocked(receiverContext)) {
                             screenTurnedOffForLockState = false;
@@ -11056,12 +11051,12 @@ public final class LockscreenLyricsModule extends XposedModule {
                     }
                     if (Intent.ACTION_USER_PRESENT.equals(action)) {
                         setAodLowFrameRateLyricMode(false);
-                        invalidateScreenTimeoutKeyguardCache();
-                        resetScreenTimeoutKeepAwakeWindow();
-                        screenTimeoutPausedByUserPresent = true;
-                        releaseScreenTimeoutWakeLock("user present");
-                        scheduleScreenTimeoutUserPresentRecheck(receiverContext);
-                        maybeLogScreenTimeout(
+                        screenTimeout.invalidateScreenTimeoutKeyguardCache();
+                        screenTimeout.resetScreenTimeoutKeepAwakeWindow();
+                        screenTimeout.screenTimeoutPausedByUserPresent = true;
+                        screenTimeout.releaseScreenTimeoutWakeLock("user present");
+                        screenTimeout.scheduleScreenTimeoutUserPresentRecheck(receiverContext);
+                        screenTimeout.maybeLogScreenTimeout(
                                 "Paused screen timeout keep-awake pending keyguard recheck",
                                 true);
                         screenTurnedOffForLockState = false;
@@ -11423,217 +11418,21 @@ public final class LockscreenLyricsModule extends XposedModule {
         receiver.send(0, result);
     }
 
-    private void scheduleScreenTimeoutUserPresentRecheck(Context context) {
-        if (screenTimeoutUserPresentRecheckPosted) {
-            return;
-        }
-        screenTimeoutUserPresentRecheckPosted = true;
-        Context appContext = applicationContextOf(context);
-        mainHandler.postDelayed(() -> {
-            screenTimeoutUserPresentRecheckPosted = false;
-            recheckScreenTimeoutAfterUserPresent(appContext);
-        }, SCREEN_TIMEOUT_USER_PRESENT_RECHECK_DELAY_MS);
-    }
-
-    private void recheckScreenTimeoutAfterUserPresent(Context context) {
-        if (!screenTimeoutPausedByUserPresent) {
-            updateScreenTimeoutWakeLock(context);
-            return;
-        }
-        if (screenTimeoutPausedByScreenOff) {
-            return;
-        }
-        if (isKeyguardShowingForScreenTimeout(context)) {
-            screenTimeoutPausedByUserPresent = false;
-            maybeLogScreenTimeout(
-                    "Resumed screen timeout keep-awake after keyguard remained visible",
-                    true);
-            updateScreenTimeoutWakeLock(context);
-            return;
-        }
-        deactivateSystemUiLyricModeAfterSurfaceHidden();
-        releaseScreenTimeoutWakeLock("keyguard dismissed");
-        maybeLogScreenTimeout("Stopped screen timeout keep-awake after keyguard dismissed", true);
-    }
-
-    private void updateScreenTimeoutWakeLock(Context context) {
-        if (!hasScreenTimeoutWakeLockBaseConditions(context)) {
-            resetScreenTimeoutKeepAwakeWindow();
-            maybeLogScreenTimeoutSkip(context);
-            releaseScreenTimeoutWakeLock("conditions changed");
-            return;
-        }
-        if (!ensureScreenTimeoutKeepAwakeWindowActive()) {
-            maybeLogScreenTimeout("Skip screen timeout wake lock: custom timeout elapsed", false);
-            releaseScreenTimeoutWakeLock("custom timeout elapsed");
-            return;
-        }
-        if (context == null) {
-            return;
-        }
-        ensureScreenTimeoutReceiver(context);
-        try {
-            Context appContext = context.getApplicationContext();
-            if (appContext == null) {
-                appContext = context;
-            }
-            PowerManager powerManager = screenTimeoutPowerManager;
-            if (powerManager == null) {
-                powerManager =
-                        (PowerManager) appContext.getSystemService(Context.POWER_SERVICE);
-                if (powerManager == null) {
-                    return;
-                }
-                screenTimeoutPowerManager = powerManager;
-            }
-            if (!powerManager.isInteractive()) {
-                releaseScreenTimeoutWakeLock("screen not interactive");
-                return;
-            }
-            PowerManager.WakeLock wakeLock = screenTimeoutWakeLock;
-            if (wakeLock == null) {
-                wakeLock = powerManager.newWakeLock(
-                        PowerManager.SCREEN_BRIGHT_WAKE_LOCK,
-                        TAG + ":ScreenTimeout");
-                wakeLock.setReferenceCounted(false);
-                screenTimeoutWakeLock = wakeLock;
-            }
-            boolean wasHeld = wakeLock.isHeld();
-            long leaseMs = screenTimeoutWakeLockLeaseMs();
-            if (!wasHeld) {
-                wakeLock.acquire(leaseMs);
-            }
-            if (!wasHeld) {
-                maybeLogScreenTimeout(
-                        "Acquired bright screen timeout wake lock lease="
-                                + leaseMs + "ms",
-                        true);
-                pulseScreenTimeoutUserActivity(powerManager, true);
-            }
-            scheduleScreenTimeoutUserActivityPulse();
-        } catch (Throwable t) {
-            error("Failed to update screen timeout wake lock", t);
-        }
-    }
-
-    private boolean shouldHoldScreenTimeoutWakeLock(Context context) {
-        return hasScreenTimeoutWakeLockBaseConditions(context)
-                && isScreenTimeoutKeepAwakeWindowActive();
-    }
-
-    private boolean hasScreenTimeoutWakeLockBaseConditions(Context context) {
-        return screenTimeoutSmartEnabled
-                && systemUiLyricModeKeepAwakeActive
-                && !screenTimeoutPausedByScreenOff
-                && !screenTimeoutPausedByUserPresent
-                && hasSupportedSystemUiPlayer()
-                && lastPlaybackIsPlaying
-                && hasScreenTimeoutLyricEvidence()
-                && isKeyguardShowingForScreenTimeout(context)
-                && isScreenInteractiveForWakeLock();
-    }
-
-    private boolean ensureScreenTimeoutKeepAwakeWindowActive() {
-        long customDurationMs = screenTimeoutCustomDurationMs();
-        if (customDurationMs <= 0L) {
-            resetScreenTimeoutKeepAwakeWindow();
-            return true;
-        }
-        long now = SystemClock.elapsedRealtime();
-        long until = screenTimeoutKeepAwakeUntilElapsedMs;
-        if (until <= 0L) {
-            screenTimeoutKeepAwakeUntilElapsedMs = now + customDurationMs;
-            maybeLogScreenTimeout(
-                    "Started custom screen timeout window duration=" + customDurationMs + "ms",
-                    true);
-            return true;
-        }
-        return now <= until;
-    }
-
-    private boolean isScreenTimeoutKeepAwakeWindowActive() {
-        if (screenTimeoutCustomDurationMs() <= 0L) {
-            return true;
-        }
-        long until = screenTimeoutKeepAwakeUntilElapsedMs;
-        return until > 0L && SystemClock.elapsedRealtime() <= until;
-    }
-
-    private long screenTimeoutCustomDurationMs() {
-        int seconds = LyricUiSettings.sanitizeScreenTimeoutSeconds(screenTimeoutCustomSeconds);
-        return seconds <= 0 ? 0L : seconds * 1000L;
-    }
-
-    private long screenTimeoutWakeLockLeaseMs() {
-        long customDurationMs = screenTimeoutCustomDurationMs();
-        if (customDurationMs <= 0L) {
-            return SCREEN_TIMEOUT_WAKE_LOCK_LEASE_MS;
-        }
-        long remainingMs = screenTimeoutKeepAwakeUntilElapsedMs - SystemClock.elapsedRealtime();
-        if (remainingMs <= 0L) {
-            return 1L;
-        }
-        return Math.min(SCREEN_TIMEOUT_WAKE_LOCK_LEASE_MS, Math.max(1L, remainingMs));
-    }
-
-    private void resetScreenTimeoutKeepAwakeWindow() {
-        screenTimeoutKeepAwakeUntilElapsedMs = 0L;
-    }
-
     private boolean hasSupportedSystemUiPlayer() {
         return lastSystemUiPackageSupported
                 || (!TextUtils.isEmpty(currentLyricProviderPackage)
                 && isCurrentLyricProviderPackage(currentLyricProviderPackage));
     }
 
-    private boolean hasScreenTimeoutLyricEvidence() {
-        return hasRecentVisibleOfficialLyricTextView()
-                || hasRecentScreenTimeoutLyricModelEvidence();
-    }
-
-    private boolean hasRecentVisibleOfficialLyricTextView() {
-        long lastVisibleAt = lastVisibleOfficialLyricTextViewAt;
-        if (lastVisibleAt <= 0L) {
-            return false;
-        }
-        long age = SystemClock.elapsedRealtime() - lastVisibleAt;
-        return age >= 0L && age <= SCREEN_TIMEOUT_VISIBLE_LYRIC_VIEW_MAX_AGE_MS;
-    }
-
-    private boolean hasRecentScreenTimeoutLyricModelEvidence() {
-        long until = screenTimeoutLyricEvidenceGraceUntilElapsedMs;
-        return until > 0L && SystemClock.elapsedRealtime() <= until;
-    }
-
-    private void markScreenTimeoutLyricModelEvidence() {
-        screenTimeoutLyricEvidenceGraceUntilElapsedMs =
-                SystemClock.elapsedRealtime() + SCREEN_TIMEOUT_MODEL_EVIDENCE_GRACE_MS;
-    }
-
-    private void clearScreenTimeoutLyricEvidence() {
-        lastVisibleOfficialLyricTextViewAt = 0L;
-        screenTimeoutLyricEvidenceGraceUntilElapsedMs = 0L;
-        resetScreenTimeoutKeepAwakeWindow();
-    }
-
-    private void invalidateScreenTimeoutKeyguardCache() {
-        screenTimeoutKeyguardCacheUntilElapsedMs = 0L;
-    }
-
-    private boolean isScreenInteractiveForWakeLock() {
-        PowerManager powerManager = screenTimeoutPowerManager;
-        return powerManager == null || powerManager.isInteractive();
-    }
-
     private boolean isDeviceKeyguardLocked(Context context) {
         Context appContext = applicationContextOf(context);
         if (appContext != null) {
             try {
-                KeyguardManager keyguardManager = screenTimeoutKeyguardManager;
+                KeyguardManager keyguardManager = screenTimeout.screenTimeoutKeyguardManager;
                 if (keyguardManager == null) {
                     keyguardManager =
                             (KeyguardManager) appContext.getSystemService(Context.KEYGUARD_SERVICE);
-                    screenTimeoutKeyguardManager = keyguardManager;
+                    screenTimeout.screenTimeoutKeyguardManager = keyguardManager;
                 }
                 if (keyguardManager != null) {
                     return keyguardManager.isKeyguardLocked();
@@ -11642,172 +11441,6 @@ public final class LockscreenLyricsModule extends XposedModule {
             }
         }
         return screenTurnedOffForLockState;
-    }
-
-    private boolean isKeyguardShowingForScreenTimeout(Context context) {
-        long now = SystemClock.elapsedRealtime();
-        if (now <= screenTimeoutKeyguardCacheUntilElapsedMs) {
-            return screenTimeoutKeyguardLockedCached;
-        }
-        Context appContext = applicationContextOf(context);
-        if (appContext == null) {
-            return false;
-        }
-        try {
-            KeyguardManager keyguardManager = screenTimeoutKeyguardManager;
-            if (keyguardManager == null) {
-                keyguardManager =
-                        (KeyguardManager) appContext.getSystemService(Context.KEYGUARD_SERVICE);
-                screenTimeoutKeyguardManager = keyguardManager;
-            }
-            boolean locked = keyguardManager != null && keyguardManager.isKeyguardLocked();
-            screenTimeoutKeyguardLockedCached = locked;
-            screenTimeoutKeyguardCacheUntilElapsedMs =
-                    now + SCREEN_TIMEOUT_KEYGUARD_STATE_CACHE_MS;
-            return locked;
-        } catch (Throwable t) {
-            invalidateScreenTimeoutKeyguardCache();
-            maybeLogScreenTimeout("Skip screen timeout wake lock: failed to read keyguard state", false);
-            return false;
-        }
-    }
-
-    private void maybeLogScreenTimeoutSkip(Context context) {
-        if (!systemUiLyricModeKeepAwakeActive) {
-            return;
-        }
-        maybeLogScreenTimeout("Skip screen timeout wake lock: screenOff=" + screenTimeoutPausedByScreenOff
-                + ", enabled=" + screenTimeoutSmartEnabled
-                + ", userPresent=" + screenTimeoutPausedByUserPresent
-                + ", supportedPlayer=" + hasSupportedSystemUiPlayer()
-                + ", playing=" + lastPlaybackIsPlaying
-                + ", hasModel=" + (currentWordLyricModel != null)
-                + ", hasOfficialLyric=" + systemUiHasOfficialLyric
-                + ", recentOfficialView=" + hasRecentVisibleOfficialLyricTextView()
-                + ", modelGrace=" + hasRecentScreenTimeoutLyricModelEvidence()
-                + ", customSeconds=" + screenTimeoutCustomSeconds
-                + ", customWindowActive=" + isScreenTimeoutKeepAwakeWindowActive()
-                + ", keyguardShowing=" + isKeyguardShowingForScreenTimeout(context)
-                + ", interactive=" + isScreenInteractiveForWakeLock(), false);
-    }
-
-    private void releaseScreenTimeoutWakeLock(String reason) {
-        stopScreenTimeoutUserActivityPulse();
-        PowerManager.WakeLock wakeLock = screenTimeoutWakeLock;
-        if (wakeLock == null) {
-            return;
-        }
-        try {
-            if (wakeLock.isHeld()) {
-                wakeLock.release();
-                maybeLogScreenTimeout("Released screen timeout wake lock: " + reason, true);
-            }
-        } catch (Throwable t) {
-            error("Failed to release screen timeout wake lock", t);
-        }
-    }
-
-    private void scheduleScreenTimeoutUserActivityPulse() {
-        if (screenTimeoutUserActivityPulsePosted) {
-            return;
-        }
-        screenTimeoutUserActivityPulsePosted = true;
-        mainHandler.postDelayed(
-                screenTimeoutUserActivityPulse,
-                nextScreenTimeoutUserActivityPulseDelayMs());
-    }
-
-    private void stopScreenTimeoutUserActivityPulse() {
-        if (!screenTimeoutUserActivityPulsePosted) {
-            return;
-        }
-        mainHandler.removeCallbacks(screenTimeoutUserActivityPulse);
-        screenTimeoutUserActivityPulsePosted = false;
-    }
-
-    private void renewScreenTimeoutWakeLockLease(PowerManager powerManager) {
-        if (powerManager == null) {
-            return;
-        }
-        PowerManager.WakeLock wakeLock = screenTimeoutWakeLock;
-        if (wakeLock == null) {
-            return;
-        }
-        try {
-            boolean wasHeld = wakeLock.isHeld();
-            long leaseMs = screenTimeoutWakeLockLeaseMs();
-            wakeLock.acquire(leaseMs);
-            if (!wasHeld) {
-                maybeLogScreenTimeout(
-                        "Re-acquired bright screen timeout wake lock lease="
-                                + leaseMs + "ms",
-                        true);
-            }
-        } catch (Throwable t) {
-            error("Failed to renew screen timeout wake lock lease", t);
-        }
-    }
-
-    private long nextScreenTimeoutUserActivityPulseDelayMs() {
-        long customDurationMs = screenTimeoutCustomDurationMs();
-        if (customDurationMs <= 0L) {
-            return SCREEN_TIMEOUT_USER_ACTIVITY_INTERVAL_MS;
-        }
-        long remainingMs = screenTimeoutKeepAwakeUntilElapsedMs - SystemClock.elapsedRealtime();
-        if (remainingMs <= 0L) {
-            return 1L;
-        }
-        return Math.min(SCREEN_TIMEOUT_USER_ACTIVITY_INTERVAL_MS, Math.max(1L, remainingMs));
-    }
-
-    @SuppressLint("DiscouragedPrivateApi")
-    private void pulseScreenTimeoutUserActivity(PowerManager powerManager, boolean forceLog) {
-        if (powerManager == null) {
-            return;
-        }
-        long uptime = SystemClock.uptimeMillis();
-        Throwable firstFailure = null;
-        try {
-            Method userActivity = PowerManager.class.getDeclaredMethod(
-                    "userActivity",
-                    long.class,
-                    int.class,
-                    int.class);
-            userActivity.setAccessible(true);
-            userActivity.invoke(powerManager, uptime, 0, 1);
-            maybeLogScreenTimeout("Pulsed screen timeout user activity without changing lights", forceLog);
-            return;
-        } catch (NoSuchMethodException ignored) {
-            // Fall through to older framework signature.
-        } catch (Throwable t) {
-            firstFailure = t;
-        }
-        try {
-            Method userActivity = PowerManager.class.getDeclaredMethod(
-                    "userActivity",
-                    long.class,
-                    boolean.class);
-            userActivity.setAccessible(true);
-            userActivity.invoke(powerManager, uptime, true);
-            maybeLogScreenTimeout("Pulsed screen timeout user activity without changing lights", forceLog);
-        } catch (Throwable t) {
-            if (!screenTimeoutUserActivityFailureLogged) {
-                screenTimeoutUserActivityFailureLogged = true;
-                if (firstFailure != null) {
-                    error("Failed to pulse screen timeout user activity via int signature", firstFailure);
-                }
-                error("Failed to pulse screen timeout user activity", t);
-            }
-        }
-    }
-
-    private void maybeLogScreenTimeout(String message, boolean force) {
-        long now = System.currentTimeMillis();
-        if (!force && now - lastScreenTimeoutLogAt < 2_000L) {
-            return;
-        }
-        lastScreenTimeoutLogAt = now;
-        info(BridgeDebugArea.MEDIA, BridgeEvents.SESSION_REDUCED, message);
     }
 
     private static boolean hasCustomAction(PlaybackState state, String actionId) {
@@ -11972,7 +11605,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (retention == LyricInfoTrackMatcher.NativeOnlyModelRetention.RETAIN) {
             // Keep the complete payload and cleanup/translation lanes along with its model.
             // The caller still forwards this native update and remembers the new load context.
-            markScreenTimeoutLyricModelEvidence();
+            screenTimeout.markScreenTimeoutLyricModelEvidence();
             publishLyricRenderBinding(currentWordLyricModel,
                     nativeLyricModelAssembler.displayDatasetFor(displayLyric), loadEpoch);
             info(BridgeDebugArea.RENDERER, BridgeEvents.LYRIC_MODEL_RETAINED,
@@ -11980,7 +11613,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                             + " | epoch=" + loadEpoch
                             + ", track=" + SensitiveFieldRedactor.trackHash(
                                     currentLyricObservedTrackKey));
-            updateScreenTimeoutWakeLock(currentApplicationContext());
+            screenTimeout.updateScreenTimeoutWakeLock(currentApplicationContext());
             return true;
         }
 
@@ -11993,16 +11626,16 @@ public final class LockscreenLyricsModule extends XposedModule {
                 observedArtist);
         systemUiHasOfficialLyric = displayTimed || rawTimed;
         if (systemUiHasOfficialLyric) {
-            markScreenTimeoutLyricModelEvidence();
+            screenTimeout.markScreenTimeoutLyricModelEvidence();
         } else {
-            screenTimeoutLyricEvidenceGraceUntilElapsedMs = 0L;
+            screenTimeout.screenTimeoutLyricEvidenceGraceUntilElapsedMs = 0L;
         }
         if (assembled == null) {
             if (currentWordLyricModel != null) {
                 publishLyricRenderBinding(currentWordLyricModel,
                         nativeLyricModelAssembler.displayDatasetFor(displayLyric), loadEpoch);
             }
-            updateScreenTimeoutWakeLock(currentApplicationContext());
+            screenTimeout.updateScreenTimeoutWakeLock(currentApplicationContext());
             return true;
         }
 
@@ -12097,7 +11730,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         info(area, event, message);
         mainHandler.post(this::refreshTranslationActionViewVisibility);
         finishOfficialLyricTrackHandoff();
-        updateScreenTimeoutWakeLock(currentApplicationContext());
+        screenTimeout.updateScreenTimeoutWakeLock(currentApplicationContext());
     }
 
     private void publishWordLyricModel(
@@ -12126,7 +11759,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 lastTranslationModelRebindKey = rebindKey;
             }
         });
-        updateScreenTimeoutWakeLock(currentApplicationContext());
+        screenTimeout.updateScreenTimeoutWakeLock(currentApplicationContext());
     }
 
     private void publishLyricRenderBinding(
@@ -12953,7 +12586,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 + ", size=" + recycler.getWidth() + "x" + recycler.getHeight()
                 + ", alpha=" + recycler.getAlpha()
                 + ", aod=" + isAodLowFrameRateLyricMode()
-                + ", interactive=" + isScreenInteractiveForWakeLock());
+                + ", interactive=" + screenTimeout.isScreenInteractiveForWakeLock());
     }
 
     private void maybeLogRecyclerScrollStabilize(View recycler, String reason) {
