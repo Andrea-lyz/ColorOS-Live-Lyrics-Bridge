@@ -2666,6 +2666,78 @@ E-2b 到 E-2d 都读写入口类的实例状态或调用 `hook()`，不能只靠
 - 上一个进程的退出记录是重启按钮的 `SIGNALED 9`，LSPosed SafeMode 没有新增计数。
 - **用户设备冒烟：** 1–7 项通过。
 
+### 15.8.21 F-2 实施记录：KuWo 兼容与元数据工具（2026-11-15，已提交，未推送，设备已通过）
+
+**分支：** Bridge `feat/f2-model-publication`（基于 `2aecbae`）。
+
+**范围调整（用户确认）：**
+- 原计划 F-2 = 模型真值 `LyricModelStore` + 发布管线 + KuWo 兼容。
+- 实测：模型真值字段（当前模型、Provider 绑定、SystemUI 元数据、清理快照）的写入点都已在入口类内，但约 50 行与兼容状态重置、渲染模型清空、签名字段交错。外移只会产生一行一个的 setter，不形成真正的 owner。
+- 用户选择：
+  - 模型真值留在入口类作为唯一写入者，在 F-3 排版时划为独立区段；
+  - 加载 Hook 属于 Hook 胶水，同样留在入口类；
+  - F-2 只做 KuWo 兼容外移，加上元数据静态工具外移。
+
+**F-2a `8821fda`：KuWo SystemUI 与插件兼容外移。**
+- 新类 `KuWoSystemUiCompat`，移入 20 个方法、约 660 行：
+  - artwork 快照、MediaData artwork 捕获、Seedling artwork 三个 Hook；
+  - 车机歌词 metadata 两个 Hook；
+  - KuWo artwork 查找；
+  - OPlus 插件 media model Hook，以及封面修复、歌词支持位。
+- 一并移入 `kuWoRuntime`，以及 media model Hook 所做的插件 DexKit 解析结果：media model 目标、旧版歌词位置控制器。
+- 插件换代时，这组字段的复位由 3 行内联赋值改为 `resetForPluginGeneration()`。
+- `Host` 正好 12 个方法：
+  - `hook()`；
+  - 4 个日志出口；
+  - `artworkProbe`；
+  - MediaDataManager 交接；
+  - 3 个 SystemUI 曲目元数据读取；
+  - metadata 刷新方法的写入；
+  - 车机歌词 installer 注册的两个通用 MediaData 回调。这两个回调属于入口类，经同名转发保持 installer 方法体不变。
+- 方法体：
+  - 改动 5 个：
+    - 插件换代复位 1 个；
+    - 经 Host 写 metadata 刷新方法 1 个；
+    - 经 Host 读曲目元数据 3 个；
+  - 其余移动后一致；
+  - `PLUGIN_COMPAT` 契约测试经 `BridgeSourceMap` 跟随。
+- 三份基线（含 Hook 安装顺序）不变。
+
+**F-2b `ff29a50`：元数据静态工具外移。**
+- 22 个无状态工具移入 `LyricMetadataSupport`：曲目键、模型签名、MediaMetadata 身份与封面复制、metadata 参数定位、宽松文本规整、包名判断、短行判断。
+- 方法体：22 个移动后一致，0 改动。
+
+**仍在入口类（F-3 处理）：**
+- 通用的按名反射工具（`invoke*ByName`、`read*Field`、`findMethod` 等，约 280 行）。第 15.2 节不建通用 `ReflectionUtils`，F-3 按使用方分散或书面保留。
+
+**证据（整刀）：**
+- 每个子步骤单独构建通过。
+- 入口类预算：10,727 → 9,804 行，字段 235 → 232，方法 388 → 346。
+- `verify-build-identity` 通过（379 个输入）。
+- 本地 1056 tests / 0 fail / 6 skip，Debug 与 R8 通过。
+
+**候选：** `artifacts/f2-kuwo-metadata-20261115/Bridge-F2-kuwo-debug-r1.apk`（`cae40f5d…`）。
+
+**设备验证分工：**
+- agent 经授权装包；用户重启 SystemUI 一次后，agent 只读 LSPosed 日志，与本次开机基线比对 `HOOK_INSTALLED` 与 WARN / ERROR。
+- 这次的基线应包含 KuWo 相关项，例如已知的“Skipped KuWo artwork snapshot hook”WARN。
+
+**设备冒烟（只重启 SystemUI 一次）：**
+1. 酷我音乐播放：锁屏卡片封面正常，不是空白或旧歌封面。
+2. 酷我播放时锁屏歌词入口出现，歌词正常显示与推进。
+3. 酷我切歌：封面与歌词都换到新歌。
+4. 换回常用播放器（如 Salt）：歌词、封面、翻译按钮正常。
+5. 常用播放器内同一首歌的元数据变化（如暂停后继续、拖动进度）：歌词不重置到第一行，不闪烁。
+
+**结果（2026-11-16）：**
+- **agent 自检（只读 LSPosed 日志）：** 用户重启 SystemUI 一次后，新进程（00:03:30）与基线（F-1 进程）比对，四条 `HOOK_INSTALLED` 逐字相同：
+  - plugin factory；
+  - LyricsRecyclerView 运行时方法；
+  - adapter bind：它在歌词首次显示时懒安装，00:05:07 出现，`methods=2`；
+  - 已知的 KuWo artwork WARN 由 `KuWoSystemUiCompat` 发出，文字不变。
+- ERROR / FATAL 为 0。上一个进程是重启按钮的 `SIGNALED 9`，SafeMode 没有新增计数。
+- **用户设备冒烟：** 1–5 项通过。
+
 ### 15.9 未覆盖
 
 - **Providers 仓库**的结构与性能没有做同等盘点。若要纳入“完整优化”，需要另做一次基线（13 个专用模块的 Hooker、`provider-core`、Universal），本节不对其作任何结论。
