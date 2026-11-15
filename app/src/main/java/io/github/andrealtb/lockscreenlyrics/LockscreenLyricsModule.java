@@ -90,6 +90,7 @@ import io.github.andrealtb.lockscreenlyrics.bootstrap.SystemUiRuntimeBootstrap;
 import io.github.andrealtb.lockscreenlyrics.systemui.artwork.DynamicArtworkRuntime;
 import io.github.andrealtb.lockscreenlyrics.systemui.artwork.ArtworkTrace;
 import io.github.andrealtb.lockscreenlyrics.diagnostics.BridgeDebugApplyPolicy;
+import io.github.andrealtb.lockscreenlyrics.SystemUiPlaybackController.PlaybackControllerBinding;
 import io.github.andrealtb.lockscreenlyrics.diagnostics.BridgeDebugArea;
 import io.github.andrealtb.lockscreenlyrics.diagnostics.BridgeDebugConfig;
 import io.github.andrealtb.lockscreenlyrics.diagnostics.BridgeEvents;
@@ -904,11 +905,40 @@ public final class LockscreenLyricsModule extends XposedModule {
                 }
             },
             officialLyricTextRenderer);
-    private final Object systemUiPlaybackControllerLock = new Object();
-    private PlaybackControllerBinding systemUiPlaybackControllerBinding;
-    private long nextSystemUiPlaybackControllerEpoch;
-    private volatile long lastPlaybackControllerDiscoveryElapsedMs = -1L;
-    private volatile String lastPlaybackControllerDiscoveryPackage = "";
+    private final SystemUiPlaybackController playbackController = new SystemUiPlaybackController(
+            new SystemUiPlaybackController.Host() {
+                @Override
+                public void onBoundPlaybackStateChanged(
+                        PlaybackControllerBinding source,
+                        PlaybackState state) {
+                    LockscreenLyricsModule.this.onBoundPlaybackStateChanged(source, state);
+                }
+
+                @Override
+                public void rememberSystemUiPlaybackState(PlaybackState playbackState) {
+                    LockscreenLyricsModule.this.rememberSystemUiPlaybackState(playbackState);
+                }
+
+                @Override
+                public void rememberMediaControllerPlaybackState(
+                        String packageName,
+                        Object controllerObject) {
+                    LockscreenLyricsModule.this.rememberMediaControllerPlaybackState(
+                            packageName,
+                            controllerObject);
+                }
+
+                @Override
+                public void info(BridgeDebugArea area, String event, String message) {
+                    LockscreenLyricsModule.this.info(area, event, message);
+                }
+
+                @Override
+                public void error(String message, Throwable throwable) {
+                    LockscreenLyricsModule.this.error(message, throwable);
+                }
+            },
+            mainHandler);
     private WeakReference<Object> oplusMediaDataManager = new WeakReference<>(null);
     private volatile Method oplusPlaybackStateRefreshMethod;
     private final DynamicArtworkRuntime dynamicArtworkRuntime = new DynamicArtworkRuntime(
@@ -1493,8 +1523,8 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
         MediaController controller;
         String controllerPackage;
-        synchronized (systemUiPlaybackControllerLock) {
-            PlaybackControllerBinding binding = systemUiPlaybackControllerBinding;
+        synchronized (playbackController.systemUiPlaybackControllerLock) {
+            PlaybackControllerBinding binding = playbackController.systemUiPlaybackControllerBinding;
             controller = binding == null ? null : binding.controller;
             controllerPackage = binding == null ? "" : binding.packageName;
         }
@@ -3429,7 +3459,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 : chain == null ? "" : findPlayerPackageInArgs(chain.getArgs());
         if (!TextUtils.isEmpty(packageName)) {
             bindCurrentLyricProviderPackage(packageName, "lyricInfo metadata");
-            scheduleSystemUiPlaybackControllerDiscovery(packageName);
+            playbackController.scheduleSystemUiPlaybackControllerDiscovery(packageName);
         } else if (isLyricPayloadTrackChanged(previousPayload, payload)) {
             currentLyricProviderPackage = "";
         }
@@ -3745,7 +3775,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         mainHandler.post(() -> {
             if (currentWordLyricModel == null) deactivateSystemUiLyricModeAfterSurfaceHidden();
         });
-        mainHandler.post(this::clearSystemUiPlaybackControllerBinding);
+        mainHandler.post(playbackController::clearSystemUiPlaybackControllerBinding);
         mainHandler.post(translationTracker::refreshTranslationActionViewVisibility);
         screenTimeout.updateScreenTimeoutWakeLock(currentApplicationContext());
     }
@@ -3858,7 +3888,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
 
         MediaController controller = (MediaController) controllerObject;
-        ensureSystemUiPlaybackControllerCallback(packageName, controller);
+        playbackController.ensureSystemUiPlaybackControllerCallback(packageName, controller);
         PlaybackState playbackState = controller.getPlaybackState();
         if (playbackState == null) {
             return;
@@ -3866,47 +3896,10 @@ public final class LockscreenLyricsModule extends XposedModule {
         rememberSystemUiPlaybackState(playbackState);
     }
 
-    private final class PlaybackControllerBinding {
-        final MediaController controller;
-        final Object token;
-        final String packageName;
-        final long epoch;
-        final MediaController.Callback callback;
-
-        PlaybackControllerBinding(
-                MediaController controller,
-                Object token,
-                String packageName,
-                long epoch) {
-            this.controller = controller;
-            this.token = token;
-            this.packageName = packageName;
-            this.epoch = epoch;
-            this.callback = new MediaController.Callback() {
-                @Override
-                public void onPlaybackStateChanged(PlaybackState state) {
-                    onBoundPlaybackStateChanged(
-                            PlaybackControllerBinding.this,
-                            state);
-                }
-
-                @Override
-                public void onSessionDestroyed() {
-                    onBoundPlaybackSessionDestroyed(PlaybackControllerBinding.this);
-                }
-            };
-        }
-
-        boolean matches(MediaController candidate, Object candidateToken, String candidatePackage) {
-            return packageName.equals(candidatePackage)
-                    && (controller == candidate || sameSessionToken(token, candidateToken));
-        }
-    }
-
     private void onBoundPlaybackStateChanged(
             PlaybackControllerBinding source,
             PlaybackState state) {
-        if (state == null || !isCurrentPlaybackControllerBinding(source)) {
+        if (state == null || !playbackController.isCurrentPlaybackControllerBinding(source)) {
             return;
         }
         if (!TextUtils.isEmpty(currentLyricProviderPackage)
@@ -3918,177 +3911,6 @@ public final class LockscreenLyricsModule extends XposedModule {
         TextView activeView = firstActiveLyricTextView();
         if (activeView != null) {
             scheduleActiveLyricRefresh(activeView, ACTIVE_LYRIC_FRAME_DELAY_MS);
-        }
-    }
-
-    private void onBoundPlaybackSessionDestroyed(PlaybackControllerBinding source) {
-        synchronized (systemUiPlaybackControllerLock) {
-            if (systemUiPlaybackControllerBinding == source) {
-                systemUiPlaybackControllerBinding = null;
-            }
-        }
-    }
-
-    private boolean isCurrentPlaybackControllerBinding(PlaybackControllerBinding source) {
-        synchronized (systemUiPlaybackControllerLock) {
-            return source != null
-                    && systemUiPlaybackControllerBinding == source
-                    && LockscreenIntegrationPolicy.isCurrentPlaybackControllerEvent(
-                    source.epoch,
-                    nextSystemUiPlaybackControllerEpoch,
-                    source.packageName,
-                    systemUiPlaybackControllerBinding == null
-                            ? ""
-                            : systemUiPlaybackControllerBinding.packageName,
-                    systemUiPlaybackControllerBinding != null
-                            && sameSessionToken(
-                            source.token,
-                            systemUiPlaybackControllerBinding.token));
-        }
-    }
-
-    private static boolean sameSessionToken(Object left, Object right) {
-        return left == right || (left != null && left.equals(right));
-    }
-
-    private void scheduleSystemUiPlaybackControllerDiscovery(String packageName) {
-        if (TextUtils.isEmpty(packageName)) {
-            return;
-        }
-        PlaybackControllerBinding existing;
-        synchronized (systemUiPlaybackControllerLock) {
-            existing = systemUiPlaybackControllerBinding;
-        }
-        if (existing != null && packageName.equals(existing.packageName)) {
-            rememberSystemUiPlaybackState(existing.controller.getPlaybackState());
-            return;
-        }
-        long now = SystemClock.elapsedRealtime();
-        if (packageName.equals(lastPlaybackControllerDiscoveryPackage)
-                && lastPlaybackControllerDiscoveryElapsedMs >= 0L
-                && now - lastPlaybackControllerDiscoveryElapsedMs < 750L) {
-            return;
-        }
-        lastPlaybackControllerDiscoveryPackage = packageName;
-        lastPlaybackControllerDiscoveryElapsedMs = now;
-        mainHandler.post(() -> discoverSystemUiPlaybackController(packageName));
-    }
-
-    @SuppressLint("MissingPermission")
-    private void discoverSystemUiPlaybackController(String packageName) {
-        try {
-            PlaybackControllerBinding existing;
-            synchronized (systemUiPlaybackControllerLock) {
-                existing = systemUiPlaybackControllerBinding;
-            }
-            if (existing != null && packageName.equals(existing.packageName)) {
-                rememberSystemUiPlaybackState(existing.controller.getPlaybackState());
-                return;
-            }
-            Context context = currentApplicationContext();
-            if (context == null) {
-                return;
-            }
-            MediaSessionManager manager = (MediaSessionManager) context.getSystemService(
-                    Context.MEDIA_SESSION_SERVICE);
-            if (manager == null) {
-                return;
-            }
-            List<MediaController> controllers = manager.getActiveSessions(null);
-            ArrayList<String> packages = new ArrayList<>(controllers.size());
-            for (MediaController controller : controllers) {
-                packages.add(controller == null ? "" : controller.getPackageName());
-            }
-            int selectedIndex = LockscreenIntegrationPolicy.uniquePackageMatchIndex(
-                    packages,
-                    packageName);
-            if (selectedIndex < 0 || selectedIndex >= controllers.size()) {
-                info(BridgeDebugArea.MEDIA, BridgeEvents.DETAIL,
-                        "Skipped playback controller discovery for package="
-                                + packageName
-                                + ", candidates=" + packages.size());
-                return;
-            }
-            rememberMediaControllerPlaybackState(packageName, controllers.get(selectedIndex));
-        } catch (Throwable t) {
-            error("Failed to discover active MediaController for " + packageName, t);
-        }
-    }
-
-    private void ensureSystemUiPlaybackControllerCallback(
-            String packageName,
-            MediaController controller) {
-        if (TextUtils.isEmpty(packageName) || controller == null) {
-            return;
-        }
-        Object token;
-        try {
-            token = controller.getSessionToken();
-        } catch (Throwable t) {
-            error("Failed to read MediaController session token", t);
-            return;
-        }
-        PlaybackControllerBinding previous;
-        PlaybackControllerBinding candidate;
-        synchronized (systemUiPlaybackControllerLock) {
-            previous = systemUiPlaybackControllerBinding;
-            if (previous != null && previous.matches(controller, token, packageName)) {
-                return;
-            }
-            candidate = new PlaybackControllerBinding(
-                    controller,
-                    token,
-                    packageName,
-                    ++nextSystemUiPlaybackControllerEpoch);
-            systemUiPlaybackControllerBinding = candidate;
-        }
-
-        if (previous != null) {
-            try {
-                previous.controller.unregisterCallback(previous.callback);
-            } catch (Throwable ignored) {
-                // A released/remote session may already have removed the callback.
-            }
-        }
-        try {
-            controller.registerCallback(candidate.callback, mainHandler);
-        } catch (Throwable t) {
-            synchronized (systemUiPlaybackControllerLock) {
-                if (systemUiPlaybackControllerBinding == candidate) {
-                    systemUiPlaybackControllerBinding = null;
-                }
-            }
-            error("Failed to register MediaController playback callback", t);
-            return;
-        }
-        if (!isCurrentPlaybackControllerBinding(candidate)) {
-            try {
-                controller.unregisterCallback(candidate.callback);
-            } catch (Throwable ignored) {
-                // A newer binding already owns playback events.
-            }
-            return;
-        }
-        info(BridgeDebugArea.MEDIA, BridgeEvents.SESSION_REDUCED,
-                "Registered MediaController playback callback for package=" + packageName
-                        + ", epoch=" + candidate.epoch
-                        + ", token=" + SensitiveFieldRedactor.trackHash(String.valueOf(token)));
-    }
-
-    private void clearSystemUiPlaybackControllerBinding() {
-        PlaybackControllerBinding previous;
-        synchronized (systemUiPlaybackControllerLock) {
-            previous = systemUiPlaybackControllerBinding;
-            if (previous == null) {
-                return;
-            }
-            systemUiPlaybackControllerBinding = null;
-            nextSystemUiPlaybackControllerEpoch++;
-        }
-        try {
-            previous.controller.unregisterCallback(previous.callback);
-        } catch (Throwable ignored) {
-            // Released sessions may already have removed the callback.
         }
     }
 

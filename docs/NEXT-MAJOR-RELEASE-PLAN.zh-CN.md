@@ -1998,6 +1998,54 @@ E-2b 到 E-2d 都读写入口类的实例状态或调用 `hook()`，不能只靠
 
 **结果：** 用户安装候选 `8f613bfe…`、重启 SystemUI 后，设备冒烟 1–5 项通过（2026-11-15）。
 
+### 15.8.10 E-5a 实施记录：MediaController 绑定外移（2026-11-15，已提交，未推送）
+
+**分支：** Bridge `feat/e5-playback-controller`（基于 `35a4c9e`）。
+
+**为什么先只做绑定：**
+- 计划中 E-5 约 3,300 行，第一步是 `SystemUiPlaybackController`（MediaController、时钟、reset guard）。
+- 逐方法看依赖后，“时钟”与“reset guard”不能和绑定一起干净地移走：
+  - 播放状态写入（`rememberSystemUiPlaybackState` 两个重载）在同一个方法里还要做官方歌词 handoff、清渲染目标、清 seedling 提示、观察进度跳变（Recycler）、更新屏幕超时；
+  - `resetSystemUiPlaybackPositionForTrackChange` 同时清活动行、Recycler 索引与 adaptive follow；
+  - 时钟字段（`lastPlaybackIsPlaying`、`lastComputedPosition*` 等）被渲染热路径多处直接读取。
+- 现在硬搬只能造一个十几个方法的宽 Host。所以 E-5a 只移 MediaController 绑定；时钟与 reset guard 等模型真值（E-5 第二步）一起定 owner 后再迁。
+
+**移动了什么：** 新类 `SystemUiPlaybackController`（同包、final、包内可见）。
+- 7 个方法：
+  - `scheduleSystemUiPlaybackControllerDiscovery`、`discoverSystemUiPlaybackController`（活动会话查找与 750 ms 节流）；
+  - `ensureSystemUiPlaybackControllerCallback`、`clearSystemUiPlaybackControllerBinding`；
+  - `isCurrentPlaybackControllerBinding`、`onBoundPlaybackSessionDestroyed`；
+  - `sameSessionToken`。
+- 5 个字段：绑定锁、当前绑定、epoch、两个发现节流字段。
+- 内部类 `PlaybackControllerBinding`：原样移入，去掉 `private`，因为入口类仍用这个类型。入口类的内嵌类型 2 → 1。
+- `Host` 有 5 个方法：`onBoundPlaybackStateChanged`、`rememberSystemUiPlaybackState`、`rememberMediaControllerPlaybackState`、`info`、`error`。
+- 主线程 `Handler` 由构造参数传入。
+
+**留在入口类的：**
+- `rememberMediaControllerPlaybackState`：判断当前 Provider，然后建绑定并写入状态。
+- `onBoundPlaybackStateChanged`：写入状态、刷新歌词 View。
+- 全部时钟与 reset guard 代码。
+- `requestOplusTranslationActionRebind` 仍在锁内直接读当前绑定（`playbackController.` 前缀），改为具名查询留到收口。
+
+**证据：**
+- 方法体比对（`--strip playbackController. --strip this:: --strip playbackController:: --strip host.`）：11 个移动后一致（含内部类的构造函数与 `matches`），**0 个改动**，0 个删除，新增 6 个（构造函数与 5 个同名转发）。
+- 三份基线不变。
+- 入口类预算下调：12,339 → 12,161 行，字段 312 → 308，方法 478 → 471，内嵌类型 2 → 1（内嵌行 73 → 37）。
+- `BridgeSourceMap` 的 `SYSTEMUI_RUNTIME` 加入新文件。
+- `verify-build-identity` 通过（369 个输入）。
+- 本地 1056 tests / 0 fail / 6 skip，Debug 与 R8 通过。
+
+**候选：** `artifacts/e5-playback-controller-20261115/Bridge-E5a-playback-debug-r1.apk`（`8d69eaf2…`）。
+
+**设备冒烟（重启 SystemUI；逐字歌词）：**
+1. 重启 SystemUI 后开始播放，锁屏歌词能跟上进度（绑定建立）。
+2. 锁屏上暂停、继续，歌词随之停走。
+3. 拖动进度条或在播放器内 seek，歌词跳到对应行。
+4. 快速连续切歌 3–5 次，歌词每次都换到新歌且进度从头开始。
+5. 切到另一个播放器播放，锁屏歌词跟随新播放器；关掉原播放器后不残留。
+
+**结果：** 用户安装候选 `8d69eaf2…`、重启 SystemUI 后，设备冒烟 1–5 项通过（2026-11-15）。
+
 ### 15.9 未覆盖
 
 - **Providers 仓库**的结构与性能没有做同等盘点。若要纳入“完整优化”，需要另做一次基线（13 个专用模块的 Hooker、`provider-core`、Universal），本节不对其作任何结论。
