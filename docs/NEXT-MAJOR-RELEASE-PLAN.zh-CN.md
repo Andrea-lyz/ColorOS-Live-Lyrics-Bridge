@@ -2258,6 +2258,68 @@ E-2b 到 E-2d 都读写入口类的实例状态或调用 `hook()`，不能只靠
 
 **结果：** 用户安装候选 `ea7c82f8…`、重启 SystemUI 后，设备冒烟 1–5 项通过（2026-11-15）。
 
+### 15.8.14 E-7a 实施记录：handoff 状态外移（2026-11-15，已提交，未推送）
+
+**分支：** Bridge `feat/e7a-handoff`（基于 `0ab4e88`）。这是修订刀序的第二刀，做法与 E-6b 相同。
+
+**移动了什么：** 新类 `LyricSurfaceHandoffController`（同包、final、包内可见），是以下状态的**唯一写入者**：
+- 8 个字段：
+  - handoff generation、开始时间、释放重试 generation；
+  - 官方歌词绘制抑制截止时间；
+  - 迟到接管淡入标志；
+  - 亮行几何提交的锁、generation、待提交模型。
+- 原样移入 2 个方法：`beginBrightLyricGeometryCommit`、`cancelBrightLyricGeometryCommit`。
+- 移入 1 个只改读取方式的方法：`isCurrentBrightLyricGeometryCommit`，当前模型改为经 Host 读取。
+- 新增 8 个状态转换方法：`beginTrackHandoff`、`clearTrackHandoff`、`nextHandoffGeneration`、`markReleaseRetry`、`clearReleaseRetry`、`clearDrawSuppression`、`clearTakeoverFade`、`claimBrightLyricGeometryCommit`。
+- `Host` 只有 `currentWordLyricModel` 一个方法（入口类以 lambda 提供）。
+
+**入口类的 7 处有意改写**（只换调用位置，常量、条件、日志文字和前后语句不变）：
+
+| 方法 | 原内联语句 | 改为 |
+| --- | --- | --- |
+| `beginOfficialLyricTrackHandoff` | 不需要 handoff 时 `fade = false`；开始时依次写开始时间、重试、抑制截止、fade，再 `++generation` | `clearTakeoverFade()`；`beginTrackHandoff(now)`（返回 generation）。`armRowRebind` 写入仍在其前 |
+| 同上，超时 lambda | 依次清抑制、开始时间、重试、fade | `clearTrackHandoff()` |
+| `finishOfficialLyricTrackHandoff` | 同样四个字段清零，再 `++generation` | `clearTrackHandoff()`；`nextHandoffGeneration()`。读 `finishedGeneration`、`startedAt` 仍在其前 |
+| `scheduleOfficialLyricHandoffReleaseRetry` | 判重并登记重试；lambda 内重试复位为 -1 | `markReleaseRetry(generation)`；`clearReleaseRetry()` |
+| `shouldSuppressOfficialLyricForTrackHandoff` | 截止过期时清抑制、开始时间、重试（不动 fade） | `clearDrawSuppression()` |
+| `scheduleLyricsRecyclerVisibilityWatchdog`、`fadeInLateCustomLyricTakeover` | `fade = false` | `clearTakeoverFade()` |
+| `finishBrightLyricGeometryCommit` | 加锁判 generation、模型，然后清待提交模型 | `claimBrightLyricGeometryCommit(model, generation)`。锁块原样移入，锁对象仍是专用的提交锁 |
+
+**其余访问：**
+- 入口类的其他访问都是读取，加 `handoff.` 前缀。
+- 移动脚本断言入口类不再对控制器字段赋值或自增。
+- `SYSTEMUI_LYRIC_MODEL_HANDOFF_MAX_MS` 去掉 `private`。
+- **留在入口类：**
+  - suppress / restore / fade / invalidate 等 View 操作与可见性 watchdog，随 E-6c 迁；
+  - `lyricTrackRowRebindEligibleUntilElapsedMs`，属 Recycler；
+  - `lyricModelReplacementInProgress`，属模型，E-5d 处理。
+
+**过程中的一处脚本缺陷（已修正，无语义影响）：**
+- 前缀脚本把以 `0L, ` 开头的续行误判为声明，漏改了一处读取，编译报错后手工补上前缀。
+- 这类漏改只会表现为编译错误，因为字段已不在入口类。所以此前各刀编译通过，就说明没有漏改。
+
+**证据：**
+- 方法体比对（`--strip handoff. --strip this:: --strip handoff:: --strip host.`）：
+  - 2 个移动后一致；
+  - 改动 8 个：上表 7 处，加上 `isCurrentBrightLyricGeometryCommit` 的模型读取；
+  - 0 个删除；
+  - 新增 9 个：构造函数与 8 个转换方法。
+- 三份基线不变。
+- 入口类预算下调：11,963 → 11,911 行，字段 296 → 289，方法 459 → 456。
+- `verify-build-identity` 通过（372 个输入）。
+- 本地 1056 tests / 0 fail / 6 skip，Debug 与 R8 通过。
+
+**候选：** `artifacts/e7a-handoff-20261115/Bridge-E7a-handoff-debug-r1.apk`（`309c2636…`）。
+
+**设备冒烟（重启 SystemUI；逐字歌词）：**
+1. 锁屏切歌：旧歌词消失、新歌词淡入，中间不闪出官方原始歌词。
+2. 快速连续切歌 3–5 次：最终停在最后一首的歌词，没有卡在空白或半透明。
+3. 切到歌词较晚才到的歌（如网络较慢时）：歌词到达后能淡入接管。
+4. 亮屏与 AOD 往返中切歌：回到亮屏后歌词正常显示，行高与位置正确（几何提交）。
+5. 切歌后等几秒不操作：歌词不会一直被遮住（超时释放）。
+
+**结果：** 用户安装候选 `309c2636…`、重启 SystemUI 后，设备冒烟 1–5 项通过（2026-11-15）。
+
 ### 15.9 未覆盖
 
 - **Providers 仓库**的结构与性能没有做同等盘点。若要纳入“完整优化”，需要另做一次基线（13 个专用模块的 Hooker、`provider-core`、Universal），本节不对其作任何结论。

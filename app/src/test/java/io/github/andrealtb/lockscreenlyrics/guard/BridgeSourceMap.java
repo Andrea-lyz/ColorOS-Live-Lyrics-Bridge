@@ -91,6 +91,12 @@ public final class BridgeSourceMap {
                 SOURCE_ROOT + "TranslationActionViewTracker.java", SOURCE_ROOT + "TranslationActionController.java",
                 SOURCE_ROOT + "SystemUiPlaybackController.java", SOURCE_ROOT + "LyricViewRegistry.java",
                 SOURCE_ROOT + "LyricSurfaceModeController.java"));
+        // E-7a (2026-11-15): the track handoff state moved to LyricSurfaceHandoffController.
+        FILES.put(Area.SYSTEMUI_RUNTIME, Arrays.asList(ENTRY_CLASS, SOURCE_ROOT + "OfficialLyricTextRenderer.java",
+                SOURCE_ROOT + "OplusMediaPolicyHooks.java", SOURCE_ROOT + "ScreenTimeoutController.java",
+                SOURCE_ROOT + "TranslationActionViewTracker.java", SOURCE_ROOT + "TranslationActionController.java",
+                SOURCE_ROOT + "SystemUiPlaybackController.java", SOURCE_ROOT + "LyricViewRegistry.java",
+                SOURCE_ROOT + "LyricSurfaceModeController.java", SOURCE_ROOT + "LyricSurfaceHandoffController.java"));
     }
 
     private BridgeSourceMap() {

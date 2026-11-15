@@ -194,7 +194,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     private static final String TRANSLATION_ACTION_NAME = "\u7ffb\u8bd1";
     private static final long OFFICIAL_DRAW_FRAME_TRANSIENT_MISS_GRACE_MS =
             LyricTimingTuningConstants.OfficialLyric.DRAW_FRAME_TRANSIENT_MISS_GRACE_MS;
-    private static final long SYSTEMUI_LYRIC_MODEL_HANDOFF_MAX_MS =
+    static final long SYSTEMUI_LYRIC_MODEL_HANDOFF_MAX_MS =
             LyricTimingTuningConstants.OfficialLyric.SYSTEMUI_LYRIC_MODEL_HANDOFF_MAX_MS;
     private static final long SYSTEMUI_LYRIC_HANDOFF_MIN_MASK_MS =
             LyricTimingTuningConstants.OfficialLyric.SYSTEMUI_LYRIC_HANDOFF_MIN_MASK_MS;
@@ -426,17 +426,9 @@ public final class LockscreenLyricsModule extends XposedModule {
     private volatile int lyricModeRebindGeneration;
     private Runnable lyricModeRebindRunnable;
     private volatile int translationLayoutGeneration;
-    private volatile long officialLyricDrawSuppressedUntilElapsedMs;
-    private volatile long officialLyricHandoffStartedAtElapsedMs;
-    private volatile int officialLyricHandoffReleaseRetryGeneration = -1;
-    private volatile int officialLyricHandoffGeneration;
     private volatile int lyricRecyclerForceAlignGeneration;
     private volatile long lastTransientLyricSurfaceMissLogAt;
     private volatile boolean lyricModelReplacementInProgress;
-    private final Object brightLyricGeometryCommitLock = new Object();
-    private volatile WordLyricModel pendingBrightLyricGeometryModel;
-    private volatile int brightLyricGeometryCommitGeneration;
-    private volatile boolean pendingCustomLyricTakeoverFade;
     private volatile boolean lyricUiSettingsReceiverRegistered;
     private BroadcastReceiver lyricUiSettingsReceiver;
     private volatile boolean universalBindingsReceiverRegistered;
@@ -606,7 +598,7 @@ public final class LockscreenLyricsModule extends XposedModule {
 
                 @Override
                 public WordLyricModel pendingBrightLyricGeometryModel() {
-                    return pendingBrightLyricGeometryModel;
+                    return handoff.pendingBrightLyricGeometryModel;
                 }
 
                 @Override
@@ -765,6 +757,8 @@ public final class LockscreenLyricsModule extends XposedModule {
                 }
             });
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final LyricSurfaceHandoffController handoff = new LyricSurfaceHandoffController(
+            () -> currentWordLyricModel);
     private final LyricSurfaceModeController surfaceMode = new LyricSurfaceModeController(
             LockscreenLyricsModule.this::info,
             officialLyricTextRenderer,
@@ -4797,37 +4791,10 @@ public final class LockscreenLyricsModule extends XposedModule {
                 startedAt));
     }
 
-    private int beginBrightLyricGeometryCommit(WordLyricModel model) {
-        synchronized (brightLyricGeometryCommitLock) {
-            brightLyricGeometryCommitGeneration = brightLyricGeometryCommitGeneration
-                    == Integer.MAX_VALUE ? 1 : brightLyricGeometryCommitGeneration + 1;
-            pendingBrightLyricGeometryModel = model;
-            return brightLyricGeometryCommitGeneration;
-        }
-    }
-
-    private void cancelBrightLyricGeometryCommit() {
-        synchronized (brightLyricGeometryCommitLock) {
-            brightLyricGeometryCommitGeneration = brightLyricGeometryCommitGeneration
-                    == Integer.MAX_VALUE ? 1 : brightLyricGeometryCommitGeneration + 1;
-            pendingBrightLyricGeometryModel = null;
-        }
-    }
-
-    private boolean isCurrentBrightLyricGeometryCommit(
-            WordLyricModel model,
-            int generation) {
-        synchronized (brightLyricGeometryCommitLock) {
-            return generation == brightLyricGeometryCommitGeneration
-                    && pendingBrightLyricGeometryModel == model
-                    && currentWordLyricModel == model;
-        }
-    }
-
     private void preparePublishedLyricModelGeometry(
             WordLyricModel model,
             int generation) {
-        if (!isCurrentBrightLyricGeometryCommit(model, generation)) {
+        if (!handoff.isCurrentBrightLyricGeometryCommit(model, generation)) {
             return;
         }
         if (hasActiveLyricRefreshSurface()) {
@@ -4881,13 +4848,8 @@ public final class LockscreenLyricsModule extends XposedModule {
             WordLyricModel model,
             int generation,
             boolean scheduleRenderPass) {
-        synchronized (brightLyricGeometryCommitLock) {
-            if (generation != brightLyricGeometryCommitGeneration
-                    || pendingBrightLyricGeometryModel != model
-                    || currentWordLyricModel != model) {
-                return;
-            }
-            pendingBrightLyricGeometryModel = null;
+        if (!handoff.claimBrightLyricGeometryCommit(model, generation)) {
+            return;
         }
         boolean aodLowFrameRateMode = isAodLowFrameRateLyricMode();
         boolean revealCommittedModel =
@@ -5109,7 +5071,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (model != null && model == currentWordLyricModel
                 && lyricRenderTransactions.surfaceStatus(recycler, model)
                 == LyricRenderTransactions.Status.READY) {
-            int generation = beginBrightLyricGeometryCommit(model);
+            int generation = handoff.beginBrightLyricGeometryCommit(model);
             preparePublishedLyricModelGeometry(model, generation);
         }
         invalidateLyricsRecyclerDescendants(recycler);
@@ -5198,7 +5160,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                     || lyricRenderTransactions.currentModel() != model
                     || lyricRenderTransactions.surfaceStatus(recycler, model)
                     != LyricRenderTransactions.Status.READY) return;
-            int generation = beginBrightLyricGeometryCommit(model);
+            int generation = handoff.beginBrightLyricGeometryCommit(model);
             preparePublishedLyricModelGeometry(model, generation);
         });
     }
@@ -5238,7 +5200,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             }
         }
         boolean coherent = status == LyricRenderTransactions.Status.READY
-                && pendingBrightLyricGeometryModel != model && cohort[0] > 0 && cohort[1] == 0;
+                && handoff.pendingBrightLyricGeometryModel != model && cohort[0] > 0 && cohort[1] == 0;
         boolean exposed = lyricRenderTransactions.commitSurfacePixels(recycler, model, coherent);
         if (exposed) {
             // Includes retired/hidden holders no longer listed by getChildCount. Their cached
@@ -6145,15 +6107,15 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (currentWordLyricModel != null || surfaceMode.systemUiLyricModeKeepAwakeActive) {
             return true;
         }
-        if (officialLyricDrawSuppressedUntilElapsedMs <= 0L
+        if (handoff.officialLyricDrawSuppressedUntilElapsedMs <= 0L
                 && lyricRecyclerFadeInUntilElapsedMs <= 0L
-                && !pendingCustomLyricTakeoverFade) {
+                && !handoff.pendingCustomLyricTakeoverFade) {
             return false;
         }
         long now = SystemClock.elapsedRealtime();
-        return now < officialLyricDrawSuppressedUntilElapsedMs
+        return now < handoff.officialLyricDrawSuppressedUntilElapsedMs
                 || now < lyricRecyclerFadeInUntilElapsedMs
-                || pendingCustomLyricTakeoverFade;
+                || handoff.pendingCustomLyricTakeoverFade;
     }
 
     private boolean hasCachedLyricTextView(TextView textView) {
@@ -10630,7 +10592,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             // Model, dataset expectation and mutable Canvas caches commit between UI traversals.
             lyricRenderTransactions.publish(model, dataset);
             traceLyricModelState("published", model);
-            int generation = beginBrightLyricGeometryCommit(model);
+            int generation = handoff.beginBrightLyricGeometryCommit(model);
             resetCommittedLyricRendererState();
             lyricModelReplacementInProgress = false;
             preparePublishedLyricModelGeometry(model, generation);
@@ -10652,7 +10614,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         mainHandler.post(() -> {
             if (currentWordLyricModel != null) return;
             lyricRenderTransactions.publish(null, null);
-            cancelBrightLyricGeometryCommit();
+            handoff.cancelBrightLyricGeometryCommit();
             resetCommittedLyricRendererState();
             invalidateRememberedLyricViews();
         });
@@ -10668,7 +10630,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                                 ? "none" : Integer.toHexString(System.identityHashCode(model)))
                         + ", lines=" + (model == null ? 0 : model.lines.size())
                         + ", translations=" + (model == null ? 0 : model.translationCount())
-                        + ", geometryGeneration=" + brightLyricGeometryCommitGeneration
+                        + ", geometryGeneration=" + handoff.brightLyricGeometryCommitGeneration
                         + ", track=" + SensitiveFieldRedactor.trackHash(
                                 currentLyricObservedTrackKey));
     }
@@ -10680,19 +10642,14 @@ public final class LockscreenLyricsModule extends XposedModule {
     private void beginOfficialLyricTrackHandoff(String reason, boolean armRowRebind) {
         long now = SystemClock.elapsedRealtime();
         if (!shouldStartOfficialLyricTrackHandoff(now)) {
-            pendingCustomLyricTakeoverFade = false;
+            handoff.clearTakeoverFade();
             return;
         }
         if (armRowRebind) {
             lyricTrackRowRebindEligibleUntilElapsedMs =
                     now + SYSTEMUI_LYRIC_ROW_REBIND_WINDOW_MS;
         }
-        officialLyricHandoffStartedAtElapsedMs = now;
-        officialLyricHandoffReleaseRetryGeneration = -1;
-        officialLyricDrawSuppressedUntilElapsedMs =
-                now + SYSTEMUI_LYRIC_MODEL_HANDOFF_MAX_MS;
-        pendingCustomLyricTakeoverFade = true;
-        int generation = ++officialLyricHandoffGeneration;
+        int generation = handoff.beginTrackHandoff(now);
         StructuredBridgeLog.debugTransition(
                 BridgeDebugArea.RENDERER,
                 BridgeEvents.LYRIC_HANDOFF,
@@ -10706,13 +10663,10 @@ public final class LockscreenLyricsModule extends XposedModule {
             invalidateRememberedLyricViews();
         });
         mainHandler.postDelayed(() -> {
-            if (generation != officialLyricHandoffGeneration) {
+            if (generation != handoff.officialLyricHandoffGeneration) {
                 return;
             }
-            officialLyricDrawSuppressedUntilElapsedMs = 0L;
-            officialLyricHandoffStartedAtElapsedMs = 0L;
-            officialLyricHandoffReleaseRetryGeneration = -1;
-            pendingCustomLyricTakeoverFade = false;
+            handoff.clearTrackHandoff();
             StructuredBridgeLog.debugTransition(
                     BridgeDebugArea.RENDERER,
                     BridgeEvents.LYRIC_HANDOFF,
@@ -10726,17 +10680,14 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private void finishOfficialLyricTrackHandoff() {
-        if (officialLyricDrawSuppressedUntilElapsedMs <= 0L
-                && !pendingCustomLyricTakeoverFade) {
+        if (handoff.officialLyricDrawSuppressedUntilElapsedMs <= 0L
+                && !handoff.pendingCustomLyricTakeoverFade) {
             return;
         }
-        int finishedGeneration = officialLyricHandoffGeneration;
-        long startedAt = officialLyricHandoffStartedAtElapsedMs;
-        officialLyricDrawSuppressedUntilElapsedMs = 0L;
-        officialLyricHandoffStartedAtElapsedMs = 0L;
-        officialLyricHandoffReleaseRetryGeneration = -1;
-        pendingCustomLyricTakeoverFade = false;
-        int generation = ++officialLyricHandoffGeneration;
+        int finishedGeneration = handoff.officialLyricHandoffGeneration;
+        long startedAt = handoff.officialLyricHandoffStartedAtElapsedMs;
+        handoff.clearTrackHandoff();
+        int generation = handoff.nextHandoffGeneration();
         StructuredBridgeLog.debugTransition(
                 BridgeDebugArea.RENDERER,
                 BridgeEvents.LYRIC_HANDOFF,
@@ -10749,8 +10700,8 @@ public final class LockscreenLyricsModule extends XposedModule {
             invalidateRememberedLyricViews();
             View anchor = lyricViews.firstAttachedLyricsRecyclerView();
             Runnable restore = () -> {
-                if (generation != officialLyricHandoffGeneration
-                        || officialLyricDrawSuppressedUntilElapsedMs > 0L) {
+                if (generation != handoff.officialLyricHandoffGeneration
+                        || handoff.officialLyricDrawSuppressedUntilElapsedMs > 0L) {
                     return;
                 }
                 restoreSuppressedLyricsRecyclerViews(true);
@@ -10765,7 +10716,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private void finishOfficialLyricTrackHandoffAfterStableCustomFrame(TextView textView) {
-        if (officialLyricDrawSuppressedUntilElapsedMs <= 0L) {
+        if (handoff.officialLyricDrawSuppressedUntilElapsedMs <= 0L) {
             return;
         }
         if (delayOfficialLyricTrackHandoffReleaseIfNeeded()) {
@@ -10783,7 +10734,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private boolean delayOfficialLyricTrackHandoffReleaseIfNeeded() {
-        long startedAt = officialLyricHandoffStartedAtElapsedMs;
+        long startedAt = handoff.officialLyricHandoffStartedAtElapsedMs;
         if (startedAt <= 0L) {
             return false;
         }
@@ -10797,17 +10748,16 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private void scheduleOfficialLyricHandoffReleaseRetry(long delayMs) {
-        int generation = officialLyricHandoffGeneration;
-        if (officialLyricHandoffReleaseRetryGeneration == generation) {
+        int generation = handoff.officialLyricHandoffGeneration;
+        if (!handoff.markReleaseRetry(generation)) {
             return;
         }
-        officialLyricHandoffReleaseRetryGeneration = generation;
         mainHandler.postDelayed(() -> {
-            if (generation != officialLyricHandoffGeneration
-                    || officialLyricDrawSuppressedUntilElapsedMs <= 0L) {
+            if (generation != handoff.officialLyricHandoffGeneration
+                    || handoff.officialLyricDrawSuppressedUntilElapsedMs <= 0L) {
                 return;
             }
-            officialLyricHandoffReleaseRetryGeneration = -1;
+            handoff.clearReleaseRetry();
             invalidateRememberedLyricViews();
         }, Math.max(32L, Math.min(delayMs, 260L)));
     }
@@ -10831,7 +10781,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             if (hasSuppressedLyricsRecyclerAlphas()) {
                 restoreSuppressedLyricsRecyclerViews(true);
                 invalidateRememberedLyricViews();
-                pendingCustomLyricTakeoverFade = false;
+                handoff.clearTakeoverFade();
                 if (isLyricLayoutDiagnosticsEnabled()) {
                     info(BridgeDebugArea.AOD, BridgeEvents.SURFACE_STATE_CHANGED, "Visibility watchdog restored module-suppressed lyric RecyclerView alpha");
                 }
@@ -10841,7 +10791,7 @@ public final class LockscreenLyricsModule extends XposedModule {
 
     private long currentLyricsRecyclerVisibilityHoldUntil(long now) {
         long holdUntil = Math.max(
-                officialLyricDrawSuppressedUntilElapsedMs,
+                handoff.officialLyricDrawSuppressedUntilElapsedMs,
                 lyricRecyclerFadeInUntilElapsedMs);
         return holdUntil > now ? holdUntil : 0L;
     }
@@ -10853,16 +10803,14 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private boolean shouldSuppressOfficialLyricForTrackHandoff() {
-        long deadline = officialLyricDrawSuppressedUntilElapsedMs;
+        long deadline = handoff.officialLyricDrawSuppressedUntilElapsedMs;
         if (deadline <= 0L) {
             return false;
         }
         if (SystemClock.elapsedRealtime() < deadline) {
             return true;
         }
-        officialLyricDrawSuppressedUntilElapsedMs = 0L;
-        officialLyricHandoffStartedAtElapsedMs = 0L;
-        officialLyricHandoffReleaseRetryGeneration = -1;
+        handoff.clearDrawSuppression();
         return false;
     }
 
@@ -10903,7 +10851,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private void fadeInLateCustomLyricTakeover(TextView textView) {
-        if (!pendingCustomLyricTakeoverFade
+        if (!handoff.pendingCustomLyricTakeoverFade
                 || textView == null) {
             return;
         }
@@ -10911,11 +10859,11 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (recycler == null || !recycler.isAttachedToWindow()) {
             return;
         }
-        pendingCustomLyricTakeoverFade = false;
-        int handoffGeneration = officialLyricHandoffGeneration;
+        handoff.clearTakeoverFade();
+        int handoffGeneration = handoff.officialLyricHandoffGeneration;
         recycler.postOnAnimation(() -> {
-            if (handoffGeneration != officialLyricHandoffGeneration
-                    || officialLyricDrawSuppressedUntilElapsedMs > 0L
+            if (handoffGeneration != handoff.officialLyricHandoffGeneration
+                    || handoff.officialLyricDrawSuppressedUntilElapsedMs > 0L
                     || !recycler.isAttachedToWindow()) {
                 return;
             }
@@ -10956,7 +10904,7 @@ public final class LockscreenLyricsModule extends XposedModule {
 
     private boolean shouldStartOfficialLyricTrackHandoff(long now) {
         if (hasVisibleLyricsSurfaceForTrackHandoff(now)
-                || now < officialLyricDrawSuppressedUntilElapsedMs
+                || now < handoff.officialLyricDrawSuppressedUntilElapsedMs
                 || now <= lyricRecyclerFadeInUntilElapsedMs) {
             return true;
         }
@@ -10967,7 +10915,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private boolean hasVisibleLyricsSurfaceForTrackHandoff(long now) {
-        if (now < officialLyricDrawSuppressedUntilElapsedMs) {
+        if (now < handoff.officialLyricDrawSuppressedUntilElapsedMs) {
             return true;
         }
         if (!surfaceMode.systemUiLyricModeKeepAwakeActive) {
@@ -11219,8 +11167,8 @@ public final class LockscreenLyricsModule extends XposedModule {
     private void maybeLogTextViewDraw(DrawFrame frame, TextView view) {
         if (frame != null && view != null
                 && StructuredBridgeLog.isAreaEnabled(BridgeDebugArea.RENDERER)
-                && lastCustomDrawLogGeometryGeneration != brightLyricGeometryCommitGeneration) {
-            int geometryGeneration = brightLyricGeometryCommitGeneration;
+                && lastCustomDrawLogGeometryGeneration != handoff.brightLyricGeometryCommitGeneration) {
+            int geometryGeneration = handoff.brightLyricGeometryCommitGeneration;
             lastCustomDrawLogGeometryGeneration = geometryGeneration;
             StructuredBridgeLog.debugTransition(
                     BridgeDebugArea.RENDERER,
@@ -11281,7 +11229,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                                 ? "none" : Integer.toHexString(System.identityHashCode(model)))
                         + ", viewId=" + Integer.toHexString(System.identityHashCode(view))
                         + ", handoffRemainingMs=" + Math.max(
-                                0L, officialLyricDrawSuppressedUntilElapsedMs - now)
+                                0L, handoff.officialLyricDrawSuppressedUntilElapsedMs - now)
                         + ", fadeRemainingMs=" + Math.max(
                                 0L, lyricRecyclerFadeInUntilElapsedMs - now));
         if (!isLyricVerboseDiagnosticsEnabled()) {
