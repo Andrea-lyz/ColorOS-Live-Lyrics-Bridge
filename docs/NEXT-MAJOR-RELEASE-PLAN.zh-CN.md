@@ -1426,6 +1426,111 @@ E 系列（第 15 节）不单列里程碑：E-0 随 M1，E-1/E-2 在 C-04/C-05 
 
 明确不做：打开 `DRAW_FRAME_REUSE_ENABLED` 换取表面性能；为性能改变 Recycler 所有权、AOD 私有状态或 handoff 时序；为减少 Hook 数量而放宽 LyricsRecyclerView 归属门禁。
 
+### 15.4.1 性能基线（2026-11-15，场景 1–7 已采集）
+
+**口径说明：**
+- 基线采在 E-2c（`9a2e3a1`）之后的代码上，不是 E-0 时的代码。E-1、E-2 都是纯移动，并已通过设备冒烟，但迁移前没有同口径的数据。
+- 因此本基线只用于比较 E-3 及之后的各刀；E-1、E-2 的性能影响记为“未测”。
+- Phase 6 台账里的 2026-10-13 数据仍只作参考。
+
+**构建：** Bridge `feat/perf-baseline`（基于 `9a2e3a1`），已提交，未推送。
+- 新增两个只在 atrace 采集 `com.android.systemui` 时才生效的区段：
+  - `CLL:systemUiBootstrap`，在 `SystemUiRuntimeBootstrap.initialize` 中；
+  - `CLL:systemUiDexKitResolve`，在 `SystemUiDexKitAdapter.resolve` 中。
+- 两处原有的方法体都原样移到了私有方法里。
+- 没有放在入口类里，入口类预算不变。
+- 本地 1056 tests / 0 fail / 6 skip，Debug、R8 通过，`verify-build-identity` 通过。
+- 候选 `artifacts/perf-baseline-20261115/Bridge-perf-baseline-debug-r1.apk`（`5f9f41d6…`）。
+- 这是 Debug 构建，不经 R8，与正式包的差异在第 15.6 节的 R8 抽查里另算。
+
+**采集方式：**
+- 采集用现有 `scripts/capture-lockscreen-perf.ps1 -Mode jank`。它会交互式地要求输入 READY，需要用户在自己的终端运行。
+- 关闭 Bridge 调试日志与录屏。
+- 用同一首逐字歌词、同一亮度与刷新率；每次运行前在 `-Notes` 里写清配置。
+- 结果放在工作区 `.perf/runs/`，属于私人设备数据，不入库。
+
+| # | 场景（`-Label`） | 时长 | 次数 | 操作 |
+| --- | --- | --- | --- | --- |
+| 1 | `idle-no-lyrics` | 45 s | 1 | 暂停播放或使用无歌词的播放器，停在锁屏 |
+| 2 | `word-lift-on` | 45 s | 3 | 逐字歌词播放中，字符上浮开，停在锁屏。重复 3 次，用来估计单轮噪声 |
+| 3 | `word-lift-off` | 45 s | 1 | 同上，字符上浮关 |
+| 4 | `track-switch` | 90 s | 1 | 锁屏上连续切歌 10 次，每次间隔约 5 秒 |
+| 5 | `aod-roundtrip` | 60 s | 1 | 播放中按电源键在亮屏与 AOD 间往返约 10 次 |
+| 6 | `systemui-cold` | 30 s | 2 | 开始录制后，立即在 Bridge 首页点“重启系统界面” |
+| 7 | 长播放内存 | 30 min | 1 | 不用 Perfetto：开始和结束时各取一次 `dumpsys meminfo com.android.systemui` 的 Java 堆与 Graphics。需要当次授权 adb |
+
+**分析：**
+- 由 trace 计算以下指标，并写回本节作为 E-3 及之后各刀的对比基线：
+  - FrameTimeline 掉帧率，分整窗和 AOD 切换窗；
+  - SystemUI 主线程 `doFrame` 均值；
+  - `CLL:lyricRender`、`CLL:lyricFindFrame`、`CLL:lyricNoteVisible` 等区段的 p50/p95；
+  - 场景 6 的 `CLL:systemUiBootstrap` 与 `CLL:systemUiDexKitResolve` 耗时。
+- 噪声幅度用场景 2 的三次结果估计。
+
+**采集与分析：**
+- 用户于 2026-11-15 在 PJZ110（f05be72a）上用基线构建 `5f9f41d6…` 完成场景 1–6，共 10 份 trace。其中 `idle-no-lyrics` 多出一份 05:53 的早期样本，一并计入。
+- 用本机已有的 `trace_processor_shell` 执行 `.perf/analysis/baseline.sql`。逐份结果在 `.perf/analysis/baseline-*.txt`，不入库。
+- 指标口径：
+  - 帧取 SystemUI `NotificationShade` 图层的 FrameTimeline；
+  - “卡顿帧”指 jank_type 不是 None 或 Buffer Stuffing 的帧；
+  - `doFrame` 取 SystemUI 主线程的 `Choreographer#doFrame`；
+  - `CLL:` 区段为 Bridge 的 atrace 区段。
+
+| 场景 | 帧数 | 卡顿帧 % | doFrame 均值 / p95 ms | `CLL:lyricRender` 次数，均值 / p50 / p95 ms | `lyricMainPassActive` 均值 / p95 ms | SystemUI CPU 总 / 主线程 s |
+| --- | ---: | ---: | --- | --- | --- | --- |
+| idle-no-lyrics（2 次） | 1902 / 2072 | 5.99 / 4.83 | 3.00 / 8.93；3.38 / 9.16 | 无 | 无 | 15.7 / 5.4；15.7 / 5.0 |
+| word-lift-on-1 | 2795 | 0.11 | 2.87 / 4.91 | 3392，0.566 / 0.486 / 1.436 | 0.391 / 0.960 | 24.6 / 6.7 |
+| word-lift-on-2 | 2811 | 0.25 | 6.89 / 10.32 | 3395，0.449 / 0.413 / 0.839 | 0.305 / 0.552 | 23.3 / 6.0 |
+| word-lift-on-3 | 2807 | 0.14 | 2.66 / 4.71 | 3386，0.499 / 0.430 / 1.298 | 0.339 / 0.882 | 23.4 / 5.9 |
+| word-lift-off | 2861 | 0.21 | 2.82 / 4.85 | 3500，0.400 / 0.354 / 0.901 | 0.227 / 0.446 | 24.4 / 6.1 |
+| track-switch（90 s） | 6587 | 5.27 | 4.60 / 11.49 | 7600，0.320 / 0.273 / 0.657 | 0.212 / 0.384 | 50.3 / 14.0 |
+| aod-roundtrip（60 s） | 5207 | 14.08 | 4.71 / 14.99 | 4960，0.318 / 0.296 / 0.568 | 0.166 / 0.273 | 43.5 / 13.0 |
+
+**冷启动（场景 6，2 次）：**
+- `CLL:systemUiBootstrap` 分别为 136.7 ms 和 131.1 ms，其中 `CLL:systemUiDexKitResolve` 为 127.8 ms 和 121.7 ms，约占 93%。
+- 两者都在新 SystemUI 进程的主线程上，录制开始后 1.6 s 或 2.8 s 出现。
+- 这两份 trace 的帧和 CPU 数字属于被结束的旧进程，不作基线。
+
+**读数与噪声（只陈述数据，未做归因）：**
+- 场景 2 的三次运行之间：
+  - `CLL:lyricRender` 均值 0.45–0.57 ms，p50 0.41–0.49 ms，相对波动约 ±12%；
+  - 卡顿帧 0.11–0.25%；
+  - 主线程 `doFrame` 均值在 2.7–6.9 ms 之间大幅波动，第 2 次明显偏高，但同一次的 `lyricRender` 没有变高。
+- 因此以后的对比判据如下：
+  - Bridge 区段的 p50 / 均值，超过约 ±15% 才视为变化；
+  - 卡顿帧比例在稳定播放场景下以 0.3% 为噪声上限；
+  - `doFrame` 均值不单独作为回归依据。
+- 字符上浮开与关相比：`lyricRender` 均值多约 0.05–0.17 ms，`lyricMainPassActive` 多约 0.08–0.16 ms，与 Phase 6 台账“上浮占当前行主要成本”的结论方向一致。
+- 无歌词锁屏的卡顿帧（4.8–6.0%）反而高于播放歌词时（0.1–0.25%）。这时没有任何 `CLL:` 区段执行，来源不在 Bridge 的绘制路径；是否与锁屏其他动画或刷新率档位有关，未查。
+- 切歌和 AOD 往返窗口的卡顿帧分别为 5.3% 和 14.1%。这两个场景本身含系统过渡动画；没有关闭 Bridge 的同口径对照，所以不能归因于 Bridge。
+- P-8 有了第一份数据：SystemUI 每次启动时，Bridge 在主线程上花约 130 ms，主要是 DexKit。按 SystemUI 版本缓存 DexKit 结果可能省掉大部分，列为候选，未实施。
+
+**场景 7（长播放内存，用户授权 adb）：**
+- 逐字歌词持续播放，锁屏或 AOD 下进行。
+- 开始快照 06:13:04 UTC，结束快照 06:43:10 UTC，相隔 30 分钟。两次都是同一个 SystemUI 进程（pid 25243），中途没有重启。
+- 原始输出在 `.perf/runs/20261115T061303Z-meminfo-long-play/`。
+- 第一次误在未播放时取的快照已另存为 `…-meminfo-not-playing-discarded`，不计入。
+
+| SystemUI | 开始（KB） | 30 分钟后（KB） | 变化 |
+| --- | ---: | ---: | ---: |
+| TOTAL PSS | 743,684 | 913,257 | +169,573 |
+| Java 堆 | 117,528 | 145,632 | +28,104 |
+| Native 堆 | 261,468 | 374,268 | +112,800 |
+| Graphics | 162,558 | 172,590 | +10,032 |
+| Views | 3,011 | 3,744 | +733 |
+| AppContexts | 65 | 74 | +9 |
+
+**结论：只是一个需要跟进的信号，不是结论。**
+- 30 分钟内 SystemUI 的 Native 堆增加约 110 MB，View 数增加 733 个，增长明显。
+- 但这里只有两个时间点，`dumpsys meminfo` 不会触发 GC，也没有关闭 Bridge 的对照。所以既不能判定是否泄漏，也不能归因于 Bridge。
+- 在 Android 8 以后，Bitmap 像素计入 Native 堆。Bridge 侧的候选来源有光晕位图缓存、封面取色、翻译图标指纹缓存（见第 15.4 节 P-9），未核实。
+
+**跟进（P-9，未实施）：** 按以下方法重测：
+- 每 5–10 分钟取一次，共 30–60 分钟；
+- 每次取之前先触发 GC（需要授权，方式另定）；
+- 再在“Bridge 模块关闭”的条件下用同一首歌做对照；
+- 必要时取 heap dump，看 Bitmap 与 View 的持有者。heap dump 含私人数据，只在本地分析，不入库。
+
 ### 15.5 与里程碑的排期关系
 
 | 时点 | E 系列工作 | 约束 |
@@ -1483,7 +1588,7 @@ E 系列不阻塞商店与引导功能；若进度不足，允许 5.0 只完成�
    - `log-events.txt`：`BridgeEvents` 全部定义，以及全部源码中每个事件常量和字面事件名的使用次数；
    - `hook-install-order.txt`：40 处 `.intercept(` 按所在方法分组、按源码顺序列出 `setId` 与回调。按方法名分组，所以整方法搬到别的类不会改变清单。
 4. **方法体等价脚本**：`scripts/guard/method-bodies.py --base <ref> [--head <ref>]`。按“方法名 + 参数类型”匹配两个版本中的全部方法，不管在哪个文件或类；从左花括号起比较方法体，去掉注释、合并空白，并忽略 `this.` / `LockscreenLyricsModule.`（可用 `--strip` 追加，例如 `host.`）。方法体有变化或消失则退出码为 1，并输出 diff。自检：`HEAD` 对工作区 2,722 个方法全部一致；`0d883d1 → 87b7645` 正确报出 M5 里实际改动的 Java 方法（10 处改动、14 处删除）。
-5. **性能基线：未做，需要设备。** 按第 15.4 节的六个场景采集：锁屏无歌词、逐字歌词且上浮开/关、连续切歌 10 次、亮屏与 AOD 往返、SystemUI 冷启动、约 30 分钟长播放。使用现有 `scripts/capture-lockscreen-perf.ps1 -Mode jank` 和 Bridge 调试页的性能区域；每项记录 APK 哈希、配置与框架版本。抓取 Perfetto/logcat 需要用户当次授权。另外，冷启动场景目前没有现成采样点，需要先新增一个只在开启 tracing 时生效的区段。
+5. **性能基线：构建与采集清单已备（第 15.4.1 节），待设备采集。** 按第 15.4 节的六个场景采集：锁屏无歌词、逐字歌词且上浮开/关、连续切歌 10 次、亮屏与 AOD 往返、SystemUI 冷启动、约 30 分钟长播放。使用现有 `scripts/capture-lockscreen-perf.ps1 -Mode jank` 和 Bridge 调试页的性能区域；每项记录 APK 哈希、配置与框架版本。抓取 Perfetto/logcat 需要用户当次授权。另外，冷启动场景目前没有现成采样点，需要先新增一个只在开启 tracing 时生效的区段。
 
 本地 Bridge 1056 tests / 0 fail / 6 skip（新增 6 项守卫测试），Debug 与 R8 通过。
 
