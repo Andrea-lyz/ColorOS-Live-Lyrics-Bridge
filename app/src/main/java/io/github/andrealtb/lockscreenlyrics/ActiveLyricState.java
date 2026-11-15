@@ -1,6 +1,7 @@
 package io.github.andrealtb.lockscreenlyrics;
 
 import static io.github.andrealtb.lockscreenlyrics.LockscreenLyricsModule.*;
+import static io.github.andrealtb.lockscreenlyrics.LyricsRecyclerViews.*;
 
 import android.view.View;
 import android.widget.TextView;

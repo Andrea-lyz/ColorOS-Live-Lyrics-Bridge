@@ -110,6 +110,7 @@ import io.github.libxposed.api.XposedInterface;
 import io.github.libxposed.api.XposedModule;
 
 import static io.github.andrealtb.lockscreenlyrics.LyricLogDescriptions.*;
+import static io.github.andrealtb.lockscreenlyrics.LyricsRecyclerViews.*;
 import static io.github.andrealtb.lockscreenlyrics.TranslationActionController.normalizeTranslationPreferencePackage;
 import static io.github.andrealtb.lockscreenlyrics.TranslationActionController.translationPreferenceKeyForPackage;
 import static io.github.andrealtb.lockscreenlyrics.TranslationActionViewTracker.isTranslationActionDescription;
@@ -130,7 +131,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     // current track. This bounds a stale context that survived a vendor-side load failure.
     private static final long SYSTEM_UI_METADATA_REPLAY_MAX_AGE_MS = 12L * 60L * 60L * 1000L;
     private static volatile String logProcessName = "unknown";
-    private static volatile LyricUiConfig runtimeLyricUiConfig = LyricUiConfig.defaults();
+    static volatile LyricUiConfig runtimeLyricUiConfig = LyricUiConfig.defaults();
     private static final String MODULE_PACKAGE = "io.github.andrealtb.lockscreenlyrics";
     private static final String SYSTEMUI_PACKAGE = "com.android.systemui";
     private static final String OPLUS_PLUGIN_CLASS_LOADER_CLASS =
@@ -141,7 +142,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             "com.android.systemui.shared.plugins.PluginInstance$PluginFactory";
     private static final String OPLUS_PLUGIN_FACTORY_CREATE_CLASS_LOADER_METHOD =
             "createClassLoader";
-    private static final String LYRICS_RECYCLER_VIEW_CLASS =
+    static final String LYRICS_RECYCLER_VIEW_CLASS =
             "com.oplus.systemui.plugins.shared.template.component.media.view.LyricsRecyclerView";
     private static final String LYRICS_SWITCHER_VIEW_CLASS =
             "com.oplus.systemui.plugins.shared.template.component.media.view.LyricsSwitcherView";
@@ -255,8 +256,6 @@ public final class LockscreenLyricsModule extends XposedModule {
             LyricTimingTuningConstants.Translation.TOGGLE_LAYOUT_FRAME_MS;
     private static final float OFFICIAL_LYRIC_INACTIVE_BLUR_RADIUS_PX =
             LyricTimingTuningConstants.OfficialLyric.INACTIVE_BLUR_RADIUS_PX;
-    private static final float OFFICIAL_LYRIC_BLUR_ZERO_THRESHOLD_PX =
-            LyricTimingTuningConstants.OfficialLyric.BLUR_ZERO_THRESHOLD_PX;
     private static final long OFFICIAL_LYRIC_ROW_SCALE_ATTACH_SUPPRESS_MS =
             LyricTimingTuningConstants.OfficialLyric.ROW_SCALE_ATTACH_SUPPRESS_MS;
     static final long AOD_WORD_PROGRESS_TO_LINE_ANIMATION_MS =
@@ -469,39 +468,23 @@ public final class LockscreenLyricsModule extends XposedModule {
             new WeakHashMap<>();
     private int nextLyricTextBindEpoch;
     private volatile boolean translationActionViewRecoveryPosted;
-    private static final Object VIEW_VISUAL_EFFECT_CACHE_LOCK = new Object();
-    private static final WeakHashMap<Class<?>, WeakReference<Method[]>>
-            VIEW_BLUR_METHOD_CACHE = new WeakHashMap<>();
-    private static final WeakHashMap<View, Boolean> VIEW_BLUR_DISABLED = new WeakHashMap<>();
-    private static final WeakHashMap<View, Integer> VIEW_LYRIC_RENDER_EFFECT_MODE =
+    static final Object VIEW_VISUAL_EFFECT_CACHE_LOCK = new Object();
+    static final WeakHashMap<View, Boolean> VIEW_BLUR_DISABLED = new WeakHashMap<>();
+    static final WeakHashMap<View, Integer> VIEW_LYRIC_RENDER_EFFECT_MODE =
             new WeakHashMap<>();
-    private static final Object RECYCLER_POSITION_METHOD_CACHE_LOCK = new Object();
-    private static final WeakHashMap<Class<?>, WeakReference<Method>>
-            RECYCLER_POSITION_METHOD_CACHE = new WeakHashMap<>();
-    private static final WeakHashMap<Class<?>, Boolean> RECYCLER_POSITION_METHOD_MISSING =
+    static final WeakHashMap<TextView, LyricsRecyclerMatch> LYRICS_RECYCLER_MATCH_CACHE =
             new WeakHashMap<>();
-    /** getAdapter lives on RecyclerView; a per-call declared-method walk throws once per subclass level. */
-    private static final WeakHashMap<Class<?>, WeakReference<Method>>
-            RECYCLER_ADAPTER_METHOD_CACHE = new WeakHashMap<>();
-    private static final WeakHashMap<Class<?>, Boolean> LYRICS_RECYCLER_VIEW_CLASS_MATCH_CACHE =
-            new WeakHashMap<>();
-    private static final WeakHashMap<TextView, LyricsRecyclerMatch> LYRICS_RECYCLER_MATCH_CACHE =
-            new WeakHashMap<>();
-    private static final LyricsRecyclerFieldAccessor LYRICS_RECYCLER_FIELD_ACCESSOR =
-            new LyricsRecyclerFieldAccessor();
     // ColorOS 17 has no readable index field (n). Its official row field is resolved by DexKit
     // semantics on the first attach (immersiveCurrentIndexField); until then, or when it cannot be
     // resolved, the row each recycler was last sent through its immersive entry stands in for it.
     // Weak keys: a detached recycler never outlives SystemUI.
-    private static final WeakHashMap<Object, ImmersiveEntryIndex> IMMERSIVE_ENTRY_INDEXES =
+    static final WeakHashMap<Object, ImmersiveEntryIndex> IMMERSIVE_ENTRY_INDEXES =
             new WeakHashMap<>();
     // The vendor applies a new list only after its switch fade and an asynchronous diff, so the
     // row sent through the entry can lead the displayed one; this field is the displayed row.
-    private static volatile Field immersiveCurrentIndexField;
-    private static final LyricsRecyclerMatch NO_LYRICS_RECYCLER_MATCH =
+    static volatile Field immersiveCurrentIndexField;
+    static final LyricsRecyclerMatch NO_LYRICS_RECYCLER_MATCH =
             new LyricsRecyclerMatch(null, null);
-    private static final ThreadLocal<Rect> VIEW_VISIBLE_RECT =
-            ThreadLocal.withInitial(Rect::new);
     private volatile boolean activeLyricUpdatePosted;
     private boolean activeLyricRefreshCadenceScheduled;
     private WordLine activeLyricRefreshCadenceLine;
@@ -602,7 +585,7 @@ public final class LockscreenLyricsModule extends XposedModule {
 
                 @Override
                 public View findContainingLyricsRecyclerView(TextView textView) {
-                    return LockscreenLyricsModule.this.findContainingLyricsRecyclerView(textView);
+                    return LyricsRecyclerViews.findContainingLyricsRecyclerView(textView);
                 }
 
                 @Override
@@ -4630,10 +4613,6 @@ public final class LockscreenLyricsModule extends XposedModule {
         maybeLogRecyclerIndex(lastLyricsRecyclerIndex);
     }
 
-    private static void stopLyricsRecyclerScroll(View recycler) {
-        tryInvokeNoArgByName(recycler, "stopScroll");
-    }
-
     private void rememberLyricsRecyclerView(View recycler) {
         if (recycler == null) {
             return;
@@ -5480,24 +5459,6 @@ public final class LockscreenLyricsModule extends XposedModule {
         return Math.max(0, desiredCenter - itemHeight / 2);
     }
 
-    private static int findBoundLyricsRecyclerItemHeight(View recyclerView, int targetIndex) {
-        if (!(recyclerView instanceof ViewGroup) || targetIndex < 0) {
-            return 0;
-        }
-        ViewGroup group = (ViewGroup) recyclerView;
-        for (int i = 0; i < group.getChildCount(); i++) {
-            View child = group.getChildAt(i);
-            if (readRecyclerChildPosition(recyclerView, child) == targetIndex) {
-                return child.getHeight();
-            }
-        }
-        return 0;
-    }
-
-    private static boolean hasBoundLyricsRecyclerChildren(View recycler) {
-        return recycler instanceof ViewGroup && ((ViewGroup) recycler).getChildCount() > 0;
-    }
-
     private boolean invokeLyricsRecyclerSetCurrentLyric(View recycler, int targetIndex) {
         if (lyricsRecyclerSetCurrentUnavailable
                 || targetIndex < 0
@@ -5558,33 +5519,6 @@ public final class LockscreenLyricsModule extends XposedModule {
                 } finally {
                     suppressLyricsRecyclerHook.remove();
                 }
-            }
-            current = current.getSuperclass();
-        }
-        return false;
-    }
-
-    private static boolean isLyricsRecyclerView(View view) {
-        if (view == null) {
-            return false;
-        }
-        Class<?> viewClass = view.getClass();
-        synchronized (LYRICS_RECYCLER_VIEW_CLASS_MATCH_CACHE) {
-            Boolean cached = LYRICS_RECYCLER_VIEW_CLASS_MATCH_CACHE.get(viewClass);
-            if (cached != null) {
-                return cached;
-            }
-            boolean matches = hasLyricsRecyclerViewClassName(viewClass);
-            LYRICS_RECYCLER_VIEW_CLASS_MATCH_CACHE.put(viewClass, matches);
-            return matches;
-        }
-    }
-
-    private static boolean hasLyricsRecyclerViewClassName(Class<?> viewClass) {
-        Class<?> current = viewClass;
-        while (current != null) {
-            if (LYRICS_RECYCLER_VIEW_CLASS.equals(current.getName())) {
-                return true;
             }
             current = current.getSuperclass();
         }
@@ -5979,12 +5913,6 @@ public final class LockscreenLyricsModule extends XposedModule {
                     position,
                     counts);
         }
-    }
-
-    private static int readLyricsRecyclerAdapterItemCount(View recycler) {
-        Object adapter = invokeNoArgByName(recycler, "getAdapter");
-        Object itemCount = invokeNoArgByName(adapter, "getItemCount");
-        return itemCount instanceof Number ? ((Number) itemCount).intValue() : -1;
     }
 
     private void forgetLyricTextViewCaches(TextView textView) {
@@ -7133,35 +7061,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         mainHandler.post(() -> redrawLyricRenderTargets(false, true));
     }
 
-    private static boolean isLyricsRecyclerCurrentLyricMethod(Method method) {
-        if (method == null || method.getReturnType() != void.class) {
-            return false;
-        }
-        Class<?>[] parameterTypes = method.getParameterTypes();
-        if ("setCurrentLyric".equals(method.getName())
-                && parameterTypes.length > 0
-                && parameterTypes[0] == int.class) {
-            return true;
-        }
-        return isOfficialTimedCurrentLyricMethod(method);
-    }
-
-    private static boolean isLyricsRecyclerNotifyCrashGuardMethod(Method method) {
-        return method != null
-                && "e".equals(method.getName())
-                && method.getReturnType() == void.class;
-    }
-
-    private static boolean isLyricsRecyclerScalePivotMethod(Method method) {
-        // Method names drift across same-version SystemUIPlugin binaries (verified m/k plus the
-        // current u/v/C device variant, and ColorOS 17's static d). The shapes are narrow and
-        // safe: they can only operate on the lyric row, and restoring the configured pivot after
-        // they return is idempotent even for style/binding helpers.
-        return OfficialLyricScalePivotMethodPolicy.textViewArgumentIndex(method)
-                != OfficialLyricScalePivotMethodPolicy.NOT_A_PIVOT_METHOD;
-    }
-
-    private static boolean isOfficialTimedCurrentLyricMethod(Method method) {
+    static boolean isOfficialTimedCurrentLyricMethod(Method method) {
         return method != null
                 && method.getReturnType() == void.class
                 && isOfficialTimedCurrentLyricExecutable(method);
@@ -7194,10 +7094,6 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (adapterClass != null) {
             tryInstallRecyclerAdapterNotifyHook(adapterClass, "attached-adapter");
         }
-    }
-
-    private static Class<?> findRecyclerAdapterBaseClass(Object adapter) {
-        return LyricRecyclerAdapterContract.findBaseClass(adapter);
     }
 
     private synchronized void tryInstallRecyclerAdapterNotifyHook(
@@ -7692,19 +7588,6 @@ public final class LockscreenLyricsModule extends XposedModule {
                 model.displayIndexAt(position));
     }
 
-    private static boolean isOfficialVisualFocusedLine(
-            int lineIndex,
-            int focusAnchorIndex,
-            int scaleActiveIndex) {
-        if (lineIndex < 0) {
-            return false;
-        }
-        if (lineIndex == scaleActiveIndex) {
-            return true;
-        }
-        return scaleActiveIndex < 0 && lineIndex == focusAnchorIndex;
-    }
-
     private static boolean isBeforeFirstLyricScaleStart(WordLyricModel model, long position) {
         return model != null && model.isBeforeFirstProgressStart(position);
     }
@@ -7946,7 +7829,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         return playbackLine;
     }
 
-    private static WordLine firstLineBeforeDisplayStart(WordLyricModel model, long position) {
+    static WordLine firstLineBeforeDisplayStart(WordLyricModel model, long position) {
         if (model == null || position < 0L || model.lines.isEmpty()) {
             return null;
         }
@@ -7955,18 +7838,6 @@ public final class LockscreenLyricsModule extends XposedModule {
             return null;
         }
         return firstLine;
-    }
-
-    private static WordLine resolveFocusAnchorLine(
-            WordLyricModel model, WordLine activeLine, long position) {
-        WordLine firstDisplayLine = firstLineBeforeDisplayStart(model, position);
-        if (firstDisplayLine != null) {
-            return firstDisplayLine;
-        }
-        if (activeLine != null || model == null) {
-            return activeLine;
-        }
-        return model.lineAt(model.displayIndexAt(position));
     }
 
     private static boolean isReadyForLyricDraw(TextView textView) {
@@ -8034,133 +7905,8 @@ public final class LockscreenLyricsModule extends XposedModule {
         return !TextUtils.isEmpty(normalizedTextOf(textView));
     }
 
-    private static int findLyricsRecyclerAdapterPosition(TextView textView) {
-        LyricsRecyclerMatch match = findLyricsRecyclerMatch(textView);
-        return match == null
-                ? -1
-                : readRecyclerChildPosition(match.recycler(), match.itemView());
-    }
-
-    private static int readRecyclerChildPosition(View recyclerView, View child) {
-        if (recyclerView == null || child == null) {
-            return -1;
-        }
-        Method method = resolveRecyclerChildPositionMethod(recyclerView.getClass());
-        if (method == null) {
-            return -1;
-        }
-        try {
-            Object result = method.invoke(recyclerView, child);
-            return result instanceof Number ? ((Number) result).intValue() : -1;
-        } catch (Throwable ignored) {
-            return -1;
-        }
-    }
-
-    private static Method resolveRecyclerChildPositionMethod(Class<?> recyclerClass) {
-        synchronized (RECYCLER_POSITION_METHOD_CACHE_LOCK) {
-            WeakReference<Method> reference = RECYCLER_POSITION_METHOD_CACHE.get(recyclerClass);
-            Method cached = reference == null ? null : reference.get();
-            if (cached != null) {
-                return cached;
-            }
-            if (RECYCLER_POSITION_METHOD_MISSING.containsKey(recyclerClass)) {
-                return null;
-            }
-        }
-        Method resolved = findRecyclerChildPositionMethod(recyclerClass);
-        synchronized (RECYCLER_POSITION_METHOD_CACHE_LOCK) {
-            if (resolved == null) {
-                RECYCLER_POSITION_METHOD_MISSING.put(recyclerClass, Boolean.TRUE);
-            } else {
-                RECYCLER_POSITION_METHOD_CACHE.put(
-                        recyclerClass,
-                        new WeakReference<>(resolved));
-            }
-        }
-        return resolved;
-    }
-
-    private static Method findRecyclerChildPositionMethod(Class<?> recyclerClass) {
-        Method resolved = null;
-        String[] methodNames = {
-                "getChildBindingAdapterPosition",
-                "getChildAdapterPosition",
-                "getChildLayoutPosition"
-        };
-        for (String methodName : methodNames) {
-            try {
-                resolved = findMethod(recyclerClass, methodName, View.class);
-                resolved.setAccessible(true);
-                break;
-            } catch (Throwable ignored) {
-                // Some plugin RecyclerView builds expose only one of these helpers.
-            }
-        }
-        return resolved;
-    }
-
-    private static int findValidLyricsRecyclerAdapterPosition(TextView textView, WordLyricModel model) {
-        int position = findLyricsRecyclerAdapterPosition(textView);
-        if (model == null
-                || position < 0
-                || (position >= model.lines.size()
-                && position >= model.officialLines.size())) {
-            return -1;
-        }
-        return position;
-    }
-
     private static int currentOfficialIndexForTextView(TextView textView) {
         return readLyricsRecyclerCurrentIndex(findContainingLyricsRecyclerView(textView));
-    }
-
-    static View findContainingLyricsRecyclerView(TextView textView) {
-        LyricsRecyclerMatch match = findLyricsRecyclerMatch(textView);
-        return match == null ? null : match.recycler();
-    }
-
-    static View findLyricsRecyclerItemView(TextView textView) {
-        LyricsRecyclerMatch match = findLyricsRecyclerMatch(textView);
-        if (match != null) {
-            return match.itemView();
-        }
-        if (textView == null) {
-            return null;
-        }
-        return textView;
-    }
-
-    private static LyricsRecyclerMatch findLyricsRecyclerMatch(TextView textView) {
-        if (textView == null) {
-            return null;
-        }
-        LyricsRecyclerMatch cached = LYRICS_RECYCLER_MATCH_CACHE.get(textView);
-        if (cached == NO_LYRICS_RECYCLER_MATCH) {
-            return null;
-        }
-        if (cached != null && cached.isUsable(textView)) {
-            return cached;
-        }
-        if (cached != null) {
-            LYRICS_RECYCLER_MATCH_CACHE.remove(textView);
-        }
-        View child = textView;
-        Object parent = child.getParent();
-        for (int depth = 0; depth < 12 && parent instanceof View; depth++) {
-            View parentView = (View) parent;
-            if (isLyricsRecyclerView(parentView)) {
-                LyricsRecyclerMatch match = new LyricsRecyclerMatch(parentView, child);
-                LYRICS_RECYCLER_MATCH_CACHE.put(textView, match);
-                return match;
-            }
-            child = parentView;
-            parent = child.getParent();
-        }
-        if (textView.isAttachedToWindow()) {
-            LYRICS_RECYCLER_MATCH_CACHE.put(textView, NO_LYRICS_RECYCLER_MATCH);
-        }
-        return null;
     }
 
     private void configureOfficialLyricLineSpacing(View recyclerView) {
@@ -8323,119 +8069,6 @@ public final class LockscreenLyricsModule extends XposedModule {
                         + field.getName());
     }
 
-    /** ColorOS 17 displayed official row, or null before it is resolved for this recycler. */
-    private static Integer readImmersiveCurrentIndexField(Object recycler) {
-        Field field = immersiveCurrentIndexField;
-        if (field == null
-                || recycler == null
-                || !field.getDeclaringClass().isInstance(recycler)) {
-            return null;
-        }
-        try {
-            return field.getInt(recycler);
-        } catch (Throwable ignored) {
-            return null;
-        }
-    }
-
-    private static int synchronizeBoundLyricItemScales(
-            View recyclerView,
-            float inactiveScale) {
-        if (!(recyclerView instanceof ViewGroup)) {
-            return 0;
-        }
-        ViewGroup group = (ViewGroup) recyclerView;
-        int officialIndex = readLyricsRecyclerCurrentIndex(recyclerView);
-        int changed = 0;
-        for (int i = 0; i < group.getChildCount(); i++) {
-            View child = group.getChildAt(i);
-            TextView lyricTextView = findFirstTextView(child, new int[]{0});
-            View scaleView = lyricTextView == null ? child : lyricTextView;
-            int adapterPosition = readRecyclerChildPosition(recyclerView, child);
-            float targetScale = adapterPosition >= 0 && adapterPosition == officialIndex
-                    ? 1f
-                    : inactiveScale;
-            if (Math.abs(scaleView.getScaleX() - targetScale) > 0.001f) {
-                scaleView.setScaleX(targetScale);
-                changed++;
-            }
-            if (Math.abs(scaleView.getScaleY() - targetScale) > 0.001f) {
-                scaleView.setScaleY(targetScale);
-            }
-        }
-        return changed;
-    }
-
-    private static void synchronizeBoundLyricItemPivots(View recyclerView) {
-        if (!(recyclerView instanceof ViewGroup)) {
-            return;
-        }
-        ViewGroup group = (ViewGroup) recyclerView;
-        for (int i = 0; i < group.getChildCount(); i++) {
-            TextView textView = findFirstTextView(group.getChildAt(i), new int[]{0});
-            if (textView != null) {
-                applyOfficialLyricScalePivot(textView);
-            }
-        }
-    }
-
-    private static TextView findFirstTextView(View view, int[] visited) {
-        if (view == null || visited[0]++ > 24) {
-            return null;
-        }
-        if (view instanceof TextView) {
-            return (TextView) view;
-        }
-        if (!(view instanceof ViewGroup)) {
-            return null;
-        }
-        ViewGroup group = (ViewGroup) view;
-        for (int i = 0; i < group.getChildCount(); i++) {
-            TextView match = findFirstTextView(group.getChildAt(i), visited);
-            if (match != null) {
-                return match;
-            }
-        }
-        return null;
-    }
-
-    private static void applyOfficialLyricScalePivot(TextView textView) {
-        if (textView == null) {
-            return;
-        }
-        int resolvedWidth = LyricUiLayoutPolicy.resolvedViewDimension(
-                textView.getWidth(),
-                textView.getMeasuredWidth());
-        int resolvedHeight = LyricUiLayoutPolicy.resolvedViewDimension(
-                textView.getHeight(),
-                textView.getMeasuredHeight());
-        if (resolvedWidth <= 0) {
-            // The vendor method already selected its safest available pivot. Do not replace it
-            // with paddingLeft merely because this hook ran before the first layout.
-            return;
-        }
-        float contentWidth = Math.max(
-                0f,
-                resolvedWidth - textView.getPaddingLeft() - textView.getPaddingRight());
-        float pivotX = LyricUiLayoutPolicy.horizontalScalePivot(
-                runtimeLyricUiConfig.alignment,
-                textView.getLayoutDirection() == View.LAYOUT_DIRECTION_RTL,
-                textView.getPaddingLeft(),
-                contentWidth);
-        textView.setPivotX(pivotX);
-        if (runtimeLyricUiConfig.alignment != LyricUiConfig.ALIGN_CENTER) {
-            textView.setPivotY(0f);
-            return;
-        }
-        if (resolvedHeight <= 0) {
-            return;
-        }
-        float contentHeight = Math.max(
-                0f,
-                resolvedHeight - textView.getPaddingTop() - textView.getPaddingBottom());
-        textView.setPivotY(textView.getPaddingTop() + contentHeight / 2f);
-    }
-
     private static final View.OnLayoutChangeListener
             OFFICIAL_LYRIC_SCALE_PIVOT_LAYOUT_LISTENER =
             (view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
@@ -8445,254 +8078,6 @@ public final class LockscreenLyricsModule extends XposedModule {
                     applyOfficialLyricScalePivot((TextView) view);
                 }
             };
-
-    private static int synchronizeBoundLyricItemSpacing(
-            View recyclerView, int previousSpacing, int requestedSpacing) {
-        if (!(recyclerView instanceof ViewGroup) || previousSpacing == requestedSpacing) {
-            return 0;
-        }
-        ViewGroup recyclerGroup = (ViewGroup) recyclerView;
-        int synchronizedChildren = 0;
-        for (int i = 0; i < recyclerGroup.getChildCount(); i++) {
-            View child = recyclerGroup.getChildAt(i);
-            ViewGroup.LayoutParams params = child.getLayoutParams();
-            if (!(params instanceof ViewGroup.MarginLayoutParams)) {
-                continue;
-            }
-            ViewGroup.MarginLayoutParams marginParams = (ViewGroup.MarginLayoutParams) params;
-            if (marginParams.bottomMargin != previousSpacing) {
-                continue;
-            }
-            marginParams.bottomMargin = requestedSpacing;
-            child.setLayoutParams(marginParams);
-            synchronizedChildren++;
-        }
-        return synchronizedChildren;
-    }
-
-    private static void prepareOfficialLyricTextView(TextView textView) {
-        if (textView == null) {
-            return;
-        }
-        // This method is also reached from the per-frame custom draw path. TextView's
-        // height setters request a new layout even when the requested value is unchanged,
-        // so keep this preparation idempotent to avoid remeasuring the whole shade on
-        // every lyric frame.
-        if (textView.getIncludeFontPadding()) {
-            textView.setIncludeFontPadding(false);
-        }
-        if (textView.getMinHeight() != 0) {
-            textView.setMinHeight(0);
-        }
-        if (textView.getMinimumHeight() != 0) {
-            textView.setMinimumHeight(0);
-        }
-        View itemView = findLyricsRecyclerItemView(textView);
-        if (itemView != null
-                && itemView != textView
-                && itemView.getMinimumHeight() != 0) {
-            itemView.setMinimumHeight(0);
-        }
-    }
-
-    private static void clearFocusedOfficialLyricViewEffects(TextView textView) {
-        applyFocusedOfficialLyricViewEffects(textView, false, false);
-    }
-
-    private static void applyFocusedOfficialLyricViewEffects(
-            TextView textView,
-            boolean inactiveBlur) {
-        applyFocusedOfficialLyricViewEffects(textView, inactiveBlur, inactiveBlur);
-    }
-
-    private static void applyFocusedOfficialLyricViewEffects(
-            TextView textView,
-            boolean inactiveBlur,
-            boolean keepZeroBlurEffect) {
-        applyFocusedOfficialLyricViewEffects(
-                textView,
-                inactiveBlur ? runtimeLyricUiConfig.blurRadiusTenthsPx / 10f : 0f,
-                keepZeroBlurEffect);
-    }
-
-    static void applyFocusedOfficialLyricViewEffects(
-            TextView textView,
-            float inactiveBlurRadius,
-            boolean keepZeroBlurEffect) {
-        if (textView == null) {
-            return;
-        }
-        applyViewVisualEffects(textView, inactiveBlurRadius, keepZeroBlurEffect);
-        View itemView = findLyricsRecyclerItemView(textView);
-        if (itemView != null && itemView != textView) {
-            applyViewVisualEffects(itemView, false, false);
-        }
-    }
-
-    private static void clearViewVisualEffects(View view) {
-        applyViewVisualEffects(view, false, false);
-    }
-
-    private static void applyViewVisualEffects(View view, boolean inactiveBlur) {
-        applyViewVisualEffects(view, inactiveBlur, inactiveBlur);
-    }
-
-    private static void applyViewVisualEffects(
-            View view,
-            boolean inactiveBlur,
-            boolean keepZeroBlurEffect) {
-        applyViewVisualEffects(
-                view,
-                inactiveBlur ? runtimeLyricUiConfig.blurRadiusTenthsPx / 10f : 0f,
-                keepZeroBlurEffect);
-    }
-
-    private static void applyViewVisualEffects(
-            View view,
-            float inactiveBlurRadius,
-            boolean keepZeroBlurEffect) {
-        if (view == null) {
-            return;
-        }
-        float blurRadius = Math.max(0f, inactiveBlurRadius);
-        if (blurRadius < OFFICIAL_LYRIC_BLUR_ZERO_THRESHOLD_PX) {
-            blurRadius = 0f;
-        }
-        // Do not reset alpha/scale/layer type from onDraw. Those physical View properties belong
-        // to SystemUI's RecyclerView/page transaction; overwriting them each frame caused the
-        // official row animator and the custom renderer to pull the same item in opposite ways.
-        boolean updateBlur;
-        int effectMode = blurRadius > 0f
-                ? 1000 + Math.max(1, Math.round(blurRadius * 10f))
-                : keepZeroBlurEffect ? 1 : 0;
-        synchronized (VIEW_VISUAL_EFFECT_CACHE_LOCK) {
-            Integer previousEffectMode = VIEW_LYRIC_RENDER_EFFECT_MODE.get(view);
-            updateBlur = previousEffectMode == null
-                    || previousEffectMode != effectMode
-                    || !VIEW_BLUR_DISABLED.containsKey(view);
-            if (effectMode != 0) {
-                VIEW_LYRIC_RENDER_EFFECT_MODE.put(view, effectMode);
-            } else {
-                VIEW_LYRIC_RENDER_EFFECT_MODE.remove(view);
-            }
-            if (updateBlur) {
-                VIEW_BLUR_DISABLED.put(view, Boolean.TRUE);
-            }
-        }
-        if (!updateBlur) {
-            return;
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            RenderEffect effect = null;
-            if (effectMode > 1) {
-                float radius = (effectMode - 1000) / 10f;
-                effect = RenderEffect.createBlurEffect(
-                        radius,
-                        radius,
-                        Shader.TileMode.CLAMP);
-            } else if (effectMode == 1) {
-                effect = RenderEffect.createBlurEffect(0f, 0f, Shader.TileMode.CLAMP);
-            }
-            view.setRenderEffect(effect);
-        }
-        if (effectMode == 0) {
-            for (Method method : resolveViewBlurMethods(view.getClass())) {
-                try {
-                    method.invoke(view, false);
-                } catch (Throwable ignored) {
-                    // The standard visual properties above are sufficient when a vendor
-                    // implementation rejects its optional blur setter.
-                }
-            }
-        }
-    }
-
-    private static Method[] resolveViewBlurMethods(Class<?> viewClass) {
-        synchronized (VIEW_VISUAL_EFFECT_CACHE_LOCK) {
-            WeakReference<Method[]> reference = VIEW_BLUR_METHOD_CACHE.get(viewClass);
-            Method[] cached = reference == null ? null : reference.get();
-            if (cached != null) {
-                return cached;
-            }
-        }
-        Method[] resolved = findViewBlurMethods(viewClass);
-        synchronized (VIEW_VISUAL_EFFECT_CACHE_LOCK) {
-            VIEW_BLUR_METHOD_CACHE.put(viewClass, new WeakReference<>(resolved));
-        }
-        return resolved;
-    }
-
-    private static Method[] findViewBlurMethods(Class<?> viewClass) {
-        ArrayList<Method> resolved = new ArrayList<>(2);
-        boolean foundViewBlur = false;
-        boolean foundBlur = false;
-        Class<?> current = viewClass;
-        while (current != null && (!foundViewBlur || !foundBlur)) {
-            for (Method method : current.getDeclaredMethods()) {
-                String name = method.getName();
-                if ((foundViewBlur || !"setViewBlur".equals(name))
-                        && (foundBlur || !"setBlur".equals(name))) {
-                    continue;
-                }
-                Class<?>[] parameterTypes = method.getParameterTypes();
-                if (parameterTypes.length != 1
-                        || (parameterTypes[0] != boolean.class
-                        && parameterTypes[0] != Boolean.class)) {
-                    continue;
-                }
-                try {
-                    method.setAccessible(true);
-                    resolved.add(method);
-                    if ("setViewBlur".equals(name)) {
-                        foundViewBlur = true;
-                    } else {
-                        foundBlur = true;
-                    }
-                } catch (Throwable ignored) {
-                    // Keep looking in the superclass.
-                }
-            }
-            current = current.getSuperclass();
-        }
-        return resolved.toArray(new Method[0]);
-    }
-
-    static void setOfficialLyricSlotHeight(TextView textView, int height) {
-        int safeHeight = Math.max(1, height);
-        setViewHeight(textView, safeHeight);
-        View itemView = findLyricsRecyclerItemView(textView);
-        if (itemView != null && itemView != textView) {
-            if (itemView.getMinimumHeight() != 0) {
-                itemView.setMinimumHeight(0);
-            }
-            setViewHeight(itemView, safeHeight);
-        }
-    }
-
-    private static void setViewHeight(View view, int height) {
-        if (view == null) {
-            return;
-        }
-        ViewGroup.LayoutParams params = view.getLayoutParams();
-        if (params == null || params.height == height) {
-            return;
-        }
-        int oldHeight = params.height;
-        boolean diagnosticsEnabled = isLyricLayoutDiagnosticsEnabled();
-        String before = diagnosticsEnabled ? describeViewForLog(view) : "";
-        params.height = height;
-        view.setLayoutParams(params);
-        if (diagnosticsEnabled) {
-            StructuredBridgeLog.info(
-                    BridgeDebugArea.AOD,
-                    BridgeEvents.OFFICIAL_LAYOUT_HEIGHT_CHANGED,
-                    "Official lyric layout height changed"
-                    + ", oldLayoutHeight=" + oldHeight
-                    + ", newLayoutHeight=" + height
-                    + ", before=" + before
-                    + ", after=" + describeViewForLog(view));
-        }
-    }
 
     private void scheduleActiveLyricRefresh(TextView textView, long delayMillis) {
         scheduleActiveLyricRefresh(textView, delayMillis, null);
@@ -9065,20 +8450,6 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
     }
 
-    private static int countEffectivelyVisibleLyricCandidates(
-            ArrayList<TextView> candidates) {
-        if (candidates == null || candidates.isEmpty()) {
-            return 0;
-        }
-        int visible = 0;
-        for (TextView candidate : candidates) {
-            if (isEffectivelyVisible(candidate)) {
-                visible++;
-            }
-        }
-        return visible;
-    }
-
     private int invalidateRenderableVisibleLyricTextViews(
             ArrayList<TextView> candidates, WordLyricModel model, long position) {
         if (candidates == null || model == null) {
@@ -9199,36 +8570,6 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
     }
 
-    static boolean isEffectivelyVisible(View view) {
-        if (view == null
-                || !view.isAttachedToWindow()
-                || view.getVisibility() != View.VISIBLE
-                || view.getAlpha() <= 0.01f
-                || view.getWidth() <= 0
-                || view.getHeight() <= 0) {
-            return false;
-        }
-
-        Object parent = view.getParent();
-        for (int depth = 0; depth < 16 && parent instanceof View; depth++) {
-            View parentView = (View) parent;
-            if (parentView.getVisibility() != View.VISIBLE
-                    || parentView.getAlpha() <= 0.01f
-                    || parentView.getWidth() <= 0
-                    || parentView.getHeight() <= 0) {
-                return false;
-            }
-            parent = parentView.getParent();
-        }
-        Rect visibleRect = VIEW_VISIBLE_RECT.get();
-        visibleRect.setEmpty();
-        return view.getGlobalVisibleRect(visibleRect) && !visibleRect.isEmpty();
-    }
-
-    static boolean isInLyricsRecyclerView(TextView textView) {
-        return findLyricsRecyclerMatch(textView) != null;
-    }
-
     private static boolean containsTextView(ArrayList<TextView> textViews, TextView target) {
         for (TextView textView : textViews) {
             if (textView == target) {
@@ -9270,7 +8611,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
     }
 
-    private static void tryInvokeNoArgByName(Object target, String methodName) {
+    static void tryInvokeNoArgByName(Object target, String methodName) {
         if (target == null || TextUtils.isEmpty(methodName)) {
             return;
         }
@@ -9287,7 +8628,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
     }
 
-    private static Object invokeNoArgByName(Object target, String methodName) {
+    static Object invokeNoArgByName(Object target, String methodName) {
         if (target == null || TextUtils.isEmpty(methodName)) {
             return null;
         }
@@ -9304,41 +8645,6 @@ public final class LockscreenLyricsModule extends XposedModule {
             }
         }
         return null;
-    }
-
-    private static Object readRecyclerAdapter(View recycler) {
-        if (recycler == null) {
-            return null;
-        }
-        Class<?> recyclerClass = recycler.getClass();
-        Method method;
-        synchronized (RECYCLER_POSITION_METHOD_CACHE_LOCK) {
-            WeakReference<Method> reference = RECYCLER_ADAPTER_METHOD_CACHE.get(recyclerClass);
-            method = reference == null ? null : reference.get();
-        }
-        if (method == null) {
-            for (Class<?> current = recyclerClass; current != null && method == null;
-                    current = current.getSuperclass()) {
-                try {
-                    method = current.getDeclaredMethod("getAdapter");
-                    method.setAccessible(true);
-                } catch (NoSuchMethodException ignored) {
-                } catch (Throwable ignored) {
-                    return null;
-                }
-            }
-            if (method == null) {
-                return null;
-            }
-            synchronized (RECYCLER_POSITION_METHOD_CACHE_LOCK) {
-                RECYCLER_ADAPTER_METHOD_CACHE.put(recyclerClass, new WeakReference<>(method));
-            }
-        }
-        try {
-            return method.invoke(recycler);
-        } catch (Throwable ignored) {
-            return null;
-        }
     }
 
     private static boolean invokeTwoIntByName(
@@ -9381,7 +8687,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         return type == boolean.class || type == Boolean.class;
     }
 
-    private static Method findMethod(
+    static Method findMethod(
             Class<?> clazz, String methodName, Class<?>... parameterTypes) throws NoSuchMethodException {
         Class<?> current = clazz;
         while (current != null) {
@@ -9399,24 +8705,6 @@ public final class LockscreenLyricsModule extends XposedModule {
     private static int readIntField(Object target, String fieldName, int defaultValue) {
         Object value = readFieldValue(target, fieldName);
         return value instanceof Number ? ((Number) value).intValue() : defaultValue;
-    }
-
-    private static int readLyricsRecyclerCurrentIndex(Object recycler) {
-        int fieldIndex = LYRICS_RECYCLER_FIELD_ACCESSOR.readCurrentIndex(recycler, Integer.MIN_VALUE);
-        if (fieldIndex != Integer.MIN_VALUE) {
-            return fieldIndex;
-        }
-        if (recycler == null) {
-            return -1;
-        }
-        Integer immersiveIndex = readImmersiveCurrentIndexField(recycler);
-        if (immersiveIndex != null) {
-            return immersiveIndex;
-        }
-        synchronized (IMMERSIVE_ENTRY_INDEXES) {
-            ImmersiveEntryIndex entry = IMMERSIVE_ENTRY_INDEXES.get(recycler);
-            return entry == null ? -1 : entry.index;
-        }
     }
 
     private static long readLongField(Object target, String fieldName, long defaultValue) {
@@ -10603,26 +9891,6 @@ public final class LockscreenLyricsModule extends XposedModule {
         recycler.postInvalidateOnAnimation();
     }
 
-    private static void invalidateLyricsRecyclerDescendants(View root) {
-        invalidateLyricsRecyclerDescendants(root, new int[]{0});
-    }
-
-    private static void invalidateLyricsRecyclerDescendants(View view, int[] visited) {
-        if (view == null || visited[0]++ > 320) {
-            return;
-        }
-        if (view instanceof TextView) {
-            view.postInvalidateOnAnimation();
-        }
-        if (!(view instanceof ViewGroup)) {
-            return;
-        }
-        ViewGroup group = (ViewGroup) view;
-        for (int i = 0; i < group.getChildCount(); i++) {
-            invalidateLyricsRecyclerDescendants(group.getChildAt(i), visited);
-        }
-    }
-
     private boolean shouldStartOfficialLyricTrackHandoff(long now) {
         if (hasVisibleLyricsSurfaceForTrackHandoff(now)
                 || now < handoff.officialLyricDrawSuppressedUntilElapsedMs
@@ -11180,42 +10448,6 @@ public final class LockscreenLyricsModule extends XposedModule {
 
     private static boolean isLyricParseTraceEnabled() {
         return LYRIC_PARSE_TRACE_ENABLED || Log.isLoggable(LYRIC_PARSE_TRACE_TAG, Log.VERBOSE);
-    }
-
-    private static LyricsRecyclerGeometry captureLyricsRecyclerGeometry(
-            View recycler, int targetIndex) {
-        if (!(recycler instanceof ViewGroup)) {
-            return LyricsRecyclerGeometry.EMPTY;
-        }
-        ViewGroup group = (ViewGroup) recycler;
-        int childCount = group.getChildCount();
-        int firstVisiblePosition = Integer.MAX_VALUE;
-        int lastVisiblePosition = -1;
-        int firstVisibleTop = 0;
-        int targetCenter = Integer.MIN_VALUE;
-        for (int i = 0; i < childCount; i++) {
-            View child = group.getChildAt(i);
-            int position = readRecyclerChildPosition(recycler, child);
-            if (position >= 0 && position < firstVisiblePosition) {
-                firstVisiblePosition = position;
-                firstVisibleTop = child.getTop();
-            }
-            if (position > lastVisiblePosition) {
-                lastVisiblePosition = position;
-            }
-            if (position == targetIndex) {
-                targetCenter = child.getTop() + child.getHeight() / 2;
-            }
-        }
-        if (firstVisiblePosition == Integer.MAX_VALUE) {
-            firstVisiblePosition = -1;
-        }
-        return new LyricsRecyclerGeometry(
-                firstVisiblePosition,
-                lastVisiblePosition,
-                firstVisibleTop,
-                targetCenter,
-                childCount);
     }
 
     private static int bottomMarginOf(View view) {

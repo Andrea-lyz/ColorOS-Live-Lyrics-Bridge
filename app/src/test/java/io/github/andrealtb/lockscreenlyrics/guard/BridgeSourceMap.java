@@ -113,6 +113,16 @@ public final class BridgeSourceMap {
                 SOURCE_ROOT + "SystemUiPlaybackController.java", SOURCE_ROOT + "LyricViewRegistry.java",
                 SOURCE_ROOT + "LyricSurfaceModeController.java", SOURCE_ROOT + "LyricSurfaceHandoffController.java",
                 SOURCE_ROOT + "ActiveLyricState.java", SOURCE_ROOT + "PluginHookGenerationManager.java"));
+        // F-1a (2026-11-15): static LyricsRecyclerView / lyric View helpers moved to LyricsRecyclerViews.
+        FILES.put(Area.RECYCLER, Arrays.asList(ENTRY_CLASS, SOURCE_ROOT + "LyricViewRegistry.java",
+                SOURCE_ROOT + "LyricsRecyclerViews.java"));
+        FILES.put(Area.SYSTEMUI_RUNTIME, Arrays.asList(ENTRY_CLASS, SOURCE_ROOT + "OfficialLyricTextRenderer.java",
+                SOURCE_ROOT + "OplusMediaPolicyHooks.java", SOURCE_ROOT + "ScreenTimeoutController.java",
+                SOURCE_ROOT + "TranslationActionViewTracker.java", SOURCE_ROOT + "TranslationActionController.java",
+                SOURCE_ROOT + "SystemUiPlaybackController.java", SOURCE_ROOT + "LyricViewRegistry.java",
+                SOURCE_ROOT + "LyricSurfaceModeController.java", SOURCE_ROOT + "LyricSurfaceHandoffController.java",
+                SOURCE_ROOT + "ActiveLyricState.java", SOURCE_ROOT + "PluginHookGenerationManager.java",
+                SOURCE_ROOT + "LyricsRecyclerViews.java"));
     }
 
     private BridgeSourceMap() {

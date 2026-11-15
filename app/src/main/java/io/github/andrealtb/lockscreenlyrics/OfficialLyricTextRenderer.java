@@ -107,6 +107,7 @@ import io.github.libxposed.api.XposedModule;
 // Members of the entry class the renderer used as a nested class. A pure move (E-1) keeps the
 // bodies unchanged; narrowing this to an explicit host is a separate change (plan §15.8.2).
 import static io.github.andrealtb.lockscreenlyrics.LockscreenLyricsModule.*;
+import static io.github.andrealtb.lockscreenlyrics.LyricsRecyclerViews.*;
 import static io.github.andrealtb.lockscreenlyrics.LyricLogDescriptions.*;
 
 /**
