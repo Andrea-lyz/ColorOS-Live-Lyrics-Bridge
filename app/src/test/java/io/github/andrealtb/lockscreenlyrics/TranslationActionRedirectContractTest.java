@@ -24,7 +24,7 @@ public final class TranslationActionRedirectContractTest {
     @Test
     public void reboundSlotGetsItsRedirectedVisibilityBack() throws Exception {
         String module = BridgeSourceMap.read(BridgeSourceMap.Area.TRANSLATION_ACTION);
-        int forget = module.indexOf("private void forgetTranslationActionViewIfRebound(View view) {");
+        int forget = module.indexOf("void forgetTranslationActionViewIfRebound(View view) {");
         int restore = module.indexOf("restoreRedirectedTranslationActionVisibility(view);", forget);
         int forgotten = module.indexOf("forgetTranslationActionView(view);", forget);
 

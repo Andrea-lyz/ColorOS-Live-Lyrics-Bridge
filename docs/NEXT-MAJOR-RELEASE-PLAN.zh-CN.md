@@ -1881,6 +1881,57 @@ E-2b 到 E-2d 都读写入口类的实例状态或调用 `hook()`，不能只靠
 
 **结果：** 用户安装候选 `9ddde0dd…`、重启 SystemUI 后，设备冒烟 1–6 项通过（2026-11-15）。
 
+### 15.8.8 E-4a 实施记录：翻译按钮 View 追踪外移（2026-11-15，已提交，未推送）
+
+**分支：** Bridge `feat/e4-translation-tracker`（基于 `94f32a2`）。E-4 按计划分两步，这是第一步 `TranslationActionViewTracker`；第二步 `TranslationActionController`（rule-0、偏好、rebind）另做。
+
+**移动了什么：** 新类 `TranslationActionViewTracker`（同包、final、包内可见），共 24 个方法、11 个字段、3 个常量：
+- 识别翻译按钮：内容描述前缀、图标 alpha 指纹，以及位图、矢量图的匹配缓存；
+- 已追踪的 View 集合；
+- VISIBLE→INVISIBLE 重定向的记录与回退；
+- 强制显隐，以及开/关状态的图标与无障碍描述。
+- `Host` 有 8 个方法：
+  - `shouldManageTranslationActionViewVisibility`、`describeTranslationButtonState`；
+  - `currentWordLyricModel`、`currentTranslationPreferencePackage`；
+  - `userWantsTranslationButton`、`isLyricInfoTranslationEnabled`；
+  - `isNearRememberedLyricsRecyclerView`、`translationButtonDebug`。
+- 构造参数另传 `translationToggleActionBinder`（独立类，不是入口类）和主线程 `Handler`。
+
+**留在入口类的：**
+- 喂给追踪器的 View Hook 回调：`onViewSetVisibility` 的重定向、`onViewSetContentDescription`、`onImageViewSetImage`。它们随 E-7 的全局 View Hook installer 迁走。
+- 以 Recycler 注册表为锚的扫描与恢复：`discoverTranslationActionViewsNearRememberedLyrics`、`scheduleTranslationActionViewRecovery`、`isNearRememberedLyricsRecyclerView`，随 E-6 迁走。
+- 歌词模式门禁与状态描述：`shouldManageTranslationActionViewVisibility`、`describeTranslationButtonState`。
+- 这些回调仍直接读写追踪器的 7 个字段（锁、重定向集合、presentation 两个表、追踪标志、指纹）。改成具名方法留到收口时做。
+
+**访问点：**
+- 入口类对已移动成员的引用加 `translationTracker.` 前缀，`this::refreshTranslationActionViewVisibility` 改为 `translationTracker::…`。
+- `isTranslationActionDescription` 是静态函数，入口类改为静态导入。
+- action binder 的 Host 中，`rememberTranslationIconFingerprint` 转发的接收者从 `LockscreenLyricsModule.this` 改为 `translationTracker`。
+- `TranslationActionRedirectContractTest` 的定位串去掉了 `private `（同 E-2d1 的先例），断言不变。
+- `BridgeSourceMap` 的 `TRANSLATION_ACTION` 改为“追踪器 + 入口类”，`SYSTEMUI_RUNTIME` 加入新文件。
+
+**证据：**
+- 方法体比对（`--strip translationTracker. --strip this:: --strip translationTracker:: --strip host.`）：
+  - 23 个移动后一致；
+  - 1 个改动：`applyTranslationActionViewVisibility` 把 3 处 `currentWordLyricModel` 字段读取换成 `host.currentWordLyricModel()`；
+  - 0 个删除；
+  - 新增 8 个：构造函数和 7 个同名转发。
+- 三份基线不变。
+- 入口类预算下调：13,114 → 12,596 行，字段 335 → 322，方法 520 → 496。
+- `verify-build-identity` 通过（367 个输入）。
+- 本地 1056 tests / 0 fail / 6 skip，Debug 与 R8 通过。
+
+**候选：** `artifacts/e4-translation-tracker-20261115/Bridge-E4a-tracker-debug-r1.apk`（`b5d61931…`）。
+
+**设备冒烟（重启 SystemUI；用带翻译的逐字歌词）：**
+1. 锁屏媒体卡片上翻译按钮正常出现；点它，歌词译文切换，按钮图标随开/关变化。
+2. 切到没有译文的歌，翻译按钮隐藏，播放器自己的按钮（如收藏）正常显示，上一首/播放/下一首仍居中。
+3. 再切回有译文的歌，翻译按钮回来。
+4. 灭屏再亮屏、解锁再锁屏后，按钮状态正确。
+5. 在设置里关闭“显示翻译按钮”，锁屏上按钮隐藏；重新打开后恢复。
+
+**结果：** 用户安装候选 `b5d61931…`、重启 SystemUI 后，设备冒烟 1–5 项通过（2026-11-15）。
+
 ### 15.9 未覆盖
 
 - **Providers 仓库**的结构与性能没有做同等盘点。若要纳入“完整优化”，需要另做一次基线（13 个专用模块的 Hooker、`provider-core`、Universal），本节不对其作任何结论。

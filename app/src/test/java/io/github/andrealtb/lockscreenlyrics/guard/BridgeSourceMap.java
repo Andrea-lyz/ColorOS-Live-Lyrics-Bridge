@@ -59,6 +59,12 @@ public final class BridgeSourceMap {
         // test reads it, but the runtime guard must cover the new file.
         FILES.put(Area.SYSTEMUI_RUNTIME, Arrays.asList(ENTRY_CLASS, SOURCE_ROOT + "OfficialLyricTextRenderer.java",
                 SOURCE_ROOT + "OplusMediaPolicyHooks.java", SOURCE_ROOT + "ScreenTimeoutController.java"));
+        // E-4a (2026-11-15): translation action view tracking moved to TranslationActionViewTracker;
+        // the View hooks that feed it (setVisibility redirect, content description) stay in the entry.
+        FILES.put(Area.TRANSLATION_ACTION, Arrays.asList(SOURCE_ROOT + "TranslationActionViewTracker.java", ENTRY_CLASS));
+        FILES.put(Area.SYSTEMUI_RUNTIME, Arrays.asList(ENTRY_CLASS, SOURCE_ROOT + "OfficialLyricTextRenderer.java",
+                SOURCE_ROOT + "OplusMediaPolicyHooks.java", SOURCE_ROOT + "ScreenTimeoutController.java",
+                SOURCE_ROOT + "TranslationActionViewTracker.java"));
     }
 
     private BridgeSourceMap() {
