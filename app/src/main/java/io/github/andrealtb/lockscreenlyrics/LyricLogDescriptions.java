@@ -241,4 +241,33 @@ final class LyricLogDescriptions {
         String normalized = text.replace('\n', ' ').replace('\r', ' ').trim();
         return normalized.length() <= 80 ? normalized : normalized.substring(0, 77) + "...";
     }
+
+    static BridgeDebugArea mapLogArea(LyricLogFormatter.Area area) {
+        if (area == null) {
+            return BridgeDebugArea.MEDIA;
+        }
+        switch (area) {
+            case LIFECYCLE:
+            case HOOK:
+            case SETTINGS:
+                return BridgeDebugArea.BOOTSTRAP;
+            case PLAYER:
+            case TRANSACTION:
+            case SYSTEM_UI:
+            case SCREEN:
+                return BridgeDebugArea.MEDIA;
+            case PROVIDER:
+            case PARSER:
+                return BridgeDebugArea.LYRIC;
+            case RENDER:
+            case RECYCLER:
+                return BridgeDebugArea.RENDERER;
+            case AOD:
+                return BridgeDebugArea.AOD;
+            case TRANSLATION:
+                return BridgeDebugArea.PLAYER_SPECIAL;
+            default:
+                return BridgeDebugArea.MEDIA;
+        }
+    }
 }
