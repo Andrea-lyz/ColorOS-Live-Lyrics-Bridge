@@ -2046,6 +2046,51 @@ E-2b 到 E-2d 都读写入口类的实例状态或调用 `hook()`，不能只靠
 
 **结果：** 用户安装候选 `8d69eaf2…`、重启 SystemUI 后，设备冒烟 1–5 项通过（2026-11-15）。
 
+### 15.8.11 E-5 后续与 E-6a 实施记录：歌词 View 注册表外移（2026-11-15，已提交，未推送）
+
+**E-5 第二步暂缓：**
+- 计划中 E-5 的下一步是把播放时钟和切歌复位保护（reset guard）交给 `SystemUiPlaybackController`。核对后发现它不能纯移动：
+  - `estimatePlaybackPositionMillis` 还读取 Provider payload 的快照位置，以及 Recycler 索引对应的模型行；
+  - 时钟的每一处写入都嵌在 handoff、渲染目标、Recycler 跟随的逻辑里。
+- 只搬字段会让全部写入仍留在入口类，没有收益。
+- 用户选择先做 E-6a。E-5 至 E-7 的边界（时钟、reset guard、模型真值、handoff、设置快照的 owner 与 Host 大小）需要先写设计，再实施 E-5b。
+
+**E-6a 分支：** Bridge `feat/e6a-view-registry`（基于 `268da50`）。
+
+**移动了什么：** 新类 `LyricViewRegistry`（同包、final、包内可见，**不需要 Host**）。
+- 7 个方法：
+  - `hasAttachedLyricsRecyclerView`、`isRememberedLyricsRecyclerView`、`isNearRememberedLyricsRecyclerView`；
+  - `snapshotLyricsRecyclerViews`、`firstAttachedLyricsRecyclerView`；
+  - `rememberLyricRootView`、`snapshotLyricRootViews`。
+- 4 个字段：两个弱引用列表及各自的锁。
+- 这些方法只读写这两个列表，和它们的锁。
+
+**留在入口类的：**
+- `rememberLyricsRecyclerView`：还要绑定 adapter 并记录日志。
+- `hasStableActiveLyricRefreshSurface`：要回退到活动 TextView。
+- 若干在锁内直接遍历列表的代码：E-4a 留下的翻译按钮扫描、Recycler 对齐与刷新等。
+- 它们改用 `lyricViews.lyricsRecyclerViewsLock` / `lyricViews.lyricsRecyclerViews` 访问，锁对象与遍历逻辑不变；改成具名查询随 E-6 后续步骤做。
+- E-4a 追踪器的 Host 转发 `isNearRememberedLyricsRecyclerView`，接收者改为 `lyricViews`。
+
+**证据：**
+- 方法体比对（`--strip lyricViews. --strip this:: --strip lyricViews::`）：7 个移动后一致，**0 个改动**，0 个删除，0 个新增。
+- 三份基线不变。
+- 入口类预算下调：12,161 → 12,027 行，字段 308 → 305，方法 471 → 464。
+- `BridgeSourceMap` 的 `RECYCLER` 改为“入口类 + 注册表”，`SYSTEMUI_RUNTIME` 加入新文件。
+- `verify-build-identity` 通过（370 个输入）。
+- 本地 1056 tests / 0 fail / 6 skip，Debug 与 R8 通过。
+
+**候选：** `artifacts/e6-view-registry-20261115/Bridge-E6a-registry-debug-r1.apk`（`e9b28375…`）。
+
+**设备冒烟（重启 SystemUI；逐字歌词）：**
+1. 锁屏歌词出现并滚动跟随当前行。
+2. 亮屏与 AOD 往返 3 次，歌词每次都恢复，位置正确。
+3. 切歌后新歌歌词淡入，没有残留旧行。
+4. 翻译按钮仍能被识别和切换（扫描依赖注册表）。
+5. 点开沉浸式歌词入口再返回，锁屏歌词正常。
+
+**结果：** 用户安装候选 `e9b28375…`、重启 SystemUI 后，设备冒烟 1–5 项通过（2026-11-15）。
+
 ### 15.9 未覆盖
 
 - **Providers 仓库**的结构与性能没有做同等盘点。若要纳入“完整优化”，需要另做一次基线（13 个专用模块的 Hooker、`provider-core`、Universal），本节不对其作任何结论。

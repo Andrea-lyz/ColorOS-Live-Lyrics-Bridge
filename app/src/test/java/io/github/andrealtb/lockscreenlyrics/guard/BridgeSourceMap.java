@@ -79,6 +79,12 @@ public final class BridgeSourceMap {
                 SOURCE_ROOT + "OplusMediaPolicyHooks.java", SOURCE_ROOT + "ScreenTimeoutController.java",
                 SOURCE_ROOT + "TranslationActionViewTracker.java", SOURCE_ROOT + "TranslationActionController.java",
                 SOURCE_ROOT + "SystemUiPlaybackController.java"));
+        // E-6a (2026-11-15): the lyric RecyclerView / root-view registry moved to LyricViewRegistry.
+        FILES.put(Area.RECYCLER, Arrays.asList(ENTRY_CLASS, SOURCE_ROOT + "LyricViewRegistry.java"));
+        FILES.put(Area.SYSTEMUI_RUNTIME, Arrays.asList(ENTRY_CLASS, SOURCE_ROOT + "OfficialLyricTextRenderer.java",
+                SOURCE_ROOT + "OplusMediaPolicyHooks.java", SOURCE_ROOT + "ScreenTimeoutController.java",
+                SOURCE_ROOT + "TranslationActionViewTracker.java", SOURCE_ROOT + "TranslationActionController.java",
+                SOURCE_ROOT + "SystemUiPlaybackController.java", SOURCE_ROOT + "LyricViewRegistry.java"));
     }
 
     private BridgeSourceMap() {
