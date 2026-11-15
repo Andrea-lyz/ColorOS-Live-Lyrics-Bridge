@@ -1517,6 +1517,39 @@ E 系列不阻塞商店与引导功能；若进度不足，允许 5.0 只完成�
 
 **设备结果：用户重启 SystemUI 后确认 1–7 项全部通过（2026-11-15）。**
 
+### 15.8.3 E-2 拆分与 E-2a：静态值类型外移（2026-11-15，E-2a 已提交，未推送）
+
+**E-2 拆成四小刀，按纯移动的可行性排序：**
+- **E-2a：静态内嵌值类型。** 可以纯移动，本次完成。
+- **E-2b：通用反射工具归入各 accessor。**
+- **E-2c：`maybeLog*` 与描述函数归入 `diagnostics/`。**
+- **E-2d：system_server / OPlus 策略 Hook 与 AOD 支持归入 `OplusMediaPolicyHooks`。**
+
+E-2b 到 E-2d 都读写入口类的实例状态或调用 `hook()`，不能只靠移动完成，需要先定义窄 Host。每一刀会分两次提交：先只移动（必要时加 Host 访问），再收窄。
+
+**E-2a 内容：** Bridge `feat/e2-entry-cleanup`（基于 `cefb9e4`）。
+- 把入口类里 10 个 `static` 内嵌类型原样移到同包独立文件（共 315 行），做法与 E-1 相同：左移、改为包内可见的顶层类、静态导入入口类。这 10 个类型是 `ImmersiveEntryIndex`、`SystemUiLyricLoadContext`、`OplusMediaWhitelistBypassList`、`MetadataTrackIdentity`、`NormalizedTextSnapshot`、`LyricsRecyclerMatch`、`BoundLyricFrameStamp`、`LyricSurfaceReadinessSnapshot`、`LyricSurfaceReadinessState`、`LyricTextMatch`。
+- 无需放宽任何访问修饰符。
+- 两个非静态内部类 `PlaybackControllerBinding`（E-5）与 `LyricSurfaceReactivationTask`（E-6）依赖入口实例，随各自的 owner 一起迁移。
+
+**E-2a 证据：**
+- 方法体比对：2,700 个未变，22 个移动且一致，0 个改动。
+- 三份基线未变；契约测试未改。
+- 入口类预算下调：14,207 → 13,882 行，内嵌类型 12 → 2 个（73 行）。
+- `verify-build-identity` 通过（363 个输入）。
+- 本地 1056 tests / 0 fail / 6 skip，Debug 与 R8 通过。
+- 候选 `artifacts/e2-cleanup-20261115/Bridge-E2a-types-debug-r1.apk`（`3642c6d5…`）。
+
+**设备冒烟（需重启 SystemUI）：**
+1. 模块加载：状态页显示正常。
+2. 播放与歌词显示。
+3. 切歌。
+4. 亮屏与 AOD 往返。
+5. 沉浸歌词入口。
+6. 历史/白名单播放器：被系统列入黑名单的播放器仍有锁屏卡片（`OplusMediaWhitelistBypassList`）。
+
+**设备结果：用户重启 SystemUI 后确认 1–6 项全部通过（2026-11-15）。**
+
 ### 15.9 未覆盖
 
 - **Providers 仓库**的结构与性能没有做同等盘点。若要纳入“完整优化”，需要另做一次基线（13 个专用模块的 Hooker、`provider-core`、Universal），本节不对其作任何结论。
