@@ -1472,7 +1472,7 @@ E 系列不阻塞商店与引导功能；若进度不足，允许 5.0 只完成�
 | D14 迁移期间语言 | 保持 Java | 与第 0.2、8 节一致，Kotlin 仅用于新管理 UI；结构迁移不叠加语言迁移 |
 | D15 根包分包时机 | 放到 E-8 | 提前做会与所有在途改动冲突，且对运行行为没有收益 |
 
-### 15.8.1 E-0 实施记录（2026-11-15，本地，未提交）
+### 15.8.1 E-0 实施记录（2026-11-15，已提交 `634a9d0`，未推送）
 
 **分支：** Bridge `feat/e0-guardrails`（基于 `87b7645`）。只加测试、基线文件和脚本，**不改任何 `app/src/main` 代码**，所以不需要设备回归。
 
@@ -1486,6 +1486,36 @@ E 系列不阻塞商店与引导功能；若进度不足，允许 5.0 只完成�
 5. **性能基线：未做，需要设备。** 按第 15.4 节的六个场景采集：锁屏无歌词、逐字歌词且上浮开/关、连续切歌 10 次、亮屏与 AOD 往返、SystemUI 冷启动、约 30 分钟长播放。使用现有 `scripts/capture-lockscreen-perf.ps1 -Mode jank` 和 Bridge 调试页的性能区域；每项记录 APK 哈希、配置与框架版本。抓取 Perfetto/logcat 需要用户当次授权。另外，冷启动场景目前没有现成采样点，需要先新增一个只在开启 tracing 时生效的区段。
 
 本地 Bridge 1056 tests / 0 fail / 6 skip（新增 6 项守卫测试），Debug 与 R8 通过。
+
+### 15.8.2 E-1 实施记录：渲染器纯移动（2026-11-15，已提交，未推送）
+
+**分支：** Bridge `feat/e1-renderer-move`（基于 `634a9d0`）。
+
+- **移动：** 内嵌类 `OfficialLyricTextRenderer`（入口类第 13938–17718 行，3,781 行，含其内部类型）原样移到同包新文件 `OfficialLyricTextRenderer.java`。只做三处机械改动：整体左移 4 个空格；`private static final class` 改为包内可见的顶层 `final class`；文件头复制入口类的 import，并加 `import static ...LockscreenLyricsModule.*`，让方法体里对入口类静态成员的不带限定名引用保持原样。
+- **访问点：** 入口类里渲染器用到的 11 个 `private static` 成员去掉 `private`，改为包内可见，方法体不变：`dp`、`sp`、`nullToEmpty`、`shortenForLog`、`isLyricLayoutDiagnosticsEnabled`、`isLyricVerboseDiagnosticsEnabled`、`setOfficialLyricSlotHeight`、`findLyricsRecyclerItemView`、`findContainingLyricsRecyclerView`、`applyFocusedOfficialLyricViewEffects(TextView, float, boolean)`、`AOD_WORD_PROGRESS_TO_LINE_ANIMATION_MS`。
+- **名称解析核对：** 新文件只有这一条静态导入；入口类 12 个内嵌类型与新文件的单类型导入、同包顶层类型均不重名，渲染器也不引用其中任何一个。因此移动后没有任何简单名会解析到别的成员。
+- **与第 15.3 节的差异（有意）：**
+  - 放在同包而不是 `render/` 子包：渲染器依赖大量包内可见的类型（如 `LyricUiConfig`），移进子包就得把它们改成 public，这不再是纯移动；分包按 D15 留到 E-8。
+  - 收窄为显式 `RendererHost`：会改动方法体，按“移动与修改不同提交”的规则，另开一个提交做。
+- **证据：**
+  - `scripts/guard/method-bodies.py --base 634a9d0`：2,598 个方法未变，124 个移动且方法体一致，0 个改动，0 个删除。
+  - Hook ID、日志事件、Hook 安装顺序三份基线未变。
+  - 12 个源码契约测试的断言未改，只把定位表的 RENDERER 改为“新文件 + 入口类”，SYSTEMUI_RUNTIME 与 CONFIG_CONSUMERS 加入新文件。
+  - 入口类预算按守卫要求下调：17,989 → 14,207 行，内嵌类型 13 → 12 个，4,168 → 387 行；字段与方法数不变。
+  - `scope.list`、`module.prop`、`java_init.list` 未改；`verify-build-identity` 通过（353 个输入）。
+  - 本地 1056 tests / 0 fail / 6 skip，Debug 与 R8 通过。
+- **候选：** `artifacts/e1-renderer-20261115/Bridge-E1-renderer-debug-r1.apk`（`d12646fa…`）。安装后需要重启 SystemUI 才会加载新的 Hook 代码。
+
+**设备冒烟（第 15.3 节 E-1 行，需用户执行）：**
+1. 逐字歌词：当前行逐字填充正常。
+2. 逐行歌词：开启“普通逐行歌词进度”时进度正常。
+3. 字符上浮：开启后效果与以前一致。
+4. 发光：光晕颜色、跟随封面正常。
+5. 译文：翻译行与翻译进度正常。
+6. AOD 低帧率：熄屏显示下歌词正常，亮屏与 AOD 来回切换不闪。
+7. 状态页：“歌词自绘”“逐字歌词进度”等显示已执行。
+
+**设备结果：用户重启 SystemUI 后确认 1–7 项全部通过（2026-11-15）。**
 
 ### 15.9 未覆盖
 

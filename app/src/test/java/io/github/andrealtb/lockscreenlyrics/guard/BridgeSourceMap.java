@@ -45,6 +45,11 @@ public final class BridgeSourceMap {
         // Everything still lives in the entry class (baseline 2026-11-15). Update a row when its
         // slice moves code; never edit the contract assertions to follow a move.
         for (Area area : Area.values()) FILES.put(area, Collections.singletonList(ENTRY_CLASS));
+        // E-1 (2026-11-15): the renderer moved verbatim to its own file; the rest of the
+        // renderer-facing code (row effects, slot heights, typeface learning) is still in the entry.
+        FILES.put(Area.RENDERER, Arrays.asList(SOURCE_ROOT + "OfficialLyricTextRenderer.java", ENTRY_CLASS));
+        FILES.put(Area.SYSTEMUI_RUNTIME, Arrays.asList(ENTRY_CLASS, SOURCE_ROOT + "OfficialLyricTextRenderer.java"));
+        FILES.put(Area.CONFIG_CONSUMERS, Arrays.asList(ENTRY_CLASS, SOURCE_ROOT + "OfficialLyricTextRenderer.java"));
     }
 
     private BridgeSourceMap() {
