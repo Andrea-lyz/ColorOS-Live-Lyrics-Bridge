@@ -2091,6 +2091,114 @@ E-2b 到 E-2d 都读写入口类的实例状态或调用 `hook()`，不能只靠
 
 **结果：** 用户安装候选 `e9b28375…`、重启 SystemUI 后，设备冒烟 1–5 项通过（2026-11-15）。
 
+### 15.8.12 E-5 至 E-7 边界设计（2026-11-15，设计已提交，按刀实施）
+
+**为什么要先设计：**
+- E-0 至 E-6a 都是纯移动，被移走的部分各自只有少数外部写入。
+- 剩下的时钟、模型真值、Recycler 回调、handoff 和设置应用互相写对方的字段。再按“整块原样移走”做，只能得到转发十几个回调的宽 Host。
+- 本节先给出每个字段的唯一 owner，以及跨 owner 的交互方式，再据此排刀。
+
+#### 1. 度量（入口类 `f042951`，脚本扫描，不是 AST）
+
+- 剩余 **204 个实例字段、464 个方法**。
+- 按“方法写得最多的字段所属区域”归类后，各区域的方法行数：
+
+| 区域 | 方法数 | 行数 | 代表字段 |
+| --- | ---: | ---: | --- |
+| 模型与加载 | 81 | 2,697 | `currentWordLyricModel`、`currentLyricProvider*`、`systemUiHasOfficialLyric`、`lastSystemUi*` 元数据、清理快照、插件 generation |
+| Recycler | 104 | 2,121 | `lastLyricsRecyclerIndex`、primed/adaptive follow、行样式、沉浸入口、adapter 绑定 |
+| 活动行刷新 | 34 | 859 | `activeLyricLine*`、`activeRendererWordLine`、`activeRendererTargetsByRecycler`、TextView 缓存 |
+| 设置应用 | 18 | 797 | `lyricUiConfig`、`runtimeLyricUiConfig`、渲染器配置、`translationLayoutGeneration` |
+| 播放时钟 | 21 | 540 | `lastPlaybackIsPlaying/Speed`、`lastComputedPosition*`、reset guard、seedling 提示 |
+| 歌词模式 | 19 | 379 | `systemUiLyricModeKeepAwakeActive`、表面再激活、provisional draw、AOD 低帧率 |
+| handoff | 15 | 276 | `officialLyricHandoff*`、`officialLyricDrawSuppressedUntil`、亮行几何提交、接管淡入 |
+| 封面 | 10 | 155 | 动态封面运行时 |
+| 未归类 | 162 | 2,544 | 日志时间戳、Hook 安装标志、反射缓存、通用工具 |
+
+- **跨区域写入少，而且集中在几个事件点**：
+  - 切歌复位 `resetSystemUiPlaybackPositionForTrackChange`：写时钟，还写活动行 3 个字段、Recycler 3 个字段；
+  - 播放状态写入 `rememberSystemUiPlaybackState`：写时钟；判定为重播时，再清活动行、清渲染目标、开始 handoff；最后观察进度跳变（Recycler）；
+  - Recycler 的 `rememberLyricsRecyclerTargetIndex` / `primeLyricsRecyclerView`：写活动行与 seedling 提示；
+  - 插件 generation 激活 `activatePluginHookGeneration`：重置 Recycler、位置控制器的 Hook 标志；
+  - 模型替换标志 `lyricModelReplacementInProgress`：在模型发布路径写、handoff 读；
+  - 接管淡入 `pendingCustomLyricTakeoverFade`：在 Recycler 可见性 watchdog 与 handoff 两处写。
+- **读取面最宽的两个字段**：
+  - `currentWordLyricModel` 在入口类出现 88 次；
+  - `systemUiLyricModeKeepAwakeActive` 出现 26 次，但只有 2 个写入点（激活 / 隐藏）。
+
+#### 2. Owner 与交互规则
+
+**规则：**
+1. 每个可变字段只有一个写入组件。
+2. 其他组件只通过 owner 的只读查询，或不可变快照读取。
+3. 跨 owner 的连带动作用**入口类组合根里的显式事件**表达，按现有执行顺序依次调用各 owner，不引入通用事件总线。
+4. 单个 Host ≤ 12 个方法，超过就说明边界画错。
+
+| Owner（目标类） | 拥有的状态 | 对外只读 | 接收的事件 |
+| --- | --- | --- | --- |
+| `LyricSurfaceModeController`（新） | 歌词模式常亮标志、表面再激活回调与 generation、provisional draw、AOD 低帧率、`screenTurnedOffForLockState`、模式重绑 runnable | `isActive()`、`isAodLowFrameRate()`、`hasProvisionalSurface(now)` | `activateFromSurface`、`deactivateAfterHidden`、亮灭屏（由 E-3 接收器调用） |
+| `SystemUiPlaybackController`（已有，E-5a） | 现有绑定，加上时钟、reset guard、seedling 提示、`playbackClockTrackKey` | `isPlaying()`、`speed()`、`rawPositionMillis(now)`（无法给出时返回 -1）、`isResetGuardActive(now)` | `onTrackReset(title, artist, reason)`、`onPlaybackState(...)`（两阶段，见下）、`noteSeedlingActiveLine(...)` |
+| `LyricModelStore`（并入 `LyricRenderTransactions` 或其旁） | 当前模型、Provider 包名与 payload、官方歌词标志、SystemUI 元数据、清理快照、`lyricModelReplacementInProgress` | `ModelSnapshot`（不可变：模型、payload、包名、官方歌词标志、替换中标志） | 只由 `LyricPublicationPipeline` 写入 |
+| `LyricSurfaceHandoffController`（新） | handoff generation、开始时间、释放重试、绘制抑制截止、亮行几何提交、接管淡入 | `isDrawSuppressed(now)`、`isHandoffActive()` | `beginTrackHandoff(reason)`、`onRecyclerVisibilityWatchdog(...)`（替代 watchdog 直接写淡入标志） |
+| `ActiveLyricRefreshScheduler`（新） | 活动行与时间、活动渲染行、渲染目标表（含 `activeRendererTargetsByRecycler`）、TextView 绑定缓存 | `activeLine()`、`targetsFor(recycler)` | `onTrackReset`、`onRecyclerPrimed(line)`、`onPlaybackRestart` |
+| `LyricsRecyclerController`（新，配合 `LyricViewRegistry`） | Recycler 索引、primed/adaptive follow、行样式、沉浸入口状态、Recycler 回调 | `currentIndex()` | `onTrackReset`、`onPositionJump(prev, next)` |
+| `PluginHookGenerationManager`（新，E-5 原计划） | 插件 generation，以及各 Hook 的“已安装 / 已尝试”标志 | `isRecyclerHookAvailable()` 等 | `activateGeneration(loader)` |
+| `RuntimeConfigSnapshot` 发布者（E-7） | `lyricUiConfig`、运行时配置、加载时间 | 不可变快照 | 设置广播 |
+
+**两阶段播放状态写入**（解决 E-5b 不能纯移动的问题）：
+- 原 `rememberSystemUiPlaybackState` 的顺序是：
+  1. 读上一位置；
+  2. 判断是否忽略过期位置；
+  3. 判断是否重播；如果是，清活动行与渲染目标，并开始 handoff；
+  4. 平滑处理；
+  5. 写时钟；
+  6. 写日志；
+  7. 观察进度跳变；
+  8. 更新屏幕超时。
+- 改为：
+  - `PlaybackPlan plan = playbackController.plan(state, ..., previousPosition, now)`：纯计算，不写字段，产出“忽略过期 / 重播 / 平滑后位置 / 活动位置 / 是否跳变”；
+  - 组合根按原顺序执行连带动作：重播时调刷新调度与 handoff；
+  - `playbackController.commit(plan)`：写时钟；
+  - 组合根再执行跳变观察与屏幕超时。
+- 这样写入顺序与现在逐步一致，时钟只有一个写入者。
+- `estimatePlaybackPositionMillis` 留在组合根，作为组合函数：Provider payload 快照 → `rawPositionMillis` → 模型按 Recycler 索引给出的行。它本来就跨三个 owner。
+
+**切歌复位事件 `onTrackReset`：** 现在一个方法写三处。改为组合根依次调用：
+1. 时钟复位；
+2. 刷新调度清活动行；
+3. Recycler 清索引与 follow；
+4. 清 seedling 提示。
+
+顺序与现有赋值顺序一致。
+
+#### 3. 修订后的刀序（替代第 15.3 节中 E-5 至 E-7 的内部顺序）
+
+按“外部写入最少”排列：
+
+| 刀 | 内容 | 外部写入点 | 风险 | 设备验证要点 |
+| --- | --- | --- | --- | --- |
+| **E-6b** | `LyricSurfaceModeController`：模式标志与再激活、provisional draw、AOD 低帧率、锁屏状态 | 2 个（激活 / 隐藏） | 中 | 亮屏 / AOD 往返、隐藏后停刷新、切歌时短暂丢失表面 |
+| **E-7a** | `LyricSurfaceHandoffController`：handoff 与绘制抑制、亮行几何提交；watchdog 改发事件 | 2 个字段 | 高 | 切歌淡入、迟到接管、transient miss |
+| **E-5b** | 时钟、reset guard、seedling 提示并入 `SystemUiPlaybackController`；两阶段写入；`onTrackReset` 事件 | 4 个事件点 | 高 | 暂停 / seek、快速切歌、同曲重播、AOD 低帧率进度 |
+| **E-7b** | `ActiveLyricRefreshScheduler`：活动行、渲染目标、TextView 缓存 | 2 个事件 | 高 | 逐字推进、刷新率档位、AOD |
+| **E-5c** | `PluginHookGenerationManager`：插件 generation 与 Hook 标志；KuWo / 插件兼容 | 1 个（generation 激活） | 中 | 重启 SystemUI、插件重载、KuWo |
+| **E-6c** | `LyricsRecyclerController` 及其 Hook installer：Recycler 回调、索引、follow、行样式、沉浸入口 | 由 E-5b、E-7b 的事件替代 | 高 | attach / detach、对齐与行高、沉浸入口 |
+| **E-5d** | `LyricModelStore` + `LyricPublicationPipeline`：模型真值、提交前 `canCommit(loadEpoch)` 复核；加载 Hook 只剩读参、调 pipeline、一次 `proceed` | 模型读取面最宽，放在其余 owner 都已就位之后 | 高 | 快速切歌、同曲 metadata 更新、清理配置重放 |
+| **E-7c** | `RuntimeConfigSnapshot`：设置广播只发布快照，各 owner 自行应用 | — | 中 | 设置页全部开关、播放器翻译设置 |
+
+- E-8 不变。
+- 每刀仍遵守第 15.3 节的通用规则，变化如下：
+  - E-5b、E-7a、E-7b 含少量**有意的结构改写**（两阶段写入、事件替代直接赋值），不再是纯移动。它们的等价证据改为“方法体比对 + 改写处逐条对照原执行顺序的说明 + 设备冒烟”。
+  - 改写只调整调用位置，不改常量、判定条件和日志文字。
+- 每刀开工前，先用本节的脚本口径重新统计该 owner 的读写点，确认 Host ≤ 12。超出就先回到本节修改设计，不硬做。
+
+#### 4. 未决与风险
+
+- `currentWordLyricModel` 有 88 处读取。E-5d 之前的各刀继续直接读入口类字段，经 Host 的 `currentWordLyricModel()` 读取。E-5d 再统一改为 `ModelSnapshot`。每刀都要防止 Host 因此变宽。
+- 160 余个未归类方法中，大部分是日志与反射工具。它们随各 owner 迁移时一起带走（第 15.8.4 节的 E-2b 结论不变），不单独成刀。
+- 本节的归类来自文本扫描。少数字段可能被分错区域，实施时以逐方法阅读为准。
+- 锁对象：E-6b、E-7a 涉及 `synchronized` 方法与 `this` 锁。每刀都要像 E-4b 那样逐个核对加锁顺序。
+
 ### 15.9 未覆盖
 
 - **Providers 仓库**的结构与性能没有做同等盘点。若要纳入“完整优化”，需要另做一次基线（13 个专用模块的 Hooker、`provider-core`、Universal），本节不对其作任何结论。
