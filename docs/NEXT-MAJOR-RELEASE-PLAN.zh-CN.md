@@ -2394,6 +2394,65 @@ E-2b 到 E-2d 都读写入口类的实例状态或调用 `hook()`，不能只靠
 
 **结果：** 用户安装候选 `128325b7…`、重启 SystemUI 后，设备冒烟 1–6 项通过（2026-11-15）。
 
+### 15.8.16 E-7b 实施记录：活动行与渲染目标外移（2026-11-15，已提交，未推送）
+
+**分支：** Bridge `feat/e7b-active-refresh`（基于 `150e27d`）。这是修订刀序的第四刀。
+
+**范围比设计小一半：**
+- 设计中的 `ActiveLyricRefreshScheduler` 同时拥有“活动行状态”和“刷新调度”。
+- 这刀只做前一半，新类按实际内容命名为 `ActiveLyricState`。
+- 刷新调度留在入口类，作为下一步：节奏（cadence）、posted 标志、刷新 runnable、截止时间、模式重绑 runnable 与 generation。
+  - 原因：调度方法（`scheduleActiveLyricRefresh` 四个重载、`runActiveLyricRefresh` 143 行）直接驱动渲染器与 Recycler。等 E-6c 把 Recycler 控制器拿出来后再移，Host 才不会变宽。
+
+**移动了什么：** `ActiveLyricState`（同包、final、包内可见，**不需要 Host**，构造参数只有 E-6a 的 `LyricViewRegistry`），是以下状态的**唯一写入者**：
+- 8 个字段：
+  - 活动行文本与时间；
+  - 活动渲染行 `activeRendererWordLine`；
+  - 活动渲染 TextView；
+  - 按 Recycler 的渲染目标表及其锁；
+  - 活动 TextView 注册表及其锁。
+- 原样移入 10 个方法：
+  - 记录、判断、快照活动 TextView：`rememberActiveTextViewReference`、`isRememberedActiveTextView`、`snapshotActiveTextViews`、`collectActiveTextViews`、`firstActiveLyricTextView`；
+  - 记录、忘记、快照、清空渲染目标：`rememberActiveRendererTextView`、`forgetActiveRendererTarget` 两个重载、`snapshotActiveRendererTargets`、`clearActiveRendererTargets`。
+- 新增 3 个写入方法：`setActiveLine(text, time)`、`clearActiveLine()`、`setActiveRendererWordLine(line)`。
+- 入口类放宽了 2 个静态函数的 `private`：`isEffectivelyVisible`、`isInLyricsRecyclerView`。
+
+**入口类的改写（原位替换，只有三种形式）：**
+- 7 处相邻的 `activeLyricLine = X.normalizedText; activeLyricLineTimeMs = X.timeMillis;` 改为 `setActiveLine(X.normalizedText, X.timeMillis)`；
+- 2 处 `activeLyricLine = ""; activeLyricLineTimeMs = -1L;` 改为 `clearActiveLine()`；
+- 8 处 `activeRendererWordLine = X;` 改为 `setActiveRendererWordLine(X)`。
+- 这些改写分布在 10 个方法里：
+  - `resetSystemUiPlaybackPositionForTrackChange`、`rememberSystemUiPlaybackState`、`observeLyricsPlaybackPositionJump`；
+  - `rememberLyricsRecyclerTargetIndex`、`primeLyricsRecyclerView`、`rememberActiveLyricTextView`；
+  - `resolveOfficialLyricDrawFrame`、`runActiveLyricRefresh`、`invalidateRenderableVisibleLyricTextViews`、`resetCommittedLyricRendererState`。
+- 其余访问全部是读取，加 `activeLyrics.` 前缀。
+
+**证据：**
+- 方法体比对（`--strip activeLyrics. --strip this:: --strip activeLyrics::`）：
+  - 10 个移动后一致；
+  - 10 个改动；
+  - 0 个删除；
+  - 新增 4 个（构造函数与 3 个写入方法）。
+- **另做了一次更强的核对：** 对 HEAD 上这 10 个方法体只套用上面三种替换后，与新方法体逐个比较，10 个全部相同。所以这些改动除这三种替换外没有其他差异。
+- 移动脚本还断言：
+  - 入口类不再对这些字段赋值，也不再对两个集合调用 add / remove / clear / put；
+  - 字段裸名不再出现。
+- 三份基线不变。
+- 入口类预算下调：11,797 → 11,629 行，字段 275 → 268，方法 451 → 441。
+- `verify-build-identity` 通过（373 个输入）。
+- 本地 1056 tests / 0 fail / 6 skip，Debug 与 R8 通过。
+
+**候选：** `artifacts/e7b-active-lyric-20261115/Bridge-E7b-active-debug-r1.apk`（`d2c1f728…`）。
+
+**设备冒烟（重启 SystemUI；逐字歌词）：**
+1. 当前行逐字高亮推进流畅，没有跳字或停顿。
+2. 换行时下一行接上，上一行恢复为非当前样式。
+3. 切歌后当前行从新歌第一行开始，不残留上一首的高亮。
+4. 拖动进度后当前行立即跟到新位置。
+5. 亮屏与 AOD 往返后，当前行高亮位置正确。
+
+**结果：** 用户安装候选 `d2c1f728…`、重启 SystemUI 后，设备冒烟 1–5 项通过（2026-11-15）。
+
 ### 15.9 未覆盖
 
 - **Providers 仓库**的结构与性能没有做同等盘点。若要纳入“完整优化”，需要另做一次基线（13 个专用模块的 Hooker、`provider-core`、Universal），本节不对其作任何结论。
