@@ -1268,7 +1268,7 @@ E 系列（第 15 节）不单列里程碑：E-0 随 M1，E-1/E-2 在 C-04/C-05 
 
 本地 1050 tests / 0 fail / 6 skip（新增 `HomeExtrasTest` 2 项：只对升级且只一次、默认显示图标），Debug 与 R8 通过。候选 `artifacts/m5-wrapup-20261115/Bridge-M5-wrapup-debug-r2.apk`（`f21a4c58…`）。待设备验证：安装后桌面出现图标并打开首页；开关隐藏/恢复图标；隐藏后 LSPosed 仍可进入；新版说明卡片显示一次，点“知道了”后重进不再出现（本机是覆盖安装，所以会显示）。
 
-**r2 设备结果：用户确认全部通过（桌面图标、隐藏/恢复、隐藏后 LSPosed 仍可进入、新版说明只显示一次）。M5 功能与收口完成，待提交。**
+**r2 设备结果：用户确认全部通过（桌面图标、隐藏/恢复、隐藏后 LSPosed 仍可进入、新版说明只显示一次）。M5 完成，已提交 `87b7645`（未推送）。**
 
 ## 15. 主线五：代码结构与性能治理（E 系列）
 
@@ -1471,6 +1471,21 @@ E 系列不阻塞商店与引导功能；若进度不足，允许 5.0 只完成�
 | D13 入口类完成上限 | ≤ 1,500 行、可变字段 ≤ 30 | 数字可调；重点是有一个入库的、只降不升的预算 |
 | D14 迁移期间语言 | 保持 Java | 与第 0.2、8 节一致，Kotlin 仅用于新管理 UI；结构迁移不叠加语言迁移 |
 | D15 根包分包时机 | 放到 E-8 | 提前做会与所有在途改动冲突，且对运行行为没有收益 |
+
+### 15.8.1 E-0 实施记录（2026-11-15，本地，未提交）
+
+**分支：** Bridge `feat/e0-guardrails`（基于 `87b7645`）。只加测试、基线文件和脚本，**不改任何 `app/src/main` 代码**，所以不需要设备回归。
+
+1. **入口类预算守卫**：`guard/EntryClassGuardTest.entryClassStaysWithinItsBudget` 用 `guard/JavaOutline`（去掉注释和字面量后按括号深度扫描，不是 AST）统计 `LockscreenLyricsModule.java`，与 `app/src/test/resources/guard/entry-class-budget.properties` 比较。入库值（2026-11-15）：行数 17,989、顶层字段 373、方法 565、内嵌类型 13 个共 4,168 行；与第 15.1 节的静态估计（约 371 / 564 / 13 个 4,149 行）一致，差异来自计数口径。超出预算即失败；低于预算超过余量（行 60、字段 3、方法 3、内嵌类型 0、内嵌行 30）也失败，提示把预算调低，所以预算只降不升。扫描器有一条小样本自检测试。
+2. **契约测试定位表**：新增 `guard/BridgeSourceMap`，按将来迁移的刀分区（RENDERER=E-1、OPLUS_POLICY=E-2、TRANSLATION_ACTION=E-4、PLUGIN_COMPAT=E-5、RECYCLER=E-6，另有 CONFIG_CONSUMERS、SYSTEMUI_RUNTIME），目前全部指向入口类。第 15.1 节列出的 12 个源码文本契约测试（共 15 处读取）改为 `BridgeSourceMap.read(Area.X)`，断言本身一字未改；以后某刀移走代码只改这张表。另有测试检查表中每个文件都存在。
+3. **三份基线**（`app/src/test/resources/guard/`，测试逐字比对，变化时把当前值写到 `app/build/e0-guard/*.actual` 供审阅后覆盖）：
+   - `hook-ids.txt`：28 个 `HOOK_ID_*` 常量的值与引用次数；
+   - `log-events.txt`：`BridgeEvents` 全部定义，以及全部源码中每个事件常量和字面事件名的使用次数；
+   - `hook-install-order.txt`：40 处 `.intercept(` 按所在方法分组、按源码顺序列出 `setId` 与回调。按方法名分组，所以整方法搬到别的类不会改变清单。
+4. **方法体等价脚本**：`scripts/guard/method-bodies.py --base <ref> [--head <ref>]`。按“方法名 + 参数类型”匹配两个版本中的全部方法，不管在哪个文件或类；从左花括号起比较方法体，去掉注释、合并空白，并忽略 `this.` / `LockscreenLyricsModule.`（可用 `--strip` 追加，例如 `host.`）。方法体有变化或消失则退出码为 1，并输出 diff。自检：`HEAD` 对工作区 2,722 个方法全部一致；`0d883d1 → 87b7645` 正确报出 M5 里实际改动的 Java 方法（10 处改动、14 处删除）。
+5. **性能基线：未做，需要设备。** 按第 15.4 节的六个场景采集：锁屏无歌词、逐字歌词且上浮开/关、连续切歌 10 次、亮屏与 AOD 往返、SystemUI 冷启动、约 30 分钟长播放。使用现有 `scripts/capture-lockscreen-perf.ps1 -Mode jank` 和 Bridge 调试页的性能区域；每项记录 APK 哈希、配置与框架版本。抓取 Perfetto/logcat 需要用户当次授权。另外，冷启动场景目前没有现成采样点，需要先新增一个只在开启 tracing 时生效的区段。
+
+本地 Bridge 1056 tests / 0 fail / 6 skip（新增 6 项守卫测试），Debug 与 R8 通过。
 
 ### 15.9 未覆盖
 

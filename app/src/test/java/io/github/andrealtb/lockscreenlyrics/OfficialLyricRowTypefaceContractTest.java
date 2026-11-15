@@ -1,5 +1,6 @@
 package io.github.andrealtb.lockscreenlyrics;
 
+import io.github.andrealtb.lockscreenlyrics.guard.BridgeSourceMap;
 import org.junit.Test;
 
 import java.io.File;
@@ -13,8 +14,7 @@ import static org.junit.Assert.assertTrue;
 public final class OfficialLyricRowTypefaceContractTest {
     @Test
     public void measurementAndDrawingShareOneOfficialTypeface() throws Exception {
-        String module = readProjectFile(
-                "app/src/main/java/io/github/andrealtb/lockscreenlyrics/LockscreenLyricsModule.java");
+        String module = BridgeSourceMap.read(BridgeSourceMap.Area.RENDERER);
 
         assertFalse(module.contains("resolveConfiguredTypeface(textView.getTypeface())"));
         assertEquals(2, count(module, "resolveConfiguredTypeface(officialTypefaceOf(textView))"));
@@ -37,8 +37,7 @@ public final class OfficialLyricRowTypefaceContractTest {
 
     @Test
     public void learningTheTypefaceInvalidatesCachedRowHeights() throws Exception {
-        String module = readProjectFile(
-                "app/src/main/java/io/github/andrealtb/lockscreenlyrics/LockscreenLyricsModule.java");
+        String module = BridgeSourceMap.read(BridgeSourceMap.Area.RENDERER);
 
         // Rows measured before the official typeface was learned carry a stale slot height; the
         // one-time re-measure only works when the typeface is part of the cache key.

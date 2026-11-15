@@ -1,0 +1,81 @@
+package io.github.andrealtb.lockscreenlyrics.guard;
+
+import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.EnumMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Where each area of the SystemUI hook code lives (E-0 ②, plan §15.3). Source-text contract
+ * tests read an area through this table instead of naming {@code LockscreenLyricsModule.java},
+ * so moving an area out of the entry class (E-1 to E-7) only edits this table: the assertions
+ * stay as they are. An area that spans several files is read as their concatenation, in order.
+ */
+public final class BridgeSourceMap {
+    /** Areas follow the E-series slices that will move them. */
+    public enum Area {
+        /** E-1: the lyric text renderer, char lift, typeface and glow drawing. */
+        RENDERER,
+        /** E-2: system_server / OPlus media policy hooks and AOD support. */
+        OPLUS_POLICY,
+        /** E-4: translation action view tracking and redirect. */
+        TRANSLATION_ACTION,
+        /** E-5: plugin class loader and plugin media-info compatibility. */
+        PLUGIN_COMPAT,
+        /** E-6: LyricsRecyclerView hooks, fields and immersive entry. */
+        RECYCLER,
+        /** Config consumers across the hook side (the settings UI is read separately). */
+        CONFIG_CONSUMERS,
+        /** Every hook-side class the architecture guard must keep free of network/caches. */
+        SYSTEMUI_RUNTIME,
+    }
+
+    public static final String SOURCE_ROOT = "app/src/main/java/io/github/andrealtb/lockscreenlyrics/";
+    /** The entry class whose size the budget guard pins. */
+    public static final String ENTRY_CLASS = SOURCE_ROOT + "LockscreenLyricsModule.java";
+
+    private static final Map<Area, List<String>> FILES = new EnumMap<>(Area.class);
+
+    static {
+        // Everything still lives in the entry class (baseline 2026-11-15). Update a row when its
+        // slice moves code; never edit the contract assertions to follow a move.
+        for (Area area : Area.values()) FILES.put(area, Collections.singletonList(ENTRY_CLASS));
+    }
+
+    private BridgeSourceMap() {
+    }
+
+    public static List<String> files(Area area) {
+        return FILES.get(area);
+    }
+
+    public static String read(Area area) throws IOException {
+        StringBuilder text = new StringBuilder();
+        for (String path : FILES.get(area)) text.append(readProjectFile(path)).append('\n');
+        return text.toString();
+    }
+
+    public static String readProjectFile(String relativePath) throws IOException {
+        return new String(Files.readAllBytes(locate(relativePath).toPath()), StandardCharsets.UTF_8);
+    }
+
+    /** Unit tests run from the module directory; paths in this table are repository-relative. */
+    public static File locate(String relativePath) {
+        File direct = new File(relativePath);
+        if (direct.exists()) return direct;
+        return new File(".." + File.separator + relativePath);
+    }
+
+    /** Repository root (the directory holding settings.gradle.kts). */
+    public static File repositoryRoot() {
+        for (File dir : Arrays.asList(new File("."), new File(".."))) {
+            if (new File(dir, "settings.gradle.kts").isFile()) return dir;
+        }
+        return new File("..");
+    }
+}

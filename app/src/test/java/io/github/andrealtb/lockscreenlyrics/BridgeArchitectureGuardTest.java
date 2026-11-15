@@ -1,5 +1,6 @@
 package io.github.andrealtb.lockscreenlyrics;
 
+import io.github.andrealtb.lockscreenlyrics.guard.BridgeSourceMap;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -200,8 +201,7 @@ public final class BridgeArchitectureGuardTest {
 
     @Test
     public void systemUiRuntimeContainsNoNetworkClientOrLeakyClassCache() throws Exception {
-        String module = readProjectFile(
-                "app/src/main/java/io/github/andrealtb/lockscreenlyrics/LockscreenLyricsModule.java");
+        String module = BridgeSourceMap.read(BridgeSourceMap.Area.SYSTEMUI_RUNTIME);
         String coordinator = readProjectFile(
                 "app/src/main/java/io/github/andrealtb/lockscreenlyrics/"
                         + "OfficialLyricDrawCoordinator.java");

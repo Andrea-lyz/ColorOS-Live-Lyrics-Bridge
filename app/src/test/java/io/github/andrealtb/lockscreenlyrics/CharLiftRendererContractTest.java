@@ -1,5 +1,6 @@
 package io.github.andrealtb.lockscreenlyrics;
 
+import io.github.andrealtb.lockscreenlyrics.guard.BridgeSourceMap;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -161,8 +162,7 @@ public final class CharLiftRendererContractTest {
     }
 
     private static String module() throws Exception {
-        return readProjectFile(
-                "app/src/main/java/io/github/andrealtb/lockscreenlyrics/LockscreenLyricsModule.java");
+        return BridgeSourceMap.read(BridgeSourceMap.Area.RENDERER);
     }
 
     private static String readProjectFile(String relativePath) throws Exception {

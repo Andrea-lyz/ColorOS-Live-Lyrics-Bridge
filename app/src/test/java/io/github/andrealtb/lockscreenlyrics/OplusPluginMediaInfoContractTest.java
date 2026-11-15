@@ -1,5 +1,6 @@
 package io.github.andrealtb.lockscreenlyrics;
 
+import io.github.andrealtb.lockscreenlyrics.guard.BridgeSourceMap;
 import org.junit.Test;
 
 import java.io.File;
@@ -30,8 +31,7 @@ public final class OplusPluginMediaInfoContractTest {
     public void coloros17EvidencePutsAnotherBooleanAfterTheLyricFlag() throws Exception {
         String evidence = readProjectFile(
                 "app/src/test/resources/fixtures/oplus-plugin-media-info-evidence-c17.txt");
-        String module = readProjectFile(
-                "app/src/main/java/io/github/andrealtb/lockscreenlyrics/LockscreenLyricsModule.java");
+        String module = BridgeSourceMap.read(BridgeSourceMap.Area.PLUGIN_COMPAT);
 
         assertTrue(evidence.contains("p:s q:Z r:a s:Z t:Object"));
         assertTrue(evidence.contains("s artworkFullBgEnable (the last boolean)"));

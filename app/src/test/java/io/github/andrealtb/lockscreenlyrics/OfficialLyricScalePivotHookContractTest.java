@@ -1,5 +1,6 @@
 package io.github.andrealtb.lockscreenlyrics;
 
+import io.github.andrealtb.lockscreenlyrics.guard.BridgeSourceMap;
 import org.junit.Test;
 
 import java.io.File;
@@ -12,8 +13,7 @@ import static org.junit.Assert.assertTrue;
 public final class OfficialLyricScalePivotHookContractTest {
     @Test
     public void pivotHookUsesStableMethodShapeInsteadOfObfuscatedName() throws Exception {
-        String module = readProjectFile(
-                "app/src/main/java/io/github/andrealtb/lockscreenlyrics/LockscreenLyricsModule.java");
+        String module = BridgeSourceMap.read(BridgeSourceMap.Area.RECYCLER);
 
         assertTrue(module.contains(
                 "OfficialLyricScalePivotMethodPolicy.textViewArgumentIndex(method)"));

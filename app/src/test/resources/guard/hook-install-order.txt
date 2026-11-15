@@ -1,0 +1,61 @@
+LockscreenLyricsModule.<field-initializer>
+  id -> <lambda>
+LockscreenLyricsModule.hookAodMediaSupportMethod
+  HOOK_ID_AOD_MEDIA_SUPPORT + "-" + methodName -> onAodMediaSupportLookup
+LockscreenLyricsModule.hookRecyclerAdapterNotifyMethod
+  HOOK_ID_RECYCLER_ADAPTER_NOTIFY_CHANGED + "-" + methodName + "-" + parameterTypes.length -> onRecyclerAdapterNotifyChanged
+LockscreenLyricsModule.installKuWoArtworkSnapshotHook
+  HOOK_ID_SYSTEMUI_ARTWORK_ICON -> onSystemUiKuWoArtworkLookup
+LockscreenLyricsModule.installKuWoCarLyricLoadMetadataHook
+  HOOK_ID_MEDIA_DATA_LOAD_METADATA -> onLegacyMediaDataLoad
+LockscreenLyricsModule.installKuWoCarLyricMetadataHook
+  HOOK_ID_MEDIA_DATA_METADATA_CHANGED -> onOplusMediaDataMetadataChanged
+LockscreenLyricsModule.installKuWoMediaDataArtworkCaptureHook
+  HOOK_ID_SYSTEMUI_ARTWORK_ICON + "-media-data" -> onKuWoMediaDataArtworkLoaded
+LockscreenLyricsModule.installKuWoSeedlingArtworkHook
+  HOOK_ID_SYSTEMUI_SEEDLING_ARTWORK -> onKuWoSeedlingArtworkChanged
+LockscreenLyricsModule.installOplusHistoryWhitelistHook
+  HOOK_ID_OPLUS_HISTORY_WHITELIST -> onOplusHistoryWhitelistLookup
+LockscreenLyricsModule.installOplusMediaBlacklistBypassHook
+  HOOK_ID_OPLUS_MEDIA_BLACKLIST -> onOplusMediaBlackListLookup
+LockscreenLyricsModule.installOplusMediaPolicyBypassHooks
+  HOOK_ID_RUS_GET_WHITE_LIST -> onOplusMediaRusGetWhiteList
+  HOOK_ID_RUS_GET_WHITE_LIST -> onOplusMediaRusGetWhiteList
+  HOOK_ID_GET_LYRIC_ENTRANCE -> onOplusMediaGetLyricEntrance
+  HOOK_ID_RESOLVE_LYRIC_SUPPORT -> onOplusMediaResolveLyricSupport
+  HOOK_ID_UPDATE_PKG_ACTIONS_RULE -> onOplusMediaUpdatePkgActionsRule
+LockscreenLyricsModule.installSystemUiArtworkDiagnosticsHook
+  HOOK_ID_SYSTEMUI_ARTWORK_LOADER_PROBE -> onSystemUiArtworkLoaderProbe
+LockscreenLyricsModule.installSystemUiTranslationToggleActionHook
+  HOOK_ID_TRANSLATION_TOGGLE_ACTION -> onOplusMediaCreateActionsFromState
+LockscreenLyricsModule.installSystemUiWordLyricHooks
+  HOOK_ID_SYSTEMUI_LOAD_LYRIC -> onSystemUiLoadLyricInBg
+  HOOK_ID_SEEDLING_MEDIA_BUNDLE -> onSeedlingMediaBundle
+  HOOK_ID_TEXTVIEW_ON_DRAW -> onTextViewOnDraw
+  HOOK_ID_TEXTVIEW_SET_TEXT -> onTextViewSetText
+  HOOK_ID_VIEW_ON_ATTACHED -> onViewAttachedToWindow
+  HOOK_ID_VIEW_ON_DETACHED -> onViewDetachedFromWindow
+  HOOK_ID_VIEW_SET_VISIBILITY -> onViewSetVisibility
+  HOOK_ID_VIEW_SET_CONTENT_DESCRIPTION -> onViewSetContentDescription
+  HOOK_ID_IMAGE_VIEW_SET_IMAGE_DRAWABLE -> onImageViewSetImage
+  HOOK_ID_IMAGE_VIEW_SET_IMAGE_BITMAP -> onImageViewSetImage
+LockscreenLyricsModule.tryInstallKuWoPluginMediaModelHook
+  HOOK_ID_PLUGIN_CLASS_LOADER_CONSTRUCTOR + "-kuwo-model-" + hooked + "-" + constructor.getParameterTypes().length -> onKuWoPluginMediaModelBuilt
+LockscreenLyricsModule.tryInstallLyricAdapterBindHook
+  HOOK_ID_LYRICS_RECYCLER + "-adapter-bind-" + count -> onLyricsAdapterBindViewHolder
+LockscreenLyricsModule.tryInstallLyricPositionControllerHook
+  HOOK_ID_LYRICS_RECYCLER + "-controller-position" -> onLyricControllerPositionUpdate
+LockscreenLyricsModule.tryInstallLyricsRecyclerViewHook
+  HOOK_ID_LYRICS_RECYCLER + "-surface-draw" -> onLyricsRecyclerDraw
+  HOOK_ID_LYRICS_RECYCLER + "-dataset-" + datasetHooks -> onLyricsRecyclerSetLyrics
+  HOOK_ID_LYRICS_RECYCLER + "-current-" + currentLyricHooks + "-" + method.getParameterTypes().length -> onLyricsRecyclerSetCurrentLyric
+  HOOK_ID_LYRICS_RECYCLER + "-pivot-" + scalePivotHooks -> onLyricsRecyclerPrepareScalePivot
+  HOOK_ID_LYRICS_RECYCLER + "-row-style-" + rowStyleHooks -> onLyricsRecyclerRowStyleApplied
+  HOOK_ID_LYRICS_RECYCLER + "-immersive-entry-" + immersiveEntryHooks -> onLyricsRecyclerImmersiveEntry
+LockscreenLyricsModule.tryInstallPluginClassLoaderConstructorHook
+  HOOK_ID_PLUGIN_CLASS_LOADER_CONSTRUCTOR + "-" + hooked + "-" + constructor.getParameterTypes().length -> onPluginClassLoaderConstructed
+LockscreenLyricsModule.tryInstallPluginClassLoaderFactoryHook
+  HOOK_ID_PLUGIN_CLASS_LOADER_FACTORY -> onPluginClassLoaderCreated
+LockscreenLyricsModule.tryInstallShortWindowDiagnostics
+  "short-window-probe-invoke-" + hooks -> onShortWindowProbeInvoke
+  "short-window-probe-model-" + constructor.getParameterCount() -> onShortWindowProbeModelBuilt

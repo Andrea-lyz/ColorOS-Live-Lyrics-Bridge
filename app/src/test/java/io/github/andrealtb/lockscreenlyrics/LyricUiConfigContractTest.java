@@ -1,5 +1,6 @@
 package io.github.andrealtb.lockscreenlyrics;
 
+import io.github.andrealtb.lockscreenlyrics.guard.BridgeSourceMap;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -111,8 +112,7 @@ public final class LyricUiConfigContractTest {
 
     @Test
     public void everyConfigFieldHasAnExplicitRuntimeOrUiConsumer() throws Exception {
-        String sources = readProjectFile(
-                "app/src/main/java/io/github/andrealtb/lockscreenlyrics/LockscreenLyricsModule.java")
+        String sources = BridgeSourceMap.read(BridgeSourceMap.Area.CONFIG_CONSUMERS)
                 + readProjectFile(
                 "app/src/main/java/io/github/andrealtb/lockscreenlyrics/LyricUiSettingsActivity.java")
                 + readProjectFile(
@@ -129,8 +129,7 @@ public final class LyricUiConfigContractTest {
 
     @Test
     public void rendererConsumesVisualSchemaWithoutLegacyFadeCoupling() throws Exception {
-        String module = readProjectFile(
-                "app/src/main/java/io/github/andrealtb/lockscreenlyrics/LockscreenLyricsModule.java");
+        String module = BridgeSourceMap.read(BridgeSourceMap.Area.RENDERER);
         String colors = readProjectFile(
                 "app/src/main/java/io/github/andrealtb/lockscreenlyrics/LyricUiColors.java");
         String renderConstants = readProjectFile(

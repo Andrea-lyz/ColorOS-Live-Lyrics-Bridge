@@ -1,5 +1,6 @@
 package io.github.andrealtb.lockscreenlyrics;
 
+import io.github.andrealtb.lockscreenlyrics.guard.BridgeSourceMap;
 import org.junit.Test;
 
 import java.io.File;
@@ -22,8 +23,7 @@ public final class SystemUiLyricSupportGateContractTest {
 
     @Test
     public void onlyModuleManagedPlayersGetTheGateLifted() throws Exception {
-        String module = readProjectFile(
-                "app/src/main/java/io/github/andrealtb/lockscreenlyrics/LockscreenLyricsModule.java");
+        String module = BridgeSourceMap.read(BridgeSourceMap.Area.OPLUS_POLICY);
         int handler = module.indexOf("private Object onOplusMediaResolveLyricSupport(");
         int next = module.indexOf("private Object onOplusMediaUpdatePkgActionsRule(", handler);
         assertTrue(handler > 0 && next > handler);
