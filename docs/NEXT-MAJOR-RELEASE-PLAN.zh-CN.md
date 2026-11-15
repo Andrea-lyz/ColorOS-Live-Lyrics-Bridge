@@ -1636,6 +1636,40 @@ E-2b 到 E-2d 都读写入口类的实例状态或调用 `hook()`，不能只靠
 
 **设备结果：用户重启手机后确认 1–5 项全部通过（2026-11-15）。**
 
+### 15.8.6 E-2c 实施记录：日志描述函数外移（2026-11-15，已提交，未推送）
+
+**分支：** Bridge `feat/e2c-log-descriptions`（基于 `01926e3`）。
+
+**移动了什么：**
+- 8 个只拼日志文字的 `static` 函数，共 118 行，原样移入同包新类 `LyricLogDescriptions`（final、包内可见、私有构造）。
+- 这 8 个函数是：`describeViewForLog`、`describeLayoutParamsForLog`、`describeSeedlingIcon`、`describeProbeLines`、`describeMetadataArtwork`、`describeDecisionLine`、`describeModelWindow`、`shortenForLog`。
+- 它们都是 static，编译器保证不读实例状态。
+
+**调用方怎么处理：**
+- 入口类和 `OfficialLyricTextRenderer` 各加一条 `import static ...LyricLogDescriptions.*`，调用处不改。
+- `OfficialLyricDrawCoordinator` 本来就有自己的私有 `shortenForLog`，不受影响。
+- 新类需要的 5 个入口类成员去掉 `private`：`extractIconBitmap`、`firstNonNullBitmap`、`firstNonEmpty`、`objectId`、`PROBE_FIELD_MISSING`。
+
+**有意留下的函数：** `whitelistGetterLabel`、`kuWoArtworkSnapshotKey`、`isTranslationActionDescription` 带业务含义（启动标签、缓存键、按钮识别），不是纯日志，留给各自的 owner。
+
+**位置与计划不同：** 放在同包而非 `diagnostics/`，原因同 E-1：依赖的类型是包内可见的，分包留到 E-8。
+
+**证据：**
+- 方法体比对：8 个移动且一致，0 个改动，新增 1 个（私有构造）。
+- 三份基线不变。
+- 入口类预算下调：13,605 → 13,481 行，方法 554 → 546。
+- `verify-build-identity` 通过（365 个输入）。
+- 本地 1056 tests / 0 fail / 6 skip，Debug 与 R8 通过。
+
+**候选：** `artifacts/e2-cleanup-20261115/Bridge-E2c-logdesc-debug-r1.apk`（`ea07903a…`）。
+
+**设备冒烟（重启 SystemUI）：**
+1. 状态页正常。
+2. 锁屏歌词正常。
+3. 调试页打开任一日志区域、点“开始 60 秒诊断”，结束后预览摘要能生成。这些函数只在开启诊断时执行。
+
+**设备结果：用户重启 SystemUI 后确认 1–3 项全部通过（2026-11-15）。**
+
 ### 15.9 未覆盖
 
 - **Providers 仓库**的结构与性能没有做同等盘点。若要纳入“完整优化”，需要另做一次基线（13 个专用模块的 Hooker、`provider-core`、Universal），本节不对其作任何结论。

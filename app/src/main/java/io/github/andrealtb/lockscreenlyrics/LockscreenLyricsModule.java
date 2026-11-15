@@ -108,6 +108,8 @@ import io.github.andrealtb.lockscreenlyrics.systemui.lyrics.SystemUiLoadLyricPol
 import io.github.libxposed.api.XposedInterface;
 import io.github.libxposed.api.XposedModule;
 
+import static io.github.andrealtb.lockscreenlyrics.LyricLogDescriptions.*;
+
 public final class LockscreenLyricsModule extends XposedModule {
     private static final String TAG = "LockscreenLyrics";
     private static final String LYRIC_PARSE_TRACE_TAG = "LockscreenLyricsParse";
@@ -2872,18 +2874,6 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
     }
 
-    private static String describeSeedlingIcon(Icon icon) {
-        if (icon == null) {
-            return "null";
-        }
-        Bitmap bitmap = extractIconBitmap(icon);
-        return bitmap == null
-                ? "icon"
-                : bitmap.getWidth() + "x" + bitmap.getHeight()
-                        + ":generation-" + bitmap.getGenerationId()
-                        + ":identity-" + System.identityHashCode(bitmap);
-    }
-
     private void installKuWoCarLyricMetadataHook(Class<?> ownerClass, Method metadataChanged) {
         try {
             Method changed = metadataChanged;
@@ -3217,7 +3207,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
     }
 
-    private static Bitmap extractIconBitmap(Icon icon) {
+    static Bitmap extractIconBitmap(Icon icon) {
         try {
             android.content.Context context = currentApplicationContext();
             if (context != null) {
@@ -7604,23 +7594,6 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     /**
-     * A null list is the vendor's empty model ({@code h()} delegates to {@code h(null,-1)}),
-     * so it must be reported instead of being filtered out as an unreadable probe.
-     */
-    private static String describeProbeLines(Object lines) {
-        if (lines == PROBE_FIELD_MISSING) {
-            return "unreadable";
-        }
-        if (lines == null) {
-            return "null";
-        }
-        if (lines instanceof List) {
-            return "count=" + ((List<?>) lines).size();
-        }
-        return "type=" + lines.getClass().getSimpleName();
-    }
-
-    /**
      * Diagnostic-only F06 probe. It observes the immersive lyric transform and the model
      * constructors without changing the emitted model. Per-stage throttling plus
      * {@link StructuredBridgeLog#debugTransition} preserves the input and output stages of one
@@ -10737,46 +10710,6 @@ public final class LockscreenLyricsModule extends XposedModule {
         return false;
     }
 
-    private static String describeViewForLog(View view) {
-        if (view == null) {
-            return "null";
-        }
-        return view.getClass().getName()
-                + "{attached=" + view.isAttachedToWindow()
-                + ", visibility=" + view.getVisibility()
-                + ", windowVisibility=" + view.getWindowVisibility()
-                + ", alpha=" + view.getAlpha()
-                + ", size=" + view.getWidth() + "x" + view.getHeight()
-                + ", measured=" + view.getMeasuredWidth() + "x" + view.getMeasuredHeight()
-                + ", pos=" + view.getX() + "," + view.getY()
-                + ", top=" + view.getTop()
-                + ", left=" + view.getLeft()
-                + ", scroll=" + view.getScrollX() + "," + view.getScrollY()
-                + ", translation=" + view.getTranslationX() + "," + view.getTranslationY()
-                + ", layout=" + describeLayoutParamsForLog(view)
-                + "}";
-    }
-
-    private static String describeLayoutParamsForLog(View view) {
-        if (view == null) {
-            return "null";
-        }
-        ViewGroup.LayoutParams params = view.getLayoutParams();
-        if (params == null) {
-            return "null";
-        }
-        String value = params.width + "x" + params.height;
-        if (params instanceof ViewGroup.MarginLayoutParams) {
-            ViewGroup.MarginLayoutParams margins = (ViewGroup.MarginLayoutParams) params;
-            value += ",margins="
-                    + margins.leftMargin + ","
-                    + margins.topMargin + ","
-                    + margins.rightMargin + ","
-                    + margins.bottomMargin;
-        }
-        return value;
-    }
-
     private static void tryInvokeOneArgByName(Object target, String methodName, Object arg) {
         if (target == null || TextUtils.isEmpty(methodName)) {
             return;
@@ -10984,7 +10917,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         return null;
     }
 
-    private static final Object PROBE_FIELD_MISSING = new Object();
+    static final Object PROBE_FIELD_MISSING = new Object();
 
     /** Distinguishes a genuinely null field from a missing or unreadable field. */
     private static Object readFieldOrMissing(Object target, String fieldName) {
@@ -11960,25 +11893,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 .build();
     }
 
-    private static String describeMetadataArtwork(MediaMetadata metadata) {
-        if (metadata == null) return "metadata-null";
-        Bitmap bitmap = firstNonNullBitmap(
-                metadata.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON),
-                metadata.getBitmap(MediaMetadata.METADATA_KEY_ART),
-                metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART));
-        String uri = firstNonEmpty(
-                metadata.getString(MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI),
-                metadata.getString(MediaMetadata.METADATA_KEY_ART_URI),
-                metadata.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI));
-        return (bitmap == null
-                ? "bitmap=null"
-                : "bitmap=" + bitmap.getWidth() + 'x' + bitmap.getHeight()
-                + ":generation-" + bitmap.getGenerationId()
-                + ":identity-" + System.identityHashCode(bitmap))
-                + ", uri=" + SensitiveFieldRedactor.uriSummary(uri);
-    }
-
-    private static Bitmap firstNonNullBitmap(Bitmap... bitmaps) {
+    static Bitmap firstNonNullBitmap(Bitmap... bitmaps) {
         if (bitmaps == null) return null;
         for (Bitmap bitmap : bitmaps) {
             if (bitmap != null) return bitmap;
@@ -12801,38 +12716,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 + ", window=" + describeModelWindow(model, focusIndex, 5));
     }
 
-    private static String describeDecisionLine(WordLyricModel model, WordLine line) {
-        if (line == null) {
-            return "null";
-        }
-        return "idx=" + (model == null ? -1 : model.indexOfLine(line))
-                + "#"
-                + objectId(line)
-                + " time=" + LyricModelTraceSupport.formatLrcTime(line.timeMillis)
-                + " text=" + shortenForLog(line.text);
-    }
-
-    private static String describeModelWindow(WordLyricModel model, int centerIndex, int radius) {
-        if (model == null || model.lines.isEmpty()) {
-            return "";
-        }
-        int center = Math.max(0, Math.min(model.lines.size() - 1, centerIndex));
-        int start = Math.max(0, center - Math.max(0, radius));
-        int end = Math.min(model.lines.size() - 1, center + Math.max(0, radius));
-        StringBuilder builder = new StringBuilder();
-        for (int i = start; i <= end; i++) {
-            WordLine line = model.lineAt(i);
-            if (builder.length() > 0) {
-                builder.append(" | ");
-            }
-            builder.append(i)
-                    .append("=>")
-                    .append(describeDecisionLine(model, line));
-        }
-        return builder.toString();
-    }
-
-    private static String objectId(Object value) {
+    static String objectId(Object value) {
         return value == null ? "null" : Integer.toHexString(System.identityHashCode(value));
     }
 
@@ -13230,14 +13114,6 @@ public final class LockscreenLyricsModule extends XposedModule {
                 : 0;
     }
 
-    static String shortenForLog(String text) {
-        if (text == null) {
-            return "";
-        }
-        String normalized = text.replace('\n', ' ').replace('\r', ' ').trim();
-        return normalized.length() <= 80 ? normalized : normalized.substring(0, 77) + "...";
-    }
-
     private static String sanitizeForOplusLyric(String rawLyric) {
         return OplusLyricNormalizer.normalizeForOfficialList(rawLyric);
     }
@@ -13250,7 +13126,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         return value.toString().trim();
     }
 
-    private static String firstNonEmpty(String... values) {
+    static String firstNonEmpty(String... values) {
         for (String value : values) {
             if (!TextUtils.isEmpty(value)) {
                 return value;
