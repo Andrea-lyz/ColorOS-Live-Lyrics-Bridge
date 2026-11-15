@@ -140,13 +140,11 @@ public final class BridgeDebugSettingsActivity extends SettingsBaseActivity {
         aod = areaToggle(R.string.debug_area_aod);
         playerSpecial = areaToggle(R.string.debug_area_player_special);
         performance = areaToggle(R.string.debug_area_performance);
-        areas.addView(bootstrap, matchWrap());
-        areas.addView(media, matchWrap());
-        areas.addView(lyric, matchWrap());
-        areas.addView(renderer, matchWrap());
-        areas.addView(aod, matchWrap());
-        areas.addView(playerSpecial, matchWrap());
-        areas.addView(performance, matchWrap());
+        MaterialSwitch[] areaRows = {bootstrap, media, lyric, renderer, aod, playerSpecial, performance};
+        for (int i = 0; i < areaRows.length; i++) {
+            if (i > 0) addCardDivider(areas);
+            areas.addView(areaRows[i], matchWrap());
+        }
         content.addView(areas, marginBottom(dp(12)));
 
         LinearLayout statusCard = paddedCard();
@@ -164,12 +162,16 @@ public final class BridgeDebugSettingsActivity extends SettingsBaseActivity {
         statusCard.addView(restartHint, matchWrap());
         content.addView(statusCard, marginBottom(dp(12)));
 
-        // M0 prototype entry (5.0 plan §8.4 U-01). App-side Activity only; sample data.
-        Button managementPrototype = button(getString(R.string.mgmt_debug_entry));
-        removeButtonShadow(managementPrototype);
-        managementPrototype.setOnClickListener(view -> startActivity(new Intent(this,
-                io.github.andrealtb.lockscreenlyrics.management.ManagementPreviewActivity.class)));
-        content.addView(managementPrototype, marginBottom(dp(12)));
+        // Debug builds only: provider preview and fixed-video test (moved from the old
+        // appearance page, plan §14.18).
+        if (BuildConfig.DEBUG) {
+            Button dynamicArtwork = button(getString(R.string.artwork_title));
+            dynamicArtwork.setContentDescription(getString(R.string.artwork_link_sub));
+            removeButtonShadow(dynamicArtwork);
+            dynamicArtwork.setOnClickListener(view -> startActivity(
+                    new Intent(this, DynamicArtworkSettingsActivity.class)));
+            content.addView(dynamicArtwork, marginBottom(dp(12)));
+        }
 
         Button save = button(getString(R.string.debug_save));
         styleGoldButton(save);
@@ -208,9 +210,9 @@ public final class BridgeDebugSettingsActivity extends SettingsBaseActivity {
     }
 
     private MaterialSwitch areaToggle(int labelRes) {
-        MaterialSwitch view = toggle(getString(labelRes), true);
-        view.setPadding(0, 0, 0, 0);
-        return view;
+        // Keep toggle()'s row padding: zero padding put the labels and switches on the card
+        // edges (PJZ110 r3 screenshot).
+        return toggle(getString(labelRes), true);
     }
 
     private void bind(BridgeDebugConfig config) {

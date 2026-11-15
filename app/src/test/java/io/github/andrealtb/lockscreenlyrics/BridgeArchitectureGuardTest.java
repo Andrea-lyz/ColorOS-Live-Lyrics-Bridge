@@ -138,8 +138,8 @@ public final class BridgeArchitectureGuardTest {
      * management package, or start its Activity from Hook, bootstrap or render code.
      */
     /** Ordinary-App settings Activities allowed to open the management UI (never Hook code). */
-    private static final List<String> MANAGEMENT_UI_ENTRY_POINTS = Arrays.asList(
-            "BridgeDebugSettingsActivity.java");
+    /** Views pages that may open the management UI; none since it became the settings entry (§14.18). */
+    private static final List<String> MANAGEMENT_UI_ENTRY_POINTS = Arrays.asList();
 
     private static final List<String> MANAGEMENT_ONLY_MARKERS = Arrays.asList(
             "HttpURLConnection", "HttpsURLConnection", "java.net.URL", "openConnection(",

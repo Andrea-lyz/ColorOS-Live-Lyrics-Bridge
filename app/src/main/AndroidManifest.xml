@@ -84,19 +84,14 @@
             android:exported="true"
             android:importantForAutofill="no"
             android:label="@string/lyric_ui_settings_title"
-            android:windowSoftInputMode="adjustResize">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="de.robv.android.xposed.category.MODULE_SETTINGS" />
-            </intent-filter>
-        </activity>
+            android:windowSoftInputMode="adjustResize" />
         <activity
             android:name=".BridgeConfigBackupSettingsActivity"
             android:exported="false"
             android:importantForAutofill="no"
             android:label="@string/config_backup_title"
             android:theme="@style/Theme.LockscreenLyrics"
-            android:parentActivityName=".LyricUiSettingsActivity" />
+            android:parentActivityName=".management.ManagementPreviewActivity" />
         <activity
             android:name=".LyricVisualLayersSettingsActivity"
             android:exported="false"
@@ -110,42 +105,47 @@
             android:importantForAutofill="no"
             android:label="@string/player_translation_settings_title"
             android:theme="@style/Theme.LockscreenLyrics"
-            android:parentActivityName=".LyricUiSettingsActivity" />
+            android:parentActivityName=".management.ManagementPreviewActivity" />
         <activity
             android:name=".LyricOpeningCleanupSettingsActivity"
             android:exported="false"
             android:importantForAutofill="no"
             android:label="@string/opening_cleanup_settings_title"
             android:theme="@style/Theme.LockscreenLyrics"
-            android:parentActivityName=".LyricUiSettingsActivity"
+            android:parentActivityName=".management.ManagementPreviewActivity"
             android:windowSoftInputMode="adjustResize" />
-        <!-- M0 Compose integration check; not exported and no launcher entry yet. -->
+        <!-- Management Home (plan D3): LSPosed's module settings open here. No launcher entry yet. -->
         <activity
             android:name=".management.ManagementPreviewActivity"
-            android:exported="false"
+            android:exported="true"
             android:label="@string/management_preview_title"
-            android:theme="@style/Theme.LockscreenLyrics" />
+            android:theme="@style/Theme.LockscreenLyrics">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="de.robv.android.xposed.category.MODULE_SETTINGS" />
+            </intent-filter>
+        </activity>
         <activity
             android:name=".BridgeDebugSettingsActivity"
             android:exported="false"
             android:importantForAutofill="no"
             android:label="@string/debug_settings_title"
             android:theme="@style/Theme.LockscreenLyrics"
-            android:parentActivityName=".LyricUiSettingsActivity" />
+            android:parentActivityName=".management.ManagementPreviewActivity" />
         <activity
             android:name=".ArtworkSettingsActivity"
             android:exported="false"
             android:importantForAutofill="no"
             android:label="@string/artwork_settings_title"
             android:theme="@style/Theme.LockscreenLyrics"
-            android:parentActivityName=".LyricUiSettingsActivity" />
+            android:parentActivityName=".management.ManagementPreviewActivity" />
         <activity
             android:name=".DynamicArtworkSettingsActivity"
             android:exported="false"
             android:importantForAutofill="no"
             android:label="@string/artwork_title"
             android:theme="@style/Theme.LockscreenLyrics"
-            android:parentActivityName=".LyricUiSettingsActivity" />
+            android:parentActivityName=".management.ManagementPreviewActivity" />
         <receiver
             android:name=".UniversalPlayerBindingsReceiver"
             android:exported="true">

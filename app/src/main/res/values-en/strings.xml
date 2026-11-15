@@ -2,17 +2,8 @@
     <string name="app_name">ColorOS Live Lyrics Bridge</string>
     <string name="module_description">Bridge lyrics from supported players to the ColorOS/OPlus lock screen, with customizable effects.</string>
     <string name="lyric_ui_settings_title">Lyric Appearance</string>
-    <string name="settings_status_name">Live Lyrics Bridge</string>
     <string name="player_translation_settings_title">Player translation settings</string>
     <string name="opening_cleanup_settings_title">Opening lyric cleanup</string>
-    <string name="settings_module_icon_description">Module icon</string>
-    <string name="settings_appbar_version">v%1$s</string>
-    <string name="settings_module_status_checking">Checking…</string>
-    <string name="settings_module_status_active">Module active · SystemUI loaded · just now</string>
-    <string name="settings_module_status_active_restart">Module updated; restart SystemUI to apply</string>
-    <string name="settings_module_status_inactive">Not active</string>
-    <string name="settings_language_current">EN</string>
-    <string name="settings_language_description">Switch language</string>
     <string name="cleanup_current_song_artist">%1$s\n%2$s</string>
     <string name="cleanup_hidden_count">The module currently hides %1$d lines. Tap a line to set it as the first official lyric line for this song.</string>
     <string name="cleanup_learn_similar">Hide similar formats in the future: %1$s</string>
@@ -86,7 +77,6 @@
     <string name="settings_section_presets">Style presets</string>
     <string name="settings_section_color">Color &amp; glow</string>
     <string name="settings_section_motion_refresh">Motion &amp; refresh</string>
-    <string name="settings_section_compat">Compatibility &amp; screen</string>
     <string name="settings_section_typography">Typography</string>
     <!-- Main page: presets -->
     <string name="preset_default">Default</string>
@@ -131,8 +121,6 @@
     <string name="link_config_backup_sub">Back up main, player translation, cleanup, and debug settings</string>
     <string name="link_opening_cleanup">Opening lyric cleanup</string>
     <string name="link_opening_cleanup_sub">Learned formats &amp; first-line rules</string>
-    <string name="link_debug_logging">Debug logging</string>
-    <string name="link_debug_logging_sub">Off by default; writes logcat and LSPosed logs</string>
     <string name="debug_settings_title">Debug logging</string>
     <string name="debug_settings_desc">Off by default. When enabled, extra [CLL] DEBUG/INFO lines are written to both Android logcat and the LSPosed framework log. When disabled, only startup summaries, key state changes, warnings, and errors remain. This switch does not change lyric, hook, or render behavior.</string>
     <string name="debug_master">Enable debug logging</string>
@@ -289,7 +277,6 @@
     <string name="mgmt_tab_store">Store</string>
     <string name="mgmt_tab_appearance">Appearance</string>
     <string name="mgmt_tab_status">Status</string>
-    <string name="mgmt_sample_banner">Sample data: not this device\'s real state. Buttons do not install, update or grant anything.</string>
     <string name="mgmt_check_config">Settings applied</string>
     <string name="mgmt_check_unknown">Unknown</string>
     <string name="mgmt_action_continue_setup">Continue setup</string>
@@ -307,10 +294,8 @@
     <string name="mgmt_action_download">Download</string>
     <string name="mgmt_action_update">Update</string>
     <string name="mgmt_store_empty">No plugins in this filter</string>
-    <string name="mgmt_appearance_body">Appearance settings still use the existing page.</string>
     <string name="mgmt_appearance_open">Open appearance settings</string>
     <string name="mgmt_status_body">The status page is not prototyped yet. Use the debug page for now.</string>
-    <string name="mgmt_debug_entry">Management UI prototype (sample data)</string>
     <plurals name="mgmt_onboarding_remaining"><item quantity="one">%1$d setup step left</item><item quantity="other">%1$d setup steps left</item></plurals>
     <plurals name="mgmt_features_attention"><item quantity="one">%1$d feature is not active</item><item quantity="other">%1$d features are not active</item></plurals>
     <plurals name="mgmt_updates_available"><item quantity="one">%1$d plugin update</item><item quantity="other">%1$d plugin updates</item></plurals>
@@ -543,4 +528,22 @@
     <string name="status_verdict_line_progress_na">The current lyrics are not line-timed, so this is not used (word-timed lyrics have their own rendering)</string>
     <string name="status_owner_counts">Last 60 s: ran in %1$d place(s), not in %2$d</string>
     <string name="status_feature_word_progress">Word-timed lyric progress</string>
+    <string name="appearance_subtitle">Your saved settings. Tap a card to change them in Appearance settings; changes apply after you save.</string>
+    <string name="appearance_primary_color">Lyric color</string>
+    <string name="appearance_glow">Glow</string>
+    <string name="appearance_translation_ratio">Translation size</string>
+    <string name="appearance_sp">%1$s sp</string>
+    <string name="appearance_percent">%1$d%%</string>
+    <string name="appearance_section_effects">Progress and animation</string>
+    <string name="appearance_section_more">More settings</string>
+    <string name="appearance_lyric_card">Lyric appearance</string>
+    <string name="appearance_preset_value">Style: %1$s</string>
+    <string name="settings_section_screen">Screen</string>
+    <string name="appearance_language">Language</string>
+    <string name="appearance_language_zh">中文</string>
+    <string name="appearance_language_en">English</string>
+    <string name="appearance_seconds">%1$d s</string>
+    <string name="appearance_screen_always">Always on</string>
+    <plurals name="home_providers_disabled"><item quantity="one">%1$d not enabled</item><item quantity="other">%1$d not enabled</item></plurals>
+    <string name="home_restart_confirm">The status bar, lock screen and notifications disappear briefly and reload, so SystemUI picks up the new Bridge build.</string>
 </resources>

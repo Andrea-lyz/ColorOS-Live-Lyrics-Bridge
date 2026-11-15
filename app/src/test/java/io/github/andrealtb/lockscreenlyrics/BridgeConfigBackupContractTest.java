@@ -11,7 +11,7 @@ import static org.junit.Assert.assertTrue;
 
 public final class BridgeConfigBackupContractTest {
     @Test
-    public void globalBackupLivesOnItsOwnMainPageEntryNotTheVisualSubpage() throws Exception {
+    public void globalBackupLivesOnTheAppearanceTabNotTheVisualSubpage() throws Exception {
         String main = readProjectFile(
                 "app/src/main/java/io/github/andrealtb/lockscreenlyrics/LyricUiSettingsActivity.java");
         String visual = readProjectFile(
@@ -19,8 +19,15 @@ public final class BridgeConfigBackupContractTest {
                         + "LyricVisualLayersSettingsActivity.java");
         String manifest = readProjectFile("app/src/main/AndroidManifest.xml");
 
-        assertTrue(main.contains("BridgeConfigBackupSettingsActivity.class"));
-        assertTrue(main.contains("R.string.link_config_backup"));
+        String management = readProjectFile(
+                "app/src/main/kotlin/io/github/andrealtb/lockscreenlyrics/management/ManagementPreviewActivity.kt");
+        String appearance = readProjectFile(
+                "app/src/main/kotlin/io/github/andrealtb/lockscreenlyrics/management/appearance/AppearanceScreen.kt");
+
+        // Plan §14.18: one way in, from the management Appearance tab; the old page only edits the look.
+        assertFalse(main.contains("BridgeConfigBackupSettingsActivity"));
+        assertTrue(management.contains("BridgeConfigBackupSettingsActivity::class.java"));
+        assertTrue(appearance.contains("R.string.link_config_backup"));
         assertTrue(manifest.contains(".BridgeConfigBackupSettingsActivity"));
         assertFalse(visual.contains("BridgeConfigBackupRepository"));
         assertFalse(visual.contains("config_backup_"));

@@ -48,17 +48,6 @@ abstract class SettingsBaseActivity extends AppCompatActivity {
         super.attachBaseContext(SettingsLocaleContext.wrap(newBase));
     }
 
-    /** Toggles the settings-page language between Chinese and English and rebuilds the page. */
-    protected final void toggleSettingsLocale() {
-        String current = getSharedPreferences(LyricUiSettings.PREFERENCES_NAME, MODE_PRIVATE)
-                .getString(LyricUiSettings.PREF_SETTINGS_LOCALE, null);
-        String next = current != null && current.startsWith("en") ? "zh-CN" : "en";
-        getSharedPreferences(LyricUiSettings.PREFERENCES_NAME, MODE_PRIVATE)
-                .edit()
-                .putString(LyricUiSettings.PREF_SETTINGS_LOCALE, next)
-                .apply();
-        recreate();
-    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {

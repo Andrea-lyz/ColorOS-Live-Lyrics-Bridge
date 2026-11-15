@@ -11,7 +11,7 @@ class HomeDashboardTest {
         hostDetected = true, enablement = enablement,
     )
 
-    @Test fun tilesCountOnlyInstalledPluginsAndTheOnesNeedingLsposed() {
+    @Test fun tilesCountInstalledPluginsAndSeparateMissingScopeFromNotEnabled() {
         val items = listOf(
             item("a", true, Enablement.ENABLED),
             item("b", true, Enablement.ENABLED_NO_SCOPE),
@@ -20,7 +20,8 @@ class HomeDashboardTest {
             item("e", false, null),
         )
         val summary = homeSummary(items, updatesAvailable = 2, setupDone = 4, setupTotal = 6, setupRemaining = 1)
-        assertEquals(HomeSummary(4, 1, 2, 2, 4, 6, 1), summary)
+        // b (no scope) needs action; c (not enabled) is only a note (§14.18).
+        assertEquals(HomeSummary(4, 1, 1, 1, 2, 4, 6, 1), summary)
     }
 
     @Test fun heroFollowsTheBridgeAndSystemUiState() {

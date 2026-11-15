@@ -23,4 +23,12 @@ public final class SettingsLocaleContext {
         configuration.setLocale(locale);
         return base.createConfigurationContext(configuration);
     }
+
+    /** Persists the settings language; the caller recreates its Activity to apply it. */
+    public static void setEnglish(Context context, boolean english) {
+        context.getSharedPreferences(LyricUiSettings.PREFERENCES_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putString(LyricUiSettings.PREF_SETTINGS_LOCALE, english ? "en" : "zh-CN")
+                .apply();
+    }
 }

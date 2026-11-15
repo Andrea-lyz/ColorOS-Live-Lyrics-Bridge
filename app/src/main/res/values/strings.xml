@@ -2,17 +2,8 @@
     <string name="app_name">ColorOS Live Lyrics Bridge</string>
     <string name="module_description">将受支持播放器的歌词桥接至 ColorOS/OPlus 锁屏，可在设置中自定义各类动效。</string>
     <string name="lyric_ui_settings_title">歌词外观</string>
-    <string name="settings_status_name">Live Lyrics Bridge</string>
     <string name="player_translation_settings_title">播放器翻译设置</string>
     <string name="opening_cleanup_settings_title">歌词开头信息清理</string>
-    <string name="settings_module_icon_description">模块图标</string>
-    <string name="settings_appbar_version">v%1$s</string>
-    <string name="settings_module_status_checking">正在检测…</string>
-    <string name="settings_module_status_active">模块已激活 · SystemUI 已加载 · 刚刚</string>
-    <string name="settings_module_status_active_restart">模块已更新，重启 SystemUI 生效</string>
-    <string name="settings_module_status_inactive">未激活</string>
-    <string name="settings_language_current">中文</string>
-    <string name="settings_language_description">切换语言</string>
     <string name="cleanup_current_song_artist">%1$s\n%2$s</string>
     <string name="cleanup_hidden_count">模块当前会隐藏 %1$d 行。点击一行，将它设为这首歌第一句正式歌词。</string>
     <string name="cleanup_learn_similar">以后也隐藏类似格式：%1$s</string>
@@ -86,7 +77,6 @@
     <string name="settings_section_presets">风格预设</string>
     <string name="settings_section_color">颜色与光晕</string>
     <string name="settings_section_motion_refresh">动效与刷新</string>
-    <string name="settings_section_compat">兼容与屏幕</string>
     <string name="settings_section_typography">排版</string>
     <!-- 主页：预设 -->
     <string name="preset_default">默认</string>
@@ -131,8 +121,6 @@
     <string name="link_config_backup_sub">备份主设置、播放器翻译、开头清理与调试配置</string>
     <string name="link_opening_cleanup">歌词开头信息清理</string>
     <string name="link_opening_cleanup_sub">已学习格式与首句规则</string>
-    <string name="link_debug_logging">调试日志</string>
-    <string name="link_debug_logging_sub">默认关闭；开启后写入 logcat 与 LSPosed 日志</string>
     <string name="debug_settings_title">调试日志</string>
     <string name="debug_settings_desc">默认关闭。开启后额外的 [CLL] DEBUG/INFO 会同时写入 Android logcat 和 LSPosed framework log。关闭时只保留启动摘要、关键状态切换、警告和错误。开关不改变歌词、hook 或渲染行为。</string>
     <string name="debug_master">启用调试日志</string>
@@ -289,7 +277,6 @@
     <string name="mgmt_tab_store">商店</string>
     <string name="mgmt_tab_appearance">外观</string>
     <string name="mgmt_tab_status">状态</string>
-    <string name="mgmt_sample_banner">样例数据：不代表本机真实状态，按钮不会安装、更新或授权。</string>
     <string name="mgmt_check_config">设置应用</string>
     <string name="mgmt_check_unknown">未知</string>
     <string name="mgmt_action_continue_setup">继续设置</string>
@@ -307,10 +294,8 @@
     <string name="mgmt_action_download">下载</string>
     <string name="mgmt_action_update">更新</string>
     <string name="mgmt_store_empty">这个筛选下没有插件</string>
-    <string name="mgmt_appearance_body">外观设置暂时仍使用原来的页面。</string>
     <string name="mgmt_appearance_open">打开外观设置</string>
     <string name="mgmt_status_body">状态与诊断页还没有做原型，目前请在调试页查看。</string>
-    <string name="mgmt_debug_entry">管理界面原型（样例数据）</string>
     <plurals name="mgmt_onboarding_remaining"><item quantity="other">还有 %1$d 步设置未完成</item></plurals>
     <plurals name="mgmt_features_attention"><item quantity="other">%1$d 项功能未生效</item></plurals>
     <plurals name="mgmt_updates_available"><item quantity="other">%1$d 个插件有更新</item></plurals>
@@ -550,4 +535,22 @@
     <string name="status_verdict_line_progress_na">当前歌词不是逐行时间轴，不使用此项（逐字歌词由逐字渲染负责）</string>
     <string name="status_owner_counts">最近 60 秒：%1$d 处已执行，%2$d 处未执行</string>
     <string name="status_feature_word_progress">逐字歌词进度</string>
+    <string name="appearance_subtitle">这里显示已保存的设置。点按卡片进入外观设置修改，保存后才会生效。</string>
+    <string name="appearance_primary_color">歌词颜色</string>
+    <string name="appearance_glow">光晕</string>
+    <string name="appearance_translation_ratio">翻译字号</string>
+    <string name="appearance_sp">%1$s sp</string>
+    <string name="appearance_percent">%1$d%%</string>
+    <string name="appearance_section_effects">进度与动画</string>
+    <string name="appearance_section_more">更多设置</string>
+    <string name="appearance_lyric_card">歌词外观</string>
+    <string name="appearance_preset_value">风格：%1$s</string>
+    <string name="settings_section_screen">屏幕</string>
+    <string name="appearance_language">界面语言</string>
+    <string name="appearance_language_zh">中文</string>
+    <string name="appearance_language_en">English</string>
+    <string name="appearance_seconds">%1$d 秒</string>
+    <string name="appearance_screen_always">一直点亮</string>
+    <plurals name="home_providers_disabled"><item quantity="other">%1$d 个未启用</item></plurals>
+    <string name="home_restart_confirm">状态栏、锁屏和通知会短暂消失后重新加载，用来让 SystemUI 加载新版 Bridge。</string>
 </resources>

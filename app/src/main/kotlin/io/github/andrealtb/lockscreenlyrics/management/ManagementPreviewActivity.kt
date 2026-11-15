@@ -53,10 +53,14 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import io.github.andrealtb.lockscreenlyrics.LyricUiSettingsActivity
+import io.github.andrealtb.lockscreenlyrics.AppearanceSnapshot
+import io.github.andrealtb.lockscreenlyrics.management.appearance.AppearanceContent
+import io.github.andrealtb.lockscreenlyrics.management.appearance.AppearanceTarget
 import io.github.andrealtb.lockscreenlyrics.ModuleStatusQuery
 import androidx.compose.ui.unit.dp
 import io.github.andrealtb.lockscreenlyrics.R
 import io.github.andrealtb.lockscreenlyrics.SettingsLocaleContext
+import io.github.andrealtb.lockscreenlyrics.SystemUiRestartRequest
 import io.github.andrealtb.lockscreenlyrics.management.catalog.CatalogState
 import io.github.andrealtb.lockscreenlyrics.management.install.Operation
 import io.github.andrealtb.lockscreenlyrics.management.install.StoreOperations
@@ -106,6 +110,8 @@ class ManagementPreviewActivity : AppCompatActivity() {
     /** Incremented when a notification asks to show the store. */
     private var openStoreRequests by mutableIntStateOf(0)
     private var message by mutableStateOf<String?>(null)
+    /** Saved appearance settings, re-read on every resume (the old page may have saved). */
+    private var appearance by mutableStateOf<AppearanceSnapshot?>(null)
     /** The user's setup choices (plan §5.2, §14.16); every step's state is derived on screen. */
     private val setupStore by lazy { SetupStore(this) }
     private var setupChoices by mutableStateOf(SetupChoices())
@@ -135,6 +141,9 @@ class ManagementPreviewActivity : AppCompatActivity() {
     }
 
     companion object {
+        /** SystemUI usually comes back within a few seconds after acknowledging a restart. */
+        private const val RESTART_RECHECK_MS = 5_000L
+
         /** Set by the update reminder notification: open on the store tab. */
         const val EXTRA_OPEN_STORE = "io.github.andrealtb.lockscreenlyrics.extra.OPEN_STORE"
     }
@@ -214,9 +223,13 @@ class ManagementPreviewActivity : AppCompatActivity() {
                     message = message,
                     onMessageShown = { message = null },
                     onStoreAction = ::runStoreAction,
-                    onOpenAppearance = {
-                        startActivity(Intent(this, LyricUiSettingsActivity::class.java))
+                    appearance = appearance,
+                    onOpenAppearance = ::openAppearance,
+                    onLanguageChange = { english ->
+                        SettingsLocaleContext.setEnglish(this, english)
+                        recreate()
                     },
+                    onRestartSystemUi = ::restartSystemUi,
                 )
             }
         }
@@ -230,6 +243,33 @@ class ManagementPreviewActivity : AppCompatActivity() {
         StoreOperations.reconcile(this)
         reminders = RemindersView(UpdateReminders.isEnabled(this), UpdateReminders.notificationsAllowed(this))
         StoreOperations.continueIfAllowed(this)
+        refreshAppearance()
+    }
+
+    /** Same request the old appearance page sent; re-checks once SystemUI is back. */
+    private fun restartSystemUi() {
+        val sent = SystemUiRestartRequest.send(this) { acknowledged ->
+            message = getString(if (acknowledged) R.string.snack_restart_acknowledged else R.string.snack_restart_no_response)
+            if (acknowledged) window.decorView.postDelayed({ queryStatus() }, RESTART_RECHECK_MS)
+        }
+        message = getString(if (sent) R.string.snack_restart_requesting else R.string.snack_restart_failed)
+    }
+
+    private fun refreshAppearance() {
+        lifecycleScope.launch {
+            appearance = withContext(Dispatchers.IO) { AppearanceSnapshot.load(applicationContext) }
+        }
+    }
+
+    private fun openAppearance(target: AppearanceTarget) {
+        val page: Class<out android.app.Activity> = when (target) {
+            AppearanceTarget.SETTINGS -> LyricUiSettingsActivity::class.java
+            AppearanceTarget.ARTWORK -> io.github.andrealtb.lockscreenlyrics.ArtworkSettingsActivity::class.java
+            AppearanceTarget.TRANSLATION -> io.github.andrealtb.lockscreenlyrics.PlayerTranslationSettingsActivity::class.java
+            AppearanceTarget.CLEANUP -> io.github.andrealtb.lockscreenlyrics.LyricOpeningCleanupSettingsActivity::class.java
+            AppearanceTarget.BACKUP -> io.github.andrealtb.lockscreenlyrics.BridgeConfigBackupSettingsActivity::class.java
+        }
+        startActivity(Intent(this, page))
     }
 
     /** Read-only PackageManager lookup, limited by the manifest's directed <queries>. */
@@ -544,7 +584,10 @@ internal fun ManagementPrototype(
     message: String?,
     onMessageShown: () -> Unit,
     onStoreAction: (StoreItem, StoreAction) -> String?,
-    onOpenAppearance: () -> Unit,
+    appearance: AppearanceSnapshot?,
+    onOpenAppearance: (AppearanceTarget) -> Unit,
+    onLanguageChange: (english: Boolean) -> Unit,
+    onRestartSystemUi: () -> Unit,
 ) {
     // Only page-level UI state lives here; it is safe to restore after recreation.
     var tab by rememberSaveable { mutableStateOf(ManagementTab.HOME) }
@@ -623,6 +666,7 @@ internal fun ManagementPrototype(
                         summary = homeSummary(store.items, store.updatesAvailable, setup.done, setup.steps.size, setup.remaining),
                         root = root,
                         onRefreshStatus = onRefreshStatus,
+                        onRestartSystemUi = onRestartSystemUi,
                         onRequestRoot = onRequestRoot,
                         onOpenSetup = { showSetup = true },
                         onOpenStore = { tab = ManagementTab.STORE },
@@ -645,11 +689,11 @@ internal fun ManagementPrototype(
                             }
                         },
                     )
-                    ManagementTab.APPEARANCE -> PlaceholderContent(
-                        modifier = Modifier.padding(bottom = dockSpace),
-                        body = stringResource(R.string.mgmt_appearance_body),
-                        action = stringResource(R.string.mgmt_appearance_open),
-                        onAction = onOpenAppearance,
+                    ManagementTab.APPEARANCE -> AppearanceContent(
+                        snapshot = appearance,
+                        onOpen = onOpenAppearance,
+                        onLanguageChange = onLanguageChange,
+                        bottomPadding = dockSpace + Spacing.l,
                     )
                     ManagementTab.STATUS -> StatusContent(
                         status = status,

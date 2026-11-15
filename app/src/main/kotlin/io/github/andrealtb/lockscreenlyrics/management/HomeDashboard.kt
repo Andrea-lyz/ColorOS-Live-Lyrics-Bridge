@@ -26,6 +26,14 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledIconButton
@@ -52,8 +60,10 @@ import io.github.andrealtb.lockscreenlyrics.management.root.RootState
 internal data class HomeSummary(
     val installedProviders: Int,
     val enabledProviders: Int,
-    /** Installed Providers that need an LSPosed action (not enabled, or no player in scope). */
-    val providersNeedingAction: Int,
+    /** Enabled in LSPosed but no player in scope: the plugin cannot work, so it needs action. */
+    val providersMissingScope: Int,
+    /** Installed but not enabled: may be the user's choice, so only a neutral note (§14.18). */
+    val providersDisabled: Int,
     val updatesAvailable: Int,
     val setupDone: Int,
     val setupTotal: Int,
@@ -65,7 +75,8 @@ internal fun homeSummary(items: List<StoreItem>, updatesAvailable: Int, setupDon
     return HomeSummary(
         installedProviders = installed.size,
         enabledProviders = installed.count { it.enablement == Enablement.ENABLED },
-        providersNeedingAction = installed.count { it.enablement == Enablement.NOT_ENABLED || it.enablement == Enablement.ENABLED_NO_SCOPE },
+        providersMissingScope = installed.count { it.enablement == Enablement.ENABLED_NO_SCOPE },
+        providersDisabled = installed.count { it.enablement == Enablement.NOT_ENABLED },
         updatesAvailable = updatesAvailable,
         setupDone = setupDone,
         setupTotal = setupTotal,
@@ -94,6 +105,7 @@ internal fun HomeDashboard(
     summary: HomeSummary,
     root: RootView,
     onRefreshStatus: () -> Unit,
+    onRestartSystemUi: () -> Unit,
     onRequestRoot: () -> Unit,
     onOpenSetup: () -> Unit,
     onOpenStore: () -> Unit,
@@ -113,7 +125,7 @@ internal fun HomeDashboard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        item { HeroCard(status, onRefreshStatus) }
+        item { HeroCard(status, onRefreshStatus, onRestartSystemUi) }
         if (summary.setupRemaining > 0) {
             item { SetupCallout(summary, onOpenSetup) }
         }
@@ -124,10 +136,18 @@ internal fun HomeDashboard(
                     icon = Icons.AutoMirrored.Filled.List,
                     label = stringResource(R.string.home_tile_providers),
                     value = summary.installedProviders.toString(),
-                    caption = if (summary.providersNeedingAction > 0)
-                        pluralStringResource(R.plurals.home_providers_attention, summary.providersNeedingAction, summary.providersNeedingAction)
-                    else stringResource(R.string.home_providers_enabled, summary.enabledProviders),
-                    attention = summary.providersNeedingAction > 0,
+                    caption = when {
+                        summary.providersMissingScope > 0 ->
+                            pluralStringResource(R.plurals.home_providers_attention, summary.providersMissingScope, summary.providersMissingScope)
+                        summary.providersDisabled > 0 ->
+                            pluralStringResource(R.plurals.home_providers_disabled, summary.providersDisabled, summary.providersDisabled)
+                        else -> stringResource(R.string.home_providers_enabled, summary.enabledProviders)
+                    },
+                    level = when {
+                        summary.providersMissingScope > 0 -> TileLevel.WARN
+                        summary.providersDisabled > 0 -> TileLevel.NOTE
+                        else -> TileLevel.NONE
+                    },
                     onClick = onOpenStore,
                 )
                 Tile(
@@ -136,7 +156,7 @@ internal fun HomeDashboard(
                     label = stringResource(R.string.home_tile_updates),
                     value = summary.updatesAvailable.toString(),
                     caption = stringResource(if (summary.updatesAvailable > 0) R.string.home_updates_some else R.string.home_updates_none),
-                    attention = false,
+                    level = TileLevel.NONE,
                     onClick = onOpenStore,
                 )
             }
@@ -150,7 +170,7 @@ internal fun HomeDashboard(
                     label = stringResource(R.string.home_tile_root),
                     value = stringResource(root.shortLabel()),
                     caption = stringResource(if (rootMissing) R.string.home_root_tap else R.string.home_root_readonly),
-                    attention = root.state == RootState.GRANTED && root.cliAvailable == false,
+                    level = if (root.state == RootState.GRANTED && root.cliAvailable == false) TileLevel.WARN else TileLevel.NONE,
                     onClick = if (rootMissing) onRequestRoot else null,
                 )
                 Tile(
@@ -161,7 +181,7 @@ internal fun HomeDashboard(
                     caption = if (summary.setupRemaining > 0)
                         pluralStringResource(R.plurals.mgmt_onboarding_remaining, summary.setupRemaining, summary.setupRemaining)
                     else stringResource(R.string.home_setup_all_done),
-                    attention = summary.setupRemaining > 0,
+                    level = if (summary.setupRemaining > 0) TileLevel.WARN else TileLevel.NONE,
                     onClick = onOpenSetup,
                 )
             }
@@ -173,8 +193,24 @@ internal fun HomeDashboard(
 }
 
 @Composable
-private fun HeroCard(status: HomeStatus, onRefresh: () -> Unit) {
+private fun HeroCard(status: HomeStatus, onRefresh: () -> Unit, onRestartSystemUi: () -> Unit) {
     val hero = status.hero()
+    var confirmRestart by rememberSaveable { mutableStateOf(false) }
+    if (confirmRestart) {
+        AlertDialog(
+            onDismissRequest = { confirmRestart = false },
+            title = { Text(stringResource(R.string.action_restart_system_ui)) },
+            text = { Text(stringResource(R.string.home_restart_confirm)) },
+            confirmButton = {
+                TextButton(onClick = { confirmRestart = false; onRestartSystemUi() }) {
+                    Text(stringResource(R.string.action_restart_system_ui))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmRestart = false }) { Text(stringResource(android.R.string.cancel)) }
+            },
+        )
+    }
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.extraLarge,
@@ -192,6 +228,15 @@ private fun HeroCard(status: HomeStatus, onRefresh: () -> Unit) {
                 if (hero == HeroState.NOT_RUNNING) {
                     Text(stringResource(R.string.mgmt_module_no_response), style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                // Moved from the old appearance page (§14.18). Prominent only when SystemUI still
+                // runs an older Bridge build; otherwise a quiet secondary action.
+                if (hero == HeroState.RESTART_SYSTEMUI) {
+                    Button(onClick = { confirmRestart = true }) { Text(stringResource(R.string.action_restart_system_ui)) }
+                } else {
+                    OutlinedButton(onClick = { confirmRestart = true }, enabled = hero != HeroState.CHECKING) {
+                        Text(stringResource(R.string.action_restart_system_ui))
+                    }
                 }
             }
             FilledIconButton(
@@ -264,6 +309,9 @@ private fun SetupCallout(summary: HomeSummary, onOpenSetup: () -> Unit) {
     }
 }
 
+/** How loud a tile's caption is: a warning needs action, a note is informational. */
+internal enum class TileLevel { NONE, NOTE, WARN }
+
 /** A tile: label, one large value and a caption. Tapping opens where the value comes from. */
 @Composable
 private fun Tile(
@@ -271,7 +319,7 @@ private fun Tile(
     label: String,
     value: String,
     caption: String,
-    attention: Boolean,
+    level: TileLevel,
     onClick: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
@@ -289,10 +337,15 @@ private fun Tile(
             }
             Text(value, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs), verticalAlignment = Alignment.CenterVertically) {
-                if (attention) Icon(Icons.Filled.Warning, contentDescription = null, modifier = Modifier.size(14.dp),
-                    tint = MaterialTheme.colorScheme.error)
+                when (level) {
+                    TileLevel.WARN -> Icon(Icons.Filled.Warning, contentDescription = null, modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.error)
+                    TileLevel.NOTE -> Icon(Icons.Filled.Info, contentDescription = null, modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    TileLevel.NONE -> Unit
+                }
                 Text(caption, style = MaterialTheme.typography.bodySmall,
-                    color = if (attention) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                    color = if (level == TileLevel.WARN) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -338,9 +391,11 @@ internal fun FloatingDock(
                 val on = tab == selected
                 // Each item fills the dock's height so its icon and label sit centered (r3 left
                 // them at the top with empty space below).
+                // Rounded rectangle, not a full pill: the pill's curve clipped the ends of long
+                // labels such as "Appearance" (PJZ110 r3, English).
                 Surface(
                     modifier = Modifier.weight(1f).fillMaxHeight(),
-                    shape = CircleShape,
+                    shape = RoundedCornerShape(20.dp),
                     color = if (on) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
                     contentColor = if (on) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                     selected = on,
@@ -350,7 +405,8 @@ internal fun FloatingDock(
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Icon(icon, contentDescription = null)
                             Text(stringResource(label), style = MaterialTheme.typography.labelMedium,
-                                fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal)
+                                fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+                                maxLines = 1, softWrap = false)
                         }
                     }
                 }

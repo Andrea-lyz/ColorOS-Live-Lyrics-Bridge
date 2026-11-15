@@ -51,26 +51,6 @@ import io.github.andrealtb.lockscreenlyrics.management.install.Operation
 import io.github.andrealtb.lockscreenlyrics.management.install.OperationFailure
 import io.github.andrealtb.lockscreenlyrics.management.root.RootState
 
-/** Marks every prototype page; sample values must never be read as device evidence. */
-@Composable
-internal fun SampleBanner(modifier: Modifier = Modifier, text: Int = R.string.mgmt_sample_banner) {
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-        shape = MaterialTheme.shapes.medium,
-    ) {
-        Row(
-            modifier = Modifier.padding(Spacing.m),
-            horizontalArrangement = Arrangement.spacedBy(Spacing.s),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(Icons.Filled.Info, contentDescription = null)
-            Text(stringResource(text), style = MaterialTheme.typography.bodyMedium)
-        }
-    }
-}
-
 @Composable
 private fun StatusCard(content: @Composable () -> Unit) {
     Card(
@@ -375,25 +355,6 @@ private fun KindLabel(kind: ProviderKind) {
             style = MaterialTheme.typography.labelMedium,
             modifier = Modifier.padding(horizontal = Spacing.s, vertical = Spacing.xs),
         )
-    }
-}
-
-@Composable
-internal fun PlaceholderContent(
-    body: String,
-    action: String?,
-    onAction: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier.widthIn(max = Spacing.maxContentWidth).padding(Spacing.l),
-        verticalArrangement = Arrangement.spacedBy(Spacing.m),
-    ) {
-        SampleBanner()
-        StatusCard {
-            Text(body, style = MaterialTheme.typography.bodyLarge)
-            if (action != null) OutlinedButton(onClick = onAction) { Text(action) }
-        }
     }
 }
 
