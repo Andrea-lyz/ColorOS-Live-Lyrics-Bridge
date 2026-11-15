@@ -326,6 +326,11 @@ private fun StoreCard(item: StoreItem, operation: Operation?, busy: Boolean, onA
         StateNote(item)
         item.enablement?.let { state ->
             EnablementRow(state)
+            if (item.offersScopeRequest() && operation?.active != true) {
+                Button(onClick = { onAction(StoreAction.REQUEST_SCOPE) }) {
+                    Text(stringResource(R.string.mgmt_action_request_scope))
+                }
+            }
             if (state.offersLsposedShortcut() && operation?.active != true) {
                 OutlinedButton(onClick = { onAction(StoreAction.OPEN_LSPOSED) }) {
                     Text(stringResource(if (state == Enablement.ENABLED_NO_SCOPE) R.string.mgmt_action_lsposed_scope
@@ -339,7 +344,7 @@ private fun StoreCard(item: StoreItem, operation: Operation?, busy: Boolean, onA
         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
             when (val action = item.primaryAction()) {
                 StoreAction.NONE, StoreAction.CANCEL, StoreAction.CONFIRM_INSTALL, StoreAction.ALLOW_INSTALLS,
-                StoreAction.OPEN_LSPOSED -> Unit
+                StoreAction.OPEN_LSPOSED, StoreAction.REQUEST_SCOPE -> Unit
                 StoreAction.DOWNLOAD ->
                     Button(onClick = { onAction(action) }, enabled = !busy) { Text(stringResource(action.labelRes())) }
                 StoreAction.UPDATE -> {
@@ -542,6 +547,7 @@ internal fun StoreAction.labelRes(): Int = when (this) {
     StoreAction.CONFIRM_INSTALL -> R.string.mgmt_action_confirm_install
     StoreAction.ALLOW_INSTALLS -> R.string.mgmt_action_allow_installs
     StoreAction.OPEN_LSPOSED -> R.string.mgmt_action_lsposed_enable
+    StoreAction.REQUEST_SCOPE -> R.string.mgmt_action_request_scope
 }
 
 internal fun OperationFailure.messageRes(): Int = when (this) {

@@ -1106,6 +1106,42 @@ E 系列（第 15 节）不单列里程碑：E-0 随 M1，E-1/E-2 在 C-04/C-05 
 - **目录：** `store-catalog` 分支 `35a1909`，revision 1，`cll-catalog-2026a` 签名，1 个条目（LX，`sourceCommit` `ba6c1cb`），`verify-catalog.mjs` 验签通过；git、raw.githubusercontent.com、jsDelivr 三处字节相同。
 - **设备候选：** `artifacts/m3-enablement-20261114/Bridge-M3-prod-catalog-debug-r8.apk`（`0f0d9caf…`，基于 `bf6837c`；`STORE_TEST_TRUST=false`、不内置目录，只信任正式密钥）。已经当次授权 adb 安装，**用户设备确认全部通过**（PJZ110）：刷新正式目录、LX 显示 1.2.1 → 1.2.2 可更新、下载校验与 ColorOS 安装、启用状态（Root 路径）、在洛雪中播放与切歌歌词正常。M3 的正式目录端到端链路由此闭合；LX 也是 M1 启动改动在 Salt 之外、Release/R8 下的第一份设备证据。
 
+### 14.13 M4 第一刀：插件自己申请作用域（管理协议 v1，2026-11-15，本地，未提交）
+
+**范围：** 共用 `provider-settings-api102` 的 12 个专用插件（Salt、Cone、酷我、洛雪、Poweramp、Metrolist、酷狗、QQ、网易云、Apple、Spotify、汽水）。Readify 用自己的 Application，留到下一刀；通用 Provider 与动态封面不进入此流程（§7.0）。`staticScope` 保持 `true`（§14.0 设备证据：声明内宿主可发原生请求），矩阵不改。
+
+**Providers `feat/m4-scope-request`（基于 `main` 的 `ba6c1cb`）：**
+- `scope/ScopeRequestProtocol`：协议 v1 的 action 与 extra 名；允许的宿主只取本 APK 内编译的 `META-INF/xposed/scope.list`（构建约定已校验它等于矩阵）；请求 id 8–64 位，宿主最多 16 个，不得重复，必须全部在列表内，否则整体判无效（不截断）；`android`、`system`、SystemUI 永不允许。
+- `scope/ScopeRequestController`：M0 探针控制器的生产版。先读 scope，只为缺少的宿主调 `requestScope`，结果一律以回调后的重新读取为准；保留已有 scope，从不删除。结果：已包含 / 已批准 / 部分批准 / 未批准（拒绝或不再询问，API 102 无法区分）/ 待定（120 秒无回应）/ 服务未连接（10 秒）/ 失败 / 请求无效。“已批准但回读没有”判失败。迟到回调忽略。
+- `scope/ScopeRequestActivity`：导出的入口（随库合并进 12 个插件的清单）。只接受 `startActivityForResult` 且调用方是本插件或签名一致的应用（Bridge）；页面只说明“请在 LSPosed 通知中选择允许”，不自绘允许/拒绝。重建或按返回时回复“待定”。
+- 插件自己的调试页加了“申请播放器作用域（LSPosed 原生请求）”按钮，不装 Bridge 也能用。
+
+**Bridge `feat/m4-scope-request`（基于 `32f9b65`）：**
+- `ScopeRequestContract` 镜像协议字符串；`parseScopeReply` 只信任同一请求 id、协议 v1、且只含所问宿主的回复，否则视为未知。
+- 商店卡片在“已启用但作用域没勾选本机播放器”时多一个“申请播放器作用域”按钮，只传本机已安装的受支持播放器；插件旧版本没有入口时提示更新或去 LSPosed 勾选。回复只用来提示，卡片随后重新读取 LSPosed 状态。
+
+**本地验证：** Providers `testV5Matrix assembleV5MatrixDebug :player-salt:minifyReleaseWithR8` 通过，`ScopeRequestControllerTest` 7/7；Salt Debug APK 内含 `ScopeRequestActivity`（exported）与 `scope.list`（`com.salt.music`）。Bridge 1028 tests / 0 fail / 6 skip（`ScopeRequestContractTest` 4 项，含跨仓库常量与状态枚举比对），Debug 与 R8 通过。
+
+**设备候选（`artifacts/m4-scope-20261115/`，均为 debug 签名，与设备上现有 Salt、Bridge 同签名）：** `Bridge-M4-scope-debug-r1.apk`（`8f91d0e7…`），`Salt-M4-scope-debug-r1.apk`（`147288c6…`，1.1.2 / 8）。待授权安装后验证：在 LSPosed 中取消 Salt Provider 对 Salt Player 的勾选 → 商店卡片出现“申请播放器作用域” → 点按出现 LSPosed 原生“作用域请求”通知 → 允许后回到 Bridge 显示已包含且卡片恢复“已启用” → 再取消勾选并选“拒绝”显示未获批准 → 插件调试页按钮在已勾选时显示“已包含”。正式签名插件与 debug Bridge 签名不同，会被插件拒绝，这是预期。
+
+**r1 设备结果（用户实测）：** 第 1、2、4 项通过：卡片出现按钮，点按后出现 LSPosed 原生“作用域请求”通知，允许后卡片恢复“已启用”；插件调试页在已勾选时提示已包含。第 3 项（拒绝）：插件页自动关闭，卡片仍为作用域未勾选，但**没有出现任何提示**。原因在 Bridge：提示由 `LaunchedEffect(message)` 弹出，代码先清空 `message` 再弹，清空改变了键，提示随即被取消（从插件页返回时界面在重组，所以立刻消失；第 2 项的提示很可能也没显示，只是卡片状态对了）。r2 改为提示消失后再清空。1028 tests / 0 fail；候选 `Bridge-M4-scope-debug-r2.apk`（`effc7d47…`），Salt 不变。 **r2 设备结果：用户确认允许与拒绝两条路径的提示与卡片状态均正确。** 第一刀（12 个共用设置库的插件 + Bridge 发起）设备验证完成，仅 Salt 实测。
+
+### 14.14 M4 第二刀：Readify 接入，协议代码独立成库（2026-11-15，本地，未提交）
+
+- 作用域请求代码从 `provider-settings-api102` 移到新库 **`provider-scope-request`**（包 `io.github.andrealtb.coloroslyrics.provider.scoperequest`），并入 `testV5Matrix`。服务改从 `ModuleStatus.awaitService` 取得：共用 Application 已把服务转给它，Readify 的 `ReadifyApplication` 也已调用 `ModuleStatus.register()`，所以两边用同一份实现，Readify 不依赖共用设置库，保持独立。
+- `provider-settings-api102` 与 `player-readify` 依赖该库；Readify 的说明页加了“Request player scope (LSPosed prompt)”按钮。
+- Bridge：`offersScopeRequest` 不再排除 Readify（全部专用 Provider）；跨仓库常量测试改读新路径。
+- **本地验证：** Providers `testV5Matrix assembleV5MatrixDebug :player-salt:minifyReleaseWithR8` 通过，`ScopeRequestControllerTest` 7/7；13 个专用模块的 Debug APK 都含 `ScopeRequestActivity`，通用 Provider 与动态封面不含。Bridge 测试与 Debug 通过，`ScopeRequestContractTest` 4 项实际运行。
+- **设备覆盖缺口：** 设备上的 Readify Provider 是正式签名，debug 包无法覆盖安装（按边界不卸载），且设备未安装 Readify（`com.readin.app`），所以 **Readify 路径只有本地证据**。Salt 因服务来源改动需回归：候选 `Salt-M4-scope-debug-r2.apk`（`0cf39501…`）、`Bridge-M4-scope-debug-r3.apk`（`cbc8f16c…`）。
+- **r3 设备结果（用户实测）：** 允许后常见其他插件卡片变为“无法检测启用状态：这个版本的插件还不支持”，首页 Root 行显示“已授权，但没能读取 LSPosed 配置”；点“重新检查”无效，退出 Bridge 重进才恢复。原因（静态分析，无日志）：申请结果回调里调用了一次 `refreshEnablement()`，随后 `onResume` 又调用一次；协程取消停不住阻塞中的读取，两次 `LsposedConfig.read` 同时清空、复制同一个 `cacheDir/lspd-read`，读取失败。“重进才好”推测是 SQLite 在本进程保留了被删文件的 WAL 共享内存状态（未证实）。r4：读取加进程内锁、每次用独立子目录；回调不再自行刷新，交给 `onResume`。候选 `Bridge-M4-scope-debug-r4.apk`（`363ae56b…`），Salt 不变。 **r4 设备结果：用户确认多次允许后 Root 读取与其他卡片均保持正常，拒绝与插件页按钮回归通过。**
+
+### 14.15 M4 收口：接线守卫与现状（2026-11-15，本地，未提交）
+
+- 新增 `ScopeRequestWiringTest`（`provider-scope-request`，并入 `testV5Matrix`）：从矩阵读出 14 个 Provider，凡 `processPolicy.kind` 不是 `system-server-bound-list` 的专用模块必须依赖 `provider-settings-api102` 或 `provider-scope-request`（即带入口），通用 Provider 必须都不依赖。新增专用模块忘接、通用模块误接都会让矩阵测试失败。本地 8/8 通过。
+- **未做、且建议不做：** “安装后自动接续申请作用域”（§7.2 第 2–3 步）。刚安装的插件尚未在 LSPosed 中启用，服务不会连上，立即申请只会得到“服务未连接”；启用必须由用户在 LSPosed 中完成（§14.10 决定不自动启用）。现有路径已覆盖：安装 → 卡片提示“去 LSPosed 启用” → 启用后若作用域缺失，卡片出现“申请播放器作用域”。M5 引导中按这个顺序串起来即可。
+- **矩阵元数据：** §7.4 设想的 `scopePolicy` / `managementProtocol` 字段未加入矩阵。接入与否已由上面的守卫按 `processPolicy.kind` 推出，`staticScope` 维持矩阵全局 `true`；如以后某个专用模块需要不同策略，再加字段。
+- **M4 现状：** 13 个专用 Provider 本地全部带入口；设备只验证了 Salt（允许、拒绝、插件页按钮、Root 读取并发修复）。正式生效需要各插件发新版；在此之前，已发布的旧版插件在商店里会提示“请更新或去 LSPosed 勾选”。M4 门禁“每个模块均以自己的服务授权；无跨模块代设；拒绝/部分批准/服务死亡可恢复”：机制满足；部分批准只有单元测试证据（设备上只有单宿主的 Salt）。
+
 ## 15. 主线五：代码结构与性能治理（E 系列）
 
 > 状态：**仅分析与方案，未落任何代码**；第 15.8 节 D11–D15 已于 2026-11-14 由用户确认按推荐采用。落档日期：2026-11-14。本节是用户在 M1 期间追加的第五条主线：在下一大版本内完整治理 Bridge 的代码结构与性能，重点拆分 `LockscreenLyricsModule.java`。

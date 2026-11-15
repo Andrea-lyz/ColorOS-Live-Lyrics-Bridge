@@ -418,6 +418,15 @@
     <string name="mgmt_action_request_root">授权 Root</string>
     <string name="mgmt_action_lsposed_enable">去 LSPosed 启用</string>
     <string name="mgmt_action_lsposed_scope">去 LSPosed 勾选播放器</string>
+    <string name="mgmt_action_request_scope">申请播放器作用域</string>
+    <string name="mgmt_scope_unsupported">%1$s 当前版本还不支持从这里申请作用域：请更新插件，或去 LSPosed 勾选播放器</string>
+    <string name="mgmt_scope_granted">%1$s 的作用域已包含本机播放器。请完全结束并重新打开播放器</string>
+    <string name="mgmt_scope_partial">%1$s 只获批了部分播放器：%2$s</string>
+    <string name="mgmt_scope_not_granted">%1$s 未获批准（拒绝或“不再询问”）。可以去 LSPosed 手动勾选播放器</string>
+    <string name="mgmt_scope_pending">还没收到 LSPosed 对 %1$s 的结果。处理通知后回到这里会重新读取状态</string>
+    <string name="mgmt_scope_no_service">%1$s 没有连上 LSPosed 服务：请先在 LSPosed 中启用它</string>
+    <string name="mgmt_scope_refused">%1$s 拒绝了这次请求（签名不一致或播放器不在它的支持列表中）</string>
+    <string name="mgmt_scope_unknown">%1$s 的作用域请求结果未知，已重新读取 LSPosed 状态</string>
     <string name="mgmt_lsposed_open_failed">无法自动打开 LSPosed 管理器：请手动打开 LSPosed，在模块列表中找到 %1$s</string>
     <string name="mgmt_lsposed_open_needs_root">需要先在首页授权 Root 才能直接打开 LSPosed；也可以手动打开 LSPosed，在模块列表中找到 %1$s</string>
     <string name="mgmt_lsposed_opened">已打开 LSPosed：在“模块”里找到 %1$s，打开开关后返回这里</string>

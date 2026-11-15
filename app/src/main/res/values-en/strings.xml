@@ -412,6 +412,15 @@
     <string name="mgmt_action_request_root">Grant root</string>
     <string name="mgmt_action_lsposed_enable">Enable in LSPosed</string>
     <string name="mgmt_action_lsposed_scope">Select players in LSPosed</string>
+    <string name="mgmt_action_request_scope">Request player scope</string>
+    <string name="mgmt_scope_unsupported">This version of %1$s cannot request scope from here: update it, or select players in LSPosed</string>
+    <string name="mgmt_scope_granted">%1$s now has this phone\'s players in scope. Fully close and reopen the player</string>
+    <string name="mgmt_scope_partial">%1$s got only some players approved: %2$s</string>
+    <string name="mgmt_scope_not_granted">%1$s was not approved (denied or \"never ask\"). You can select players in LSPosed</string>
+    <string name="mgmt_scope_pending">No answer from LSPosed for %1$s yet. Handle the notification, then come back to re-read</string>
+    <string name="mgmt_scope_no_service">%1$s is not connected to LSPosed: enable it in LSPosed first</string>
+    <string name="mgmt_scope_refused">%1$s refused this request (different signature, or a player it does not support)</string>
+    <string name="mgmt_scope_unknown">The scope request for %1$s ended without a clear result; LSPosed state was re-read</string>
     <string name="mgmt_lsposed_open_failed">Could not open the LSPosed manager: open LSPosed yourself and find %1$s in the module list</string>
     <string name="mgmt_lsposed_open_needs_root">Grant root on the home page to open LSPosed directly, or open LSPosed yourself and find %1$s in the module list</string>
     <string name="mgmt_lsposed_opened">LSPosed is open: find %1$s under Modules, turn it on, then come back</string>

@@ -59,6 +59,8 @@ internal enum class StoreAction {
     ALLOW_INSTALLS,
     /** Open the LSPosed manager on this module's page (root, or a standalone manager). */
     OPEN_LSPOSED,
+    /** Ask the installed Provider to request its own LSPosed scope (plan §14.13). */
+    REQUEST_SCOPE,
 }
 
 internal data class StoreItem(
@@ -80,6 +82,8 @@ internal data class StoreItem(
     @DrawableRes val iconRes: Int = 0,
     /** LSPosed enable state for installed modules; null when not applicable or not asked. */
     val enablement: Enablement? = null,
+    /** Supported players installed on this phone (dedicated Providers only). */
+    val installedHosts: List<String> = emptyList(),
 )
 
 /** The name shown to people: the formal localized store name when there is one. */

@@ -89,6 +89,19 @@ class ManagementPreviewActivity : AppCompatActivity() {
     private var openStoreRequests by mutableIntStateOf(0)
     private var message by mutableStateOf<String?>(null)
 
+    /** The one scope request in flight: request id, Provider name, and the players asked for. */
+    private var scopeRequest: Triple<String, String, Set<String>>? = null
+
+    private val scopeResult = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val pending = scopeRequest ?: return@registerForActivityResult
+        scopeRequest = null
+        val (id, name, asked) = pending
+        message = scopeReplyMessage(name, parseScopeReply(result.data?.extras, id, asked))
+        // The reply is a hint; the card shows what LSPosed now has stored. That re-read comes
+        // from onResume, which follows this callback; starting another one here ran two reads
+        // at once (plan §14.14).
+    }
+
     /** Asked only when the user turns reminders on (plan §6.4/§6.5), never on first open. */
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
@@ -276,6 +289,7 @@ class ManagementPreviewActivity : AppCompatActivity() {
                 openLsposed(item)
                 return null
             }
+            StoreAction.REQUEST_SCOPE -> return requestScope(item)
             StoreAction.NONE -> return null
         } ?: return getString(R.string.mgmt_snackbar_cannot_open, item.displayName(resources))
         return try {
@@ -286,6 +300,36 @@ class ManagementPreviewActivity : AppCompatActivity() {
         } catch (denied: SecurityException) {
             getString(R.string.mgmt_snackbar_cannot_open, item.displayName(resources))
         }
+    }
+
+    /**
+     * Starts the Provider's own scope request for the players installed here. The Provider checks
+     * the caller's signature and its compiled scope list; LSPosed shows the only allow/deny choice.
+     */
+    private fun requestScope(item: StoreItem): String? {
+        val name = item.displayName(resources)
+        if (scopeRequest != null) return null
+        val id = ScopeRequestContract.newRequestId()
+        val intent = ScopeRequestContract.intent(item.applicationId, item.installedHosts, id)
+        if (intent.resolveActivity(packageManager) == null) return getString(R.string.mgmt_scope_unsupported, name)
+        scopeRequest = Triple(id, name, item.installedHosts.toSet())
+        return try {
+            scopeResult.launch(intent)
+            null
+        } catch (error: RuntimeException) {
+            scopeRequest = null
+            getString(R.string.mgmt_snackbar_cannot_open, name)
+        }
+    }
+
+    private fun scopeReplyMessage(name: String, reply: ScopeReply): String = when (reply.status) {
+        ScopeReplyStatus.ALREADY_GRANTED, ScopeReplyStatus.GRANTED -> getString(R.string.mgmt_scope_granted, name)
+        ScopeReplyStatus.PARTIAL -> getString(R.string.mgmt_scope_partial, name, reply.granted.joinToString())
+        ScopeReplyStatus.NOT_GRANTED -> getString(R.string.mgmt_scope_not_granted, name)
+        ScopeReplyStatus.PENDING -> getString(R.string.mgmt_scope_pending, name)
+        ScopeReplyStatus.NO_SERVICE -> getString(R.string.mgmt_scope_no_service, name)
+        ScopeReplyStatus.INVALID_REQUEST -> getString(R.string.mgmt_scope_refused, name)
+        ScopeReplyStatus.FAILED, ScopeReplyStatus.UNKNOWN -> getString(R.string.mgmt_scope_unknown, name)
     }
 
     /** Opens the LSPosed manager on the module; the user flips the switch there themselves. */
@@ -406,11 +450,13 @@ internal fun ManagementPrototype(
     val showNothingDone: () -> Unit = { scope.launch { snackbar.showSnackbar(nothingDone) } }
     val useRail = LocalConfiguration.current.screenWidthDp >= RAIL_MIN_WIDTH_DP
     LaunchedEffect(openStoreRequests) { if (openStoreRequests > 0) tab = ManagementTab.STORE }
+    // Clear only after the snackbar is gone: clearing first changed this effect's key and
+    // cancelled the snackbar at once (seen on PJZ110 after returning from a scope request).
+    // A newer message still replaces the one on screen.
     LaunchedEffect(message) {
-        if (message != null) {
-            onMessageShown()
-            snackbar.showSnackbar(message)
-        }
+        val text = message ?: return@LaunchedEffect
+        snackbar.showSnackbar(text)
+        onMessageShown()
     }
     // Also re-runs once the first catalog load finishes; the callee throttles network checks.
     val catalogLoaded = catalog.state != null

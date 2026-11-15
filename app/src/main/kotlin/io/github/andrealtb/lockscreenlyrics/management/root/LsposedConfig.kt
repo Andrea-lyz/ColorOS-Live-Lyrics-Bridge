@@ -90,9 +90,19 @@ internal object LsposedConfig {
     private const val TIMEOUT_MS = 15_000L
     private val PACKAGE = Regex("^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+$")
 
-    fun read(context: Context, packages: List<String>, userId: Int): LsposedRead {
+    private val readLock = Any()
+    private var readNumber = 0L
+
+    /**
+     * One read at a time, each in its own directory. A cancelled coroutine does not stop a
+     * blocking read, so two refreshes used to copy into and delete the same directory at once;
+     * after that every read failed until the Bridge restarted (PJZ110, after a scope request,
+     * plan §14.14). SQLite keeps per-file WAL state for the process, so a reused path is avoided.
+     */
+    fun read(context: Context, packages: List<String>, userId: Int): LsposedRead = synchronized(readLock) {
         val asked = packages.filter { PACKAGE.matches(it) }.distinct()
-        val work = File(context.cacheDir, "lspd-read").apply { deleteRecursively(); mkdirs() }
+        val root = File(context.cacheDir, "lspd-read").apply { deleteRecursively(); mkdirs() }
+        val work = File(root, "r${++readNumber}-${System.nanoTime()}").apply { mkdirs() }
         try {
             val db = File(work, DB)
             // WAL first: a checkpoint between the two copies then leaves the main file newer.
@@ -108,7 +118,7 @@ internal object LsposedConfig {
                 LsposedRead.Failed
             }
         } finally {
-            work.deleteRecursively()
+            root.deleteRecursively()
         }
     }
 

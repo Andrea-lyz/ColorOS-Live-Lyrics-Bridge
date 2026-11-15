@@ -52,6 +52,7 @@ internal fun storeItems(
             entry = e.entry,
             installedVersion = installed?.versionName,
             installState = installState(installed, entry),
+            installedHosts = if (e.kind == ProviderKind.DEDICATED) e.hostPackages.filter { installedOf(it) != null } else emptyList(),
             hostDetected = e.kind == ProviderKind.DEDICATED && e.hostPackages.any { installedOf(it) != null },
             catalogVersion = entry?.versionName,
             availability = when {
