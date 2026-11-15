@@ -123,7 +123,8 @@ public final class BridgeSourceMap {
                 SOURCE_ROOT + "SystemUiPlaybackController.java", SOURCE_ROOT + "LyricViewRegistry.java",
                 SOURCE_ROOT + "LyricSurfaceModeController.java", SOURCE_ROOT + "LyricSurfaceHandoffController.java",
                 SOURCE_ROOT + "ActiveLyricState.java", SOURCE_ROOT + "PluginHookGenerationManager.java",
-                SOURCE_ROOT + "LyricsRecyclerViews.java", SOURCE_ROOT + "LyricsRecyclerState.java"));
+                SOURCE_ROOT + "LyricsRecyclerViews.java", SOURCE_ROOT + "LyricsRecyclerState.java",
+                SOURCE_ROOT + "ActiveLyricRefreshSchedule.java"));
     }
 
     private BridgeSourceMap() {

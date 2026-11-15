@@ -409,8 +409,6 @@ public final class LockscreenLyricsModule extends XposedModule {
     private volatile String currentCleanupSnapshotArtist = "";
     private volatile long lyricUiStyleSettingsLoadedAtElapsedMs = -1L;
     private boolean bridgeDebugConfigAnnounced;
-    private volatile int lyricModeRebindGeneration;
-    private Runnable lyricModeRebindRunnable;
     private volatile int translationLayoutGeneration;
     private volatile long lastTransientLyricSurfaceMissLogAt;
     private volatile boolean lyricModelReplacementInProgress;
@@ -470,13 +468,6 @@ public final class LockscreenLyricsModule extends XposedModule {
     static volatile Field immersiveCurrentIndexField;
     static final LyricsRecyclerMatch NO_LYRICS_RECYCLER_MATCH =
             new LyricsRecyclerMatch(null, null);
-    private volatile boolean activeLyricUpdatePosted;
-    private boolean activeLyricRefreshCadenceScheduled;
-    private WordLine activeLyricRefreshCadenceLine;
-    private int activeLyricRefreshCadenceHz = -1;
-    private long activeLyricRefreshNextDeadlineNanos =
-            LyricRefreshRatePolicy.UNSET_DEADLINE_NANOS;
-    private View activeLyricRefreshAnchor;
     private volatile long lastRecyclerAdapterNotifyGuardLogAt;
     private final ThreadLocal<Boolean> suppressLyricsRecyclerHook = new ThreadLocal<>();
     private final OfficialLyricTextRenderer officialLyricTextRenderer = new OfficialLyricTextRenderer();
@@ -705,6 +696,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             mainHandler);
     private final LyricViewRegistry lyricViews = new LyricViewRegistry();
     private final LyricsRecyclerState recyclerState = new LyricsRecyclerState();
+    private final ActiveLyricRefreshSchedule refreshSchedule = new ActiveLyricRefreshSchedule();
     private final ActiveLyricState activeLyrics = new ActiveLyricState(lyricViews);
     private final ScreenTimeoutController screenTimeout = new ScreenTimeoutController(
             new ScreenTimeoutController.Host() {
@@ -960,13 +952,10 @@ public final class LockscreenLyricsModule extends XposedModule {
                     OFFICIAL_DRAW_FRAME_REUSE_ENABLED,
                     WordLyricRenderConstants.OFFICIAL_SLOT_ALIAS_REUSE_ENABLED);
     private final Runnable activeLyricRefreshRunnable = () -> {
-        View scheduledAnchor = activeLyricRefreshAnchor;
-        boolean useDisplayCadence = activeLyricRefreshCadenceScheduled;
-        WordLine cadenceLine = activeLyricRefreshCadenceLine;
-        activeLyricUpdatePosted = false;
-        activeLyricRefreshAnchor = null;
-        activeLyricRefreshCadenceScheduled = false;
-        activeLyricRefreshCadenceLine = null;
+        View scheduledAnchor = refreshSchedule.activeLyricRefreshAnchor;
+        boolean useDisplayCadence = refreshSchedule.activeLyricRefreshCadenceScheduled;
+        WordLine cadenceLine = refreshSchedule.activeLyricRefreshCadenceLine;
+        refreshSchedule.clearPostedRefresh();
         if (useDisplayCadence && !consumeActiveLyricRefreshFrame()) {
             if (scheduledAnchor instanceof TextView
                     && scheduledAnchor.isAttachedToWindow()) {
@@ -2970,14 +2959,14 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private void refreshLyricRenderingAfterModeChange(boolean active) {
-        int generation = ++lyricModeRebindGeneration;
+        int generation = refreshSchedule.nextModeRebindGeneration();
         cancelActiveLyricRefreshCallbacks(!active);
-        if (lyricModeRebindRunnable != null) {
-            mainHandler.removeCallbacks(lyricModeRebindRunnable);
+        if (refreshSchedule.lyricModeRebindRunnable != null) {
+            mainHandler.removeCallbacks(refreshSchedule.lyricModeRebindRunnable);
         }
 
         Runnable refresh = () -> {
-            if (generation != lyricModeRebindGeneration) {
+            if (generation != refreshSchedule.lyricModeRebindGeneration) {
                 return;
             }
             // Mode changes only invalidate custom pixels. SystemUI owns the RecyclerView
@@ -2997,7 +2986,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 scheduleActiveLyricRefresh(ACTIVE_LYRIC_FRAME_DELAY_MS);
             }
         };
-        lyricModeRebindRunnable = refresh;
+        refreshSchedule.setModeRebindRunnable(refresh);
         mainHandler.post(refresh);
     }
 
@@ -3079,10 +3068,10 @@ public final class LockscreenLyricsModule extends XposedModule {
 
     private void deactivateSystemUiLyricModeAfterSurfaceHidden() {
         boolean changed = surfaceMode.markLyricModeInactive();
-        lyricModeRebindGeneration++;
-        if (lyricModeRebindRunnable != null) {
-            mainHandler.removeCallbacks(lyricModeRebindRunnable);
-            lyricModeRebindRunnable = null;
+        refreshSchedule.nextModeRebindGeneration();
+        if (refreshSchedule.lyricModeRebindRunnable != null) {
+            mainHandler.removeCallbacks(refreshSchedule.lyricModeRebindRunnable);
+            refreshSchedule.setModeRebindRunnable(null);
         }
         surfaceMode.noteLyricSurfaceSignal(SystemClock.elapsedRealtime());
         cancelActiveLyricRefreshCallbacks(true);
@@ -4772,9 +4761,9 @@ public final class LockscreenLyricsModule extends XposedModule {
         boolean prepare;
         synchronized (lyricSurfaceRenderEpochsLock) {
             Integer previousGeneration = lyricSurfaceVisibleSessionGenerations.get(recycler);
-            prepare = previousGeneration == null || previousGeneration != lyricModeRebindGeneration;
+            prepare = previousGeneration == null || previousGeneration != refreshSchedule.lyricModeRebindGeneration;
             if (prepare) {
-                lyricSurfaceVisibleSessionGenerations.put(recycler, lyricModeRebindGeneration);
+                lyricSurfaceVisibleSessionGenerations.put(recycler, refreshSchedule.lyricModeRebindGeneration);
             }
         }
         if (!prepare) {
@@ -8036,22 +8025,21 @@ public final class LockscreenLyricsModule extends XposedModule {
         if (textView == null) {
             return;
         }
-        if (activeLyricUpdatePosted || !surfaceMode.systemUiLyricModeKeepAwakeActive) {
+        if (refreshSchedule.activeLyricUpdatePosted || !surfaceMode.systemUiLyricModeKeepAwakeActive) {
             return;
         }
-        activeLyricUpdatePosted = true;
+        refreshSchedule.markPosted();
         long resolvedDelayMillis = resolveActiveLyricRefreshDelay(delayMillis, currentLine);
-        activeLyricRefreshCadenceScheduled = shouldUseActiveLyricDisplayCadence(
+        refreshSchedule.setCadence(shouldUseActiveLyricDisplayCadence(
                 resolvedDelayMillis,
-                currentLine);
-        activeLyricRefreshCadenceLine = currentLine;
+                currentLine), currentLine);
         if (resolvedDelayMillis <= ACTIVE_LYRIC_FRAME_DELAY_MS
                 && !isAodLowFrameRateLyricMode()
                 && textView.isAttachedToWindow()) {
-            activeLyricRefreshAnchor = textView;
+            refreshSchedule.setAnchor(textView);
             textView.postOnAnimation(activeLyricRefreshRunnable);
         } else {
-            activeLyricRefreshAnchor = null;
+            refreshSchedule.setAnchor(null);
             mainHandler.postDelayed(
                     activeLyricRefreshRunnable,
                     Math.max(16L, Math.min(resolvedDelayMillis, 600L)));
@@ -8063,16 +8051,15 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private void scheduleActiveLyricRefresh(long delayMillis, WordLine currentLine) {
-        if (activeLyricUpdatePosted || !surfaceMode.systemUiLyricModeKeepAwakeActive) {
+        if (refreshSchedule.activeLyricUpdatePosted || !surfaceMode.systemUiLyricModeKeepAwakeActive) {
             return;
         }
-        activeLyricUpdatePosted = true;
-        activeLyricRefreshAnchor = null;
+        refreshSchedule.markPosted();
+        refreshSchedule.setAnchor(null);
         long resolvedDelayMillis = resolveActiveLyricRefreshDelay(delayMillis, currentLine);
-        activeLyricRefreshCadenceScheduled = shouldUseActiveLyricDisplayCadence(
+        refreshSchedule.setCadence(shouldUseActiveLyricDisplayCadence(
                 resolvedDelayMillis,
-                currentLine);
-        activeLyricRefreshCadenceLine = currentLine;
+                currentLine), currentLine);
         mainHandler.postDelayed(
                 activeLyricRefreshRunnable,
                 Math.max(16L, Math.min(resolvedDelayMillis, 600L)));
@@ -8080,15 +8067,11 @@ public final class LockscreenLyricsModule extends XposedModule {
 
     private void cancelActiveLyricRefreshCallbacks(boolean ignoredCancelVisibilityRecovery) {
         mainHandler.removeCallbacks(activeLyricRefreshRunnable);
-        View anchor = activeLyricRefreshAnchor;
+        View anchor = refreshSchedule.activeLyricRefreshAnchor;
         if (anchor != null) {
             anchor.removeCallbacks(activeLyricRefreshRunnable);
         }
-        activeLyricRefreshAnchor = null;
-        activeLyricUpdatePosted = false;
-        activeLyricRefreshCadenceScheduled = false;
-        activeLyricRefreshCadenceLine = null;
-        resetActiveLyricRefreshCadence();
+        refreshSchedule.cancelPostedRefresh();
     }
 
     private void scheduleLyricSurfaceReactivation(String reason) {
@@ -8186,34 +8169,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private boolean consumeActiveLyricRefreshFrame() {
-        int maxRefreshRateHz = lyricUiConfig.maxRefreshRateHz;
-        if (maxRefreshRateHz <= 0) {
-            resetActiveLyricRefreshCadence();
-            return true;
-        }
-        if (activeLyricRefreshCadenceHz != maxRefreshRateHz) {
-            activeLyricRefreshCadenceHz = maxRefreshRateHz;
-            activeLyricRefreshNextDeadlineNanos =
-                    LyricRefreshRatePolicy.UNSET_DEADLINE_NANOS;
-        }
-        long nowNanos = System.nanoTime();
-        if (!LyricRefreshRatePolicy.isFrameDue(
-                nowNanos,
-                activeLyricRefreshNextDeadlineNanos,
-                maxRefreshRateHz)) {
-            return false;
-        }
-        activeLyricRefreshNextDeadlineNanos = LyricRefreshRatePolicy.advanceDeadline(
-                nowNanos,
-                activeLyricRefreshNextDeadlineNanos,
-                maxRefreshRateHz);
-        return true;
-    }
-
-    private void resetActiveLyricRefreshCadence() {
-        activeLyricRefreshCadenceHz = -1;
-        activeLyricRefreshNextDeadlineNanos =
-                LyricRefreshRatePolicy.UNSET_DEADLINE_NANOS;
+        return refreshSchedule.consumeFrame(lyricUiConfig.maxRefreshRateHz);
     }
 
     private boolean requiresDisplayRateActiveLyricRefresh(WordLine currentLine) {
