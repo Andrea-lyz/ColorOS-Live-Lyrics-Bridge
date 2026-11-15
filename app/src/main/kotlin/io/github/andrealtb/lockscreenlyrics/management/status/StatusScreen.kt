@@ -15,7 +15,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -36,6 +35,7 @@ import io.github.andrealtb.lockscreenlyrics.R
 import io.github.andrealtb.lockscreenlyrics.management.Enablement
 import io.github.andrealtb.lockscreenlyrics.management.HomeStatus
 import io.github.andrealtb.lockscreenlyrics.management.ModuleStatus
+import io.github.andrealtb.lockscreenlyrics.management.BrandButton
 import io.github.andrealtb.lockscreenlyrics.management.Spacing
 import io.github.andrealtb.lockscreenlyrics.management.StoreItem
 import io.github.andrealtb.lockscreenlyrics.management.SystemUiLoad
@@ -135,7 +135,7 @@ internal fun StatusContent(
             Section(stringResource(R.string.status_section_diagnostics)) {
                 Text(stringResource(R.string.status_diagnostics_body), style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Button(onClick = onOpenDiagnostics) { Text(stringResource(R.string.status_open_diagnostics)) }
+                BrandButton(onClick = onOpenDiagnostics) { Text(stringResource(R.string.status_open_diagnostics)) }
             }
         }
     }

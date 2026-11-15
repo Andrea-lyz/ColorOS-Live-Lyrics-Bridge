@@ -114,17 +114,29 @@
             android:theme="@style/Theme.LockscreenLyrics"
             android:parentActivityName=".management.ManagementPreviewActivity"
             android:windowSoftInputMode="adjustResize" />
-        <!-- Management Home (plan D3): LSPosed's module settings open here. No launcher entry yet. -->
+        <!-- Management Home (plan D3): LSPosed's module settings open here. -->
         <activity
             android:name=".management.ManagementPreviewActivity"
             android:exported="true"
-            android:label="@string/management_preview_title"
+            android:label="@string/launcher_label"
             android:theme="@style/Theme.LockscreenLyrics">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="de.robv.android.xposed.category.MODULE_SETTINGS" />
             </intent-filter>
         </activity>
+        <!-- Launcher icon (D3, 2026-11-15). The Home card disables this alias to hide the icon. -->
+        <activity-alias
+            android:name=".management.LauncherEntry"
+            android:enabled="true"
+            android:exported="true"
+            android:label="@string/launcher_label"
+            android:targetActivity=".management.ManagementPreviewActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
         <activity
             android:name=".BridgeDebugSettingsActivity"
             android:exported="false"

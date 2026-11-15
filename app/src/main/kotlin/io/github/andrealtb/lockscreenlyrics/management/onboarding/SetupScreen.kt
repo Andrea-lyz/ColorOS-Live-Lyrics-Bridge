@@ -19,7 +19,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -44,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.github.andrealtb.lockscreenlyrics.R
+import io.github.andrealtb.lockscreenlyrics.management.BrandButton
 import io.github.andrealtb.lockscreenlyrics.management.Spacing
 
 /** What the setup page asks the Activity to do; the page itself never starts external work. */
@@ -160,7 +160,7 @@ private fun StepCard(
                     }
                 }
                 val changed = !view.playersConfirmed || picked.toSet() != view.chosenPlayers
-                Button(onClick = { onAction(SetupAction.ChoosePlayers(picked.toSet())) },
+                BrandButton(onClick = { onAction(SetupAction.ChoosePlayers(picked.toSet())) },
                     enabled = picked.isNotEmpty() && changed) {
                     Text(stringResource(R.string.setup_action_choose_players))
                 }
@@ -178,15 +178,15 @@ private fun StepActions(step: StepView, onAction: (SetupAction) -> Unit) {
                 TextButton(onClick = { onAction(SetupAction.Unskip(step.step)) }) { Text(stringResource(R.string.setup_action_unskip)) }
             step.state != StepState.TODO -> Unit
             step.step == SetupStep.BRIDGE -> {
-                Button(onClick = { onAction(SetupAction.OpenLsposedForBridge) }) { Text(stringResource(R.string.setup_action_open_lsposed)) }
+                BrandButton(onClick = { onAction(SetupAction.OpenLsposedForBridge) }) { Text(stringResource(R.string.setup_action_open_lsposed)) }
                 OutlinedButton(onClick = { onAction(SetupAction.RefreshStatus) }) { Text(stringResource(R.string.mgmt_action_refresh)) }
             }
             step.step == SetupStep.ROOT ->
-                Button(onClick = { onAction(SetupAction.RequestRoot) }) { Text(stringResource(R.string.mgmt_action_request_root)) }
+                BrandButton(onClick = { onAction(SetupAction.RequestRoot) }) { Text(stringResource(R.string.mgmt_action_request_root)) }
             step.step == SetupStep.INSTALL || step.step == SetupStep.ENABLE ->
-                Button(onClick = { onAction(SetupAction.OpenStore) }) { Text(stringResource(R.string.setup_action_open_store)) }
+                BrandButton(onClick = { onAction(SetupAction.OpenStore) }) { Text(stringResource(R.string.setup_action_open_store)) }
             step.step == SetupStep.PLAYBACK ->
-                Button(onClick = { onAction(SetupAction.ConfirmPlayback) }) { Text(stringResource(R.string.setup_action_confirm_playback)) }
+                BrandButton(onClick = { onAction(SetupAction.ConfirmPlayback) }) { Text(stringResource(R.string.setup_action_confirm_playback)) }
         }
         if (step.skippable && step.state == StepState.TODO) {
             TextButton(onClick = { onAction(SetupAction.Skip(step.step)) }) { Text(stringResource(R.string.setup_action_skip)) }

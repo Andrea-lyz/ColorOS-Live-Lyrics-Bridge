@@ -110,6 +110,8 @@ class ManagementPreviewActivity : AppCompatActivity() {
     /** Incremented when a notification asks to show the store. */
     private var openStoreRequests by mutableIntStateOf(0)
     private var message by mutableStateOf<String?>(null)
+    private var whatsNew by mutableStateOf(false)
+    private var launcherShown by mutableStateOf(true)
     /** Saved appearance settings, re-read on every resume (the old page may have saved). */
     private var appearance by mutableStateOf<AppearanceSnapshot?>(null)
     /** The user's setup choices (plan §5.2, §14.16); every step's state is derived on screen. */
@@ -187,6 +189,8 @@ class ManagementPreviewActivity : AppCompatActivity() {
             }
         }
         setupChoices = setupStore.load()
+        whatsNew = WhatsNew.shouldShow(this)
+        launcherShown = LauncherIcon.isShown(this)
         setContent {
             ManagementTheme {
                 val packages = installed
@@ -230,6 +234,17 @@ class ManagementPreviewActivity : AppCompatActivity() {
                         recreate()
                     },
                     onRestartSystemUi = ::restartSystemUi,
+                    whatsNew = whatsNew,
+                    onDismissWhatsNew = {
+                        WhatsNew.markSeen(this)
+                        whatsNew = false
+                    },
+                    launcherShown = launcherShown,
+                    onLauncherShownChange = { shown ->
+                        LauncherIcon.setShown(this, shown)
+                        launcherShown = LauncherIcon.isShown(this)
+                        message = getString(if (shown) R.string.home_launcher_shown else R.string.home_launcher_hidden)
+                    },
                 )
             }
         }
@@ -588,6 +603,10 @@ internal fun ManagementPrototype(
     onOpenAppearance: (AppearanceTarget) -> Unit,
     onLanguageChange: (english: Boolean) -> Unit,
     onRestartSystemUi: () -> Unit,
+    whatsNew: Boolean,
+    onDismissWhatsNew: () -> Unit,
+    launcherShown: Boolean,
+    onLauncherShownChange: (Boolean) -> Unit,
 ) {
     // Only page-level UI state lives here; it is safe to restore after recreation.
     var tab by rememberSaveable { mutableStateOf(ManagementTab.HOME) }
@@ -670,6 +689,10 @@ internal fun ManagementPrototype(
                         onRequestRoot = onRequestRoot,
                         onOpenSetup = { showSetup = true },
                         onOpenStore = { tab = ManagementTab.STORE },
+                        whatsNew = whatsNew,
+                        onDismissWhatsNew = onDismissWhatsNew,
+                        launcherShown = launcherShown,
+                        onLauncherShownChange = onLauncherShownChange,
                         bottomPadding = dockSpace + Spacing.l,
                     )
                     ManagementTab.STORE -> StoreContent(

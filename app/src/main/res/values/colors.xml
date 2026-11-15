@@ -9,6 +9,8 @@
     <color name="settings_text_muted">#FF9AA0A6</color>
     <color name="settings_primary">#FFFFD68A</color>
     <color name="settings_primary_deep">#FFF2C14E</color>
+    <!-- Gold for text, outlines and indicators on white (5.9:1); the ambers above are fills. -->
+    <color name="settings_primary_text">#FF8A5A00</color>
     <color name="settings_secondary">#FF177286</color>
     <color name="settings_success">#FF1E8E5A</color>
     <color name="settings_error">#FFC04A3A</color>

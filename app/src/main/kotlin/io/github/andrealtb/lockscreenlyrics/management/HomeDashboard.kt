@@ -27,13 +27,15 @@ import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledIconButton
@@ -109,6 +111,10 @@ internal fun HomeDashboard(
     onRequestRoot: () -> Unit,
     onOpenSetup: () -> Unit,
     onOpenStore: () -> Unit,
+    whatsNew: Boolean,
+    onDismissWhatsNew: () -> Unit,
+    launcherShown: Boolean,
+    onLauncherShownChange: (Boolean) -> Unit,
     bottomPadding: androidx.compose.ui.unit.Dp,
     modifier: Modifier = Modifier,
 ) {
@@ -124,6 +130,9 @@ internal fun HomeDashboard(
                 Text(stringResource(R.string.home_subtitle), style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+        }
+        if (whatsNew) {
+            item { WhatsNewCard(onDismissWhatsNew) }
         }
         item { HeroCard(status, onRefreshStatus, onRestartSystemUi) }
         if (summary.setupRemaining > 0) {
@@ -189,6 +198,62 @@ internal fun HomeDashboard(
         if (root.state == RootState.GRANTED && root.cliAvailable == false) {
             item { NoticeCard(stringResource(R.string.mgmt_root_no_cli)) }
         }
+        item { LauncherIconCard(launcherShown, onLauncherShownChange) }
+    }
+}
+
+/** One-time summary for people upgrading from 4.x (user decision 2026-11-15, §14.20). */
+@Composable
+private fun WhatsNewCard(onDismiss: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        ),
+    ) {
+        Column(Modifier.padding(Spacing.xl), verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
+            Text(stringResource(R.string.whats_new_title), style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold)
+            listOf(R.string.whats_new_entry, R.string.whats_new_store, R.string.whats_new_status,
+                R.string.whats_new_launcher, R.string.whats_new_kept).forEach { line ->
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
+                    Text("•", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(line), style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+            TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End),
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onPrimaryContainer)) {
+                Text(stringResource(R.string.whats_new_dismiss))
+            }
+        }
+    }
+}
+
+/** Show or hide the launcher icon; LSPosed's module settings keep working either way. */
+@Composable
+private fun LauncherIconCard(shown: Boolean, onChange: (Boolean) -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+    ) {
+        Row(
+            Modifier.fillMaxWidth()
+                .toggleable(value = shown, role = Role.Switch, onValueChange = onChange)
+                .padding(Spacing.l),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Spacing.m),
+        ) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                Text(stringResource(R.string.home_launcher_title), style = MaterialTheme.typography.titleSmall)
+                Text(stringResource(R.string.home_launcher_body), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            // The whole row toggles; the switch only shows the state.
+            Switch(checked = shown, onCheckedChange = null)
+        }
     }
 }
 
@@ -232,7 +297,7 @@ private fun HeroCard(status: HomeStatus, onRefresh: () -> Unit, onRestartSystemU
                 // Moved from the old appearance page (§14.18). Prominent only when SystemUI still
                 // runs an older Bridge build; otherwise a quiet secondary action.
                 if (hero == HeroState.RESTART_SYSTEMUI) {
-                    Button(onClick = { confirmRestart = true }) { Text(stringResource(R.string.action_restart_system_ui)) }
+                    BrandButton(onClick = { confirmRestart = true }) { Text(stringResource(R.string.action_restart_system_ui)) }
                 } else {
                     OutlinedButton(onClick = { confirmRestart = true }, enabled = hero != HeroState.CHECKING) {
                         Text(stringResource(R.string.action_restart_system_ui))
@@ -391,11 +456,11 @@ internal fun FloatingDock(
                 val on = tab == selected
                 // Each item fills the dock's height so its icon and label sit centered (r3 left
                 // them at the top with empty space below).
-                // Rounded rectangle, not a full pill: the pill's curve clipped the ends of long
-                // labels such as "Appearance" (PJZ110 r3, English).
+                // Theme "large" rounded rectangle, not a full pill: the pill's curve clipped the
+                // ends of long labels such as "Appearance" (PJZ110 r3, English).
                 Surface(
                     modifier = Modifier.weight(1f).fillMaxHeight(),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = MaterialTheme.shapes.large,
                     color = if (on) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
                     contentColor = if (on) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                     selected = on,

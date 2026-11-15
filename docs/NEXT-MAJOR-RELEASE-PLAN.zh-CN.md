@@ -1191,7 +1191,7 @@ E 系列（第 15 节）不单列里程碑：E-0 随 M1，E-1/E-2 在 C-04/C-05 
 
 **r2 设备结果：** 用户确认逐行进度与动态封面显示正常；提出增加“逐字歌词进度”。**r3（改动 SystemUI 侧，仅诊断记录）：** `CompatibilityStatus.Feature` 末尾追加 `WORD_PROGRESS`（不改变已有序号），新增 `wordProgress(owner, drawn, aod)`；`LockscreenLyricsModule` 在两处已有的“当前行是否绘制进度”决定之后调用 `recordWordProgress`：只记录当前行、逐字时间轴、且不是“单字极短整行高亮”的行；记录走既有的无分配写路径，不改变任何绘制判断。结论：已准备（会绘制逐字填充）或等待（息屏低帧率）。App 侧列在“逐行歌词进度”之前，名称“逐字歌词进度”；镜像测试改为按名称集合比对。本地 1043 tests / 0 fail / 6 skip（`CompatibilityStatusTest` 新增 1 项、`CapabilityModelTest` 覆盖新项），Debug 与 R8 通过。**需要重启 SystemUI 后才会出现该行**（旧注入构建不发送）。候选 `Bridge-M5-status-debug-r3.apk`（`993f142f…`）。 **r3 设备结果：用户重启 SystemUI 后确认全部通过（逐字歌词进度显示正确，锁屏逐字效果与以前一致）。**
 
-### 14.18 M5 第三刀：“外观”页（2026-11-15，本地，未提交）
+### 14.18 M5 第三刀：“外观”页（2026-11-15，已提交 `a8b177f`，未推送）
 
 **分支：** Bridge `feat/m5-appearance`（基于 `0d883d1`，即 §14.17 的提交）。
 
@@ -1222,6 +1222,53 @@ E 系列（第 15 节）不单列里程碑：E-0 随 M1，E-1/E-2 在 C-04/C-05 
 4. 首页插件卡片“1 个需要处理”在插件只是未启用时也显示红字：把“需要处理”拆成两类——已启用但作用域里没有播放器（插件无法工作）仍为红色警告；已安装但未启用（可能是用户的选择）改为灰色信息图标 +“N 个未启用”。卡片提示改为三级（无 / 提示 / 警告）。
 
 本地 1048 tests / 0 fail / 6 skip（`HomeDashboardTest` 改为分别统计），Debug 与 R8 通过。候选 `Bridge-M5-appearance-debug-r4.apk`（`ca269091…`）。 **r4 设备结果：用户确认全部通过。**
+
+### 14.19 M5 收口：MD3 十类审查（2026-11-15，本地，未提交）
+
+**分支：** Bridge `feat/m5-wrapup`（基于 `a8b177f`）。**方法：** 加载 material-3 技能，按 §8.5.2 第 5 步的十类逐项阅读管理 UI 源码（`management/` 下首页、商店、外观、状态、设置向导与主题，约 2,400 行），用脚本计算 WCAG 对比度。只做源码与计算，**未在设备上检查**；按 §8.5.2 不打分。
+
+| 类别 | 结论与证据 | 处理 |
+| --- | --- | --- |
+| 颜色 | **问题（已修）：** `primary` 是浅琥珀 `#F2C14E`，与白色对比度仅 1.68:1。Material 把 `primary` 用作描边按钮/文字按钮的文字、进度条、开关轨道，外观页分组小标题也用它，均不达 4.5:1（文字）或 3:1（组件）。`outline`、`outlineVariant`、`inverseSurface`（Snackbar）、`tertiary`、`surfaceVariant` 未设置，沿用 Material 默认的紫调基线。其余文字配对：`onSurfaceVariant` 6.05:1、`error` 4.90:1、`secondary` 5.54:1、深色字配琥珀 11.25:1，均达标。 | `primary` 改为深金 `#8A5A00`（白底 5.93:1，新增 `settings_primary_text`），`onPrimary` 白；琥珀保留为 `primaryContainer` 和主按钮填充（新增 `BrandButton`，14 处替换，深色字 11:1，与旧页“应用并保存”一致）；补齐中性灰 `outline`/`outlineVariant`/`inverseSurface` 等，`tertiary` 用品牌青，`inversePrimary` 用琥珀 |
+| 排版 | 全部使用 `MaterialTheme.typography` 字级，没有 `sp` 硬编码；系统字体 | 无 |
+| 形状 | 卡片用 `shapes.extraLarge`，状态胶囊与色块用 `CircleShape`；dock 选中项曾为魔法值 20dp | dock 改为 `shapes.large` |
+| 层级 | 卡片与背景靠明度区分；只有悬浮 dock 用 8dp 阴影（浮在滚动内容上，属 MD3 允许的保护性阴影） | 无 |
+| 组件 | 均为官方 Material 3（Card、Button、FilterChip、Switch、AlertDialog、NavigationRail、Snackbar、TopAppBar） | 无 |
+| 布局 | 内容最大宽 840dp；≥600dp 用 rail；间距统一走 `Spacing`。宽度判断仍是 `screenWidthDp`，未用 WindowSizeClass（§14.4 已记录） | 维持，M6 视折叠屏结果再定 |
+| 导航 | 四个顶级入口有文字和图标；设置向导有返回按钮和 `BackHandler`；LSPosed 模块设置已进首页 | 无 |
+| 动效 | 只有组件默认动效，状态不依赖动画完成回调 | 设备上检查“减少动画” |
+| 无障碍 | 纯图标按钮（刷新、向导返回）有 `contentDescription`；其余图标都有文字伴随（描述置空避免重复朗读）；可点卡片有 `Role.Button`；FilterChip 等受 48dp 最小触控区约束。**未验证：** 大字体、TalkBack 朗读顺序、横屏 | 列入设备清单 |
+| 主题 | 固定浅色、无动态取色（§8.3 决定） | 无 |
+
+**范围外但记录：** 旧 Views 页的辅助说明文字用 `settings_text_muted #9AA0A6`（白底 2.64:1，10.5sp），包括外观页“进度与动画”里的两条依赖说明。属于旧页面统一配色，本次不改；建议 M6 前与旧页其他灰字一起处理。
+
+**本地验证：** Bridge 1048 tests / 0 fail / 6 skip，Debug 与 R8 通过。候选 `artifacts/m5-wrapup-20261115/Bridge-M5-wrapup-debug-r1.apk`（`27975e8e…`）。视觉变化：描边/文字按钮、进度条、开关和外观页小标题从浅琥珀变为深金色；实心主按钮仍是琥珀。
+
+**设备检查清单（M5 收口，需用户执行）：**
+1. 颜色：上述按钮、进度条、开关、小标题清晰可读，主按钮观感与旧页一致。
+2. 系统字体调到最大：首页四个小卡片、dock 标签、商店卡片按钮、设置向导选项不截断、不重叠。
+3. TalkBack：首页从上到下朗读顺序合理；dock 四项读出名称与选中状态；刷新按钮读出“重新检查”。
+4. 横屏：内容不被导航条或摄像头挖孔遮挡；dock 或 rail 正常。
+5. 三键导航与手势导航各一次：dock 与列表末尾不被导航条遮住。
+6. 开发者选项关闭动画（动画缩放设为“关闭”）：切换页面、展开确认框、商店安装进度正常。
+
+**仍待用户决定：**
+- **D3 桌面图标：** LSPosed 模块设置已进入管理首页；是否新增桌面入口（设置里可隐藏）。
+- **升级提示：** 4.x 用户升级后，在 LSPosed 点模块设置看到的从“外观设置”变为管理首页。是否在首页加一次性“新版说明”卡片（可关闭，只显示一次）。
+
+**§14.19 设备结果：** 用户确认清单 1–6 项通过（r1 `27975e8e…`）。
+
+### 14.20 M5 收口：桌面图标（D3）与一次性“新版说明”（2026-11-15，本地，未提交）
+
+**用户决定（2026-11-15）：** 新增桌面图标，首页提供隐藏开关；首页加一次性“新版说明”卡片。
+
+- **桌面图标：** 新增 `activity-alias` `.management.LauncherEntry`（MAIN/LAUNCHER，指向管理首页，名称 “Live Lyrics Bridge”）。首页底部“在桌面显示图标”开关通过 `PackageManager.setComponentEnabledSetting(..., DONT_KILL_APP)` 启用/停用这个 alias；LSPosed 的 `MODULE_SETTINGS` 入口在 Activity 本身，隐藏图标不影响从 LSPosed 进入。首页 Activity 的标题由“管理界面预览”改为 “Live Lyrics Bridge”（最近任务里显示）。
+- **新版说明：** 只给从旧版升级的人看：`lastUpdateTime > firstInstallTime` 且未点过“知道了”。全新安装在首次打开时直接记为已看过，之后 5.x 小版本更新也不会再弹。内容五条：LSPosed 模块设置改进管理页、外观在“外观”标签；新增商店；状态页与短时诊断；桌面图标可隐藏；原有外观/翻译/开头清理设置保留。点“知道了”后不再显示（`management_home` 偏好）。
+- **已知限制：** 部分桌面在停用 alias 后需要片刻才刷新图标；Android 10+ 对“没有桌面入口但申请了权限”的应用可能显示系统生成的应用信息图标，ColorOS 是否这样需设备确认。
+
+本地 1050 tests / 0 fail / 6 skip（新增 `HomeExtrasTest` 2 项：只对升级且只一次、默认显示图标），Debug 与 R8 通过。候选 `artifacts/m5-wrapup-20261115/Bridge-M5-wrapup-debug-r2.apk`（`f21a4c58…`）。待设备验证：安装后桌面出现图标并打开首页；开关隐藏/恢复图标；隐藏后 LSPosed 仍可进入；新版说明卡片显示一次，点“知道了”后重进不再出现（本机是覆盖安装，所以会显示）。
+
+**r2 设备结果：用户确认全部通过（桌面图标、隐藏/恢复、隐藏后 LSPosed 仍可进入、新版说明只显示一次）。M5 功能与收口完成，待提交。**
 
 ## 15. 主线五：代码结构与性能治理（E 系列）
 

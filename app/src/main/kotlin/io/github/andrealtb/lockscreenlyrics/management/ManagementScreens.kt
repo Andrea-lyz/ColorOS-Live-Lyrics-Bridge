@@ -21,7 +21,6 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
@@ -180,7 +179,7 @@ private fun StoreCard(item: StoreItem, operation: Operation?, busy: Boolean, onA
         item.enablement?.let { state ->
             EnablementRow(state)
             if (item.offersScopeRequest() && operation?.active != true) {
-                Button(onClick = { onAction(StoreAction.REQUEST_SCOPE) }) {
+                BrandButton(onClick = { onAction(StoreAction.REQUEST_SCOPE) }) {
                     Text(stringResource(R.string.mgmt_action_request_scope))
                 }
             }
@@ -199,15 +198,15 @@ private fun StoreCard(item: StoreItem, operation: Operation?, busy: Boolean, onA
                 StoreAction.NONE, StoreAction.CANCEL, StoreAction.CONFIRM_INSTALL, StoreAction.ALLOW_INSTALLS,
                 StoreAction.OPEN_LSPOSED, StoreAction.REQUEST_SCOPE -> Unit
                 StoreAction.DOWNLOAD ->
-                    Button(onClick = { onAction(action) }, enabled = !busy) { Text(stringResource(action.labelRes())) }
+                    BrandButton(onClick = { onAction(action) }, enabled = !busy) { Text(stringResource(action.labelRes())) }
                 StoreAction.UPDATE -> {
-                    Button(onClick = { onAction(action) }, enabled = !busy) { Text(stringResource(action.labelRes())) }
+                    BrandButton(onClick = { onAction(action) }, enabled = !busy) { Text(stringResource(action.labelRes())) }
                     OutlinedButton(onClick = { onAction(item.openAction()) }) {
                         Text(stringResource(item.openAction().labelRes()))
                     }
                 }
                 StoreAction.OPEN_DEBUG, StoreAction.OPEN_APP ->
-                    Button(onClick = { onAction(action) }) { Text(stringResource(action.labelRes())) }
+                    BrandButton(onClick = { onAction(action) }) { Text(stringResource(action.labelRes())) }
                 StoreAction.OPEN_INFO ->
                     OutlinedButton(onClick = { onAction(action) }) { Text(stringResource(action.labelRes())) }
             }
@@ -419,13 +418,13 @@ private fun OperationStatus(item: StoreItem, operation: Operation, onAction: (St
         Operation.WaitingForUser -> {
             Text(stringResource(R.string.mgmt_op_waiting), style = MaterialTheme.typography.bodyMedium, color = muted)
             Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
-                Button(onClick = { onAction(StoreAction.CONFIRM_INSTALL) }) { Text(stringResource(R.string.mgmt_action_confirm_install)) }
+                BrandButton(onClick = { onAction(StoreAction.CONFIRM_INSTALL) }) { Text(stringResource(R.string.mgmt_action_confirm_install)) }
                 OutlinedButton(onClick = { onAction(StoreAction.CANCEL) }) { Text(stringResource(R.string.mgmt_action_cancel)) }
             }
         }
         Operation.NeedsInstallPermission -> {
             Text(stringResource(R.string.mgmt_op_permission), style = MaterialTheme.typography.bodyMedium, color = muted)
-            Button(onClick = { onAction(StoreAction.ALLOW_INSTALLS) }) { Text(stringResource(R.string.mgmt_action_allow_installs)) }
+            BrandButton(onClick = { onAction(StoreAction.ALLOW_INSTALLS) }) { Text(stringResource(R.string.mgmt_action_allow_installs)) }
         }
         is Operation.Succeeded -> {
             Text(stringResource(R.string.mgmt_op_succeeded, operation.versionName),

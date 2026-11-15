@@ -272,7 +272,6 @@
         <item>你的人生将开启新的章节</item>
         <item>失去铸就你前行的路</item>
     </string-array>
-    <string name="management_preview_title">Management preview</string>
     <string name="mgmt_tab_home">Home</string>
     <string name="mgmt_tab_store">Store</string>
     <string name="mgmt_tab_appearance">Appearance</string>
@@ -546,4 +545,15 @@
     <string name="appearance_screen_always">Always on</string>
     <plurals name="home_providers_disabled"><item quantity="one">%1$d not enabled</item><item quantity="other">%1$d not enabled</item></plurals>
     <string name="home_restart_confirm">The status bar, lock screen and notifications disappear briefly and reload, so SystemUI picks up the new Bridge build.</string>
+    <string name="whats_new_title">What\'s new in Bridge 5.0</string>
+    <string name="whats_new_entry">Module settings in LSPosed now open this page; lyric appearance is under Appearance at the bottom.</string>
+    <string name="whats_new_store">New Store: install and update the player plugins here.</string>
+    <string name="whats_new_status">Status shows whether each feature is active in SystemUI, and holds short diagnostics.</string>
+    <string name="whats_new_launcher">Bridge now has a launcher icon; you can hide it at the bottom of this page.</string>
+    <string name="whats_new_kept">Your appearance, translation and opening-cleanup settings are kept; nothing to set up again.</string>
+    <string name="whats_new_dismiss">Got it</string>
+    <string name="home_launcher_title">Show launcher icon</string>
+    <string name="home_launcher_body">When off, Bridge has no launcher icon; you can still open it from module settings in LSPosed. Some launchers take a moment to update.</string>
+    <string name="home_launcher_shown">Launcher icon shown</string>
+    <string name="home_launcher_hidden">Launcher icon hidden</string>
 </resources>

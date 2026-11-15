@@ -272,7 +272,6 @@
         <item>你的人生将开启新的章节</item>
         <item>失去铸就你前行的路</item>
     </string-array>
-    <string name="management_preview_title">管理界面预览</string>
     <string name="mgmt_tab_home">首页</string>
     <string name="mgmt_tab_store">商店</string>
     <string name="mgmt_tab_appearance">外观</string>
@@ -553,4 +552,16 @@
     <string name="appearance_screen_always">一直点亮</string>
     <plurals name="home_providers_disabled"><item quantity="other">%1$d 个未启用</item></plurals>
     <string name="home_restart_confirm">状态栏、锁屏和通知会短暂消失后重新加载，用来让 SystemUI 加载新版 Bridge。</string>
+    <string name="launcher_label" translatable="false">Live Lyrics Bridge</string>
+    <string name="whats_new_title">Bridge 5.0 有哪些变化</string>
+    <string name="whats_new_entry">在 LSPosed 点模块设置，现在打开的是这个管理页；歌词外观在底部的“外观”里。</string>
+    <string name="whats_new_store">新增“商店”：在这里安装和更新各播放器插件。</string>
+    <string name="whats_new_status">“状态”页显示各项功能是否在系统界面中生效，短时诊断也在那里。</string>
+    <string name="whats_new_launcher">现在可以从桌面图标打开 Bridge；不需要的话可以在本页底部隐藏。</string>
+    <string name="whats_new_kept">原有的外观、翻译、开头清理等设置都保留，不需要重新设置。</string>
+    <string name="whats_new_dismiss">知道了</string>
+    <string name="home_launcher_title">在桌面显示图标</string>
+    <string name="home_launcher_body">关闭后桌面不再显示 Bridge 图标，仍可从 LSPosed 的模块设置进入。部分桌面需要片刻才会刷新。</string>
+    <string name="home_launcher_shown">已在桌面显示图标</string>
+    <string name="home_launcher_hidden">已隐藏桌面图标</string>
 </resources>
