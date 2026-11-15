@@ -65,6 +65,15 @@ public final class BridgeSourceMap {
         FILES.put(Area.SYSTEMUI_RUNTIME, Arrays.asList(ENTRY_CLASS, SOURCE_ROOT + "OfficialLyricTextRenderer.java",
                 SOURCE_ROOT + "OplusMediaPolicyHooks.java", SOURCE_ROOT + "ScreenTimeoutController.java",
                 SOURCE_ROOT + "TranslationActionViewTracker.java"));
+        // E-4b (2026-11-15): the pkg-actions rule hook, rule-0 sets and translation preference store
+        // moved to TranslationActionController.
+        FILES.put(Area.OPLUS_POLICY, Arrays.asList(SOURCE_ROOT + "OplusMediaPolicyHooks.java",
+                SOURCE_ROOT + "TranslationActionController.java", ENTRY_CLASS));
+        FILES.put(Area.TRANSLATION_ACTION, Arrays.asList(SOURCE_ROOT + "TranslationActionViewTracker.java",
+                SOURCE_ROOT + "TranslationActionController.java", ENTRY_CLASS));
+        FILES.put(Area.SYSTEMUI_RUNTIME, Arrays.asList(ENTRY_CLASS, SOURCE_ROOT + "OfficialLyricTextRenderer.java",
+                SOURCE_ROOT + "OplusMediaPolicyHooks.java", SOURCE_ROOT + "ScreenTimeoutController.java",
+                SOURCE_ROOT + "TranslationActionViewTracker.java", SOURCE_ROOT + "TranslationActionController.java"));
     }
 
     private BridgeSourceMap() {

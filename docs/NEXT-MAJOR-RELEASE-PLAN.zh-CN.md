@@ -1932,6 +1932,72 @@ E-2b 到 E-2d 都读写入口类的实例状态或调用 `hook()`，不能只靠
 
 **结果：** 用户安装候选 `b5d61931…`、重启 SystemUI 后，设备冒烟 1–5 项通过（2026-11-15）。
 
+### 15.8.9 E-4b 实施记录：rule-0 与翻译偏好外移（2026-11-15，已提交，未推送）
+
+**分支：** Bridge `feat/e4-translation-controller`（基于 `fdd3a2d`）。
+
+**移动了什么：** 新类 `TranslationActionController`（同包、final、包内可见），共 18 个方法、11 个字段：
+- **OPlus pkg-actions 规则：**
+  - `onOplusMediaUpdatePkgActionsRule` Hook 回调；
+  - 原始快照与上次应用的参数；
+  - 带防重入的 replay；
+  - 解锁时恢复原生规则；
+  - rule-0 的三个包集合（已知、待刷新、已刷新）及其 ensure / drop / refresh / mark。
+- **翻译偏好存储：**
+  - 每个播放器的 lyricInfo 译文开关读取、加载与缓存；
+  - 翻译按钮开关及其全局默认值；
+  - 偏好键名与包名规整（两个 static）；
+  - 是否把偏好应用到渲染器的判定。
+- `Host` 有 6 个方法：`isDeviceKeyguardLocked`、`currentTranslationPreferencePackage`、`defaultTranslationEnabled`、`translationButtonDebug`、`info`、`error`。
+- 构造参数另传 `officialLyricTextRenderer`（独立类）。
+
+**留在入口类的（E-4 原计划的其余部分）：**
+- 设置广播处理 `handlePlayerTranslationSettingsChanged`（131 行），以及 `clearTranslationPreferenceOverrides`、`setLyricInfoTranslationEnabled`、`toggleLyricInfoTranslation`。它们同时改 `lyricUiConfig`、渲染器配置、布局 generation、Recycler 锚点和设置回执，属于 E-7 的“设置应用改为发布快照”。
+- MediaData rebind：`requestOplusTranslationActionRebind`、`requestDirectMediaDataUpdateState` 等。它读取播放控制器绑定，属于 E-5。
+- `installSystemUiTranslationToggleActionHook` 与 `onOplusMediaCreateActionsFromState`。后者读取当前模型、Provider payload 和最近的 media button，随 E-5 的模型真值一起迁。
+- 这些代码仍直接读写控制器的 4 个字段：
+  - 偏好的两个缓存；
+  - 按钮开关缓存；
+  - `oplusUpdatePkgActionsRuleMethod`，由入口类安装 Hook 时写入。
+
+**访问点：**
+- 入口类引用加 `translationController.` 前缀。
+- 安装处改为 `translationController::onOplusMediaUpdatePkgActionsRule`。
+- 两个 static 改为静态导入。
+- 已有两个匿名 Host（action binder、E-4a 追踪器）中的同名转发，接收者从 `LockscreenLyricsModule.this` 改为 `translationController`。
+- `TRANSLATION_PREFERENCES_NAME`、`TRANSLATION_PREFERENCE_KEY` 去掉 `private`。
+- 两个契约测试的定位串去掉 `private `，断言不变：
+  - `OplusPkgActionsRuleReplayContractTest` 定位 Hook 回调；
+  - `SystemUiLyricSupportGateContractTest` 以它作为上一个处理函数的结束标记。
+- `BridgeSourceMap` 的 `OPLUS_POLICY`、`TRANSLATION_ACTION`、`SYSTEMUI_RUNTIME` 加入新文件。
+
+**一处语义差异（已核对）：**
+- `ensureTranslationPreferenceLoaded` 里的 `synchronized (this)` 文字不变，但锁对象从模块实例变成了控制器实例。
+- 入口类其余 `synchronized (this)` 块中，只有 `installSystemUiTranslationToggleActionHook` 会调到它。所以加锁顺序固定为“模块 → 控制器”。
+- 控制器的这段同步块内不再获取模块锁：只读静态 Context、两个无锁的 Host 读取，再调用渲染器。所以不存在锁顺序反转。
+- 其他写偏好缓存的入口类代码原本就不在锁内，行为不变。
+
+**证据：**
+- 方法体比对（`--strip translationController. --strip this:: --strip translationController:: --strip host.`）：
+  - 0 个删除；
+  - 唯一改动是 `defaultTranslationPreferenceValue`：两处 `lyricUiConfig.defaultTranslationEnabled` 换成 `host.defaultTranslationEnabled()`；
+  - 新增 6 个：构造函数和 5 个同名转发。
+- 三份基线（Hook ID、日志 event、安装顺序）不变。
+- 入口类预算下调：12,596 → 12,339 行，字段 322 → 312，方法 496 → 478。
+- `verify-build-identity` 通过（368 个输入）。
+- 本地 1056 tests / 0 fail / 6 skip，Debug 与 R8 通过。
+
+**候选：** `artifacts/e4-translation-controller-20261115/Bridge-E4b-controller-debug-r1.apk`（`8f613bfe…`）。
+
+**设备冒烟（重启 SystemUI；带翻译的逐字歌词）：**
+1. 锁屏翻译按钮出现，点它译文切换。重启 SystemUI 后，开关状态被记住。
+2. 解锁进桌面后，媒体卡片恢复播放器原生按钮（rule-0 恢复）；再锁屏，翻译按钮回来。
+3. 切到另一个支持翻译的播放器，各自的译文开关互不影响。
+4. 在 App 的“播放器翻译设置”里改某个播放器的默认译文或按钮开关，锁屏立即生效。
+5. 保留原生按钮行的播放器（如有）在锁屏上仍保持原生按钮行。
+
+**结果：** 用户安装候选 `8f613bfe…`、重启 SystemUI 后，设备冒烟 1–5 项通过（2026-11-15）。
+
 ### 15.9 未覆盖
 
 - **Providers 仓库**的结构与性能没有做同等盘点。若要纳入“完整优化”，需要另做一次基线（13 个专用模块的 Hooker、`provider-core`、Universal），本节不对其作任何结论。

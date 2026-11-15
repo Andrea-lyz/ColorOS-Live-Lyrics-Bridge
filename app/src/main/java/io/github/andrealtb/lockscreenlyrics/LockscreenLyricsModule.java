@@ -109,6 +109,8 @@ import io.github.libxposed.api.XposedInterface;
 import io.github.libxposed.api.XposedModule;
 
 import static io.github.andrealtb.lockscreenlyrics.LyricLogDescriptions.*;
+import static io.github.andrealtb.lockscreenlyrics.TranslationActionController.normalizeTranslationPreferencePackage;
+import static io.github.andrealtb.lockscreenlyrics.TranslationActionController.translationPreferenceKeyForPackage;
 import static io.github.andrealtb.lockscreenlyrics.TranslationActionViewTracker.isTranslationActionDescription;
 import static io.github.andrealtb.lockscreenlyrics.ScreenTimeoutController.SCREEN_TIMEOUT_MODEL_EVIDENCE_GRACE_MS;
 import static io.github.andrealtb.lockscreenlyrics.ScreenTimeoutController.SCREEN_TIMEOUT_VISIBLE_LYRIC_NOTE_THROTTLE_MS;
@@ -185,8 +187,8 @@ public final class LockscreenLyricsModule extends XposedModule {
             "oplus-media-translation-toggle-action";
     private static final String TRANSLATION_TOGGLE_ACTION =
             LyricInfoContract.ACTION_TOGGLE_TRANSLATION;
-    private static final String TRANSLATION_PREFERENCES_NAME = LyricUiSettings.PREFERENCES_NAME;
-    private static final String TRANSLATION_PREFERENCE_KEY =
+    static final String TRANSLATION_PREFERENCES_NAME = LyricUiSettings.PREFERENCES_NAME;
+    static final String TRANSLATION_PREFERENCE_KEY =
             LyricUiSettings.TRANSLATION_PREFERENCE_KEY;
     private static final String TRANSLATION_ACTION_NAME = "\u7ffb\u8bd1";
     private static final long OFFICIAL_DRAW_FRAME_TRANSIENT_MISS_GRACE_MS =
@@ -371,21 +373,9 @@ public final class LockscreenLyricsModule extends XposedModule {
     private volatile boolean injectedTranslationToggleActionHookInstalled;
     private volatile boolean injectedTranslationToggleActionLogged;
     private volatile boolean injectedTranslationToggleActionFailureLogged;
-    private volatile Object oplusMediaActionPrioritySelector;
-    private volatile Method oplusUpdatePkgActionsRuleMethod;
-    private volatile Object[] lastOplusPkgActionsRuleArgs;
-    private volatile Object[] rawOplusPkgActionsRuleArgs;
     private String lastTranslationModelRebindKey = "";
-    private final Set<String> translationToggleRule0Packages =
-            ConcurrentHashMap.newKeySet();
-    private final Set<String> pendingTranslationToggleRule0Packages =
-            ConcurrentHashMap.newKeySet();
-    private final Set<String> refreshedTranslationToggleRule0Packages =
-            ConcurrentHashMap.newKeySet();
     private final Set<String> providerDeclaredTranslationTogglePackages =
             ConcurrentHashMap.newKeySet();
-    private final Map<String, Boolean> translationButtonEnabledByPackage =
-            new ConcurrentHashMap<>();
     private final Map<String, WeakReference<Object>> latestTranslationMediaButtons =
             new ConcurrentHashMap<>();
     private final TranslationToggleMediaActionBinder translationToggleActionBinder =
@@ -402,7 +392,7 @@ public final class LockscreenLyricsModule extends XposedModule {
 
                 @Override
                 public boolean isLyricInfoTranslationEnabled(String packageName) {
-                    return LockscreenLyricsModule.this.isLyricInfoTranslationEnabled(packageName);
+                    return translationController.isLyricInfoTranslationEnabled(packageName);
                 }
 
                 @Override
@@ -415,10 +405,6 @@ public final class LockscreenLyricsModule extends XposedModule {
                     LockscreenLyricsModule.this.toggleLyricInfoTranslation(packageName);
                 }
             });
-    private final Set<String> loadedTranslationPreferencePackages =
-            ConcurrentHashMap.newKeySet();
-    private final Map<String, Boolean> lyricInfoTranslationEnabledByPackage =
-            new ConcurrentHashMap<>();
     private volatile boolean screenTimeoutReceiverRegistered;
     private volatile boolean systemUiLyricModeKeepAwakeActive;
     private volatile boolean lyricUiScrollScaleEnabled;
@@ -576,8 +562,6 @@ public final class LockscreenLyricsModule extends XposedModule {
     private View activeLyricRefreshAnchor;
     private volatile long lastRecyclerAdapterNotifyGuardLogAt;
     private final ThreadLocal<Boolean> suppressLyricsRecyclerHook = new ThreadLocal<>();
-    /** Set while the Bridge replays updatePkgActionsRule; see {@link #replayOplusPkgActionsRule}. */
-    private final ThreadLocal<Boolean> replayingOplusPkgActionsRule = new ThreadLocal<>();
     private final OfficialLyricTextRenderer officialLyricTextRenderer = new OfficialLyricTextRenderer();
     private final LyricRenderTransactions<WordLyricModel> lyricRenderTransactions =
             new LyricRenderTransactions<>();
@@ -867,12 +851,12 @@ public final class LockscreenLyricsModule extends XposedModule {
 
                 @Override
                 public boolean userWantsTranslationButton(String packageName) {
-                    return LockscreenLyricsModule.this.userWantsTranslationButton(packageName);
+                    return translationController.userWantsTranslationButton(packageName);
                 }
 
                 @Override
                 public boolean isLyricInfoTranslationEnabled(String packageName) {
-                    return LockscreenLyricsModule.this.isLyricInfoTranslationEnabled(packageName);
+                    return translationController.isLyricInfoTranslationEnabled(packageName);
                 }
 
                 @Override
@@ -887,6 +871,39 @@ public final class LockscreenLyricsModule extends XposedModule {
             },
             translationToggleActionBinder,
             mainHandler);
+    private final TranslationActionController translationController = new TranslationActionController(
+            new TranslationActionController.Host() {
+                @Override
+                public boolean isDeviceKeyguardLocked(Context context) {
+                    return LockscreenLyricsModule.this.isDeviceKeyguardLocked(context);
+                }
+
+                @Override
+                public String currentTranslationPreferencePackage() {
+                    return LockscreenLyricsModule.this.currentTranslationPreferencePackage();
+                }
+
+                @Override
+                public boolean defaultTranslationEnabled() {
+                    return lyricUiConfig.defaultTranslationEnabled;
+                }
+
+                @Override
+                public void translationButtonDebug(String message) {
+                    LockscreenLyricsModule.this.translationButtonDebug(message);
+                }
+
+                @Override
+                public void info(BridgeDebugArea area, String event, String message) {
+                    LockscreenLyricsModule.this.info(area, event, message);
+                }
+
+                @Override
+                public void error(String message, Throwable throwable) {
+                    LockscreenLyricsModule.this.error(message, throwable);
+                }
+            },
+            officialLyricTextRenderer);
     private final Object systemUiPlaybackControllerLock = new Object();
     private PlaybackControllerBinding systemUiPlaybackControllerBinding;
     private long nextSystemUiPlaybackControllerEpoch;
@@ -1182,8 +1199,8 @@ public final class LockscreenLyricsModule extends XposedModule {
                 hook(updatePkgActionsRule)
                         .setId(HOOK_ID_UPDATE_PKG_ACTIONS_RULE)
                         .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
-                        .intercept(this::onOplusMediaUpdatePkgActionsRule);
-                oplusUpdatePkgActionsRuleMethod = updatePkgActionsRule;
+                        .intercept(translationController::onOplusMediaUpdatePkgActionsRule);
+                translationController.oplusUpdatePkgActionsRuleMethod = updatePkgActionsRule;
 
                 oplusMediaPolicyHooksInstalled = true;
                 infoAlways(BridgeDebugArea.BOOTSTRAP, BridgeEvents.HOOK_INSTALLED, "Hooked OPlus media policy bypass"
@@ -1193,38 +1210,6 @@ public final class LockscreenLyricsModule extends XposedModule {
                 error("Failed to hook OPlus media policy bypass", t);
             }
         }
-    }
-
-    private Object onOplusMediaUpdatePkgActionsRule(XposedInterface.Chain chain) throws Throwable {
-        if (Boolean.TRUE.equals(replayingOplusPkgActionsRule.get())) {
-            // A Bridge replay already carries the exact rules to apply. Recording it as the raw
-            // vendor snapshot would make the unlock restore re-apply the patched rules.
-            return chain.proceed();
-        }
-        oplusMediaActionPrioritySelector = chain.getThisObject();
-        List<Object> args = chain.getArgs();
-        if (args.isEmpty() || !(args.get(0) instanceof Map)) {
-            return chain.proceed();
-        }
-
-        Object[] rawArgs = args.toArray(new Object[0]);
-        rawOplusPkgActionsRuleArgs = TranslationActionRulePolicy.snapshotRawArgs(rawArgs);
-
-        Context lockContext = currentApplicationContext();
-        boolean keyguardLocked = isDeviceKeyguardLocked(lockContext);
-        if (!keyguardLocked) {
-            lastOplusPkgActionsRuleArgs = rawArgs.clone();
-            return chain.proceed();
-        }
-
-        ArrayList<String> knownTranslationPackages =
-                new ArrayList<>(translationToggleRule0Packages);
-        Object[] patchedArgs = TranslationActionRulePolicy.patch(
-                rawArgs, knownTranslationPackages);
-        lastOplusPkgActionsRuleArgs = patchedArgs.clone();
-        Object result = chain.proceed(patchedArgs);
-        markTranslationToggleRule0PackagesRefreshed(knownTranslationPackages);
-        return result;
     }
 
     private void installSystemUiTranslationToggleActionHook(
@@ -1237,7 +1222,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 return;
             }
             try {
-                ensureTranslationPreferenceLoaded();
+                translationController.ensureTranslationPreferenceLoaded();
                 Method createActionsFromState = targets.createActionsFromState;
                 createActionsFromState.setAccessible(true);
                 hook(createActionsFromState)
@@ -1277,14 +1262,14 @@ public final class LockscreenLyricsModule extends XposedModule {
                 : controllerArg.getClass().getName()));
         if (hasTranslationAction || canOverrideWithTranslation) {
             if (PlayerSystemUiPolicy.preservesNativeActionRow(packageName)) {
-                dropTranslationToggleRule0(packageName);
+                translationController.dropTranslationToggleRule0(packageName);
                 translationButtonDebug("Rule0 ensure skipped: player keeps its native action row"
                         + ", package=" + nullToEmpty(packageName));
             } else {
-                ensureTranslationToggleRule0(packageName);
+                translationController.ensureTranslationToggleRule0(packageName);
             }
         } else {
-            dropTranslationToggleRule0(packageName);
+            translationController.dropTranslationToggleRule0(packageName);
         }
 
         Object result = chain.proceed();
@@ -1300,7 +1285,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                     translationButtonDebug("createActionsFromState result for "
                             + packageName
                             + ", class=" + result.getClass().getName());
-                    boolean userWantsButton = keyguardLocked && userWantsTranslationButton(packageName);
+                    boolean userWantsButton = keyguardLocked && translationController.userWantsTranslationButton(packageName);
                     translationToggleActionBinder.applyTranslationToggle(
                             packageName,
                             result,
@@ -1343,193 +1328,19 @@ public final class LockscreenLyricsModule extends XposedModule {
         return hasCustomAction(state, TRANSLATION_TOGGLE_ACTION);
     }
 
-    private void ensureTranslationToggleRule0(String packageName) {
-        if (TextUtils.isEmpty(packageName)
-                ) {
-            translationButtonDebug("skip Rule0 ensure, package=" + nullToEmpty(packageName)
-                    + ", reason=empty");
-            return;
-        }
-        boolean added = translationToggleRule0Packages.add(packageName);
-        if (!refreshedTranslationToggleRule0Packages.contains(packageName)) {
-            pendingTranslationToggleRule0Packages.add(packageName);
-        }
-        translationButtonDebug("ensure Rule0 package=" + packageName
-                + ", added=" + added
-                + ", pending=" + pendingTranslationToggleRule0Packages.contains(packageName)
-                + ", refreshed=" + refreshedTranslationToggleRule0Packages.contains(packageName));
-        refreshPendingTranslationToggleRule0Packages();
-    }
-
-    /**
-     * Keeps a native-action-row player out of the forced Rule0 refresh so the cached, already
-     * patched argument map cannot re-apply Rule0 to it on the next {@code updatePkgActionsRule}.
-     */
-    private void restoreOriginalPkgActionsRules() {
-        Object selector = oplusMediaActionPrioritySelector;
-        Method updateMethod = oplusUpdatePkgActionsRuleMethod;
-        Object[] rawSnapshot = rawOplusPkgActionsRuleArgs;
-        if (selector == null || updateMethod == null || rawSnapshot == null) {
-            return;
-        }
-        try {
-            synchronized (selector) {
-                Object[] cleanArgs = TranslationActionRulePolicy.snapshotRawArgs(rawSnapshot);
-                replayOplusPkgActionsRule(updateMethod, selector, cleanArgs);
-                lastOplusPkgActionsRuleArgs = cleanArgs.clone();
-            }
-            translationButtonDebug("Restored native OPlus action rules from clean snapshot");
-        } catch (Throwable t) {
-            error("Failed to restore native OPlus action rules from snapshot", t);
-        }
-    }
-
-    /**
-     * Applies rules the Bridge prepared itself. The call re-enters the updatePkgActionsRule hook
-     * on this thread, which then passes it through unchanged.
-     */
-    private void replayOplusPkgActionsRule(Method updateMethod, Object selector, Object[] args)
-            throws ReflectiveOperationException {
-        replayingOplusPkgActionsRule.set(Boolean.TRUE);
-        try {
-            updateMethod.invoke(selector, args);
-        } finally {
-            replayingOplusPkgActionsRule.remove();
-        }
-    }
-
-    private void dropTranslationToggleRule0(String packageName) {
-        if (TextUtils.isEmpty(packageName)) {
-            return;
-        }
-        translationToggleRule0Packages.remove(packageName);
-        pendingTranslationToggleRule0Packages.remove(packageName);
-        refreshedTranslationToggleRule0Packages.remove(packageName);
-    }
-
-    private void refreshPendingTranslationToggleRule0Packages() {
-        ArrayList<String> pendingPackages = new ArrayList<>();
-        for (String packageName : pendingTranslationToggleRule0Packages) {
-            if (refreshedTranslationToggleRule0Packages.contains(packageName)) {
-                pendingTranslationToggleRule0Packages.remove(packageName);
-            } else {
-                pendingPackages.add(packageName);
-            }
-        }
-        if (pendingPackages.isEmpty()) {
-            translationButtonDebug("refresh Rule0 skipped: no pending packages");
-            return;
-        }
-
-        Object selector = oplusMediaActionPrioritySelector;
-        Method updateMethod = oplusUpdatePkgActionsRuleMethod;
-        Object[] baseArgs = rawOplusPkgActionsRuleArgs != null ? rawOplusPkgActionsRuleArgs : lastOplusPkgActionsRuleArgs;
-        if (selector == null
-                || updateMethod == null
-                || baseArgs == null) {
-            translationButtonDebug("refresh Rule0 waiting, pending=" + pendingPackages
-                    + ", selector=" + (selector != null)
-                    + ", updateMethod=" + (updateMethod != null)
-                    + ", baseArgs=" + (baseArgs != null));
-            return;
-        }
-
-        try {
-            ArrayList<String> knownTranslationPackages = new ArrayList<>();
-            synchronized (selector) {
-                Object[] refreshArgs = TranslationActionRulePolicy.snapshotRawArgs(baseArgs);
-                if (!(refreshArgs[0] instanceof Map)) {
-                    return;
-                }
-                for (String packageName : translationToggleRule0Packages) {
-                    if (!PlayerSystemUiPolicy.preservesNativeActionRow(packageName)) {
-                        knownTranslationPackages.add(packageName);
-                    }
-                }
-                refreshArgs = TranslationActionRulePolicy.patch(
-                        refreshArgs, knownTranslationPackages);
-                replayOplusPkgActionsRule(updateMethod, selector, refreshArgs);
-                lastOplusPkgActionsRuleArgs = refreshArgs.clone();
-            }
-            markTranslationToggleRule0PackagesRefreshed(knownTranslationPackages);
-            info(BridgeDebugArea.PLAYER_SPECIAL, BridgeEvents.DETAIL, "Enabled OPlus Rule0 through updatePkgActionsRule for translation providers "
-                    + pendingPackages);
-        } catch (Throwable t) {
-            error("Failed to enable OPlus Rule0 through updatePkgActionsRule for "
-                    + pendingPackages, t);
-        }
-    }
-
-    private void markTranslationToggleRule0PackagesRefreshed(List<String> packageNames) {
-        for (String packageName : packageNames) {
-            if (TextUtils.isEmpty(packageName)) {
-                continue;
-            }
-            refreshedTranslationToggleRule0Packages.add(packageName);
-            pendingTranslationToggleRule0Packages.remove(packageName);
-        }
-    }
-
     private void toggleLyricInfoTranslation(String packageName) {
-        setLyricInfoTranslationEnabled(packageName, !isLyricInfoTranslationEnabled(packageName));
-    }
-
-    private boolean isLyricInfoTranslationEnabled() {
-        return isLyricInfoTranslationEnabled(currentTranslationPreferencePackage());
-    }
-
-    private boolean isLyricInfoTranslationEnabled(String packageName) {
-        String preferencePackage = normalizeTranslationPreferencePackage(packageName);
-        ensureTranslationPreferenceLoaded(preferencePackage);
-        Boolean enabled = lyricInfoTranslationEnabledByPackage.get(preferencePackage);
-        return enabled == null || enabled;
-    }
-
-    private void ensureTranslationPreferenceLoaded() {
-        ensureTranslationPreferenceLoaded(currentTranslationPreferencePackage());
-    }
-
-    private void ensureTranslationPreferenceLoaded(String packageName) {
-        String preferencePackage = normalizeTranslationPreferencePackage(packageName);
-        if (loadedTranslationPreferencePackages.contains(preferencePackage)) {
-            return;
-        }
-        synchronized (this) {
-            if (loadedTranslationPreferencePackages.contains(preferencePackage)) {
-                return;
-            }
-            Context context = currentApplicationContext();
-            if (context == null) {
-                officialLyricTextRenderer.setTranslationEnabledImmediately(
-                        isLyricInfoTranslationEnabledFromCache(preferencePackage));
-                return;
-            }
-            SharedPreferences preferences = context.getSharedPreferences(
-                    TRANSLATION_PREFERENCES_NAME,
-                    Context.MODE_PRIVATE);
-            boolean defaultValue = defaultTranslationPreferenceValue(
-                    preferences,
-                    preferencePackage);
-            boolean enabled = preferences.getBoolean(
-                    translationPreferenceKeyForPackage(preferencePackage),
-                    defaultValue);
-            lyricInfoTranslationEnabledByPackage.put(preferencePackage, enabled);
-            loadedTranslationPreferencePackages.add(preferencePackage);
-            if (shouldApplyTranslationPreferenceToRenderer(preferencePackage)) {
-                officialLyricTextRenderer.setTranslationEnabledImmediately(enabled);
-            }
-        }
+        setLyricInfoTranslationEnabled(packageName, !translationController.isLyricInfoTranslationEnabled(packageName));
     }
 
     private void setLyricInfoTranslationEnabled(String packageName, boolean enabled) {
         String preferencePackage = normalizeTranslationPreferencePackage(packageName);
-        ensureTranslationPreferenceLoaded(preferencePackage);
-        if (isLyricInfoTranslationEnabledFromCache(preferencePackage) == enabled) {
+        translationController.ensureTranslationPreferenceLoaded(preferencePackage);
+        if (translationController.isLyricInfoTranslationEnabledFromCache(preferencePackage) == enabled) {
             return;
         }
 
-        lyricInfoTranslationEnabledByPackage.put(preferencePackage, enabled);
-        if (shouldApplyTranslationPreferenceToRenderer(preferencePackage)) {
+        translationController.lyricInfoTranslationEnabledByPackage.put(preferencePackage, enabled);
+        if (translationController.shouldApplyTranslationPreferenceToRenderer(preferencePackage)) {
             officialLyricTextRenderer.setTranslationEnabled(enabled);
         }
         Context context = currentApplicationContext();
@@ -1676,7 +1487,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                     BridgeEvents.TRANSLATION_ACTION_REBIND,
                     "Requested translation action MediaData rebind via " + directEntry
                             + " | package=" + safePackage
-                            + ", enabled=" + isLyricInfoTranslationEnabledFromCache(safePackage)
+                            + ", enabled=" + translationController.isLyricInfoTranslationEnabledFromCache(safePackage)
                             + ", keyguardLocked=" + isDeviceKeyguardLocked(currentApplicationContext()));
             return true;
         }
@@ -1722,7 +1533,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                             + " | package=" + safePackage
                             + ", key=" + resolvedKey
                             + ", enabled="
-                            + isLyricInfoTranslationEnabledFromCache(safePackage)
+                            + translationController.isLyricInfoTranslationEnabledFromCache(safePackage)
                             + ", playbackState=" + playbackState.getState());
             return true;
         } catch (Throwable throwable) {
@@ -2090,84 +1901,16 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
     }
 
-    private boolean shouldApplyTranslationPreferenceToRenderer(String packageName) {
-        String currentPackage = currentTranslationPreferencePackage();
-        return TextUtils.isEmpty(currentPackage)
-                || normalizeTranslationPreferencePackage(packageName).equals(currentPackage);
-    }
-
     private void applyTranslationPreferenceForPackage(String packageName) {
         String preferencePackage = normalizeTranslationPreferencePackage(packageName);
-        ensureTranslationPreferenceLoaded(preferencePackage);
+        translationController.ensureTranslationPreferenceLoaded(preferencePackage);
         officialLyricTextRenderer.setTranslationEnabledImmediately(
-                isLyricInfoTranslationEnabledFromCache(preferencePackage));
+                translationController.isLyricInfoTranslationEnabledFromCache(preferencePackage));
         mainHandler.post(translationTracker::refreshTranslationActionViewVisibility);
-    }
-
-    private boolean isLyricInfoTranslationEnabledFromCache(String packageName) {
-        Boolean enabled = lyricInfoTranslationEnabledByPackage.get(
-                normalizeTranslationPreferencePackage(packageName));
-        return enabled == null || enabled;
     }
 
     private String currentTranslationPreferencePackage() {
         return nullToEmpty(currentLyricProviderPackage);
-    }
-
-    private static String normalizeTranslationPreferencePackage(String packageName) {
-        return TextUtils.isEmpty(packageName) ? "" : packageName;
-    }
-
-    private static String translationPreferenceKeyForPackage(String packageName) {
-        String preferencePackage = normalizeTranslationPreferencePackage(packageName);
-        return TextUtils.isEmpty(preferencePackage)
-                ? TRANSLATION_PREFERENCE_KEY
-                : TRANSLATION_PREFERENCE_KEY + "." + preferencePackage;
-    }
-
-    private boolean defaultTranslationPreferenceValue(
-            SharedPreferences preferences,
-            String packageName) {
-        if (TextUtils.isEmpty(packageName)) {
-            return lyricUiConfig.defaultTranslationEnabled;
-        }
-        return preferences.getBoolean(
-                LyricUiSettings.translationDefaultKeyForPackage(
-                        normalizeTranslationPreferencePackage(packageName)),
-                lyricUiConfig.defaultTranslationEnabled);
-    }
-
-    private boolean userWantsTranslationButton(String packageName) {
-        if (TextUtils.isEmpty(packageName)) {
-            return defaultTranslationButtonEnabled();
-        }
-        Boolean cached = translationButtonEnabledByPackage.get(packageName);
-        if (cached != null) {
-            return cached;
-        }
-        Context context = currentApplicationContext();
-        if (context == null) {
-            return defaultTranslationButtonEnabled();
-        }
-        boolean enabled = context.getSharedPreferences(
-                        TRANSLATION_PREFERENCES_NAME,
-                        Context.MODE_PRIVATE)
-                .getBoolean(
-                        LyricUiSettings.translationButtonKeyForPackage(packageName),
-                        defaultTranslationButtonEnabled());
-        translationButtonEnabledByPackage.put(packageName, enabled);
-        return enabled;
-    }
-
-    private boolean defaultTranslationButtonEnabled() {
-        Context context = currentApplicationContext();
-        if (context == null) {
-            return true;
-        }
-        return LyricUiSettings.defaultTranslationButtonEnabled(
-                context.getSharedPreferences(
-                        TRANSLATION_PREFERENCES_NAME,
-                        Context.MODE_PRIVATE));
     }
 
     private void handlePlayerTranslationSettingsChanged(Context context, Intent intent) {
@@ -2178,7 +1921,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 TRANSLATION_PREFERENCES_NAME,
                 Context.MODE_PRIVATE);
         String currentPackage = currentTranslationPreferencePackage();
-        boolean previousCurrentValue = isLyricInfoTranslationEnabled(currentPackage);
+        boolean previousCurrentValue = translationController.isLyricInfoTranslationEnabled(currentPackage);
         long revision = intent.getLongExtra(LyricUiSettings.EXTRA_CONFIG_REVISION, -1L);
         String source = nullToEmpty(intent.getStringExtra(
                 LyricUiSettings.EXTRA_SETTINGS_SOURCE));
@@ -2198,7 +1941,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                                     LyricUiSettings.EXTRA_DEFAULT_TRANSLATION_BUTTON_ENABLED,
                                     true))
                     .apply();
-            translationButtonEnabledByPackage.clear();
+            translationController.translationButtonEnabledByPackage.clear();
         }
         LyricUiConfig previousConfig = lyricUiConfig;
         LyricUiConfig updatedConfig = LyricUiSettings.withGlobalTranslationDefault(
@@ -2253,7 +1996,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 editor.putBoolean(
                         LyricUiSettings.translationButtonKeyForPackage(packageName),
                         buttonValues[i]);
-                translationButtonEnabledByPackage.put(packageName, buttonValues[i]);
+                translationController.translationButtonEnabledByPackage.put(packageName, buttonValues[i]);
             }
         }
 
@@ -2274,19 +2017,19 @@ public final class LockscreenLyricsModule extends XposedModule {
             affectedPackages.add(currentPackage);
         }
         for (String packageName : affectedPackages) {
-            lyricInfoTranslationEnabledByPackage.remove(packageName);
-            loadedTranslationPreferencePackages.remove(packageName);
+            translationController.lyricInfoTranslationEnabledByPackage.remove(packageName);
+            translationController.loadedTranslationPreferencePackages.remove(packageName);
         }
 
         if (affectedPackages.contains(currentPackage)) {
-            boolean defaultValue = defaultTranslationPreferenceValue(
+            boolean defaultValue = translationController.defaultTranslationPreferenceValue(
                     preferences,
                     currentPackage);
             boolean enabled = preferences.getBoolean(
                     translationPreferenceKeyForPackage(currentPackage),
                     defaultValue);
-            lyricInfoTranslationEnabledByPackage.put(currentPackage, enabled);
-            loadedTranslationPreferencePackages.add(currentPackage);
+            translationController.lyricInfoTranslationEnabledByPackage.put(currentPackage, enabled);
+            translationController.loadedTranslationPreferencePackages.add(currentPackage);
             if (previousCurrentValue != enabled) {
                 officialLyricTextRenderer.setTranslationEnabled(enabled);
                 int generation = ++translationLayoutGeneration;
@@ -2326,8 +2069,8 @@ public final class LockscreenLyricsModule extends XposedModule {
                             currentLyricProviderPayload == null
                                     ? null
                                     : currentLyricProviderPayload.translationLyric)
-                            && userWantsTranslationButton(packageName),
-                    userWantsTranslationButton(packageName),
+                            && translationController.userWantsTranslationButton(packageName),
+                    translationController.userWantsTranslationButton(packageName),
                     currentLyricProviderPackage,
                     currentWordLyricModel == null
                             ? -1
@@ -2394,8 +2137,8 @@ public final class LockscreenLyricsModule extends XposedModule {
             }
         }
         editor.apply();
-        lyricInfoTranslationEnabledByPackage.clear();
-        loadedTranslationPreferencePackages.clear();
+        translationController.lyricInfoTranslationEnabledByPackage.clear();
+        translationController.loadedTranslationPreferencePackages.clear();
         officialLyricTextRenderer.setTranslationEnabled(enabled);
         int generation = ++translationLayoutGeneration;
         mainHandler.post(() -> refreshLyricViewsAfterTranslationToggle(generation));
@@ -4862,7 +4605,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                         currentWordLyricModel == null
                                 ? -1
                                 : currentWordLyricModel.translationCount(),
-                        userWantsTranslationButton(currentTranslationPreferencePackage()))) {
+                        translationController.userWantsTranslationButton(currentTranslationPreferencePackage()))) {
             Object[] args = chain.getArgs().toArray();
             // Keep the action slot measured so previous/play/next remain centered.
             args[0] = View.INVISIBLE;
@@ -4988,7 +4731,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                 + ", model=" + (model != null)
                 + ", translations=" + (model == null ? -1 : model.translationCount())
                 + ", trackedViews=" + translationTracker.rememberedTranslationActionViewCount()
-                + ", enabled=" + isLyricInfoTranslationEnabledFromCache(
+                + ", enabled=" + translationController.isLyricInfoTranslationEnabledFromCache(
                 currentTranslationPreferencePackage());
     }
 
@@ -10526,7 +10269,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                         // Check if device is actually locked (handles delay-lock window where screen was turned on before keyguard locked)
                         if (!isDeviceKeyguardLocked(receiverContext)) {
                             screenTurnedOffForLockState = false;
-                            restoreOriginalPkgActionsRules();
+                            translationController.restoreOriginalPkgActionsRules();
                             requestOplusTranslationActionRebind(currentTranslationPreferencePackage());
                         }
                         return;
@@ -10542,7 +10285,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                                 "Paused screen timeout keep-awake pending keyguard recheck",
                                 true);
                         screenTurnedOffForLockState = false;
-                        restoreOriginalPkgActionsRules();
+                        translationController.restoreOriginalPkgActionsRules();
                         infoAlways(BridgeDebugArea.PLAYER_SPECIAL, BridgeEvents.TRANSLATION_ACTION_REBIND,
                                 "Keyguard unlocked user present, requesting rebind for " + currentTranslationPreferencePackage());
                         requestOplusTranslationActionRebind(currentTranslationPreferencePackage());
@@ -10732,7 +10475,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         boolean groupButton = preferences.getBoolean(
                 LyricUiSettings.translationButtonKeyForPackage(
                         UniversalPlayerBridgeContract.TRANSLATION_GROUP_PACKAGE),
-                defaultTranslationButtonEnabled());
+                translationController.defaultTranslationButtonEnabled());
         SharedPreferences.Editor editor = preferences.edit();
         for (String packageName : bound) {
             String defaultKey = LyricUiSettings.translationDefaultKeyForPackage(packageName);
@@ -10742,7 +10485,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             String buttonKey = LyricUiSettings.translationButtonKeyForPackage(packageName);
             if (!preferences.contains(buttonKey)) {
                 editor.putBoolean(buttonKey, groupButton);
-                translationButtonEnabledByPackage.put(packageName, groupButton);
+                translationController.translationButtonEnabledByPackage.put(packageName, groupButton);
             }
         }
         editor.apply();

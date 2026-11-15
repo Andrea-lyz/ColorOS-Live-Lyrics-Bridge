@@ -14,7 +14,7 @@ public final class OplusPkgActionsRuleReplayContractTest {
     @Test
     public void bridgeReplaysNeverReplaceTheRawVendorSnapshot() throws Exception {
         String module = BridgeSourceMap.read(BridgeSourceMap.Area.OPLUS_POLICY);
-        int hook = module.indexOf("private Object onOplusMediaUpdatePkgActionsRule(");
+        int hook = module.indexOf("Object onOplusMediaUpdatePkgActionsRule(");
         int guard = module.indexOf("if (Boolean.TRUE.equals(replayingOplusPkgActionsRule.get())) {", hook);
         int snapshot = module.indexOf(
                 "rawOplusPkgActionsRuleArgs = TranslationActionRulePolicy.snapshotRawArgs(rawArgs);", hook);
