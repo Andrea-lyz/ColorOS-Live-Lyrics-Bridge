@@ -1531,6 +1531,45 @@ E 系列（第 15 节）不单列里程碑：E-0 随 M1，E-1/E-2 在 C-04/C-05 
 - 再在“Bridge 模块关闭”的条件下用同一首歌做对照；
 - 必要时取 heap dump，看 Bitmap 与 View 的持有者。heap dump 含私人数据，只在本地分析，不入库。
 
+**静态排查（2026-11-15，源码阅读，未上设备）：**
+- Hook 侧持有 View 的集合：入口类的 `lyricsRecyclerViews`、`activeLyricTextViews`、`lyricRootViews`、`translationActionViews`、`VIEW_BLUR_DISABLED`、`translationBitmapMatchCache`，以及 `render/LyricRenderTransactions`、`ArtworkLyricColorTargets`、`ArtworkTransitionRegistry`。
+  - 它们都是 `WeakReference` 或 `WeakHashMap`，不会单独阻止回收。
+- 强引用集合都有移除路径：
+  - `ArtworkSessionRegistry.hosts` / `sessions` 在 detach 时移除；
+  - `DynamicArtworkRuntime.hosts` 在 detach 时移除；
+  - `KuWoArtworkSnapshotStore` 有上限，淘汰最旧项；
+  - `activeLyricRefreshCandidates` 是复用的临时列表。
+- 仅凭源码看不出无上限的强引用缓存。detach 是否每次都触发，需要设备数据。
+
+**用户要求缩短重测时长（2026-11-15）。** 改为：
+- 每轮 12 分钟，在第 0、3、6、9、12 分钟各取一次，共 5 个点；
+- 每次取之前先触发 GC；
+- “Bridge 开启”和“Bridge 关闭”各一轮，可以只先做开启这一轮，看曲线是否继续上升。
+
+**重测结果（Bridge 开启，用户授权 Root 触发 GC，2026-11-15）：**
+- 06:49:13 至 07:01:21 UTC，同一个 SystemUI 进程（pid 25243），逐字歌词持续播放。
+- 每次取点前执行 `su -c 'kill -10 <pid>'` 让 ART 做一次 GC，6 秒后读 `dumpsys meminfo`。
+- 原始数据在 `.perf/runs/20261115T064906Z-meminfo-gc-series-bridge-on/`。
+
+| 时间点 | TOTAL PSS | Java 堆 | Native 堆 | Graphics | Views |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 0 分钟 | 780,513 | 107,364 | 297,004 | 170,662 | 3,418 |
+| 3 分钟 | 799,690 | 95,544 | 326,072 | 170,834 | 3,545 |
+| 6 分钟 | 798,863 | 94,748 | 325,892 | 170,866 | 3,545 |
+| 9 分钟 | 794,429 | 93,492 | 318,596 | 170,866 | 3,545 |
+| 12 分钟 | 797,112 | 93,864 | 319,432 | 170,866 | 3,547 |
+
+（单位：KB；Views 为个数）
+
+**读数：**
+- GC 之后，第 3 到 12 分钟各项基本持平：PSS 在 ±3 MB 内，Java 堆下降后稳定，Native 堆在 319–326 MB，Views 稳定在 3,545 左右。没有出现持续上升。
+- 前一轮 30 分钟测量的结束点（未 GC）Native 堆为 374 MB，这一轮 GC 后为 297–326 MB。Bitmap 像素会随 Java 对象回收一起释放，因此前一轮的增长大部分很可能是尚未回收的对象，而不是被持有的内存。
+- 第 0 到第 3 分钟有一次上升（Native +29 MB，Views +127），之后稳定。原因未查，可能是锁屏/AOD 状态切换带来的一次性分配。
+
+**结论：**
+- 在 12 分钟、GC 后的窗口内，没有看到 Bridge 开启时的持续内存增长，暂不做“Bridge 关闭”的对照。
+- 这只覆盖了 12 分钟。更长时间的稳定性留到 M6 的长时回归里再测，P-9 保持“观察”。
+
 ### 15.5 与里程碑的排期关系
 
 | 时点 | E 系列工作 | 约束 |
