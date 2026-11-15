@@ -19,6 +19,14 @@ public final class ModuleStatusQuery {
     public interface Listener {
         /** Called once on the given handler when SystemUI replies. */
         void onReply(String injectedBuildId, long appliedUiRevision);
+
+        /**
+         * The same reply with SystemUI's whole read-only status bundle (capability rows and the
+         * other observations it already includes). Defaults to the two-value form.
+         */
+        default void onReply(String injectedBuildId, long appliedUiRevision, Bundle reply) {
+            onReply(injectedBuildId, appliedUiRevision);
+        }
     }
 
     private ModuleStatusQuery() {
@@ -36,7 +44,8 @@ public final class ModuleStatusQuery {
                     }
                     listener.onReply(
                             data.getString(BuildIdentity.RUNTIME_BUILD_ID, BuildIdentity.UNKNOWN),
-                            data.getLong(BuildIdentity.UI_CONFIG_REVISION, -1L));
+                            data.getLong(BuildIdentity.UI_CONFIG_REVISION, -1L),
+                            data);
                 }
             };
             Intent intent = new Intent(LyricUiSettings.ACTION_REQUEST_MODULE_STATUS)

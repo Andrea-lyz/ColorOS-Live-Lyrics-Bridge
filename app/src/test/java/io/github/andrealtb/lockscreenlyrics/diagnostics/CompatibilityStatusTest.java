@@ -193,4 +193,14 @@ public class CompatibilityStatusTest {
         assertEquals(Outcome.NOT_OBSERVED, row(Feature.TRANSLATION_BUTTON).outcome);
         assertEquals(Outcome.NOT_OBSERVED, row(Feature.DYNAMIC_ARTWORK).outcome);
     }
+
+    @Test public void wordProgressRecordsTheFillDecisionAndTheAodWait() {
+        Object line = new Object();
+        status.wordProgress(line, true, false);
+        assertEquals(Outcome.PREPARED, row(Feature.WORD_PROGRESS).outcome);
+        assertEquals(Reason.NONE, row(Feature.WORD_PROGRESS).reason);
+        status.wordProgress(line, false, true);
+        assertEquals(Outcome.WAITING, row(Feature.WORD_PROGRESS).outcome);
+        assertEquals(Reason.AOD_LOW_FRAME_RATE, row(Feature.WORD_PROGRESS).reason);
+    }
 }

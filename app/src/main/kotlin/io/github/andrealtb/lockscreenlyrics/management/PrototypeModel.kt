@@ -127,7 +127,14 @@ internal fun ConfigObservation.check(): Check = when (this) {
 internal sealed interface StatusQuery {
     data object Pending : StatusQuery
     data object NoReply : StatusQuery
-    data class Reply(val injectedBuildId: String?, val appliedUiRevision: Long) : StatusQuery
+    data class Reply(
+        val injectedBuildId: String?,
+        val appliedUiRevision: Long,
+        /** Capability rows from the same reply; null when SystemUI's build predates them. */
+        val capabilities: List<io.github.andrealtb.lockscreenlyrics.management.status.CapabilityRow>? = null,
+        /** elapsedRealtime when the reply arrived, to age the rows. */
+        val receivedAtElapsed: Long = 0L,
+    ) : StatusQuery
 }
 
 internal data class HomeStatus(

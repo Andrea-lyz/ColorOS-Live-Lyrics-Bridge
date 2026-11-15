@@ -11,7 +11,7 @@ import java.util.function.LongSupplier;
 /** Bounded, process-local observations. Queries neither resolve targets nor run business code. */
 public final class CompatibilityStatus {
     public enum Feature { CUSTOM_DRAW, COVER_GLOW, CHAR_LIFT, LINE_PROGRESS, TRANSLATION_PROGRESS,
-        TRANSLATION_BUTTON, DYNAMIC_ARTWORK }
+        TRANSLATION_BUTTON, DYNAMIC_ARTWORK, WORD_PROGRESS }
     public enum Truth { UNKNOWN, YES, NO }
     public enum Path { UNKNOWN, NATIVE, CUSTOM, MANUAL_COLOR, COVER_COLOR, CHAR_LIFT, DYNAMIC_ARTWORK }
     public enum Outcome { NOT_OBSERVED, DISABLED, WAITING, FALLBACK, REJECTED, PREPARED,
@@ -123,6 +123,16 @@ public final class CompatibilityStatus {
         observe(feature, owner, requested, eligible ? Truth.YES : Truth.UNKNOWN, eligible,
                 Path.CUSTOM, !requested ? Outcome.DISABLED : eligible ? Outcome.PREPARED : Outcome.WAITING,
                 reason, Scope.LYRIC_ROW);
+    }
+
+    /**
+     * Word-timed (karaoke) fill on the active line, recorded only for word-timed lines at the
+     * normal draw decision (plan §14.17). There is no setting for it, so it is always requested.
+     */
+    public void wordProgress(Object owner, boolean drawn, boolean aod) {
+        observe(Feature.WORD_PROGRESS, owner, true, drawn ? Truth.YES : Truth.UNKNOWN, drawn, Path.CUSTOM,
+                drawn ? Outcome.PREPARED : Outcome.WAITING,
+                drawn ? Reason.NONE : aod ? Reason.AOD_LOW_FRAME_RATE : Reason.TARGET_NOT_OBSERVED, Scope.LYRIC_ROW);
     }
 
     public void translationButton(Object owner, boolean requested, int translationCount, boolean selectedVisible) {

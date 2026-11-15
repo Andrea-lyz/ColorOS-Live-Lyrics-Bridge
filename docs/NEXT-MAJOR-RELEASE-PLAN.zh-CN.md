@@ -1172,6 +1172,25 @@ E 系列（第 15 节）不单列里程碑：E-0 随 M1，E-1/E-2 在 C-04/C-05 
 - 本地：Bridge 1036 tests / 0 fail / 6 skip（新增 `HomeDashboardTest` 2 项），Debug 与 R8 通过。候选 `artifacts/m5-setup-20261115/Bridge-M5-home-debug-r3.apk`（`70c0eaad…`）。外观待用户设备确认。
 - **r3 设备反馈：** dock 不是真正悬浮：各页底部整体留出了 dock 与导航条的空间，内容滚不到 dock 下面，露出一条背景；dock 内按钮只占上半部分，下方留白过多。**r4：** Scaffold 不再吃系统栏 inset，内容铺到屏幕底部、从 dock 下面滚过，只在列表末尾加滚动留白（dock 高度 + 导航条）；顶部单独留状态栏；dock 用 `navigationBarsPadding` 定位；按钮填满 dock 高度并居中，dock 内高 56dp、内边距 6dp。候选 `Bridge-M5-home-debug-r4.apk`（`ac677e22…`）。 **r4 设备结果：用户确认悬浮 dock、内容滚动与居中均通过。**
 
+### 14.17 M5 第二刀：“状态”页（2026-11-15，本地，未提交）
+
+**分支：** Bridge `feat/m5-status`（基于 `6b9be43`）。
+
+**数据来源（不新增通道，不改 SystemUI 侧）：** SystemUI 对 `ACTION_REQUEST_MODULE_STATUS` 的回复本来就包含 C-02 的能力行（`CompatibilityStatus.putStatus`，schema 1），此前 App 只读了构建号与配置修订号。`ModuleStatusQuery.Listener` 增加带完整回复 Bundle 的默认方法（旧调用方不受影响），管理页把能力行解析为 `status/CapabilityRow`。行内时间是 SystemUI 的 `elapsedRealtime`，与 App 同一系统时钟，用来显示“N 秒前记录”。
+
+**页面（`status/StatusScreen`）：**
+- 运行的版本：已安装的 Bridge 构建号、SystemUI 正在运行的构建号（检查中/无回应如实显示），旧版本时提示重启；“重新检查”。
+- 功能状态：7 项（歌词自绘、封面取色、字符上浮、逐行进度、译文进度、翻译按钮、动态封面），每项为图标 + 文字结论（已在设置中关闭 / 最近 60 秒没有记录 / 等待中 / 已退回系统原生效果 / 未生效 / 已执行到某阶段 / 未知）、原因、记录时间。顶部写明这是 SystemUI 内部的决策记录，不等于画面效果；SystemUI 未回复或旧构建不提供时明确说明，不显示空白。
+- 插件：已安装插件及其启用状态（与商店同源），点按进入商店。
+- 诊断：说明短时诊断（60 秒、默认关闭、预览后导出脱敏摘要）的用途，按钮打开现有 `BridgeDebugSettingsActivity`，不在新页重复实现。
+- 只读：本页不修改任何设置。
+
+**本地验证：** Bridge 1039 tests / 0 fail / 6 skip（`CapabilityModelTest` 3 项：结论映射与记录时长、未知功能与时钟倒挂、与 SystemUI 侧 Feature/Outcome/Reason 枚举一一对应且每个原因都有文案），Debug 与 R8 通过。候选 `artifacts/m5-status-20261115/Bridge-M5-status-debug-r1.apk`（`a933c026…`）。设备上的实际行内容待验证。
+
+**r1 设备反馈：** “逐行进度”与“动态封面”时而“已执行到”、时而“等待中”，与实际效果不一致（用户在逐字歌词下看到“等待中”）。原因：SystemUI 对同一功能按多个对象分别记录（每个歌词行、卡片/沉浸两个封面界面和播放器生命周期），快照的结论取“最近一次记录的那个对象”，App 原样显示，所以随最近记录者跳变。逐行进度只用于逐行时间轴的行，逐字歌词的行记作“等待 / 未观测到目标”，实为不适用。**r2（只改 App 侧投影，SystemUI 不变）：** 用回复中已有的 `outcomeSummary`（60 秒内存活对象的结果计数），只要有对象执行到某阶段就显示“已执行到”（取最远阶段），并写“N 处已执行，M 处未执行”；原因只在结论来自最近记录者时显示；逐行进度只剩等待时显示“当前歌词不是逐行时间轴，不使用此项”，名称改为“逐行歌词进度”。`CapabilityModelTest` 6/6，候选 `Bridge-M5-status-debug-r2.apk`（`694a241b…`）。
+
+**r2 设备结果：** 用户确认逐行进度与动态封面显示正常；提出增加“逐字歌词进度”。**r3（改动 SystemUI 侧，仅诊断记录）：** `CompatibilityStatus.Feature` 末尾追加 `WORD_PROGRESS`（不改变已有序号），新增 `wordProgress(owner, drawn, aod)`；`LockscreenLyricsModule` 在两处已有的“当前行是否绘制进度”决定之后调用 `recordWordProgress`：只记录当前行、逐字时间轴、且不是“单字极短整行高亮”的行；记录走既有的无分配写路径，不改变任何绘制判断。结论：已准备（会绘制逐字填充）或等待（息屏低帧率）。App 侧列在“逐行歌词进度”之前，名称“逐字歌词进度”；镜像测试改为按名称集合比对。本地 1043 tests / 0 fail / 6 skip（`CompatibilityStatusTest` 新增 1 项、`CapabilityModelTest` 覆盖新项），Debug 与 R8 通过。**需要重启 SystemUI 后才会出现该行**（旧注入构建不发送）。候选 `Bridge-M5-status-debug-r3.apk`（`993f142f…`）。 **r3 设备结果：用户重启 SystemUI 后确认全部通过（逐字歌词进度显示正确，锁屏逐字效果与以前一致）。**
+
 ## 15. 主线五：代码结构与性能治理（E 系列）
 
 > 状态：**仅分析与方案，未落任何代码**；第 15.8 节 D11–D15 已于 2026-11-14 由用户确认按推荐采用。落档日期：2026-11-14。本节是用户在 M1 期间追加的第五条主线：在下一大版本内完整治理 Bridge 的代码结构与性能，重点拆分 `LockscreenLyricsModule.java`。

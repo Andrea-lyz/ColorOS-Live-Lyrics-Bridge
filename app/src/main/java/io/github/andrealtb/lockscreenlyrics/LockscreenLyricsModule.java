@@ -14813,6 +14813,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             boolean drawProgress = activeLine
                     && !timestampHighlight
                     && shouldDrawWordProgressForVisual(line, aodLineFillAmount);
+            recordWordProgress(line, activeLine, timestampHighlight, drawProgress);
             float fullLineOverlayAmount = aodLowFrameRateMode && drawProgress
                     ? aodLineFillAmount
                     : 0f;
@@ -15624,6 +15625,17 @@ public final class LockscreenLyricsModule extends XposedModule {
             return aodLineFillTransitionStartedAtMs >= 0L;
         }
 
+        /**
+         * Capability record for word-timed fill (diagnostics only; the draw decision is already
+         * made). Line-timed lines and the whole-line highlight of very short single-word lines
+         * are not word fill and are not recorded.
+         */
+        private void recordWordProgress(WordLine line, boolean activeLine, boolean timestampHighlight, boolean drawProgress) {
+            if (activeLine && !timestampHighlight && line != null && line.timingMode == LyricTimingMode.WORD_TIMED) {
+                CompatibilityStatus.global().wordProgress(line, drawProgress, aodLowFrameRateMode);
+            }
+        }
+
         private boolean shouldDrawWordProgressForVisual(WordLine line, float aodLineFillAmount) {
             return shouldDrawWordProgress(line)
                     || (aodLineFillAmount < 0.999f
@@ -15945,6 +15957,7 @@ public final class LockscreenLyricsModule extends XposedModule {
             boolean drawProgress = activeLine && !timestampHighlight && shouldDrawWordProgressForVisual(
                     line,
                     aodLineFillAmount);
+            recordWordProgress(line, activeLine, timestampHighlight, drawProgress);
                 if (drawProgress) {
                     drawProgressLine(canvas, model, line, position, glowPosition, x, y);
                     drawFullLineOverlayIfNeeded(

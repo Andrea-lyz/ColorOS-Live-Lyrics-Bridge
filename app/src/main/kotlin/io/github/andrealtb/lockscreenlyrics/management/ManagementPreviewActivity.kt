@@ -1,5 +1,10 @@
 package io.github.andrealtb.lockscreenlyrics.management
 
+import io.github.andrealtb.lockscreenlyrics.diagnostics.CompatibilityStatus
+import io.github.andrealtb.lockscreenlyrics.management.status.CapabilityRow
+import io.github.andrealtb.lockscreenlyrics.management.status.StatusContent
+import io.github.andrealtb.lockscreenlyrics.management.status.StatusDetails
+import io.github.andrealtb.lockscreenlyrics.management.status.featureStatuses
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
@@ -179,8 +184,18 @@ class ManagementPreviewActivity : AppCompatActivity() {
                 val enabled = enablement
                 val view = catalog
                 val operations by StoreOperations.operations.collectAsState()
+                val query = statusQuery
                 ManagementPrototype(
                     status = homeStatus(ModuleStatusQuery.installedBuildId(), statusQuery),
+                    statusDetails = StatusDetails(
+                        installedBuildId = ModuleStatusQuery.installedBuildId(),
+                        loadedBuildId = (query as? StatusQuery.Reply)?.injectedBuildId,
+                        features = (query as? StatusQuery.Reply)
+                            ?.let { reply -> reply.capabilities?.let { featureStatuses(it, reply.receivedAtElapsed) } },
+                    ),
+                    onOpenDiagnostics = {
+                        startActivity(Intent(this, io.github.andrealtb.lockscreenlyrics.BridgeDebugSettingsActivity::class.java))
+                    },
                     onRefreshStatus = ::queryStatus,
                     store = storeItems(ProviderDirectory.entries, view.state ?: CatalogState.Unavailable,
                         Build.VERSION.SDK_INT, { enabled[it] }) { packages[it] },
@@ -236,6 +251,25 @@ class ManagementPreviewActivity : AppCompatActivity() {
                 })
             }
             refreshEnablement()
+        }
+    }
+
+    /** SystemUI's capability rows (schema 1), or null when its build does not send them. */
+    @Suppress("DEPRECATION")
+    private fun capabilityRowsOf(reply: android.os.Bundle?): List<CapabilityRow>? {
+        if (reply == null || reply.getInt(CompatibilityStatus.SCHEMA, -1) != 1) return null
+        val rows = reply.getParcelableArrayList<android.os.Bundle>(CompatibilityStatus.ROWS) ?: return null
+        return rows.filterNotNull().map { row ->
+            CapabilityRow(
+                feature = row.getString("feature", ""),
+                requested = row.getString("requested", "UNKNOWN"),
+                outcome = row.getString("lastOutcome", "NOT_OBSERVED"),
+                reason = row.getString("reason", "TARGET_NOT_OBSERVED"),
+                scope = row.getString("evidenceScope", "NOT_OBSERVED"),
+                observedAt = row.getLong("observedAt", -1L),
+                liveOwners = row.getInt("liveOwners", -1),
+                summary = row.getString("outcomeSummary", ""),
+            )
         }
     }
 
@@ -454,11 +488,16 @@ class ManagementPreviewActivity : AppCompatActivity() {
         val generation = ++queryGeneration
         handler.removeCallbacksAndMessages(null)
         statusQuery = StatusQuery.Pending
-        val sent = ModuleStatusQuery.send(this, handler) { buildId, revision ->
-            if (generation == queryGeneration && statusQuery == StatusQuery.Pending) {
-                statusQuery = StatusQuery.Reply(buildId, revision)
+        val sent = ModuleStatusQuery.send(this, handler, object : ModuleStatusQuery.Listener {
+            override fun onReply(injectedBuildId: String?, appliedUiRevision: Long) = Unit
+
+            override fun onReply(injectedBuildId: String?, appliedUiRevision: Long, reply: android.os.Bundle?) {
+                if (generation == queryGeneration && statusQuery == StatusQuery.Pending) {
+                    statusQuery = StatusQuery.Reply(injectedBuildId, appliedUiRevision,
+                        capabilityRowsOf(reply), android.os.SystemClock.elapsedRealtime())
+                }
             }
-        }
+        })
         if (!sent) {
             statusQuery = StatusQuery.NoReply
             return
@@ -486,6 +525,8 @@ private const val RAIL_MIN_WIDTH_DP = 600
 @Composable
 internal fun ManagementPrototype(
     status: HomeStatus,
+    statusDetails: StatusDetails,
+    onOpenDiagnostics: () -> Unit,
     onRefreshStatus: () -> Unit,
     store: StoreProjection,
     setupChoices: SetupChoices,
@@ -610,11 +651,15 @@ internal fun ManagementPrototype(
                         action = stringResource(R.string.mgmt_appearance_open),
                         onAction = onOpenAppearance,
                     )
-                    ManagementTab.STATUS -> PlaceholderContent(
-                        modifier = Modifier.padding(bottom = dockSpace),
-                        body = stringResource(R.string.mgmt_status_body),
-                        action = null,
-                        onAction = {},
+                    ManagementTab.STATUS -> StatusContent(
+                        status = status,
+                        details = statusDetails,
+                        plugins = store.items,
+                        pluginName = { it.displayName(resources) },
+                        onRefresh = onRefreshStatus,
+                        onOpenDiagnostics = onOpenDiagnostics,
+                        onOpenStore = { tab = ManagementTab.STORE },
+                        bottomPadding = dockSpace + Spacing.l,
                     )
                 }
             }
