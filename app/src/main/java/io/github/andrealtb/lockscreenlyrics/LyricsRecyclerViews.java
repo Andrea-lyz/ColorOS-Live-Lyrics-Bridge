@@ -1,6 +1,7 @@
 package io.github.andrealtb.lockscreenlyrics;
 
 import static io.github.andrealtb.lockscreenlyrics.LockscreenLyricsModule.*;
+import static io.github.andrealtb.lockscreenlyrics.LyricMetadataSupport.*;
 import static io.github.andrealtb.lockscreenlyrics.LyricLogDescriptions.*;
 
 import android.app.KeyguardManager;

@@ -124,7 +124,8 @@ public final class BridgeSourceMap {
                 SOURCE_ROOT + "LyricSurfaceModeController.java", SOURCE_ROOT + "LyricSurfaceHandoffController.java",
                 SOURCE_ROOT + "ActiveLyricState.java", SOURCE_ROOT + "PluginHookGenerationManager.java",
                 SOURCE_ROOT + "LyricsRecyclerViews.java", SOURCE_ROOT + "LyricsRecyclerState.java",
-                SOURCE_ROOT + "ActiveLyricRefreshSchedule.java", SOURCE_ROOT + "KuWoSystemUiCompat.java"));
+                SOURCE_ROOT + "ActiveLyricRefreshSchedule.java", SOURCE_ROOT + "KuWoSystemUiCompat.java",
+                SOURCE_ROOT + "LyricMetadataSupport.java"));
         // F-2a (2026-11-15): KuWo SystemUI / plugin media-model compatibility moved to KuWoSystemUiCompat.
         FILES.put(Area.PLUGIN_COMPAT, Arrays.asList(ENTRY_CLASS, SOURCE_ROOT + "PluginHookGenerationManager.java",
                 SOURCE_ROOT + "KuWoSystemUiCompat.java"));

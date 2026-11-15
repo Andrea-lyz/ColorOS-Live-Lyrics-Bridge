@@ -110,6 +110,7 @@ import io.github.libxposed.api.XposedInterface;
 import io.github.libxposed.api.XposedModule;
 
 import static io.github.andrealtb.lockscreenlyrics.LyricLogDescriptions.*;
+import static io.github.andrealtb.lockscreenlyrics.LyricMetadataSupport.*;
 import static io.github.andrealtb.lockscreenlyrics.KuWoSystemUiCompat.isPlausibleKuWoCoverIcon;
 import static io.github.andrealtb.lockscreenlyrics.LyricsRecyclerViews.*;
 import static io.github.andrealtb.lockscreenlyrics.TranslationActionController.normalizeTranslationPreferencePackage;
@@ -2368,19 +2369,6 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
     }
 
-    static boolean isKuwoSeedlingData(Object data) {
-        try {
-            return KuWoMediaIdentityPolicy.isPlayerPackage(
-                    invokeStringGetter(data, "getPackageName"));
-        } catch (Throwable ignored) {
-            return false;
-        }
-    }
-
-    static boolean isLxSeedlingData(Object data) {
-        return data != null && isLxPlayerPackage(invokeStringGetter(data, "getPackageName"));
-    }
-
     private void installSystemUiArtworkDiagnosticsHook(ClassLoader classLoader) {
         try {
             Class<?> loaderClass = classLoader.loadClass(
@@ -2464,35 +2452,6 @@ public final class LockscreenLyricsModule extends XposedModule {
             info(BridgeDebugArea.MEDIA, BridgeEvents.DETAIL, "Normalized KuWo car-lyric identity before media data update");
         }
         return chain.proceed(args);
-    }
-
-    private static Object metadataChangedOwner(XposedInterface.Chain chain, Object[] args) {
-        Object owner = chain.getThisObject();
-        if (owner != null) {
-            return owner;
-        }
-        int metadataIndex = metadataArgIndex(args);
-        if (metadataIndex >= 2 && args[0] != null && args[metadataIndex - 1] instanceof String) {
-            return args[0];
-        }
-        return null;
-    }
-
-    private static int metadataArgIndex(Object[] args) {
-        int index = -1;
-        for (int i = 0; i < args.length; i++) {
-            if (!(args[i] instanceof MediaMetadata)) {
-                continue;
-            }
-            if (index >= 0) {
-                return -1;
-            }
-            index = i;
-        }
-        if (index < 1 || !(args[index - 1] instanceof String)) {
-            return -1;
-        }
-        return index;
     }
 
     static Method findDeclaredMethodOrNull(
@@ -3095,10 +3054,6 @@ public final class LockscreenLyricsModule extends XposedModule {
         return currentWordLyricModel != null;
     }
 
-    private static boolean isNativeV5Payload(LyricInfoContract.Payload payload) {
-        return payload != null;
-    }
-
     private boolean isLyricPayloadTrackChanged(
             LyricInfoContract.Payload previous,
             LyricInfoContract.Payload next) {
@@ -3145,39 +3100,6 @@ public final class LockscreenLyricsModule extends XposedModule {
                             + ", track=" + SensitiveFieldRedactor.trackHash(
                             buildTrackKey(title, artist)));
         }
-    }
-
-    private static String findPlayerPackageInArgs(List<Object> args) {
-        for (int i = 0; i < args.size(); i++) {
-            Object arg = args.get(i);
-            if (arg instanceof String && looksLikePackageName((String) arg)) {
-                return (String) arg;
-            }
-        }
-        return "";
-    }
-
-    private static boolean looksLikePackageName(String value) {
-        if (TextUtils.isEmpty(value) || !value.equals(value.toLowerCase(Locale.ROOT))) {
-            return false;
-        }
-        int dots = 0;
-        boolean segmentHasCharacter = false;
-        for (int i = 0; i < value.length(); i++) {
-            char character = value.charAt(i);
-            if (character == '.') {
-                if (!segmentHasCharacter) {
-                    return false;
-                }
-                dots++;
-                segmentHasCharacter = false;
-            } else if (Character.isLetterOrDigit(character) || character == '_') {
-                segmentHasCharacter = true;
-            } else {
-                return false;
-            }
-        }
-        return dots >= 1 && segmentHasCharacter;
     }
 
     private void bindCurrentLyricProviderPackage(String packageName, String source) {
@@ -3742,24 +3664,6 @@ public final class LockscreenLyricsModule extends XposedModule {
         return result;
     }
 
-    private static boolean payloadMatchesTrack(
-            LyricInfoContract.Payload payload, String title, String artist) {
-        return LyricInfoTrackMatcher.payloadMatchesTrack(payload, title, artist);
-    }
-
-    private static String payloadTrackKey(LyricInfoContract.Payload payload) {
-        if (payload == null) {
-            return "";
-        }
-        if (!TextUtils.isEmpty(payload.trackKey)) {
-            return payload.trackKey;
-        }
-        if (TextUtils.isEmpty(payload.songName)) {
-            return "";
-        }
-        return buildTrackKey(payload.songName, payload.artist);
-    }
-
     private void clearSystemUiLyricModelForTrackChange(String title, String artist) {
         systemUiLyricPublicationGate.invalidate();
         resetSystemUiPlaybackPositionForTrackChange(
@@ -4011,10 +3915,6 @@ public final class LockscreenLyricsModule extends XposedModule {
         }, LYRIC_VISIBILITY_RECOVERY_FIRST_DELAY_MS);
     }
 
-    private static String charSequenceToString(CharSequence value) {
-        return value == null ? "" : value.toString();
-    }
-
     private String normalizedTextOf(TextView textView) {
         if (textView == null) {
             return "";
@@ -4071,17 +3971,6 @@ public final class LockscreenLyricsModule extends XposedModule {
         return binding == null
                 ? model.lineAtAdapterIndexMatchingText(adapterPosition, normalizedText)
                 : model.lineAtBoundRow(binding.position(), normalizedText, binding.timeMillis());
-    }
-
-    private static int charSequenceContentHash(CharSequence value) {
-        if (value == null) {
-            return 0;
-        }
-        int hash = 0;
-        for (int i = 0; i < value.length(); i++) {
-            hash = 31 * hash + value.charAt(i);
-        }
-        return hash;
     }
 
     private Object onLyricsRecyclerSetCurrentLyric(XposedInterface.Chain chain) throws Throwable {
@@ -6029,26 +5918,6 @@ public final class LockscreenLyricsModule extends XposedModule {
         return null;
     }
 
-    static int countLyricModelLines(Object lyricModel) {
-        if (lyricModel == null) {
-            return 0;
-        }
-        Class<?> current = lyricModel.getClass();
-        while (current != null) {
-            for (Field field : current.getDeclaredFields()) {
-                if (field.getType() != List.class) {
-                    continue;
-                }
-                Object value = readField(lyricModel, field);
-                if (value instanceof List) {
-                    return ((List<?>) value).size();
-                }
-            }
-            current = current.getSuperclass();
-        }
-        return 0;
-    }
-
     private synchronized void tryInstallLyricsRecyclerViewHook(Class<?> lyricsRecyclerViewClass) {
         if (lyricsRecyclerHookInstallAttempted || lyricsRecyclerViewClass == null) {
             return;
@@ -7101,17 +6970,6 @@ public final class LockscreenLyricsModule extends XposedModule {
             return officialLine;
         }
         return playbackLine;
-    }
-
-    static WordLine firstLineBeforeDisplayStart(WordLyricModel model, long position) {
-        if (model == null || position < 0L || model.lines.isEmpty()) {
-            return null;
-        }
-        WordLine firstLine = model.firstDisplayLine();
-        if (firstLine == null || firstLine.timeMillis <= position) {
-            return null;
-        }
-        return firstLine;
     }
 
     private static boolean isReadyForLyricDraw(TextView textView) {
@@ -8514,22 +8372,6 @@ public final class LockscreenLyricsModule extends XposedModule {
         return screenTurnedOffForLockState;
     }
 
-    private static boolean hasCustomAction(PlaybackState state, String actionId) {
-        if (state == null || TextUtils.isEmpty(actionId)) {
-            return false;
-        }
-        List<PlaybackState.CustomAction> actions = state.getCustomActions();
-        if (actions == null) {
-            return false;
-        }
-        for (PlaybackState.CustomAction action : actions) {
-            if (action != null && actionId.equals(action.getAction())) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     @SuppressLint("WrongConstant")
     private static MediaMetadata buildMetadataWithLyricInfoPreservingArtwork(
             MediaMetadata base,
@@ -8541,47 +8383,6 @@ public final class LockscreenLyricsModule extends XposedModule {
         return builder
                 .putString(OPLUS_LYRIC_INFO_KEY, nullToEmpty(lyricInfo))
                 .build();
-    }
-
-    private static void copyMediaMetadataArtwork(
-            MediaMetadata source,
-            MediaMetadata.Builder target) {
-        if (source == null || target == null) {
-            return;
-        }
-        boolean hasArtworkUri = false;
-        String[] uriKeys = {
-                MediaMetadata.METADATA_KEY_ART_URI,
-                MediaMetadata.METADATA_KEY_ALBUM_ART_URI,
-                MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI
-        };
-        for (String key : uriKeys) {
-            if (!TextUtils.isEmpty(source.getString(key))) {
-                hasArtworkUri = true;
-                break;
-            }
-        }
-        String[] bitmapKeys = {
-                MediaMetadata.METADATA_KEY_ART,
-                MediaMetadata.METADATA_KEY_ALBUM_ART,
-                MediaMetadata.METADATA_KEY_DISPLAY_ICON
-        };
-        for (String key : bitmapKeys) {
-            Bitmap bitmap = source.getBitmap(key);
-            if (bitmap != null) {
-                if (hasArtworkUri && bitmap.getWidth() <= 1 && bitmap.getHeight() <= 1) {
-                    target.putBitmap(key, null);
-                } else {
-                    target.putBitmap(key, bitmap);
-                }
-            }
-        }
-        for (String key : uriKeys) {
-            String uri = source.getString(key);
-            if (!TextUtils.isEmpty(uri)) {
-                target.putString(key, uri);
-            }
-        }
     }
 
     @SuppressLint("WrongConstant")
@@ -8603,10 +8404,6 @@ public final class LockscreenLyricsModule extends XposedModule {
             if (bitmap != null) return bitmap;
         }
         return null;
-    }
-
-    static String buildTrackKey(String title, String artist) {
-        return TrackIdentity.buildKey(title, artist);
     }
 
     private boolean cacheSystemUiLyricModelLocked(
@@ -9162,29 +8959,6 @@ public final class LockscreenLyricsModule extends XposedModule {
         return false;
     }
 
-    private static String buildWordLyricModelSignature(
-            LyricInfoContract.Payload payload,
-            String rawLyric,
-            String translationLyric) {
-        if (payload == null) {
-            return "";
-        }
-        return firstNonEmpty(payload.trackKey, payload.songId)
-                + '|'
-                + contentSignature(payload.lyric)
-                + '|'
-                + contentSignature(rawLyric)
-                + '|'
-                + contentSignature(translationLyric);
-    }
-
-    private static String contentSignature(String value) {
-        if (value == null) {
-            return "0:0";
-        }
-        return value.length() + ":" + Integer.toHexString(value.hashCode());
-    }
-
     private long estimatePlaybackPositionMillis() {
         LyricInfoContract.Payload snapshot = currentLyricProviderPayload;
         if (snapshot != null && snapshot.snapshotPositionMillis >= 0L) {
@@ -9699,10 +9473,6 @@ public final class LockscreenLyricsModule extends XposedModule {
                 : 0;
     }
 
-    private static String sanitizeForOplusLyric(String rawLyric) {
-        return OplusLyricNormalizer.normalizeForOfficialList(rawLyric);
-    }
-
     static String getText(MediaMetadata metadata, String key) {
         CharSequence value = metadata.getText(key);
         if (value == null) {
@@ -9718,21 +9488,6 @@ public final class LockscreenLyricsModule extends XposedModule {
             }
         }
         return "";
-    }
-
-    private static String normalizeLooseMetadataText(String value) {
-        if (TextUtils.isEmpty(value)) {
-            return "";
-        }
-        String trimmed = value.trim().toLowerCase(Locale.ROOT);
-        StringBuilder builder = new StringBuilder(trimmed.length());
-        for (int i = 0; i < trimmed.length(); i++) {
-            char character = trimmed.charAt(i);
-            if (Character.isLetterOrDigit(character) || character > 0x7F) {
-                builder.append(character);
-            }
-        }
-        return builder.toString();
     }
 
     private static void traceLyricParse(String message) {
@@ -9761,23 +9516,6 @@ public final class LockscreenLyricsModule extends XposedModule {
             }
         }
         return false;
-    }
-
-    private static boolean isShortStandaloneLyricLine(WordLine line) {
-        return line != null && isShortStandaloneLyricText(line.text);
-    }
-
-    private static boolean isShortStandaloneLyricText(String text) {
-        String normalized = WordLyricRenderSupport.normalizeLine(text);
-        if (TextUtils.isEmpty(normalized) || normalized.length() > 18) {
-            return false;
-        }
-        for (int i = 0; i < normalized.length(); i++) {
-            if (Character.isWhitespace(normalized.charAt(i))) {
-                return false;
-            }
-        }
-        return true;
     }
 
     private void rememberSystemUiLyricLoadContext(
@@ -9875,7 +9613,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                         + (details == null ? "" : nullToEmpty(details.get())));
     }
 
-    private static boolean isLxPlayerPackage(String packageName) {
+    static boolean isLxPlayerPackage(String packageName) {
         return PlayerSystemUiPolicy.LX_MUSIC.equals(packageName)
                 || PlayerSystemUiPolicy.LX_WALNUT.equals(packageName);
     }
