@@ -223,4 +223,3 @@ internal object ProviderDirectory {
             ProviderKind.ARTWORK, ProviderEntry.LAUNCHER, emptyList(), R.string.store_name_artwork, R.drawable.store_icon_artwork),
     )
 }
-
