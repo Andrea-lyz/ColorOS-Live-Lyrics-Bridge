@@ -154,11 +154,6 @@ internal fun homeStatus(installedBuildId: String?, query: StatusQuery): HomeStat
 private fun isKnownBuildId(id: String?) = !id.isNullOrBlank() && id != "unknown"
 
 /** Home cards below the live status card; onboarding and features are still sample data. */
-internal data class HomeState(
-    val onboardingRemaining: Int,
-    val featuresNeedingAttention: Int,
-)
-
 internal fun StoreItem.primaryAction(): StoreAction = when (installState) {
     InstallState.NOT_INSTALLED -> if (availability == Availability.AVAILABLE) StoreAction.DOWNLOAD else StoreAction.NONE
     InstallState.UPDATE_AVAILABLE -> if (availability == Availability.AVAILABLE) StoreAction.UPDATE else openAction()
@@ -229,9 +224,3 @@ internal object ProviderDirectory {
     )
 }
 
-internal object SampleData {
-    val home = HomeState(
-        onboardingRemaining = 2,
-        featuresNeedingAttention = 1,
-    )
-}

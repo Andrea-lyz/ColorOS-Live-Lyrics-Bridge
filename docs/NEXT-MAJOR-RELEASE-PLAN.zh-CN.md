@@ -1142,6 +1142,36 @@ E 系列（第 15 节）不单列里程碑：E-0 随 M1，E-1/E-2 在 C-04/C-05 
 - **矩阵元数据：** §7.4 设想的 `scopePolicy` / `managementProtocol` 字段未加入矩阵。接入与否已由上面的守卫按 `processPolicy.kind` 推出，`staticScope` 维持矩阵全局 `true`；如以后某个专用模块需要不同策略，再加字段。
 - **M4 现状：** 13 个专用 Provider 本地全部带入口；设备只验证了 Salt（允许、拒绝、插件页按钮、Root 读取并发修复）。正式生效需要各插件发新版；在此之前，已发布的旧版插件在商店里会提示“请更新或去 LSPosed 勾选”。M4 门禁“每个模块均以自己的服务授权；无跨模块代设；拒绝/部分批准/服务死亡可恢复”：机制满足；部分批准只有单元测试证据（设备上只有单宿主的 Salt）。
 
+### 14.16 M5 第一刀：设置向导（G1–G6）接真实状态（2026-11-15，本地，未提交）
+
+**分支：** Bridge `feat/m5-setup`（基于 `e139c74`）。技能：已加载 material-3（只用 Compose 分支；固定浅色不变）。
+
+**做法：**
+- `onboarding/SetupModel`（纯 Kotlin）：六步 BRIDGE、ROOT（可选）、PLAYERS、INSTALL、ENABLE、PLAYBACK（可选）。每一步的状态都由当前事实**推导**：模块回应与 SystemUI 构建、Root 状态、已安装的播放器与插件、商店卡片上的启用状态。状态分已完成 / 需要处理 / 正在检查 / 等待前面的步骤 / 已跳过 / 本机不需要。从 LSPosed、安装器或插件返回不会自动打勾，只有重新读取才会变化。
+- 只持久化用户自己的选择：所选播放器、跳过的可选步骤、“我已看到歌词”的时间（`onboarding/SetupStore`，独立 SharedPreferences `management_setup`，含 `flowRevision`=1；不进 LyricUiConfig）。
+- 4.x 升级用户：没有保存过选择时，把“已装插件所对应、且本机已装的播放器”视为已选，不从第一步重来（§5.2）。已存的选择若播放器已卸载则忽略。
+- 第 6 步明确是“用户确认”，文案说明 Bridge 不据此判定链路生效（§5.2 引导完成度与运行健康分开）。
+- 页面 `onboarding/SetupScreen`：CenterAlignedTopAppBar + 返回（含系统返回）、总进度、每步编号/勾选徽标 + 状态文字（不只靠颜色）、说明、FilterChip 选择播放器、动作按钮（打开 LSPosed、重新检查、授权 Root、去商店处理、我已看到歌词），可选步骤可“跳过/撤销跳过”。页面只把动作交给 Activity，自身不发起外部操作；重组不会重复执行。
+- 首页：去掉“样例数据”横幅和样例的“功能未生效”卡，“还有 N 步设置未完成”改为真实计数，点“继续设置”打开向导。`SampleData` 与两条样例字符串删除。
+
+**本地验证：** Bridge 1033 tests / 0 fail / 6 skip（`SetupModelTest` 5 项：新机按序、选择后安装与启用状态、4.x 升级不重来、Bridge/Root/可选步骤、已卸载播放器的旧选择），Debug 与 R8 通过。
+
+**MD3 自查（源码层面，未做设备审查）：** 颜色全部取 `MaterialTheme.colorScheme` 角色；字级取 typography 角色；间距用 `Spacing` tokens；状态同时有文字与图标；按钮为官方 Button/OutlinedButton/TextButton，触摸目标为组件默认 48dp；宽屏限制 840dp。待设备检查：大字体、TalkBack 朗读顺序、横屏。
+
+**设备候选：** `artifacts/m5-setup-20261115/Bridge-M5-setup-debug-r1.apk`（`8b30de29…`，debug，无测试目录）。
+
+**r1 设备结果（用户实测）：** 1–6 步状态与跳过/撤销/确认均正常。问题：① 一个播放器只显示“音乐”，是荣耀版网易云 `com.hihonor.cloudmusic`；两个“光锥音乐”分别是普通版与 `.gp` 版，仅凭应用名分不清。② “确认选择”没有任何反馈。③ 全部完成后首页没有入口再进入向导；点“重新检查”时首页会闪出“还有 1 步未完成”（检查中的步骤被计入）。r2：选项第二行显示包名；确认后提示“已保存：N 个播放器”，选择未变时按钮不可点；未完成计数只算“需要处理”；全部完成时首页显示“设置向导的步骤都已处理”卡片和“查看设置向导”。`SetupModelTest` 6/6，候选 `Bridge-M5-setup-debug-r2.apk`（`1391f029…`）。
+
+**r2 设备结果：** 用户确认功能全部通过。反馈“首页有点空”，给出参考截图（卡片化、信息化、悬浮 dock）。
+
+**r3 首页仪表盘与悬浮 dock：**
+- `HomeDashboard`：大标题 + 副标题；“歌词链路”主卡（状态徽标：运行中 / 检查中 / 旧版本 / 无回应，标题：已就绪 / 需要重启 SystemUI / Bridge 未运行，下方 SystemUI 构建与设置推送两行，右侧 72dp 圆形“重新检查”按钮）；有未完成步骤时显示琥珀色“继续设置”卡（进度条）；2×2 信息块：插件（已装数，需处理数或已启用数）、更新（可用数）、Root（状态，未授权时点按授权）、设置向导（x/6）。每块点按进入对应位置。Root 已授权但读不到配置时追加说明卡。所有数字都来自实时读取。
+- `FloatingDock`：圆角胶囊悬浮在内容上方，四个顶级入口（图标 + 文字），选中项用 secondaryContainer 胶囊；宽屏（≥600dp）仍用 NavigationRail。各页底部留出 dock 空间，提示条显示在 dock 之上。
+- 旧 `HomeContent` / `ActionCard` / `HomeState` 删除；“设置全部完成后的入口”改由“设置向导”信息块常驻提供。
+- 只用官方 Material 3 组件（Card、FilledIconButton、Surface、LinearProgressIndicator），没有引入实验性 floating toolbar API；颜色、字级、形状取主题角色（卡片 `shapes.extraLarge`）。
+- 本地：Bridge 1036 tests / 0 fail / 6 skip（新增 `HomeDashboardTest` 2 项），Debug 与 R8 通过。候选 `artifacts/m5-setup-20261115/Bridge-M5-home-debug-r3.apk`（`70c0eaad…`）。外观待用户设备确认。
+- **r3 设备反馈：** dock 不是真正悬浮：各页底部整体留出了 dock 与导航条的空间，内容滚不到 dock 下面，露出一条背景；dock 内按钮只占上半部分，下方留白过多。**r4：** Scaffold 不再吃系统栏 inset，内容铺到屏幕底部、从 dock 下面滚过，只在列表末尾加滚动留白（dock 高度 + 导航条）；顶部单独留状态栏；dock 用 `navigationBarsPadding` 定位；按钮填满 dock 高度并居中，dock 内高 56dp、内边距 6dp。候选 `Bridge-M5-home-debug-r4.apk`（`ac677e22…`）。 **r4 设备结果：用户确认悬浮 dock、内容滚动与居中均通过。**
+
 ## 15. 主线五：代码结构与性能治理（E 系列）
 
 > 状态：**仅分析与方案，未落任何代码**；第 15.8 节 D11–D15 已于 2026-11-14 由用户确认按推荐采用。落档日期：2026-11-14。本节是用户在 M1 期间追加的第五条主线：在下一大版本内完整治理 Bridge 的代码结构与性能，重点拆分 `LockscreenLyricsModule.java`。

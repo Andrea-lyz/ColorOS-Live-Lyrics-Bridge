@@ -72,123 +72,6 @@ internal fun SampleBanner(modifier: Modifier = Modifier, text: Int = R.string.mg
 }
 
 @Composable
-internal fun HomeContent(
-    status: HomeStatus,
-    state: HomeState,
-    updatesAvailable: Int,
-    root: RootView,
-    onRequestRoot: () -> Unit,
-    onRefreshStatus: () -> Unit,
-    onContinueSetup: () -> Unit,
-    onViewReasons: () -> Unit,
-    onOpenStore: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    LazyColumn(
-        modifier = modifier.widthIn(max = Spacing.maxContentWidth),
-        contentPadding = PaddingValues(Spacing.l),
-        verticalArrangement = Arrangement.spacedBy(Spacing.m),
-    ) {
-        item { SampleBanner(text = R.string.mgmt_home_banner) }
-        item {
-            StatusCard {
-                CheckRow(
-                    label = stringResource(R.string.mgmt_check_module),
-                    check = status.module.check(),
-                    value = stringResource(when (status.module) {
-                        ModuleStatus.CHECKING -> R.string.mgmt_status_checking
-                        ModuleStatus.RUNNING -> R.string.mgmt_module_running
-                        ModuleStatus.NO_RESPONSE -> R.string.mgmt_module_no_response
-                    }),
-                )
-                CheckRow(
-                    label = stringResource(R.string.mgmt_check_systemui),
-                    check = status.systemUi.check(),
-                    value = stringResource(when (status.systemUi) {
-                        SystemUiLoad.CHECKING -> R.string.mgmt_status_checking
-                        SystemUiLoad.CURRENT -> R.string.mgmt_systemui_current
-                        SystemUiLoad.OUTDATED_NEEDS_RESTART -> R.string.mgmt_systemui_outdated
-                        SystemUiLoad.UNKNOWN -> R.string.mgmt_check_unknown
-                    }),
-                )
-                CheckRow(
-                    label = stringResource(R.string.mgmt_check_config),
-                    check = status.config.check(),
-                    value = stringResource(when (status.config) {
-                        ConfigObservation.CHECKING -> R.string.mgmt_status_checking
-                        ConfigObservation.APPLIED_SINCE_START -> R.string.mgmt_config_applied
-                        ConfigObservation.NOT_PUSHED_SINCE_START -> R.string.mgmt_config_not_pushed
-                        ConfigObservation.UNKNOWN -> R.string.mgmt_check_unknown
-                    }),
-                )
-                CheckRow(
-                    label = stringResource(R.string.mgmt_check_root),
-                    check = when {
-                        root.state == RootState.GRANTED && root.cliAvailable != false -> Check.OK
-                        root.state == RootState.DENIED || root.state == RootState.UNAVAILABLE ||
-                            root.cliAvailable == false -> Check.ATTENTION
-                        else -> Check.UNKNOWN
-                    },
-                    value = stringResource(when {
-                        root.state == RootState.GRANTED && root.cliAvailable == false -> R.string.mgmt_root_no_cli
-                        root.state == RootState.GRANTED -> R.string.mgmt_root_granted
-                        root.state == RootState.CHECKING -> R.string.mgmt_status_checking
-                        root.state == RootState.DENIED -> R.string.mgmt_root_denied
-                        root.state == RootState.UNAVAILABLE -> R.string.mgmt_root_unavailable
-                        else -> R.string.mgmt_root_not_requested
-                    }),
-                )
-                if (root.state == RootState.NOT_REQUESTED || root.state == RootState.DENIED) {
-                    Button(onClick = onRequestRoot) { Text(stringResource(R.string.mgmt_action_request_root)) }
-                }
-                OutlinedButton(
-                    onClick = onRefreshStatus,
-                    enabled = status.module != ModuleStatus.CHECKING,
-                ) { Text(stringResource(R.string.mgmt_action_refresh)) }
-            }
-        }
-        if (state.onboardingRemaining > 0) {
-            item {
-                ActionCard(
-                    text = pluralStringResource(
-                        R.plurals.mgmt_onboarding_remaining,
-                        state.onboardingRemaining,
-                        state.onboardingRemaining,
-                    ),
-                    action = stringResource(R.string.mgmt_action_continue_setup),
-                    primary = true,
-                    onAction = onContinueSetup,
-                )
-            }
-        }
-        if (state.featuresNeedingAttention > 0) {
-            item {
-                ActionCard(
-                    text = pluralStringResource(
-                        R.plurals.mgmt_features_attention,
-                        state.featuresNeedingAttention,
-                        state.featuresNeedingAttention,
-                    ),
-                    action = stringResource(R.string.mgmt_action_view_reasons),
-                    primary = false,
-                    onAction = onViewReasons,
-                )
-            }
-        }
-        if (updatesAvailable > 0) {
-            item {
-                ActionCard(
-                    text = pluralStringResource(R.plurals.mgmt_updates_available, updatesAvailable, updatesAvailable),
-                    action = stringResource(R.string.mgmt_action_open_store),
-                    primary = false,
-                    onAction = onOpenStore,
-                )
-            }
-        }
-    }
-}
-
-@Composable
 private fun StatusCard(content: @Composable () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -220,18 +103,6 @@ private fun CheckRow(label: String, check: Check, value: String) {
 }
 
 @Composable
-private fun ActionCard(text: String, action: String, primary: Boolean, onAction: () -> Unit) {
-    StatusCard {
-        Text(text, style = MaterialTheme.typography.bodyLarge)
-        if (primary) {
-            Button(onClick = onAction) { Text(action) }
-        } else {
-            OutlinedButton(onClick = onAction) { Text(action) }
-        }
-    }
-}
-
-@Composable
 internal fun StoreContent(
     items: List<StoreItem>,
     unrecognizedEntries: Int,
@@ -244,11 +115,13 @@ internal fun StoreContent(
     onFilterChange: (StoreFilter) -> Unit,
     onAction: (StoreItem, StoreAction) -> Unit,
     modifier: Modifier = Modifier,
+    /** Scroll space after the last card, so it can rise above the floating dock. */
+    bottomPadding: androidx.compose.ui.unit.Dp = Spacing.l,
 ) {
     val visible = items.filteredBy(filter)
     LazyColumn(
         modifier = modifier.widthIn(max = Spacing.maxContentWidth),
-        contentPadding = PaddingValues(Spacing.l),
+        contentPadding = PaddingValues(start = Spacing.l, end = Spacing.l, top = Spacing.l, bottom = bottomPadding),
         verticalArrangement = Arrangement.spacedBy(Spacing.m),
     ) {
         item { CatalogCard(catalog, unrecognizedEntries, onRefreshCatalog) }

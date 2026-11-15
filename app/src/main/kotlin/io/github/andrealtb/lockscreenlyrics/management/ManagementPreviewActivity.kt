@@ -11,6 +11,12 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -43,12 +49,19 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import io.github.andrealtb.lockscreenlyrics.LyricUiSettingsActivity
 import io.github.andrealtb.lockscreenlyrics.ModuleStatusQuery
+import androidx.compose.ui.unit.dp
 import io.github.andrealtb.lockscreenlyrics.R
 import io.github.andrealtb.lockscreenlyrics.SettingsLocaleContext
 import io.github.andrealtb.lockscreenlyrics.management.catalog.CatalogState
 import io.github.andrealtb.lockscreenlyrics.management.install.Operation
 import io.github.andrealtb.lockscreenlyrics.management.install.StoreOperations
 import io.github.andrealtb.lockscreenlyrics.management.reminder.UpdateReminders
+import io.github.andrealtb.lockscreenlyrics.management.onboarding.SetupAction
+import io.github.andrealtb.lockscreenlyrics.management.onboarding.SetupChoices
+import io.github.andrealtb.lockscreenlyrics.management.onboarding.SetupFacts
+import io.github.andrealtb.lockscreenlyrics.management.onboarding.SetupScreen
+import io.github.andrealtb.lockscreenlyrics.management.onboarding.SetupStore
+import io.github.andrealtb.lockscreenlyrics.management.onboarding.setupView
 import io.github.andrealtb.lockscreenlyrics.management.root.LsposedConfig
 import io.github.andrealtb.lockscreenlyrics.management.root.LsposedRead
 import io.github.andrealtb.lockscreenlyrics.management.root.RootAccess
@@ -88,6 +101,11 @@ class ManagementPreviewActivity : AppCompatActivity() {
     /** Incremented when a notification asks to show the store. */
     private var openStoreRequests by mutableIntStateOf(0)
     private var message by mutableStateOf<String?>(null)
+    /** The user's setup choices (plan §5.2, §14.16); every step's state is derived on screen. */
+    private val setupStore by lazy { SetupStore(this) }
+    private var setupChoices by mutableStateOf(SetupChoices())
+    /** Display names of the supported players installed here, for the setup page. */
+    private var playerLabels by mutableStateOf<Map<String, String>>(emptyMap())
 
     /** The one scope request in flight: request id, Provider name, and the players asked for. */
     private var scopeRequest: Triple<String, String, Set<String>>? = null
@@ -154,6 +172,7 @@ class ManagementPreviewActivity : AppCompatActivity() {
                 finished = now
             }
         }
+        setupChoices = setupStore.load()
         setContent {
             ManagementTheme {
                 val packages = installed
@@ -165,6 +184,9 @@ class ManagementPreviewActivity : AppCompatActivity() {
                     onRefreshStatus = ::queryStatus,
                     store = storeItems(ProviderDirectory.entries, view.state ?: CatalogState.Unavailable,
                         Build.VERSION.SDK_INT, { enabled[it] }) { packages[it] },
+                    setupChoices = setupChoices,
+                    playerLabels = playerLabels,
+                    onSetupAction = ::onSetupAction,
                     catalog = view,
                     onRefreshCatalog = { refreshCatalog(automatic = false) },
                     onStoreOpened = { refreshCatalog(automatic = true) },
@@ -203,6 +225,8 @@ class ManagementPreviewActivity : AppCompatActivity() {
         refreshJob?.cancel()
         refreshJob = lifecycleScope.launch {
             installed = withContext(Dispatchers.IO) { InstalledPackages.snapshot(packageManager, ProviderDirectory.entries) }
+            val keys = installed.keys
+            playerLabels = withContext(Dispatchers.IO) { playerLabelsOf(keys) }
             // Never prompts here: only a root grant the user asked for earlier is used.
             if (RootAccess.requested(this@ManagementPreviewActivity)) {
                 val had = root.state == RootState.GRANTED
@@ -213,6 +237,43 @@ class ManagementPreviewActivity : AppCompatActivity() {
             }
             refreshEnablement()
         }
+    }
+
+    /** Names of the supported players that are installed (setup step G3). */
+    private fun playerLabelsOf(installed: Set<String>): Map<String, String> =
+        ProviderDirectory.entries.filter { it.kind == ProviderKind.DEDICATED }.flatMap { it.hostPackages }.distinct()
+            .filter { it in installed }
+            .associateWith { pkg ->
+                runCatching { packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString() }
+                    .getOrDefault(pkg)
+            }
+
+    /** Setup page actions. Only user choices are stored; the steps re-derive from fresh reads. */
+    private fun onSetupAction(action: SetupAction) {
+        when (action) {
+            SetupAction.OpenLsposedForBridge -> lifecycleScope.launch {
+                val opened = withContext(Dispatchers.IO) {
+                    LsposedConfig.openModule(applicationContext, packageName, userId, root.state == RootState.GRANTED)
+                }
+                message = getString(if (opened) R.string.setup_lsposed_opened_bridge else R.string.mgmt_lsposed_open_needs_root,
+                    getString(R.string.setup_bridge_name))
+            }
+            SetupAction.RefreshStatus -> queryStatus()
+            SetupAction.RequestRoot -> requestRoot()
+            SetupAction.OpenStore -> openStoreRequests++
+            is SetupAction.ChoosePlayers -> {
+                updateSetup { it.copy(players = action.players) }
+                message = resources.getQuantityString(R.plurals.setup_players_saved, action.players.size, action.players.size)
+            }
+            is SetupAction.Skip -> updateSetup { it.copy(skipped = it.skipped + action.step) }
+            is SetupAction.Unskip -> updateSetup { it.copy(skipped = it.skipped - action.step) }
+            SetupAction.ConfirmPlayback -> updateSetup { it.copy(playbackConfirmedAtMillis = System.currentTimeMillis()) }
+        }
+    }
+
+    private fun updateSetup(change: (SetupChoices) -> SetupChoices) {
+        setupChoices = change(setupChoices)
+        setupStore.save(setupChoices)
     }
 
     /** The user's tap: the root manager (Magisk/KernelSU/APatch) may ask them. */
@@ -427,6 +488,9 @@ internal fun ManagementPrototype(
     status: HomeStatus,
     onRefreshStatus: () -> Unit,
     store: StoreProjection,
+    setupChoices: SetupChoices,
+    playerLabels: Map<String, String>,
+    onSetupAction: (SetupAction) -> Unit,
     catalog: CatalogView,
     onRefreshCatalog: () -> Unit,
     onStoreOpened: () -> Unit,
@@ -444,12 +508,29 @@ internal fun ManagementPrototype(
     // Only page-level UI state lives here; it is safe to restore after recreation.
     var tab by rememberSaveable { mutableStateOf(ManagementTab.HOME) }
     var filter by rememberSaveable { mutableStateOf(StoreFilter.SUITABLE) }
+    var showSetup by rememberSaveable { mutableStateOf(false) }
+    val setup = setupView(
+        ProviderDirectory.entries,
+        SetupFacts(
+            module = status.module,
+            systemUi = status.systemUi,
+            root = root.state,
+            installed = store.items.filter { it.installedVersion != null }.map { it.applicationId }.toSet() +
+                playerLabels.keys,
+            enablement = store.items.mapNotNull { item -> item.enablement?.let { item.applicationId to it } }.toMap(),
+        ),
+        setupChoices,
+    )
+    val resources = androidx.compose.ui.platform.LocalContext.current.resources
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    val nothingDone = stringResource(R.string.mgmt_snackbar_prototype)
-    val showNothingDone: () -> Unit = { scope.launch { snackbar.showSnackbar(nothingDone) } }
     val useRail = LocalConfiguration.current.screenWidthDp >= RAIL_MIN_WIDTH_DP
-    LaunchedEffect(openStoreRequests) { if (openStoreRequests > 0) tab = ManagementTab.STORE }
+    LaunchedEffect(openStoreRequests) {
+        if (openStoreRequests > 0) {
+            tab = ManagementTab.STORE
+            showSetup = false
+        }
+    }
     // Clear only after the snackbar is gone: clearing first changed this effect's key and
     // cancelled the snackbar at once (seen on PJZ110 after returning from a scope request).
     // A newer message still replaces the one on screen.
@@ -462,24 +543,26 @@ internal fun ManagementPrototype(
     val catalogLoaded = catalog.state != null
     LaunchedEffect(tab, catalogLoaded) { if (tab == ManagementTab.STORE && catalogLoaded) onStoreOpened() }
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbar) },
-        bottomBar = {
-            if (!useRail) {
-                NavigationBar {
-                    TABS.forEach { spec ->
-                        NavigationBarItem(
-                            selected = tab == spec.tab,
-                            onClick = { tab = spec.tab },
-                            icon = { Icon(spec.icon, contentDescription = null) },
-                            label = { Text(stringResource(spec.label)) },
-                        )
-                    }
-                }
-            }
-        },
-    ) { innerPadding ->
-        Row(Modifier.fillMaxSize().padding(innerPadding)) {
+    if (showSetup) {
+        Box(Modifier.fillMaxSize()) {
+            SetupScreen(
+                view = setup,
+                playerLabel = { playerLabels[it] ?: it },
+                providerName = { entry -> resources.getString(entry.nameRes) },
+                onAction = onSetupAction,
+                onBack = { showSetup = false },
+            )
+            SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter))
+        }
+        return
+    }
+    // The content runs to the bottom edge and scrolls under the floating dock; each list only
+    // adds this much scroll space at its end (PJZ110 r3: padding the whole page left a band).
+    val navigationBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val dockSpace = navigationBottom + if (useRail) 0.dp else DockReserve
+    Scaffold(contentWindowInsets = WindowInsets(0, 0, 0, 0)) { innerPadding ->
+      Box(Modifier.fillMaxSize().padding(innerPadding).windowInsetsPadding(WindowInsets.statusBars)) {
+        Row(Modifier.fillMaxSize()) {
             if (useRail) {
                 NavigationRail {
                     TABS.forEach { spec ->
@@ -494,18 +577,18 @@ internal fun ManagementPrototype(
             }
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
                 when (tab) {
-                    ManagementTab.HOME -> HomeContent(
+                    ManagementTab.HOME -> HomeDashboard(
                         status = status,
-                        state = SampleData.home,
-                        updatesAvailable = store.updatesAvailable,
+                        summary = homeSummary(store.items, store.updatesAvailable, setup.done, setup.steps.size, setup.remaining),
                         root = root,
-                        onRequestRoot = onRequestRoot,
                         onRefreshStatus = onRefreshStatus,
-                        onContinueSetup = showNothingDone,
-                        onViewReasons = { tab = ManagementTab.STATUS },
+                        onRequestRoot = onRequestRoot,
+                        onOpenSetup = { showSetup = true },
                         onOpenStore = { tab = ManagementTab.STORE },
+                        bottomPadding = dockSpace + Spacing.l,
                     )
                     ManagementTab.STORE -> StoreContent(
+                        bottomPadding = dockSpace + Spacing.l,
                         items = store.items,
                         unrecognizedEntries = store.unrecognizedEntries,
                         catalog = catalog,
@@ -522,11 +605,13 @@ internal fun ManagementPrototype(
                         },
                     )
                     ManagementTab.APPEARANCE -> PlaceholderContent(
+                        modifier = Modifier.padding(bottom = dockSpace),
                         body = stringResource(R.string.mgmt_appearance_body),
                         action = stringResource(R.string.mgmt_appearance_open),
                         onAction = onOpenAppearance,
                     )
                     ManagementTab.STATUS -> PlaceholderContent(
+                        modifier = Modifier.padding(bottom = dockSpace),
                         body = stringResource(R.string.mgmt_status_body),
                         action = null,
                         onAction = {},
@@ -534,5 +619,15 @@ internal fun ManagementPrototype(
                 }
             }
         }
+        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = dockSpace))
+        if (!useRail) {
+            FloatingDock(
+                items = TABS.map { Triple(it.tab, it.label, it.icon) },
+                selected = tab,
+                onSelect = { tab = it },
+                modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = Spacing.m),
+            )
+        }
+      }
     }
 }
