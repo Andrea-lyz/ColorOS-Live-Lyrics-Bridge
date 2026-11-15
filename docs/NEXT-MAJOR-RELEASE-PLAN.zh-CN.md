@@ -1550,6 +1550,40 @@ E-2b 到 E-2d 都读写入口类的实例状态或调用 `hook()`，不能只靠
 
 **设备结果：用户重启 SystemUI 后确认 1–6 项全部通过（2026-11-15）。**
 
+### 15.8.4 E-2b–d 调研结论与建议（2026-11-15，仅分析，未实现）
+
+基于 `76dc1a0` 的源码阅读与脚本统计。
+
+**E-2b 反射工具（建议推迟到 E-5/E-6）：**
+- 第 11017–11340 行是一整块 `private static` 工具，约 320 行：`describeViewForLog`、`invoke*ByName`、`findMethod`、`read*Field`、`readFieldValue`、`readFieldOrMissing`、`hasNoArgMethod`、`readRecyclerAdapter`、`readLyricsRecyclerCurrentIndex`、`currentApplicationContext` 等。
+- 技术上可以纯移动，但调用方遍布 Recycler、翻译按钮、OPlus 媒体对象各处。原样移走只会得到第 15.2 节明确不要的通用 `ReflectionUtils`。
+- 按系统边界拆分，需要 E-6 的 `LyricsRecyclerController` 与 E-4 的 `TranslationActionViewTracker` 先存在。
+- 因此建议：
+  - 两个日志描述函数随 E-2c 移入 `diagnostics/`；
+  - 两个 Context 函数随 E-2d；
+  - 其余在 E-4/E-6 各自迁出时一起带走，同时按 P-4 加类级缓存。
+
+**E-2d OPlus 策略 Hook（建议再拆成两刀）：** 第 1110–1600 行共 18 个方法、478 行。依赖分两类：
+- **纯策略放行**：历史白名单、黑名单放行、AOD 媒体支持、RUS 白名单、歌词入口、歌词支持门禁，共约 260 行。实例依赖只有 `hook()`、日志函数（`info` / `infoAlways` / `warn` / `error`）、`isCurrentLyricProviderPackage` 和各自的“已安装 / 已记录”标志。
+  - 建议做 **E-2d1**：新类 `OplusMediaPolicyHooks`，持有这些标志。
+  - 它通过约 5 个方法的 `PolicyHost`（hook、日志、当前 Provider 包名）访问入口类。
+  - 方法体只在调用处多一个 `host.` 前缀，用 `method-bodies.py --strip host.` 证明其余不变。
+  - 对应契约测试的定位表改为 OPLUS_POLICY。
+- **翻译按钮相关**：`onOplusMediaUpdatePkgActionsRule`、`installSystemUiTranslationToggleActionHook`、`onOplusMediaCreateActionsFromState`，约 220 行。它们读写翻译按钮的 rule-0 集合、偏好、`translationToggleActionBinder` 等 E-4 状态。
+  - 建议**并入 E-4**，与 `TranslationActionController` 一起迁，避免先造一个之后要拆的宽 Host。
+
+**E-2c 诊断日志：**
+- `maybeLog*` 约 70 处调用，读大量运行时字段。
+- 建议在 E-2d1 之后做：先把只读入参、不读实例状态的格式化与描述函数移入 `diagnostics/`；读状态的部分随各 owner 迁移。
+
+**下一步建议：E-2d1。**
+- 风险中等：Hook 回调运行在 SystemUI 中。
+- 需要设备冒烟：
+  - Salt 等历史白名单播放器有锁屏卡片；
+  - 黑名单播放器有卡片；
+  - AOD 显示媒体；
+  - 专用插件播放器显示歌词入口。
+
 ### 15.9 未覆盖
 
 - **Providers 仓库**的结构与性能没有做同等盘点。若要纳入“完整优化”，需要另做一次基线（13 个专用模块的 Hooker、`provider-core`、Universal），本节不对其作任何结论。

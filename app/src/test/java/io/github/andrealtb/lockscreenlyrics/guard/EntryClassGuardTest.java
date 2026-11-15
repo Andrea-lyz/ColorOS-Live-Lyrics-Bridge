@@ -152,6 +152,8 @@ public final class EntryClassGuardTest {
             Pattern.compile("public static final String (\\w+) = \"([^\"]*)\";");
     private static final Pattern LITERAL_EVENT = Pattern.compile("BridgeDebugArea\\.\\w+,\\s*\"([^\"]+)\"");
     private static final Pattern INTERCEPT = Pattern.compile("\\.intercept\\(");
+    /** {@code this::onX}, {@code owner::onX} or {@code Outer.this::onX}: the receiver is ignored. */
+    private static final Pattern METHOD_REFERENCE = Pattern.compile("\\s*[\\w$.]+::([\\w$]+)");
 
     static String hookIds() throws IOException {
         Map<String, String> values = new TreeMap<>();
@@ -200,13 +202,15 @@ public final class EntryClassGuardTest {
             while (m.find()) {
                 int at = m.start();
                 JavaOutline.Member method = outline.enclosingMethod(at);
-                JavaOutline.Member type = outline.enclosingType(at);
-                String key = (type == null ? "?" : type.name) + "." + (method == null ? "<field-initializer>" : method.name);
+                // Keyed by method name only, never by the declaring class, so moving an installer
+                // to another class (E-2 to E-7) leaves the baseline unchanged.
+                String key = method == null ? "<field-initializer>" : method.name;
                 int statement = Math.max(outline.code.lastIndexOf(';', at),
                         Math.max(outline.code.lastIndexOf('{', at), outline.code.lastIndexOf('}', at)));
                 String setId = setIdArgument(outline.source.substring(statement + 1, at));
                 String rest = outline.source.substring(m.end(), Math.min(outline.source.length(), m.end() + 120));
-                String callback = rest.startsWith("this::") ? rest.substring(6).split("[^\\w$]", 2)[0] : "<lambda>";
+                Matcher reference = METHOD_REFERENCE.matcher(rest);
+                String callback = reference.lookingAt() ? reference.group(1) : "<lambda>";
                 byMethod.computeIfAbsent(key, k -> new ArrayList<>()).add(setId + " -> " + callback);
             }
         }
