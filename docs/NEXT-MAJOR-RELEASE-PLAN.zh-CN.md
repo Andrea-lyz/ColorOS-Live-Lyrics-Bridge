@@ -2199,6 +2199,65 @@ E-2b 到 E-2d 都读写入口类的实例状态或调用 `hook()`，不能只靠
 - 本节的归类来自文本扫描。少数字段可能被分错区域，实施时以逐方法阅读为准。
 - 锁对象：E-6b、E-7a 涉及 `synchronized` 方法与 `this` 锁。每刀都要像 E-4b 那样逐个核对加锁顺序。
 
+### 15.8.13 E-6b 实施记录：歌词模式状态外移（2026-11-15，已提交，未推送）
+
+**分支：** Bridge `feat/e6b-surface-mode`（基于设计提交 `a94a651`）。按第 15.8.12 节的修订刀序做的第一刀。
+
+**移动了什么：** 新类 `LyricSurfaceModeController`（同包、final、包内可见），是以下状态的**唯一写入者**：
+- 10 个字段：
+  - 歌词模式常亮标志 `systemUiLyricModeKeepAwakeActive`；
+  - 两个模式日志时间戳；
+  - 表面再激活的 pending、generation、回调列表及其锁；
+  - provisional draw 的 Recycler 与截止时间；
+  - AOD 低帧率标志。
+- 原样移入 5 个方法：`maybeLogLyricModeKeepAwake`、`cancelLyricSurfaceReactivationCallbacks`、`clearLyricSurfaceProvisionalDraw`、`isProvisionalLyricSurfaceDraw`（HEAD 上已无调用，原样保留）、`setAodLowFrameRateLyricMode`。
+- 新增 8 个状态转换方法：`markLyricModeActive`、`markLyricModeInactive`、`noteLyricSurfaceSignal`、`markProvisionalLyricSurface`、`beginLyricSurfaceReactivation`、`postLyricSurfaceReactivation`、`forgetLyricSurfaceReactivation`、`finishLyricSurfaceReactivation`。
+  - 每个方法的语句都来自入口类原来的内联赋值，原样搬过来，顺序不变。
+- `Host` 只有 `info` 一个方法。构造参数另传渲染器与主线程 `Handler`。
+
+**入口类的 5 处有意改写**（第 15.8.12 节允许的结构改写；只换调用位置，常量、条件、日志文字不变）：
+
+| 方法 | 原内联语句 | 改为 | 顺序 |
+| --- | --- | --- | --- |
+| `activateSystemUiLyricModeFromSurface` | `changed = !active; active = true;` …… `lastSystemUiLyricModeLogAt = now;` | `markLyricModeActive()` …… `noteLyricSurfaceSignal(now)` | 中间的 `screenTimeoutPausedByUserPresent = false` 位置不变 |
+| `deactivateSystemUiLyricModeAfterSurfaceHidden` | `changed = active; active = false;` …… `lastSystemUiLyricModeLogAt = now;` | `markLyricModeInactive()` …… `noteLyricSurfaceSignal(now)` | 中间的 rebind generation 与 runnable 处理仍在入口类，位置不变 |
+| `activateSystemUiLyricModeFromPendingDraw` | 读 provisional、取 `now`、按条件写两个字段 | `markProvisionalLyricSurface(recycler, now)` | 同一段语句，`now` 在调用处取 |
+| `scheduleLyricSurfaceReactivation` | `cancel…(); pending = true; generation = …;` 以及循环内加锁 add 与 `postDelayed` | `beginLyricSurfaceReactivation()`；循环内 `postLyricSurfaceReactivation(callback, delay)` | 不变 |
+| `LyricSurfaceReactivationTask.run` | 加锁 remove(this)；最后一轮 `pending = false; clear…();` | `forgetLyricSurfaceReactivation(this)`；`finishLyricSurfaceReactivation()` | 不变 |
+
+**其余访问：**
+- 入口类对这些字段的读取（约 30 处，含 E-3 与 Hook 的 Host 实现）一律改为 `surfaceMode.` 前缀；
+- 移动脚本断言入口类里不再有任何对控制器字段的赋值、自增，也不再对回调列表调用 add / remove / clear。
+- 入口类放宽了 2 个常量的 `private`：`LYRIC_SURFACE_PROVISIONAL_DRAW_GRACE_MS`、`LYRIC_VISIBILITY_RECOVERY_DELAYS_MS`。
+
+**与设计不同：** `screenTurnedOffForLockState` 和模式重绑 runnable 仍留在入口类。
+- 前者是锁屏状态，由 `isDeviceKeyguardLocked` 与翻译重绑使用；
+- 后者只由 `refreshLyricRenderingAfterModeChange` 拥有，归 E-7b。
+
+**锁：** 唯一移动的锁是再激活回调锁，加锁的语句块原样搬进控制器的方法，不涉及 `synchronized (this)`。
+
+**证据：**
+- 方法体比对（`--strip surfaceMode. --strip this:: --strip surfaceMode::`）：
+  - 9 个移动后一致；
+  - 改动 5 个，正好是上表 5 处；
+  - 0 个删除；
+  - 新增 10 个：构造函数、`info` 转发与 8 个转换方法。
+- 三份基线不变。
+- 入口类预算下调：12,027 → 11,963 行，字段 305 → 296，方法 464 → 459（内嵌行 37 → 34）。
+- `verify-build-identity` 通过（371 个输入）。
+- 本地 1056 tests / 0 fail / 6 skip，Debug 与 R8 通过。
+
+**候选：** `artifacts/e6b-surface-mode-20261115/Bridge-E6b-mode-debug-r1.apk`（`ea7c82f8…`）。
+
+**设备冒烟（重启 SystemUI；逐字歌词；建议开启智能屏幕超时）：**
+1. 锁屏进入歌词页后歌词逐字推进；智能屏幕超时生效（模式激活）。
+2. 亮屏与 AOD 往返 3 次：AOD 下低帧率显示正常；回到亮屏后歌词立即恢复，不需要等几秒。
+3. 划走 / 收起歌词页后，常亮释放、按系统超时灭屏（模式隐藏）。
+4. 快速切歌时，歌词页不闪退、不卡在空白（短暂丢失表面时保持模式）。
+5. 熄屏一会儿再亮屏、解锁再锁屏后，歌词页能自己恢复（再激活回调）。
+
+**结果：** 用户安装候选 `ea7c82f8…`、重启 SystemUI 后，设备冒烟 1–5 项通过（2026-11-15）。
+
 ### 15.9 未覆盖
 
 - **Providers 仓库**的结构与性能没有做同等盘点。若要纳入“完整优化”，需要另做一次基线（13 个专用模块的 Hooker、`provider-core`、Universal），本节不对其作任何结论。
