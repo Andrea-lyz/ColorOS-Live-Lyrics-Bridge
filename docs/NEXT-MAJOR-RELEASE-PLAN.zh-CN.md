@@ -2738,6 +2738,98 @@ E-2b 到 E-2d 都读写入口类的实例状态或调用 `hook()`，不能只靠
 - ERROR / FATAL 为 0。上一个进程是重启按钮的 `SIGNALED 9`，SafeMode 没有新增计数。
 - **用户设备冒烟：** 1–5 项通过。
 
+### 15.8.22 F-3 实施记录：配置、反射工具与排版收尾（2026-11-16，已提交，未推送，设备已通过）
+
+**分支：** Bridge `feat/f3-config-layout`（基于 `729dee7`）。
+
+**F-3a 配置快照：不做，书面放弃。**
+- 实测设置状态的写入点：
+  - `lyricUiConfig` 只由三个设置处理方法写入：`handleLyricUiStyleSettingsChanged`、`handlePlayerTranslationSettingsChanged`、`loadLyricUiStyleSettings`；
+  - 4 个 `lyricUiXxxEnabled` 标志只由 `applyLyricUiStyleSettings` 写入；
+  - 清理配置、调试配置、各接收器的写入方也都各只有一两个。
+- 写入已经集中在入口类的“设置应用”区段，满足单一写入者。
+- 各 owner 读配置的方式本身没有问题：渲染器经 `setConfig` 接收配置，其余组件经 Host 读取。
+- 改成发布 `RuntimeConfigSnapshot` 属于行为重设计，没有对应的所有权收益，与 F-2 对模型真值的结论同理。
+
+**F-3b 通用反射工具：保留在入口类的“通用静态工具”区段。**
+- 剩余的按名反射工具（`invoke*ByName`、`read*Field`、`findMethod` 等，约 280 行）被多个 Hook 胶水使用。
+- 第 15.2 节不建通用 `ReflectionUtils`；按使用方拆开又会复制同一组工具。
+- 决定原样保留，以区段标题注明。
+
+**F-3c `d5459c9`：入口类按区段排版。**
+- 345 个方法按 14 个区段重新排列，每段一行标题注释：
+  1. 模块入口与组装；
+  2. Hook 安装；
+  3. 插件 ClassLoader 与 generation 回调；
+  4. 全局 View Hook 回调；
+  5. 模型真值、Provider 绑定、清理与发布；
+  6. 播放状态；
+  7. 歌词模式与 handoff；
+  8. Recycler 编排；
+  9. 活动行刷新与绘制；
+  10. 设置与翻译；
+  11. 封面；
+  12. App 侧请求；
+  13. 日志出口；
+  14. 通用静态工具。
+- 类注释写明入口类的职责：组合根、Hook 胶水、跨 owner 编排，以及模型真值与设置的唯一写入者。
+- **只移动方法，不动字段。** 脚本断言去掉全部方法块之后，新旧文件剩下的骨架逐字相同（字段、内嵌类型及其顺序），所以字段初始化顺序不变。
+- 区段标题会让行数增加。为了不突破“预算只降不升”，把 28 行的 `mapLogArea` 移入 `LyricLogDescriptions`（诊断归属，同 E-2c）。
+- 方法体：2,820 个不变，1 个移动后一致，0 改动。
+- 入口类预算：9,804 → 9,798 行，方法 346 → 345。
+- `verify-build-identity` 通过（379 个输入）。
+- 本地 1056 tests / 0 fail / 6 skip，Debug 与 R8 通过。
+
+**候选：** `artifacts/f3-layout-20261116/Bridge-F3-layout-debug-r1.apk`（`2a668d14…`）。
+
+**设备验证：**
+- 本刀没有逻辑改动，只需一次轻量冒烟：agent 经授权只读 LSPosed 日志，核对与 F-2 进程的 Hook 安装一致。
+- 用户在重启 SystemUI 一次后检查：
+  1. 锁屏逐字歌词正常推进；
+  2. 切一次歌正常；
+  3. 打开 App 的调试页，开始一次 60 秒诊断并生成摘要（日志出口已改到 `LyricLogDescriptions`）。
+
+**结果（2026-11-16）：**
+- agent 只读 LSPosed 日志：新进程（00:20:44）中本模块四条 `HOOK_INSTALLED` 与基线（F-2 进程）逐字相同；adapter bind 在歌词首次显示时懒安装，00:23:14 出现。
+- 仅有已知的 KuWo WARN，ERROR / FATAL 为 0。上一个进程是重启按钮的 `SIGNALED 9`，SafeMode 未新增计数。
+- 用户冒烟 1–3 项通过。
+
+### 15.8.23 E/F 系列收尾小结（2026-11-16）
+
+| | E-0 基线 | F-3 后 |
+| --- | ---: | ---: |
+| 入口类行数 | 17,989 | 9,798（−45.5%） |
+| 顶层字段 | 373 | 232 |
+| 方法 | 565 | 345 |
+| 内嵌类型 | 13 | 1（`LyricSurfaceReactivationTask`） |
+
+**入口类之外的 owner 与工具（均为同包类）：**
+- `OfficialLyricTextRenderer`；
+- `OplusMediaPolicyHooks`；
+- `ScreenTimeoutController`；
+- `TranslationActionViewTracker`、`TranslationActionController`；
+- `SystemUiPlaybackController`（绑定与时钟）；
+- `LyricViewRegistry`；
+- `LyricSurfaceModeController`、`LyricSurfaceHandoffController`；
+- `ActiveLyricState`、`ActiveLyricRefreshSchedule`；
+- `LyricsRecyclerState`；
+- `PluginHookGenerationManager`；
+- `KuWoSystemUiCompat`；
+- 无状态工具：`LyricsRecyclerViews`、`LyricMetadataSupport`、`LyricLogDescriptions`；
+- E-2a 的 10 个值类型。
+
+**完成定义（第 15.8.19 节）：**
+- 每个有状态 owner 都是其状态的唯一写入者；入口类保留的状态（模型真值、设置、Hook 安装标志、少量缓存与节流）也只由入口类写入。
+- 入口类按区段分为组合根、Hook 胶水、跨 owner 编排。
+- 12 个契约测试经 `BridgeSourceMap` 跟随，断言没有改动。
+
+**推迟或放弃（书面）：**
+- 根包按 Hook 面 / App 面分包（D15）；
+- P-3 去锁；
+- 第 15.4 节的性能候选（P-8 DexKit 缓存等）另行评估；
+- F-3a 配置快照、F-3b 反射工具拆分：理由见第 15.8.22 节。
+- 全部提交仅在本地，未推送。
+
 ### 15.9 未覆盖
 
 - **Providers 仓库**的结构与性能没有做同等盘点。若要纳入“完整优化”，需要另做一次基线（13 个专用模块的 Hooker、`provider-core`、Universal），本节不对其作任何结论。
