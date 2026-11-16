@@ -2844,7 +2844,7 @@ E-2b 到 E-2d 都读写入口类的实例状态或调用 `hook()`，不能只靠
 - **放弃 E 系列之后的性能复测**：第 12 节“结构治理”一行中“同场景 `PERF_SAMPLE` 与掉帧不劣于 E-0 基线”不再作为 5.0 门禁，记为“用户决定不测”，不记为通过。
 - **C-05/C-06 不使用其他真实设备**：用户手上只有 PJZ110。改用工作区 `PlayerSource/` 与 `logs/OP16/` 中其他设备的 SystemUI / SystemUIPlugin APK 做只读静态样本。结论只能是“静态契约匹配/不匹配”，不能写成“该型号设备验收通过”。
 
-### 16.2 C-04 局部降级与恢复（2026-11-16，本地，已提交 `5229654`，待设备冒烟）
+### 16.2 C-04 局部降级与恢复（2026-11-16，已提交 `5229654`，用户设备冒烟通过）
 
 **分支：** Bridge `feat/c04-degradation`（基于 `9a46f63`）。
 
@@ -2882,6 +2882,14 @@ E-2b 到 E-2d 都读写入口类的实例状态或调用 `hook()`，不能只靠
 **候选：** `artifacts/c04-degradation-20261116/Bridge-C04-degradation-debug-r1.apk`（`8818cb68…`）。
 
 **设备验证：** 真实设备上无法在不注入故障的情况下触发降级，本刀只做无回归冒烟；降级与恢复本身只有本地单元证据。
+
+**设备结果（2026-11-16，PJZ110）：**
+- agent 经授权 adb 安装 r1，回读已装 APK 哈希一致（`8818cb68…`）。
+- 用户重启 SystemUI 后，agent 经授权只读 LSPosed 日志，新进程与旧进程对照：
+  - 插件 ClassLoader 工厂、LyricsRecyclerView 的 Hook 计数（current=0 pivot=1 rowStyle=1 immersiveEntry=1 dataset=0 surfaceDraw=1）一致；
+  - 唯一 WARN 相同（KuWo 封面快照 Hook 跳过）；没有 ERROR、`HOOK_FAILED` 或 `FEATURE_DEGRADED`。
+  - 惰性安装的 adapter-bind Hook 在读取时尚未出现（旧进程是启动约 2.5 分钟后才装上），记为 unknown；本刀没有改动该路径。
+- 用户确认冒烟 1–6 通过：逐字推进、切歌、字符上浮、封面取色、翻译按钮、状态页无“多次出错”原因。
 
 ### 16.3 C-05/C-06 静态样本清单（2026-11-16）
 
