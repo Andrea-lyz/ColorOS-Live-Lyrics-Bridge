@@ -101,12 +101,13 @@ Bridge 已为 Halcyon（`com.ella.music`）、Flamingo（`yos.music.player`）�
 
 ## 安装
 
-1. 安装自己需要的 4.2 Provider APK；通用播放器在其设置 App 中选择目标播放器，专属 Provider 则在 LSPosed 中只勾选对应音乐 App。
-2. 如需 Bridge 增强，再安装 `ColorOS-Live-Lyrics-Bridge-<版本>.apk`，作用域保持 `system` 与 `com.android.systemui`。
-3. 重启目标播放器与 SystemUI；首次安装或改变作用域后建议重启手机。
-4. 不要同时让旧词幕 Provider 与 4.1 Provider hook 同一播放器。
+1. 安装 `ColorOS-Live-Lyrics-Bridge-<版本>.apk`，在 LSPosed 中启用，作用域保持 `system` 与 `com.android.systemui`。
+2. 打开 Bridge（桌面图标或 LSPosed 模块设置），在“商店”中安装自己播放器对应的专属 Provider，或通用播放器 Provider。
+3. 在 LSPosed 中启用该 Provider：专属 Provider 可在商店卡片上一键申请作用域，只勾选对应音乐 App；通用播放器在其设置 App 中选择目标播放器。
+4. 重启目标播放器与 SystemUI；首次安装或改变作用域后建议重启手机。
+5. 不要同时让旧词幕 Provider 与本项目的 Provider hook 同一播放器。
 
-Release 中的 Provider ZIP 只是 APK 下载合集，不是 Recovery 刷机包。
+自 5.0 起，Bridge Release 只包含 Bridge APK；Provider 由 Providers 仓库按各自版本发布，并通过 Bridge 商店的签名目录分发。
 
 从 3.8.x 升级时，请先阅读[迁移指南](docs/4.0/MIGRATION-3.8-TO-4.0.zh-CN.md)，其中列出
 新旧 applicationId、准确 Provider scope、不再支持的播放器、配置备份与降级边界。
@@ -116,7 +117,7 @@ Release 中的 Provider ZIP 只是 APK 下载合集，不是 Recovery 刷机包�
 
 ## 怎么设置外观
 
-在 LSPosed 的模块页面打开 **ColorOS Live Lyrics Bridge → 设置**。
+打开 Bridge（桌面图标或 LSPosed 模块设置），在“外观”标签进入歌词外观设置。
 
 你可以先选一个风格预设，再按喜好微调。修改时只会更新预览，点击“应用并保存”后才会真正应用到锁屏。设置页还提供：
 
