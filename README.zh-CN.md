@@ -13,8 +13,7 @@
 
 它不是一套盖在锁屏上的悬浮窗，而是把播放器的完整歌词交给系统原生界面显示。这样既能保留 ColorOS 的锁屏风格、切歌动画和息屏显示，也能补上逐字高亮、翻译和外观设置。
 
-> 当前正式版本：**v4.5.4**。
-> 下一大版本：[ColorOS 兼容、新手引导与 Provider 商店计划](<docs/NEXT-MAJOR-RELEASE-PLAN.zh-CN.md>)（规划中，尚未实现；不改变当前版本的安装方式）。
+> 当前正式版本：**v5.0.0**（[更新说明](.github/release-notes/5.0.0.md)）。
 
 ## 主要功能
 
@@ -29,10 +28,13 @@
 - 歌词显示时可以保持屏幕常亮，也可以设置一个自定义的亮屏时长。
 - 保留系统媒体卡片的上一首、播放/暂停、下一首等原有操作。
 - 针对切歌、暂停恢复、AOD 切换、重复歌词和中日文长句做了专门处理。
+- 自带管理应用：首页、商店、外观、状态四个标签，首次使用有设置清单；桌面图标可在首页隐藏。
+- Provider 商店：签名目录，下载校验后交给系统安装器；显示每个 Provider 是否已在 LSPosed 启用，专属 Provider 可一键申请作用域；可选的更新提醒默认关闭。
+- 状态页按功能显示是否生效及原因；某项增强多次出错时会单独暂停并回退到官方效果，不影响其他功能。
 
-自 v4.5.0 起，可选的动态封面进入正式版：安装同一 Release 中的
-[动态封面 Provider](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Providers/blob/main/artwork-provider-am/README.md)
-并在 Bridge「设置 → 动态封面」中选择、授权后，锁屏歌词小封面与大封面会播放当前歌曲的方形动态封面；
+可选的动态封面：在 Bridge 商店中安装
+[动态封面 Provider](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Providers/blob/main/artwork-provider-am/README.md)，
+并在 Bridge「外观 → 动态封面」中选择、授权后，锁屏歌词小封面与大封面会播放当前歌曲的方形动态封面；
 C17 还支持同步镜像动态背景与封面取色光晕。动态封面的帧率可在 10–30 fps 之间调节：调低更省电，
 调高更流畅（默认 30 fps，即视频原帧率）。不安装 Provider 时锁屏保持官方静态封面，AOD 始终使用静态封面。
 
@@ -44,28 +46,27 @@ C17 还支持同步镜像动态背景与封面取色光晕。动态封面的帧�
 - 系统本身带有 ColorOS / OPlus 原生锁屏歌词页面。
 - 愿意在系统更新或播放器大版本更新后，重新确认兼容性。
 
-项目最低 Android API 为 26，但这不等于所有 Android 8.0 以上设备都能使用。真正决定是否兼容的是手机上的 OPlus SystemUI 实现。当前主要围绕 ColorOS 16 的原生锁屏歌词链路开发和验证；一加、OPPO、真我等设备即使系统名称相近，也可能因为 SystemUI 版本不同而表现不同。
+项目最低 Android API 为 26，但这不等于所有 Android 8.0 以上设备都能使用。真正决定是否兼容的是手机上的 OPlus SystemUI 实现。5.0 在 ColorOS 17（PJZ110）上完成设备验收；SystemUI 16.99.12 / 17.99.02 与 SystemUIPlugin 16.001.002 / 17.000.002 的其他已知构建做了静态兼容核对，其他型号未验证。一加、OPPO、真我等设备即使系统名称相近，也可能因为 SystemUI 版本不同而表现不同。
 
 如果系统原本没有锁屏歌词页面，本模块不会另外创建一个悬浮歌词窗口。
 
-## 4.x 架构与播放器适配
+## 架构与播放器适配
 
-Bridge 4.x 只运行在 `system` / `com.android.systemui`，不再进入播放器进程，也不再接收 Provider 私有广播。独立 Provider 在目标播放器进程内把歌词写入播放器自己的 `MediaSession` / `MediaMetadata["lyricInfo"]`；Bridge 只消费这份 ColorOS 原生数据并提供样式、逐字渲染、翻译按钮、AOD 和兼容增强。
+Bridge 只运行在 `system` / `com.android.systemui`，不再进入播放器进程，也不再接收 Provider 私有广播。独立 Provider 在目标播放器进程内把歌词写入播放器自己的 `MediaSession` / `MediaMetadata["lyricInfo"]`；Bridge 只消费这份 ColorOS 原生数据并提供样式、逐字渲染、翻译按钮、AOD 和兼容增强。
 
 Provider 与 Bridge 可以独立安装：
 
 - 只安装 Provider：ColorOS SystemUI 可直接消费播放器的原生 `lyricInfo`。
 - 额外安装 Bridge：在原生链路之上增加通用增强；不会再次提交一份歌词。
-- 4.1 Provider 是使用 libxposed API 102 与静态作用域的独立 Root / LSPosed 模块。
+- 每个 Provider 都是使用 libxposed API 102 与静态作用域的独立 Root / LSPosed 模块，在 Bridge 商店中按各自版本安装和更新。
 
-| 播放器 | 4.3 Provider 模块 | 歌词能力 |
+| 播放器 | Provider 模块 | 歌词能力 |
 | --- | --- | --- |
 | Salt Player | `player-salt` | 逐字、翻译、公开翻译 CustomAction |
 | ConePlayer / 光锥音乐（正式版、Google Play 版） | `player-cone` | 完整时间轴、翻译、公开翻译 CustomAction |
 | 酷我音乐 | `kuwo-music` | 官方 `lyricInfo` 追加逐字与翻译 |
 | LX Music（ToSide / Walnut） | `player-lx` | 逐字、翻译、蓝牙歌词身份与封面兼容 |
 | Poweramp | `player-poweramp` | 同目录 `.lrc` / 内嵌标签、翻译 |
-| [Metrolist](https://github.com/metrolistgroup/metrolist) | `player-metrolist` | BetterLyrics / LrcLib / KuGou；不支持翻译 |
 | 酷狗音乐 / 酷狗概念版 | `player-kugou` | 官方 payload 追加逐字与 type-1 翻译 |
 | QQ 音乐官方版 | `player-qq` | 官方 payload 追加逐字与翻译；QQ HD 不在范围 |
 | 网易云官方版 / 荣耀版 / 修改版 9.0.40 | `player-netease` | 官方追加或按运行 profile 构造逐字与翻译 |
@@ -73,10 +74,13 @@ Provider 与 Bridge 可以独立安装：
 | Spotify | `player-spotify` | Color Lyrics 逐行或逐字；不支持翻译 |
 | 汽水音乐 | `player-qishui` | 宿主 TrackLyric / 缓存回退，逐字与翻译 |
 | 通用播放器 | `universal-provider` | 在设置 App 中选择目标 MediaSession 播放器；由 system_server 统一补全歌词 |
+| Readify AI | `player-readify` | 在线朗读的事件驱动句子窗口（见下文） |
 
 通用播放器 Provider 只运行在 `system_server`，在其设置 App 中选择目标播放器。使用它时请关闭
 播放器的蓝牙歌词、车载歌词或类似功能；这些会覆盖标题的路径当前不能同时启用。播放器更新后，
-私有歌词接口仍可能变化。上表表示当前 4.2 代码与真机验收矩阵，不代表未来所有播放器版本永久兼容。
+私有歌词接口仍可能变化。上表表示当前代码与验收范围，不代表未来所有播放器版本永久兼容。
+
+Metrolist 自 5.0 起不再提供专属 Provider，建议改用通用播放器 Provider。
 
 ### 通用播放器 Provider
 
@@ -113,7 +117,7 @@ Bridge 已为 Halcyon（`com.ella.music`）、Flamingo（`yos.music.player`）�
 新旧 applicationId、准确 Provider scope、不再支持的播放器、配置备份与降级边界。
 需要词幕 Provider 时，从
 [LyricProvider 原项目](https://github.com/tomakino/LyricProvider) 获取；词幕显示/产品问题
-向原项目反馈，不由 Bridge 或 4.1 Provider 仓库受理。
+向原项目反馈，不由 Bridge 或 Provider 仓库受理。
 
 ## 怎么设置外观
 
@@ -134,7 +138,7 @@ Bridge 已为 Halcyon（`com.ella.music`）、Flamingo（`yos.music.player`）�
 
 默认、柔和、醒目、极简四套预设会显式设置新增亮度与渐隐字段；任一预设管理的颜色、排版、动效、亮度或渐隐参数发生偏离后，都会识别为“自定义”。柔和与醒目保留旧版随模糊/缩放启用的 90% 非活动行淡化，默认与极简关闭额外行淡化。
 
-主设置页提供独立的“Bridge 配置备份与恢复”入口。它会备份和恢复 Bridge 的两个配置域，覆盖主 UI、全局/逐播放器翻译设置、开头清理规则与逐曲修正、调试设置和设置页语言；页面内也提供二次确认后的全量重置。schema v3 无法保证无损降级：旧 codec 可能拒绝已保存配置，因此降级前应先创建完整 Bridge 备份，并准备在旧版中重置设置。
+“外观”标签中提供独立的“Bridge 配置备份与恢复”入口。它会备份和恢复 Bridge 的两个配置域，覆盖主 UI、全局/逐播放器翻译设置、开头清理规则与逐曲修正、调试设置和设置页语言；页面内也提供二次确认后的全量重置。schema v3 无法保证无损降级：旧 codec 可能拒绝已保存配置，因此降级前应先创建完整 Bridge 备份，并准备在旧版中重置设置。
 
 完整默认值、预设矩阵、迁移规则与降级边界见 [Bridge 4.0 歌词亮度与渐隐设置说明](docs/4.0/LYRIC-VISUAL-CONTROLS.md)。
 
@@ -142,7 +146,7 @@ Bridge 已为 Halcyon（`com.ella.music`）、Flamingo（`yos.music.player`）�
 
 ### 安装后完全没有歌词
 
-先确认三件事：系统原生锁屏歌词页面是否存在、Bridge 是否使用推荐作用域、目标播放器是否需要单独安装 Provider。完成后强行停止音乐 App；如果仍无效，再重启手机。
+先打开 Bridge 的“首页”和“状态”标签：确认 Bridge 模块在运行、对应 Provider 已在 LSPosed 启用，并查看各功能未生效的原因。再确认系统原生锁屏歌词页面存在、Bridge 使用推荐作用域。完成后强行停止音乐 App；如果仍无效，再重启手机。
 
 ### 有普通歌词，但没有逐字或翻译
 
@@ -150,7 +154,7 @@ Bridge 已为 Halcyon（`com.ella.music`）、Flamingo（`yos.music.player`）�
 
 ### 切歌后还是上一首，或显示“暂无歌词”
 
-请先确认 Bridge 与所有 Provider 都来自同一个 Release。混用不同版本最容易出现切歌时序不一致。随后强行停止播放器并重启系统界面；涉及作用域变化时直接重启手机。
+请先在商店中把 Bridge 和所用 Provider 都更新到最新版本，并确认同一播放器只启用了一个 Provider（专属 Provider 与通用播放器 Provider 二选一）。随后强行停止播放器并重启系统界面；涉及作用域变化时直接重启手机。
 
 ### 系统更新后失效
 
@@ -166,7 +170,7 @@ Bridge 只读取本机播放器 MediaSession 中的原生歌词并增强 SystemU
 
 - [播放器接入协议（中文）](docs/PLAYER_INTEGRATION.zh-CN.md)
 - [Player integration protocol (English)](docs/PLAYER_INTEGRATION.md)
-- [Provider 适配技术指南](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Providers/blob/4.1/docs/4.0/PROVIDER-ADAPTATION-GUIDE.zh-CN.md)
+- [Provider 适配技术指南](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Providers/blob/main/docs/4.0/PROVIDER-ADAPTATION-GUIDE.zh-CN.md)
 - [3.8.x → 4.0 迁移指南](docs/4.0/MIGRATION-3.8-TO-4.0.zh-CN.md)
 - [Bridge 与 LyricProvider 的职责说明](docs/LYRIC_PROVIDER_BRIDGE.zh-CN.md)
 
@@ -201,6 +205,6 @@ Copyright 2026 Andrea-lyz。本项目采用 [Apache License 2.0](LICENSE) 开源
 
 Android、ColorOS、OPlus、LSPosed 以及各音乐 App 名称的商标权归各自权利人所有。本项目与这些产品的官方团队没有隶属或背书关系。
 
-## Readify 句子窗口（提案）
+## Readify 句子窗口
 
-Readify 在线朗读适配及事件驱动高亮见 [协议与验证说明](docs/SENTENCE_WINDOWS.md)。需要配套 Provider；Bridge 的系统作用域不变。
+Readify 在线朗读适配及事件驱动高亮见 [协议与验证说明](docs/SENTENCE_WINDOWS.md)。需要在商店中安装 Readify Provider；Bridge 的系统作用域不变。

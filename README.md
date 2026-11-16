@@ -13,8 +13,7 @@ Bring lyrics from more music apps to the native ColorOS / OPlus lock-screen lyri
 
 This is not a floating overlay. It passes a player's full lyric timeline to the system UI, keeping the ColorOS look, transitions, and always-on display while adding word-by-word highlighting, translations, and appearance controls.
 
-> Current release: **v4.5.4**.
-> Next major release: [ColorOS compatibility, onboarding, and Provider Store plan (Chinese)](<docs/NEXT-MAJOR-RELEASE-PLAN.zh-CN.md>) — planned, not implemented; current installation instructions remain unchanged.
+> Current release: **v5.0.0** ([release notes](.github/release-notes/5.0.0.md)).
 
 ## What it does
 
@@ -29,10 +28,13 @@ This is not a floating overlay. It passes a player's full lyric timeline to the 
 - Can keep the screen awake while lyrics are visible, either indefinitely or for a chosen duration.
 - Preserves the media card's original previous, play/pause, next, and other controls.
 - Handles rapid track changes, pause/resume, AOD transitions, repeated lines, and long CJK text more reliably.
+- Comes with a management app: Home, Store, Appearance and Status tabs, a first-run setup checklist, and a launcher icon you can hide from Home.
+- Provider store: a signed catalog, downloads checked before the system installer takes over, the LSPosed enabled state of each Provider, a one-tap scope request for dedicated Providers, and optional update reminders (off by default).
+- The Status tab shows per feature whether it is in effect and why; an enhancement that fails repeatedly pauses on its own and falls back to the official look without affecting the others.
 
-From v4.5.0, optional dynamic artwork is part of the stable release. Install the
+Optional dynamic artwork: install the
 [Dynamic Artwork Provider](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Providers/blob/main/artwork-provider-am/README.md)
-from the same Release, then pick and authorize it in Bridge under Settings → Dynamic artwork; the small
+from the Bridge store, then pick and authorize it in Bridge under Appearance → Dynamic artwork; the small
 lyric cover and the large cover then play the current song's square motion artwork. On C17 it also
 drives a synchronized mirrored background and artwork-based glow colors. The motion cover frame rate is
 adjustable from 10 to 30 fps: lower saves battery, higher is smoother (default 30 fps, the video's
@@ -47,28 +49,27 @@ This module is intended for devices that meet all of these requirements:
 - A ColorOS / OPlus system image that already includes the native lock-screen lyric page.
 - An understanding that a major system or player update may require a compatibility update.
 
-The APK has a minimum Android API level of 26, but that does not mean every Android 8.0+ device is compatible. The deciding factor is the private OPlus SystemUI implementation on the device. Development and current testing mainly target the ColorOS 16 lyric path. OnePlus, OPPO, and realme devices may behave differently even when their system interfaces look similar.
+The APK has a minimum Android API level of 26, but that does not mean every Android 8.0+ device is compatible. The deciding factor is the private OPlus SystemUI implementation on the device. 5.0 is device-accepted on ColorOS 17 (PJZ110); other known builds of SystemUI 16.99.12 / 17.99.02 and SystemUIPlugin 16.001.002 / 17.000.002 were checked for static compatibility, and other models are not verified. OnePlus, OPPO, and realme devices may behave differently even when their system interfaces look similar.
 
 If the ROM has no native lock-screen lyric page, this module will not create a separate floating lyric window.
 
-## 4.x architecture and player compatibility
+## Architecture and player compatibility
 
-Bridge 4.x runs only in `system` and `com.android.systemui`. It no longer enters player processes or receives private Provider broadcasts. Each independent Provider writes lyrics into the player's own `MediaSession` / `MediaMetadata["lyricInfo"]`; Bridge consumes that native ColorOS data and adds styling, word rendering, translation controls, AOD support, and compatibility enhancements.
+Bridge runs only in `system` and `com.android.systemui`. It no longer enters player processes or receives private Provider broadcasts. Each independent Provider writes lyrics into the player's own `MediaSession` / `MediaMetadata["lyricInfo"]`; Bridge consumes that native ColorOS data and adds styling, word rendering, translation controls, AOD support, and compatibility enhancements.
 
 Providers and Bridge can be installed independently:
 
 - Provider only: ColorOS SystemUI can consume the player's native `lyricInfo` directly.
 - Provider plus Bridge: Bridge adds generic enhancements without submitting a second lyric payload.
-- 4.1 Providers are independent Root / LSPosed modules using libxposed API 102 and static scope.
+- Each Provider is an independent Root / LSPosed module using libxposed API 102 and static scope, installed and updated from the Bridge store at its own version.
 
-| Player | 4.3 Provider module | Lyric capability |
+| Player | Provider module | Lyric capability |
 | --- | --- | --- |
 | Salt Player | `player-salt` | Word timing, translations, public translation CustomAction |
 | ConePlayer (standard and Google Play) | `player-cone` | Full timeline, translations, public translation CustomAction |
 | KuWo Music | `kuwo-music` | Appends word timing and translations to official `lyricInfo` |
 | LX Music (ToSide / Walnut) | `player-lx` | Word timing, translations, Bluetooth identity and artwork compatibility |
 | Poweramp | `player-poweramp` | Sidecar `.lrc` / embedded tags and translations |
-| [Metrolist](https://github.com/metrolistgroup/metrolist) | `player-metrolist` | BetterLyrics / LrcLib / KuGou; no translations |
 | KuGou Music / Concept | `player-kugou` | Appends word timing and type-1 translations to the official payload |
 | QQ Music | `player-qq` | Appends word timing and translations; QQ Music HD is out of scope |
 | NetEase official / Honor / modified 9.0.40 | `player-netease` | Official append or profile-selected constructed word timing and translations |
@@ -76,11 +77,14 @@ Providers and Bridge can be installed independently:
 | Spotify | `player-spotify` | Line- or word-timed Color Lyrics; no translations |
 | QiShui Music | `player-qishui` | Host TrackLyric / cache fallback with word timing and translations |
 | Universal Player | `universal-provider` | Select target MediaSession players in its app; system-server lyric enrichment |
+| Readify AI | `player-readify` | Event-driven sentence windows for online read-aloud ([details](docs/SENTENCE_WINDOWS.md)) |
 
 The Universal Player Provider runs only in `system_server`; select its target players in its own app.
 Disable Bluetooth/car-lyrics or similar player functions while using it, because those title-overwrite
-paths are currently incompatible. This table describes the current 4.2 implementation and
-device-validation matrix, not permanent compatibility with every future player release.
+paths are currently incompatible. This table describes the current implementation and validation
+scope, not permanent compatibility with every future player release.
+
+Since 5.0 Metrolist no longer has a dedicated Provider; the Universal Player Provider is the suggested replacement.
 
 ### Universal Player Provider
 
@@ -121,7 +125,7 @@ For a 3.8.x upgrade, old/new application IDs, exact Provider scopes, unsupported
 and downgrade boundaries, read [Migrating from 3.8.x to 4.0](docs/4.0/MIGRATION-3.8-TO-4.0.md).
 Lyricon Providers are obtained from the
 [original LyricProvider project](https://github.com/tomakino/LyricProvider); report Lyricon
-display/product issues there rather than in the Bridge or 4.1 Provider repositories.
+display/product issues there rather than in the Bridge or Provider repositories.
 
 ## Appearance and behavior
 
@@ -142,7 +146,7 @@ The refresh-rate setting limits lyric drawing only. It does not force the displa
 
 The four presets explicitly own the new brightness and fading fields. Changing any preset-owned color, typography, motion, brightness, or fading value marks the result as **Custom**. Soft and Vivid retain the legacy 90% inactive-row fade that previously followed blur/scaling; Default and Minimal leave the extra row fade off.
 
-The main settings page has a separate **Bridge configuration backup & restore** entry. It copies and restores both Bridge preference domains, covering the main UI, global/per-player translation settings, opening-cleanup rules and corrections, debug settings, and settings language. A full reset is available there after confirmation. Downgrading from a schema-v3 build is not lossless: older codecs may reject the saved configuration, so create a complete Bridge backup first and be prepared to reset the older app's settings.
+The **Appearance** tab has a separate **Bridge configuration backup & restore** entry. It copies and restores both Bridge preference domains, covering the main UI, global/per-player translation settings, opening-cleanup rules and corrections, debug settings, and settings language. A full reset is available there after confirmation. Downgrading from a schema-v3 build is not lossless: older codecs may reject the saved configuration, so create a complete Bridge backup first and be prepared to reset the older app's settings.
 
 See [Bridge 4.0 lyric visual controls](docs/4.0/LYRIC-VISUAL-CONTROLS.md) for the exact defaults, preset matrix, migration behavior, and downgrade boundary.
 
@@ -150,7 +154,7 @@ See [Bridge 4.0 lyric visual controls](docs/4.0/LYRIC-VISUAL-CONTROLS.md) for th
 
 ### No lyrics appear at all
 
-Check that the ROM has the native lyric page, that the Bridge keeps its recommended scope, and that the target player does not need a separate Provider. Force stop and reopen the player; reboot the device if the issue remains.
+Open the Bridge **Home** and **Status** tabs first: check that the Bridge module is running, that the matching Provider is enabled in LSPosed, and why a feature is not in effect. Then check that the ROM has the native lyric page and that the Bridge keeps its recommended scope. Force stop and reopen the player; reboot the device if the issue remains.
 
 ### Line lyrics work, but word highlighting or translations do not
 
@@ -158,7 +162,7 @@ The current player or track probably supplies line-timed lyrics only. Word timin
 
 ### The previous track remains visible, or “No lyrics” appears after switching tracks
 
-Make sure the Bridge and all Providers came from the same release. Version mismatches are a common cause of inconsistent track timing. Then force stop the player and restart SystemUI; reboot after any scope change.
+Update the Bridge and your Providers to their latest store versions, and make sure only one Provider is enabled per player (a dedicated Provider or the Universal Player Provider, not both). Then force stop the player and restart SystemUI; reboot after any scope change.
 
 ### A system update breaks the module
 
@@ -174,7 +178,7 @@ If your player already has a full lyric timeline, the preferred integration is t
 
 - [Player integration protocol](docs/PLAYER_INTEGRATION.md)
 - [播放器接入协议（中文）](docs/PLAYER_INTEGRATION.zh-CN.md)
-- [Provider adaptation guide](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Providers/blob/4.1/docs/4.0/PROVIDER-ADAPTATION-GUIDE.md)
+- [Provider adaptation guide](https://github.com/Andrea-lyz/ColorOS-Live-Lyrics-Providers/blob/main/docs/4.0/PROVIDER-ADAPTATION-GUIDE.md)
 - [4.0 migration guide](docs/4.0/MIGRATION-3.8-TO-4.0.md)
 - [Bridge and LyricProvider responsibilities (Chinese)](docs/LYRIC_PROVIDER_BRIDGE.zh-CN.md)
 - [Dynamic artwork Provider and Bridge design (Chinese)](docs/DYNAMIC-ARTWORK-PROVIDER-PLAN.zh-CN.md)
