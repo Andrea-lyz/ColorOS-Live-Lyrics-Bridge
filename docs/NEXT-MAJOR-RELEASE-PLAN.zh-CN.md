@@ -3058,3 +3058,25 @@ S 只说明 Hook / 反射目标存在且形状正确，不说明运行时对象�
 **验证（本地）：** Bridge 1070 tests / 0 fail / 6 skip（`ProviderDirectoryContractTest` 用新矩阵通过；`PrototypeModelTest` 专属卡片数 12 → 11），Debug 与 R8 通过；Providers `testV5Matrix assembleV5MatrixDebug` 通过，目录脚本测试 18 项通过。
 
 **影响：** 批量发布的 Provider 从 13 个（LX 之外）变为 12 个。已装 4.x Metrolist Provider 的用户在商店里看不到它，模块本身不受 Bridge 影响。
+
+### 16.8 Provider 批量商店发布（2026-11-16，已发布）
+
+**发布内容（Providers `main` = `b44877a`）：**
+- PR #13（`637e47a`）：M4 作用域申请、Metrolist 退出矩阵、动态封面 Provider 改走商店、发布检查改为 13 个、13 个 Provider 升一个补丁版本并附中英文发布说明；
+- PR #14（`b44877a`）：修正 `ScopeRequestWiringTest` 仍断言 14 个 Provider 的问题，并把矩阵与各模块构建文件声明为测试输入。
+
+**已发布的 14 个 Release 与目录：**
+- Salt 1.1.3、Cone 1.1.3、KuWo 1.2.3、LX 1.2.3、Poweramp 1.2.2、KuGou 1.2.5、QQ 1.2.2、NetEase 1.2.3、Apple 1.2.2、Spotify 1.1.3、QiShui 1.1.3、Universal 1.1.4、Readify 1.0.3，以及动态封面 Provider 1.0.6（首次走商店）。
+- `store-catalog` 从 revision 1（`35a1909`）推进到 revision 15（`64d73bd`），每个 tag 一个 revision，均经用户在 GitHub 批准 `provider-catalog` 环境。
+
+**agent 独立核对（不只看 Actions 成功）：**
+- 下载 14 个 Release APK，用仓库的 `verifyEnvelope` / `validatePayload` 验证目录：签名有效（`cll-catalog-2026a`），revision 15，有效期至 2027-05-15；
+- 目录 14 项逐项与矩阵的包名、版本一致，下载地址指向对应 tag，字节数与 SHA-256 与下载的 APK 一致，发布说明与 `release/notes/` 原文一致；矩阵模块无遗漏；
+- 14 个 APK 用 `apksigner` 实测签名证书，全部等于 `catalog-trust.json` 的正式发布证书。
+
+**过程中的两个问题（已处理）：**
+1. 一次推送 14 个 tag 没有触发任何 workflow：GitHub 对一次推送超过 3 个 tag 不产生 push 事件。经用户同意删除远端 tag，按每批最多 3 个重推。
+2. 第一轮 14 个运行全部在 “Matrix tests” 失败（发布前，没有产生 Release，目录未动）：`ScopeRequestWiringTest` 仍断言 14 个 Provider。本地 `testV5Matrix` 之前通过只是因为 Gradle 复用了缓存结果（该测试读矩阵却未声明为输入）。修正后用 `--rerun-tasks` 跑全矩阵通过，PR #14 合并后经用户同意把 14 个 tag 移到 `b44877a` 重推，全部成功。
+- 教训：改矩阵后，Providers 的本地验证要带 `--rerun-tasks`，或确认读矩阵的测试都声明了输入。
+
+**未覆盖：** 新版本 Provider 在设备上的商店下载安装、启用状态显示与作用域申请尚未实测（之前只有 LX 1.2.2 与 Salt 的调试包证据）。
