@@ -2844,7 +2844,7 @@ E-2b 到 E-2d 都读写入口类的实例状态或调用 `hook()`，不能只靠
 - **放弃 E 系列之后的性能复测**：第 12 节“结构治理”一行中“同场景 `PERF_SAMPLE` 与掉帧不劣于 E-0 基线”不再作为 5.0 门禁，记为“用户决定不测”，不记为通过。
 - **C-05/C-06 不使用其他真实设备**：用户手上只有 PJZ110。改用工作区 `PlayerSource/` 与 `logs/OP16/` 中其他设备的 SystemUI / SystemUIPlugin APK 做只读静态样本。结论只能是“静态契约匹配/不匹配”，不能写成“该型号设备验收通过”。
 
-### 16.2 C-04 局部降级与恢复（2026-11-16，本地，未提交，待设备冒烟）
+### 16.2 C-04 局部降级与恢复（2026-11-16，本地，已提交 `5229654`，待设备冒烟）
 
 **分支：** Bridge `feat/c04-degradation`（基于 `9a46f63`）。
 
@@ -2897,3 +2897,46 @@ E-2b 到 E-2d 都读写入口类的实例状态或调用 `hook()`，不能只靠
 - APK 只留本地，不入库；仓库只提交结构摘要（类/方法/字段签名的存在性与哈希）。
 - 已有工具：`artifacts/c17-0-1-rea/` 的锚点与契约脚本（两份 C17 样本）。C-05 计划把它们泛化为：对每个样本按 Bridge 实际 Hook / 反射目标生成结构摘要 → 入库摘要 → JVM 测试逐样本断言“Bridge 的每个目标在该样本中可解析，或已有降级路径”。
 - C-06 用这张表代替型号矩阵：每个不同内容的组件指纹一列，结论写“静态匹配 / 不匹配 / 未知”。
+
+### 16.4 C-05a 静态兼容样本库（2026-11-16，本地，已提交，未推送）
+
+**分支：** Bridge `feat/c04-degradation`，紧接 C-04 的 `5229654` 单独提交。
+
+**做法：**
+- `scripts/compat/component_summary.py`：纯 Python 读 APK 内的 DEX 和二进制清单，只写出：
+  - 身份（包名、versionName/Code、APK SHA-256、标签）；
+  - Bridge 源码里点名的类、DexKit 锚点命中的类及其在 APK 内的父类链的**成员签名**（名称、访问标志、类型描述符，不含代码）；
+  - DexKit 两类原生查询的结果：哪些类同时使用一组锚点字符串（`usingEqStrings`），哪些方法调用了指定目标（歌词位置控制器）。
+- `anchor-spec.json` 列出这些查询；测试检查每个锚点字符串都还在 Bridge 源码里，且样本是用当前清单提取的。
+- `ComponentSampleContractTest`：用 ASM 按摘要在隔离 ClassLoader 里重建这些类（方法体一律抛异常），然后直接调用 Bridge 自己的解析代码：
+  - SystemUI：`SystemUiDexKitAdapter.resolveLegacy`，以及按 `resolveTargets` 顺序调用的各形状判定（DexKit 类搜索结果来自摘要）；插件 ClassLoader 工厂判定；`resolveActionExConstructor` 与 `MediaAction` 构造器；AOD 媒体白名单方法。
+  - 插件：`OplusPluginDexKitAdapter.legacy` 与 `bindResolvedClasses/bindArtwork`；`OfficialLyricsRecyclerCompatibility.resolve`；与 `tryInstallLyricsRecyclerViewHook` 同序的方法选择（`LyricsRecyclerViews`、行样式、沉浸入口策略）；歌词位置控制器。
+- 结果固定在 `compat/expected-matrix.txt`（同 E-0 基线的做法：变化即失败，需有意更新）。另有硬断言：每个样本的“歌词核心”必须可解析；样本缺失直接失败，不用 skipped。
+
+**样本：** 15 个不同内容的组件（第 16.3 节表），摘要共 1.1 MB，APK 本身不入库。
+
+**结果（静态，非设备验收）：**
+
+| | 16.99.12 ×4 | 17.99.02 ×3 | 插件 16.001.002 ×5 | 插件 17.000.002 ×3 |
+| --- | --- | --- | --- | --- |
+| 歌词核心 | 全部 OK | 全部 OK | 全部 OK | 全部 OK |
+| 媒体策略 / 模型 | DexKit 与按名两条路径都 OK | 同左 | 两条路径都 OK | DexKit 路径 OK；按名 `m6.*` 失败（预期） |
+| 插件 ClassLoader | 构造器 1 个 | 无构造器，走工厂 | — | — |
+| 翻译合成动作 | 7 参数 | C17.0.1 为 8 参数，其余 7 参数 | — | — |
+| 歌词列表字段布局 | — | — | 精确匹配 `u/v/C`、`u/v/B`、`t/u/A` 之一 | 无精确布局，运行时走 DexKit 字段解析（静态未覆盖） |
+| 列表 Hook | — | — | draw / setLyrics / 当前行 / 缩放中心均命中 | 无 setLyrics / 当前行，改由沉浸入口与行样式命中 |
+| 歌词位置控制器 | — | — | 1 个 | 无（预期，C17 没有旧定时控制器） |
+| 插件内封面绑定 | — | — | OK | 失败：StaticIcon 无 `Icon` 字段（预期，C17 封面由独立的 `ArtworkCompatibilityResolver` 负责） |
+
+这些结论与 C17 两次调查（`C17.0.1.x-BRIDGE-MISMATCH-SURVEY`）已知的差异一致：构造器 8 参数、工厂代替构造器、C17 无旧定时入口。
+
+**未覆盖（写明，不算通过）：**
+- `ArtworkCompatibilityResolver` 与 `OfficialLyricsRecyclerDexKitResolver`：依赖 DexKit 的字段读写与调用图语义，本刀不模拟；
+- 元数据变更入口的 DexKit 日志字符串查找（只跑了它的按名回退）；
+- 资源、Hook 实际安装顺序、活对象、绘制；
+- 开发设备 PJZ110 自身的 SystemUI / 插件指纹不在样本内（未导出），已知良好设备与样本的对应关系未知；
+- `system_server` 侧（`OplusMediaControlService`）不在范围。
+
+**验证：** 本地 1067 tests / 0 fail / 6 skip（新增 4 项），Debug 与 R8 通过，`verify-build-identity` 通过。新增测试依赖 `org.ow2.asm:asm:9.8`（Robolectric 已带的同一版本，仅测试用）。
+
+**C-05b（下一刀）：** 重复、乱序、迟到、失效回调的回放测试。按测试名粗查，现有“失效/迟到/AOD”类测试较多，“乱序”“歌词先到封面后到”“诊断开关不改变行为”几乎没有，需逐项核对后补齐。

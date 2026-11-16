@@ -135,6 +135,8 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.16.1")
     testImplementation("org.json:json:20260522")
+    // C-05: rebuilds summarized SystemUI classes for ComponentSampleContractTest (already a Robolectric dependency).
+    testImplementation("org.ow2.asm:asm:9.8")
     testImplementation(project(":libxposed-api-stubs"))
 }
 

@@ -1,0 +1,35 @@
+{
+  "_comment": "C-05: DexKit queries the static sample summaries evaluate. Each string must appear in the Bridge source (ComponentSampleContractTest checks it). Sets sharing a 'group' are DexKit anyOf alternatives.",
+  "systemui": {
+    "anchors": [
+      {"key": "rus-manager-a", "group": "rus-manager", "package": "com.oplus.systemui.media",
+       "strings": ["parseSaveXmlValue whiteList: ", "getRusWhiteList: cache is empty", "app_systemui_oplus_media_controller_config.xml"]},
+      {"key": "rus-manager-b", "group": "rus-manager", "package": "com.oplus.systemui.media",
+       "strings": ["parseSaveXmlValue whiteList: ", "parseSaveXmlValue pkgRuleMap: ", "applyConfig version="]},
+      {"key": "action-selector", "group": "action-selector", "package": "com.oplus.systemui.media",
+       "strings": ["not rule, use Actions", "oplusActionConfig=", "Test MediaAction, but not rule, use notification Actions"]},
+      {"key": "action-strategy", "group": "action-strategy", "package": "com.oplus.systemui.media",
+       "strings": ["createActionsFromState. oplusActionConfigList = "]},
+      {"key": "lyric-loader", "group": "lyric-loader", "package": "com.oplus.systemui.media",
+       "strings": ["loadLyricInBg reason: lyric is avilable, lyric= ", "loadLyricInBg reason: song changed, lyric= ", "Failed to parse lyric data: "]},
+      {"key": "seedling-bundle", "group": "seedling-bundle", "package": "com.oplus.systemui.seedlingservice",
+       "strings": ["mediaId", "currentLyric", "lastPositionUpdateTime", "shouldShowLyric"]}
+    ]
+  },
+  "plugin": {
+    "anchors": [
+      {"key": "media-model-c16", "group": "media-model", "strings": ["MediaModel(uniqueId=", ", lyricModel=", ", isLyricSupported="]},
+      {"key": "media-info-c17", "group": "media-model", "strings": ["MediaInfo(uniqueId=", ", lyricModel=", ", isLyricSupported="]},
+      {"key": "lyric-model", "group": "lyric-model", "strings": ["LyricModel(lines="]},
+      {"key": "multi-icon", "group": "multi-icon", "strings": ["MultiIconModel(staticIcon=", ", lottieIcon="]},
+      {"key": "static-icon-a", "group": "static-icon", "strings": ["StaticIcon(icon=", ", iconModelForCard="]},
+      {"key": "static-icon-b", "group": "static-icon", "strings": ["StaticIcon(drawable=", ", iconModelForCard="]},
+      {"key": "normal-icon", "group": "normal-icon", "strings": ["NormalIcon(icon=", ", primaryColor="]},
+      {"key": "lottie-icon", "group": "lottie-icon", "strings": ["LottieIcon[assetName: ", " repeatCount="]}
+    ],
+    "invokes": [
+      {"key": "lyric-position-controller", "params": ["Ljava/lang/Long;", "Z"], "ret": "V",
+       "invoke": {"class": "Lcom/oplus/systemui/plugins/shared/template/component/media/view/LyricsRecyclerView;", "params": ["Z", "J"], "ret": "V"}}
+    ]
+  }
+}
