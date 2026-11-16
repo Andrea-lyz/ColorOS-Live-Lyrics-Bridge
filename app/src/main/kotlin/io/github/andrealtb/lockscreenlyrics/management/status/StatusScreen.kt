@@ -253,6 +253,7 @@ internal fun reasonRes(reason: String): Int? = when (reason) {
     "NATIVE_FALLBACK" -> R.string.status_reason_native_fallback
     "TARGET_NOT_OBSERVED" -> R.string.status_reason_target_not_observed
     "RUNTIME_EXCEPTION" -> R.string.status_reason_runtime_exception
+    "FEATURE_DEGRADED" -> R.string.status_reason_feature_degraded
     else -> null
 }
 

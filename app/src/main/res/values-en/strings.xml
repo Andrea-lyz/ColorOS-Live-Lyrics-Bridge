@@ -515,6 +515,7 @@
     <string name="status_reason_native_fallback">Reason: fell back to the system look</string>
     <string name="status_reason_target_not_observed">Reason: the target was not seen recently</string>
     <string name="status_reason_runtime_exception">Reason: a runtime error; safely degraded</string>
+    <string name="status_reason_feature_degraded">Reason: failed repeatedly, so it is paused and a safe fallback is used; it is retried after a System UI plugin update or when a lyric setting is changed</string>
     <string name="status_section_plugins">Plugins</string>
     <string name="status_plugins_none">No plugin is installed yet.</string>
     <string name="status_plugin_enabled">Enabled</string>

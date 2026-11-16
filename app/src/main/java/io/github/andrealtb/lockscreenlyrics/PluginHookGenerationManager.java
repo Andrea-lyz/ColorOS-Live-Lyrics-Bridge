@@ -50,6 +50,8 @@ final class PluginHookGenerationManager {
             activePluginClassLoader = new WeakReference<>(pluginLoader);
             resetUnderLock.run();
         }
+        // C-04: new component code gets a fresh failure budget for every feature.
+        FeatureDegradation.global().onComponentGeneration();
         return staleHandles;
     }
 

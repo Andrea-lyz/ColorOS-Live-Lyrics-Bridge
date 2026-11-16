@@ -199,6 +199,13 @@ final class OfficialLyricDrawCoordinator {
                 return proceed.proceed();
             }
         }
+        if (!FeatureDegradation.global().allowed(CompatibilityStatus.Feature.CUSTOM_DRAW)) {
+            // C-04: custom drawing failed on several bindings in this plugin generation. Every row
+            // now takes the same path a single failed binding takes, until an explicit recovery.
+            CompatibilityStatus.global().degraded(CompatibilityStatus.Feature.CUSTOM_DRAW, textView,
+                    Path.NATIVE, CompatibilityStatus.Scope.RENDER_DISPATCH);
+            return proceed.proceed();
+        }
         synchronized (failedBindings) {
             WordLyricModel failedModel = failedBindings.get(textView);
             if (failedModel == model && model != null) {
@@ -336,6 +343,7 @@ final class OfficialLyricDrawCoordinator {
                     model,
                     t.getClass().getSimpleName());
             host.onCustomDrawError(textView, model, t);
+            FeatureDegradation.global().failed(CompatibilityStatus.Feature.CUSTOM_DRAW, t.getClass().getSimpleName());
             // The renderer owns no host exception. Disable this binding/model after one failure
             // and immediately let the original TextView draw into the restored Canvas state.
             synchronized (failedBindings) {

@@ -10,6 +10,7 @@ import android.media.session.PlaybackState;
 import android.os.SystemClock;
 
 import io.github.andrealtb.lockscreenlyrics.diagnostics.BridgeDebugArea;
+import io.github.andrealtb.lockscreenlyrics.diagnostics.CompatibilityStatus;
 import io.github.andrealtb.lockscreenlyrics.diagnostics.StructuredBridgeLog;
 
 import java.lang.reflect.Constructor;
@@ -246,6 +247,10 @@ final class TranslationToggleMediaActionBinder {
         if (mediaButtonEx == null || translationIcon == null || translationIcon.icon == null) {
             return null;
         }
+        if (!FeatureDegradation.global().allowed(CompatibilityStatus.Feature.TRANSLATION_BUTTON)) {
+            // C-04: construction failed repeatedly in this plugin generation; keep the official slot.
+            return null;
+        }
         try {
             ClassLoader loader = mediaButtonEx.getClass().getClassLoader();
             Class<?> actionExClass = Class.forName(MEDIA_ACTION_EX_CLASS, true, loader);
@@ -274,6 +279,8 @@ final class TranslationToggleMediaActionBinder {
         } catch (Throwable t) {
             debug("synthetic translation action unavailable, package="
                     + nullToEmpty(packageName) + ", reason=" + t.getClass().getSimpleName());
+            FeatureDegradation.global().failed(CompatibilityStatus.Feature.TRANSLATION_BUTTON,
+                    t.getClass().getSimpleName());
             return null;
         }
     }

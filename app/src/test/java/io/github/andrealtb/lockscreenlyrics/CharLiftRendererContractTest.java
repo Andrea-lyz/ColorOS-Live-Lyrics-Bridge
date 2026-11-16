@@ -24,7 +24,7 @@ public final class CharLiftRendererContractTest {
         String module = module();
         int gate = module.indexOf("private void beginCharLiftLine(");
         assertTrue("beginCharLiftLine is missing", gate >= 0);
-        String body = module.substring(gate, gate + 3_000);
+        String body = module.substring(gate, gate + 3_600);
         assertTrue("lift must bail out on AOD low frame rate", body.contains("aodLowFrameRateMode"));
         assertTrue("lift must bail out without the toggle", body.contains("!charLiftEnabled"));
         assertTrue(
@@ -94,7 +94,7 @@ public final class CharLiftRendererContractTest {
         String module = module();
         int gate = module.indexOf("private void beginCharLiftLine(");
         assertTrue("beginCharLiftLine is missing", gate >= 0);
-        String body = module.substring(gate, gate + 3_000);
+        String body = module.substring(gate, gate + 3_600);
         assertTrue("future inactive rows must be prepared before the active handoff",
                 body.contains("CharLiftGeometry.shouldPrepareLine("));
         assertTrue("the intro must remain prepared until the first word starts",

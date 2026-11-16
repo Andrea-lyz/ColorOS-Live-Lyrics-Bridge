@@ -522,6 +522,7 @@
     <string name="status_reason_native_fallback">原因：已退回系统原生效果</string>
     <string name="status_reason_target_not_observed">原因：最近没有观测到目标</string>
     <string name="status_reason_runtime_exception">原因：运行时出错，已安全降级</string>
+    <string name="status_reason_feature_degraded">原因：多次出错，已暂停此项并改用安全回退；系统界面插件更新或更改歌词设置后会再试</string>
     <string name="status_section_plugins">插件</string>
     <string name="status_plugins_none">还没有安装任何插件。</string>
     <string name="status_plugin_enabled">已启用</string>

@@ -18,7 +18,8 @@ public final class CompatibilityStatus {
         DISPATCHED, DRAW_COMMANDS, PRESENTATION_ASSIGNED }
     public enum Reason { NONE, CONFIG_DISABLED, RAW_LYRIC_MISSING, LINE_PROGRESS_DISABLED,
         AOD_LOW_FRAME_RATE, HOST_NOT_FOUND, SNAPSHOT_PENDING, PALETTE_UNAVAILABLE,
-        DATASET_UNSUPPORTED, FRAME_REJECTED, NATIVE_FALLBACK, TARGET_NOT_OBSERVED, RUNTIME_EXCEPTION }
+        DATASET_UNSUPPORTED, FRAME_REJECTED, NATIVE_FALLBACK, TARGET_NOT_OBSERVED, RUNTIME_EXCEPTION,
+        FEATURE_DEGRADED }
     public enum Scope { NOT_OBSERVED, CONFIG, LYRIC_ROW, RENDER_DISPATCH, PALETTE_SAMPLE,
         CHAR_LIFT_GATE, GLYPH_COMMANDS, VIEW_VISIBILITY, ARTWORK_CARD_BINDING, ARTWORK_IMMERSIVE_BINDING, ARTWORK_LIFECYCLE }
     public static final String SCHEMA = "cll_capability_schema";
@@ -159,6 +160,12 @@ public final class CompatibilityStatus {
                 !requested ? Outcome.DISABLED : eligible ? Outcome.PREPARED : Outcome.WAITING,
                 !requested ? Reason.CONFIG_DISABLED : eligible ? Reason.NONE : Reason.SNAPSHOT_PENDING,
                 immersive ? Scope.ARTWORK_IMMERSIVE_BINDING : Scope.ARTWORK_CARD_BINDING);
+    }
+
+    /** C-04: the feature is paused after repeated failures; its fallback path is in use. */
+    public void degraded(Feature feature, Object owner, Path fallback, Scope scope) {
+        observe(feature, owner, true, Truth.UNKNOWN, false, fallback,
+                Outcome.FALLBACK, Reason.FEATURE_DEGRADED, scope);
     }
 
     public synchronized void forgetOwner(Object owner) {

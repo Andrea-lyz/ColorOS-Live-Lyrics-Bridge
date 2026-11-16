@@ -11,6 +11,7 @@ import android.graphics.drawable.TransitionDrawable;
 import android.view.ViewTreeObserver;
 
 import io.github.andrealtb.lockscreenlyrics.diagnostics.BridgeDebugArea;
+import io.github.andrealtb.lockscreenlyrics.diagnostics.CompatibilityStatus;
 import io.github.andrealtb.lockscreenlyrics.diagnostics.StructuredBridgeLog;
 
 import java.lang.ref.WeakReference;
@@ -93,6 +94,20 @@ public final class DynamicArtworkRuntime {
     /** Scoped to the lyric's actual section, with current binding and snapshot ownership. */
     public Integer coverColor(View lyric) {
         if (!coverColorEnabled || android.os.Looper.myLooper() != main.getLooper()) return null;
+        io.github.andrealtb.lockscreenlyrics.FeatureDegradation degradation =
+                io.github.andrealtb.lockscreenlyrics.FeatureDegradation.global();
+        CompatibilityStatus.Feature glow = CompatibilityStatus.Feature.COVER_GLOW;
+        // C-04: a palette failure must fall back to the manual color, never fail the lyric draw.
+        if (!degradation.allowed(glow)) return null;
+        try {
+            return coverColorFor(lyric);
+        } catch (RuntimeException error) {
+            degradation.failed(glow, error.getClass().getSimpleName());
+            return null;
+        }
+    }
+
+    private Integer coverColorFor(View lyric) {
         for (View node = lyric; node != null; node = node.getParent() instanceof View parent ? parent : null) {
             for (Host host : hosts) {
                 // The palette belongs to the current card model. Session readiness gates display

@@ -317,6 +317,11 @@ final class OfficialLyricTextRenderer {
         CompatibilityStatus.global().requested(CompatibilityStatus.Feature.LINE_PROGRESS, config.lineTimedProgressEnabled);
         CompatibilityStatus.global().requested(CompatibilityStatus.Feature.TRANSLATION_PROGRESS, config.translationProgressEnabled);
         if (config.equals(uiConfig)) return;
+        // C-04: a real settings change (not the periodic reload of unchanged values) is an
+        // explicit event that gives paused lyric features another, limited attempt.
+        FeatureDegradation.global().onSettingsReapplied(CompatibilityStatus.Feature.CUSTOM_DRAW,
+                CompatibilityStatus.Feature.CHAR_LIFT, CompatibilityStatus.Feature.COVER_GLOW,
+                CompatibilityStatus.Feature.TRANSLATION_BUTTON);
         LyricUiConfig previous = uiConfig;
         uiConfig = config;
         palette = LyricUiPalette.from(config);
@@ -1943,8 +1948,10 @@ final class OfficialLyricTextRenderer {
             float canvasHeight,
             float minClearance) {
         charLift.reset();
+        boolean liftDegraded = !FeatureDegradation.global().allowed(CompatibilityStatus.Feature.CHAR_LIFT);
         if (!charLiftEnabled
                 || charLiftUnavailable
+                || liftDegraded
                 // drawProgress alone does not rule out AOD: the low frame
                 // rate path still draws word progress while the fill
                 // transition runs, and an animation there costs battery for
@@ -1964,6 +1971,11 @@ final class OfficialLyricTextRenderer {
                 // so sinking underneath it would only ghost.
                 || fullLineOverlayAmount > 0.001f
                 || WordLyricRenderSupport.shouldUseTimestampHighlight(model, line)) {
+            if (liftDegraded && charLiftEnabled) {
+                CompatibilityStatus.global().degraded(CompatibilityStatus.Feature.CHAR_LIFT, line,
+                        CompatibilityStatus.Path.CUSTOM, CompatibilityStatus.Scope.CHAR_LIFT_GATE);
+                return;
+            }
             CompatibilityStatus.global().liftBlocked(line, charLiftEnabled, charLiftUnavailable,
                     aodLowFrameRateMode, line == null || TextUtils.isEmpty(text),
                     line != null && line.timingMode == LyricTimingMode.LINE_TIMED && !lineTimedProgressEnabled);
@@ -2007,6 +2019,7 @@ final class OfficialLyricTextRenderer {
                     BridgeEvents.CHAR_LIFT_UNAVAILABLE,
                     "Character lift disabled until the next cache reset: " + error);
             charLiftUnavailable = true;
+            FeatureDegradation.global().failed(CompatibilityStatus.Feature.CHAR_LIFT, error.getClass().getSimpleName());
             charLift.reset();
         }
     }
@@ -2604,6 +2617,7 @@ final class OfficialLyricTextRenderer {
                     BridgeEvents.CHAR_LIFT_UNAVAILABLE,
                     "Character lift disabled until the next cache reset: " + error);
             charLiftUnavailable = true;
+            FeatureDegradation.global().failed(CompatibilityStatus.Feature.CHAR_LIFT, error.getClass().getSimpleName());
             return false;
         }
     }
@@ -2824,6 +2838,7 @@ final class OfficialLyricTextRenderer {
                     BridgeEvents.CHAR_LIFT_UNAVAILABLE,
                     "Character lift disabled until the next cache reset: " + error);
             charLiftUnavailable = true;
+            FeatureDegradation.global().failed(CompatibilityStatus.Feature.CHAR_LIFT, error.getClass().getSimpleName());
             int save = canvas.save();
             try {
                 if (revealedLayer) {
