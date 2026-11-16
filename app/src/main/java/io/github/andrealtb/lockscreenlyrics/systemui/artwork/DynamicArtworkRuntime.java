@@ -382,8 +382,11 @@ public final class DynamicArtworkRuntime {
     }
 
     private boolean observing() {
-        // With product enablement off, MEDIA debug permits read-only binding diagnostics only.
-        return displayEnabled || coverColorEnabled || StructuredBridgeLog.isAreaEnabled(BridgeDebugArea.MEDIA);
+        // Only the product features start observation. MEDIA debug used to start read-only binding
+        // diagnostics here too, which installed flow hooks while both features were off; the debug
+        // switch must not change hooks (C-05b, plan section 16.5). Debug traces still follow the
+        // observation the features start.
+        return displayEnabled || coverColorEnabled;
     }
 
     public synchronized void initializeSystemUi(ClassLoader loader) {

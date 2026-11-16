@@ -2948,3 +2948,43 @@ E-2b 到 E-2d 都读写入口类的实例状态或调用 `hook()`，不能只靠
 **验证：** 本地 1067 tests / 0 fail / 6 skip（新增 4 项），Debug 与 R8 通过，`verify-build-identity` 通过。新增测试依赖 `org.ow2.asm:asm:9.8`（Robolectric 已带的同一版本，仅测试用）。
 
 **C-05b（下一刀）：** 重复、乱序、迟到、失效回调的回放测试。按测试名粗查，现有“失效/迟到/AOD”类测试较多，“乱序”“歌词先到封面后到”“诊断开关不改变行为”几乎没有，需逐项核对后补齐。
+
+### 16.5 C-05b 回放覆盖核对与诊断开关不变量（2026-11-16，已提交，用户设备冒烟 1–2 通过）
+
+**分支：** Bridge `feat/c04-degradation`（基于 `b282e2b`）。
+
+**C-05 场景与现有回放测试的对照（逐类读测试名与断言，不是关键词计数）：**
+
+| 场景 | 现有覆盖 | 结论 |
+| --- | --- | --- |
+| 旧曲异步结果 | `SystemUiLyricPublicationGateTest`（旧解析不能在新加载后提交）；`LyricRenderTransactionsTest` 的 `staleDatasetCompletionCannotOverrideANewerOne`、`lateOldBindCannotBeRelabelledAsTheCurrentDataset`；封面 `ArtworkOwnershipPolicyTest`、`ArtworkRenderGuardTest`、`ArtworkSourceReplacementTest` | 已覆盖 |
+| 新旧数据集交接 | `LyricRenderTransactionsTest` 约 20 项（共享文本不能把旧行转给新模型、在途数据集不暴露半绑定行、差分行只在完整提交后迁移等） | 已覆盖 |
+| View detach / attach | `attachOrMatchingTextDoesNotEstablishOwnership`、`rowsInRecycledHiddenHoldersRemainDiscoverable…`；封面 `detachedOwnerAndMissingCurrentStampRejectLateCallbacks` | 已覆盖 |
+| 快速切歌 | 封面 `rapidAToBToCSupersedesPendingWitnessAndOldRead`、`rapidSkipCannotRevealIntermediatePendingCover`、`waitsForCardAndSeedlingTitlesToAgreeDuringFastTrackChanges`、`revokedFadeLeaseCannotReviveAfterRapidSongChanges` | 已覆盖 |
+| 歌词先到、封面后到 | `nativeDataCanArriveBeforeItsMatchingParsedModel`（反向顺序）；取色 `ArtworkPaletteAccessTest`、`ArtworkLyricColorTargetsTest`（回收行不收旧卡片更新） | 部分覆盖：取色按快照读取、不保留旧颜色已测；“封面晚到后已显示的歌词行重新取色”没有独立回放 |
+| 暂停后补资源 | `ArtworkSurfaceHandoverTest`（只有同宿主上已稳定的暂停可淡回静态）、`ArtworkRetryWakeupTest`、`ArtworkScreenAwakeTest` | 已覆盖封面；歌词侧暂停期间补模型依赖 `LyricRenderTransactions`，未单列 |
+| AOD 往返 | `aodAndBrightSurfacesCommitIndependently`、`AodModeObservationTest` | 状态机已覆盖；真实 AOD 画面属设备验收 |
+| 重复回调 | `repeatedIdenticalSetLyricsStillRequiresItsRealBindEpoch`、`ArtworkFrameDispatchTest`（多次通知只交付最新一帧）、`ArtworkDiagnosticGateTest` | 已覆盖 |
+| **诊断开关不改变行为** | **无** | **本刀补上** |
+
+**本刀新增：`DiagnosticsSwitchGuardTest`**
+- 扫描 Bridge 源码中所有诊断开关读取点（`is*DiagnosticsEnabled`、`StructuredBridgeLog.isAreaEnabled`、`ArtworkTrace.enabled`、`ShortDiagnosticSession.active`），按“文件#方法 + 谓词”固定在 `guard/diagnostic-switch-sites.txt`（43 处）。新增或移动读取点即失败，须复核它只控制日志或有界记录，再更新基线。
+- 43 处逐一复核：42 处只控制日志、诊断采样或短时诊断记录，1 处是下面的发现（已按用户决定移除）。
+- 运行时补一项：开启短时诊断与关闭时，同一组能力观测得到的状态快照完全相同。
+
+**发现与处理：** `DynamicArtworkRuntime.observing()` 原先在动态封面与封面取色**都关闭**时，只要 MEDIA 调试区域打开就返回 true：会开始观测 Seedling 来源、刷新宿主，并经 `watchFlow` 给插件的 StateFlow 方法安装 Hook。这与“调试开关不得改变 Hook”的约束不一致。
+- **用户决定去掉该分支**：`observing()` 只看 `displayEnabled || coverColorEnabled`。MEDIA 调试仍会给功能已启动的观测输出轨迹，但不再单独启动观测；产品关闭时不再提供绑定诊断。
+- 守卫的“行为例外”清单因此为空，基线 42 处，全部只控制日志、诊断采样或短时诊断记录。
+- `docs/DYNAMIC-ARTWORK-BINDING-SURVEY.zh-CN.md` 中“可用 MEDIA debug 只读绑定诊断”一句加了移除说明。
+
+**候选：** `artifacts/c05b-diagnostics-20261116/Bridge-C05b-diagnostics-debug-r1.apk`（待设备冒烟：开启动态封面 / 跟随封面配色时仍正常；两者都关、只开 MEDIA 调试时，日志中不再出现封面 flow Hook）。
+
+**验证：** 本地 1070 tests / 0 fail / 6 skip（新增 3 项），Debug 与 R8 通过，`verify-build-identity` 通过。
+
+**设备结果（2026-11-16，PJZ110）：**
+- agent 经授权 adb 安装 r1，回读哈希一致（`8572ee93…`）；用户重启 SystemUI 后 agent 经授权只读 LSPosed 日志：Hook 计数与上一进程一致，唯一 WARN 相同，无 ERROR / `HOOK_FAILED` / `FEATURE_*`。
+- 用户确认冒烟 1–2 通过（歌词与切歌；动态封面 / 跟随封面配色正常）。
+- 第 3 项（两功能关闭、只开 MEDIA 调试时不再启动封面观测）未做：日志中只有启动时 `master=false, areas=off`，没有新的调试配置下发，记为“未设备验证”，只有代码与本地测试证据。
+- adapter-bind Hook 的安装日志在 C-04 与本刀两个进程中都没出现：`HOOK_INSTALLED` 按“区域|事件”3 秒节流，启动 3 秒内连续安装时后一条被吞，只在下一条同类日志里以 `suppressed=` 计数出现（C-04 之前的进程正是 `suppressed=2`）。自绘依赖该 Hook 的绑定事件且冒烟通过，判断为日志节流而非未安装；后续可让 `HOOK_INSTALLED` 不参与节流（未改）。
+
+**仍未覆盖：** “封面晚到后已显示歌词行重新取色”的独立回放；歌词侧“暂停期间补模型”的单列回放。两者涉及 View 与主线程调度，纯 JVM 测试只能覆盖到现有状态机为止。
