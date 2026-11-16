@@ -34,6 +34,16 @@ public final class SystemUiDexKitAdapter {
 
     @SuppressLint({"DuplicateCreateDexKit", "PrivateApi"})
     static Targets resolve(ClassLoader classLoader) throws ReflectiveOperationException {
+        // DexKit share of the SystemUI cold start (plan §15.4 P-8); a no-op unless tracing is on.
+        boolean traced = BridgePerfTrace.begin("CLL:systemUiDexKitResolve");
+        try {
+            return resolveTargets(classLoader);
+        } finally {
+            BridgePerfTrace.end(traced);
+        }
+    }
+
+    private static Targets resolveTargets(ClassLoader classLoader) throws ReflectiveOperationException {
         ensureDexKitLoaded();
         // Resolution is cached by LockscreenLyricsModule; the bridge only lives for this
         // one initialization transaction.

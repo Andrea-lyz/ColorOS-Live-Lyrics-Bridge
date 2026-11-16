@@ -1,5 +1,6 @@
 package io.github.andrealtb.lockscreenlyrics;
 
+import io.github.andrealtb.lockscreenlyrics.guard.BridgeSourceMap;
 import org.junit.Test;
 
 import java.io.File;
@@ -22,8 +23,7 @@ public final class OfficialLyricsRecyclerFieldsContractTest {
     public void currentRowFieldIsWrittenByTheEntryAndReadByTheRowRestyleMethod() throws Exception {
         String resolver = readProjectFile(
                 "app/src/main/java/io/github/andrealtb/lockscreenlyrics/OfficialLyricsRecyclerDexKitResolver.java");
-        String module = readProjectFile(
-                "app/src/main/java/io/github/andrealtb/lockscreenlyrics/LockscreenLyricsModule.java");
+        String module = BridgeSourceMap.read(BridgeSourceMap.Area.RECYCLER);
 
         assertTrue(resolver.contains("OfficialImmersiveLyricEntryPolicy.matches(method, recyclerClass)"));
         assertTrue(resolver.contains("OfficialLyricRowStyleMethodPolicy.matches(method, recyclerClass)"));

@@ -1,5 +1,6 @@
 package io.github.andrealtb.lockscreenlyrics;
 
+import io.github.andrealtb.lockscreenlyrics.guard.BridgeSourceMap;
 import org.junit.Test;
 
 import java.io.File;
@@ -12,8 +13,7 @@ import static org.junit.Assert.assertTrue;
 public final class OfficialImmersiveLyricEntryContractTest {
     @Test
     public void immersiveEntryIsObservedAndOnlyItsPositionChanges() throws Exception {
-        String module = readProjectFile(
-                "app/src/main/java/io/github/andrealtb/lockscreenlyrics/LockscreenLyricsModule.java");
+        String module = BridgeSourceMap.read(BridgeSourceMap.Area.RECYCLER);
 
         assertTrue(module.contains("OfficialImmersiveLyricEntryPolicy.matches("));
         assertTrue(module.contains("immersiveEntryMethods="));
@@ -25,8 +25,7 @@ public final class OfficialImmersiveLyricEntryContractTest {
 
     @Test
     public void officialRowStyleResetsTheCachedBridgeBlur() throws Exception {
-        String module = readProjectFile(
-                "app/src/main/java/io/github/andrealtb/lockscreenlyrics/LockscreenLyricsModule.java");
+        String module = BridgeSourceMap.read(BridgeSourceMap.Area.RECYCLER);
 
         assertTrue(module.contains("VIEW_LYRIC_RENDER_EFFECT_MODE.remove(row);"));
         assertTrue(module.contains("VIEW_BLUR_DISABLED.remove(row);"));

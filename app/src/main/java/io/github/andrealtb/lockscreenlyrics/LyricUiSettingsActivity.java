@@ -61,12 +61,9 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
     private static final long PREVIEW_COLLAPSE_ANIMATION_MS = 280L;
     private static final int PREVIEW_COLLAPSE_SWIPE_DP = 30;
     private static final int PREVIEW_RESTORE_HYSTERESIS_DP = 12;
-    private static final long SYSTEM_UI_RESTART_ACK_TIMEOUT_MS = 2_500L;
-    private static final long MODULE_STATUS_QUERY_TIMEOUT_MS = 2_500L;
     private static final long SNACK_DURATION_SHORT_MS = 2_000L;
     private static final long SNACK_DURATION_LONG_MS = 3_500L;
     private static final int BOTTOM_ACTION_BAR_CLEARANCE_DP = 84;
-    private static final int REQUEST_CONFIG_BACKUP = 4001;
     private static final Pattern COLOR_PATTERN = Pattern.compile("#[0-9A-Fa-f]{6}");
 
     private SharedPreferences preferences;
@@ -74,10 +71,6 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
     private LyricUiConfig draft;
     private Spinner presetSpinner;
     private final List<SettingsPresetCard> presetCards = new ArrayList<>();
-    private View activationDot;
-    private TextView activationText;
-    private ObjectAnimator activationPulse;
-    private boolean moduleStatusQueryPending;
     private View bottomActionBar;
     private TextView unsavedBadge;
     private LyricUiConfig savedConfig;
@@ -120,7 +113,6 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
     private TextView customPresetLabel;
     private TextView presetDescription;
     private TextView visualLayersSummary;
-    private TextView artworkSummary;
     private MaterialSwitch blurEnabled;
     private Slider blurRadius;
     private View blurRadiusRow;
@@ -182,8 +174,6 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
     private LyricUiPreset displayedPreset;
     private int ignoredPresetSelection = -1;
     private long pendingSettingsRevision = -1L;
-    private long systemUiRestartRequestSequence;
-    private long pendingSystemUiRestartRequestId = -1L;
     private boolean resumedOnce;
 
     @Override
@@ -202,7 +192,6 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
         View content = createContent();
         setContentView(content);
         bind(draft);
-        requestModuleStatus();
         backCallback = new OnBackPressedCallback(true) {
             @Override
             public void handleOnBackPressed() {
@@ -240,7 +229,6 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        updateArtworkSummary();
         if (!resumedOnce) {
             resumedOnce = true;
             return;
@@ -262,11 +250,6 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
             presetAnimator.cancel();
             presetAnimator = null;
         }
-        if (activationPulse != null) {
-            activationPulse.cancel();
-            activationPulse = null;
-        }
-        pendingSystemUiRestartRequestId = -1L;
         previewTransitionRunning = false;
         previewCollapsed = false;
         if (floatingPreviewCard != null) {
@@ -277,15 +260,6 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
         }
         releaseScrollCachedPreviewLayer();
         super.onDestroy();
-    }
-
-    @Override
-    @SuppressWarnings("deprecation")
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == REQUEST_CONFIG_BACKUP && resultCode == RESULT_OK) {
-            recreate();
-        }
     }
 
     private void configureSettingsWindowRefreshRate(Window window) {
@@ -322,7 +296,6 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
         disableAutofill(content);
         installSettingsInsets(content);
 
-        content.addView(statusHeader(), marginBottom(dp(12)));
         LinearLayout preview = card();
         preview.setPadding(dp(12), dp(6), dp(12), dp(6));
         previewView = new SettingsPreviewView(this);
@@ -549,93 +522,58 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
         buildRefreshRateOptions();
         refreshRate = refreshDropdownButton();
         motion.addView(refreshLimitRow(refreshRate), matchWrap());
-        content.addView(motion, marginBottom(dp(12)));
 
-        LinearLayout artwork = card();
-        artwork.addView(linkRow(
-                R.drawable.ic_sec_artwork,
-                getString(R.string.artwork_settings_title),
-                getString(R.string.artwork_settings_link_sub_off),
-                () -> startActivity(new Intent(this, ArtworkSettingsActivity.class)),
-                view -> artworkSummary = view));
-        content.addView(artwork, marginBottom(dp(12)));
-
-        LinearLayout compatibility = card();
-        compatibility.addView(section(
-                R.drawable.ic_sec_compat,
-                getString(R.string.settings_section_compat),
-                "COMPAT"));
-        compatibility.addView(linkRow(
-                R.drawable.ic_sec_compat,
-                getString(R.string.link_config_backup),
-                getString(R.string.link_config_backup_sub),
-                () -> startActivityForResult(
-                        new Intent(this, BridgeConfigBackupSettingsActivity.class),
-                        REQUEST_CONFIG_BACKUP)));
-        addCardDivider(compatibility);
-        compatibility.addView(linkRow(
-                R.drawable.ic_translation,
-                getString(R.string.link_player_translation),
-                getString(R.string.link_player_translation_sub),
-                () -> startActivity(new Intent(this, PlayerTranslationSettingsActivity.class))));
-        addCardDivider(compatibility);
-        compatibility.addView(linkRow(
-                R.drawable.ic_cleanup,
-                getString(R.string.link_opening_cleanup),
-                getString(R.string.link_opening_cleanup_sub),
-                () -> startActivity(new Intent(this, LyricOpeningCleanupSettingsActivity.class))));
-        addCardDivider(compatibility);
-        compatibility.addView(linkRow(
-                R.drawable.ic_sec_compat,
-                getString(R.string.link_debug_logging),
-                getString(R.string.link_debug_logging_sub),
-                () -> startActivity(new Intent(this, BridgeDebugSettingsActivity.class))));
-        addCardDivider(compatibility);
-        if (BuildConfig.DEBUG) {
-            compatibility.addView(linkRow(
-                    R.drawable.ic_sec_motion,
-                    getString(R.string.artwork_title),
-                    getString(R.string.artwork_link_sub),
-                    () -> startActivity(new Intent(this, DynamicArtworkSettingsActivity.class))));
-            addCardDivider(compatibility);
-        }
+        // Sub-pages (dynamic artwork, player translation, opening cleanup, backup, debug) open
+        // from the management Appearance/Status tabs; this page only edits the lyric look (§14.18).
+        LinearLayout effects = card();
+        effects.addView(section(
+                R.drawable.ic_sec_motion,
+                getString(R.string.appearance_section_effects),
+                "EFFECTS"));
         lineTimedProgress = toggle(getString(R.string.setting_line_progress), false);
         translationProgress = toggle(getString(R.string.setting_translation_progress), false);
         charLift = toggle(
                 getString(R.string.setting_char_lift),
                 LyricUiSettings.DEFAULT_CHAR_LIFT_ENABLED);
-        screenTimeout = toggle(getString(R.string.setting_screen_timeout), true);
-        screenTimeoutSeconds = numberInput(getString(R.string.setting_screen_timeout_seconds_hint));
-        compatibility.addView(lineTimedProgress);
-        addCardDivider(compatibility);
-        compatibility.addView(translationProgress);
+        effects.addView(lineTimedProgress);
+        addCardDivider(effects);
+        effects.addView(translationProgress);
         translationProgressDependencyHint = text(
                 getString(R.string.translation_progress_dependency_hint),
                 10.5f,
                 getColor(R.color.settings_text_muted));
         translationProgressDependencyHint.setPadding(dp(17), 0, dp(17), dp(9));
-        compatibility.addView(translationProgressDependencyHint, matchWrap());
-        addCardDivider(compatibility);
-        compatibility.addView(charLift);
+        effects.addView(translationProgressDependencyHint, matchWrap());
+        addCardDivider(effects);
+        effects.addView(charLift);
         charLiftDependencyHint = text(
                 getString(R.string.char_lift_dependency_hint),
                 10.5f,
                 getColor(R.color.settings_text_muted));
         charLiftDependencyHint.setPadding(dp(17), 0, dp(17), dp(9));
-        compatibility.addView(charLiftDependencyHint, matchWrap());
+        effects.addView(charLiftDependencyHint, matchWrap());
         charLiftStrength = materialSeek(0, 200);
         charLiftStrengthRow = conditionalCardRow(labeledMaterialSeek(
                 getString(R.string.setting_char_lift_strength),
                 charLiftStrength,
                 "%"));
-        compatibility.addView(charLiftStrengthRow);
-        addCardDivider(compatibility);
-        compatibility.addView(screenTimeout);
+        effects.addView(charLiftStrengthRow);
+        content.addView(effects, marginBottom(dp(12)));
+        content.addView(motion, marginBottom(dp(12)));
+
+        LinearLayout screen = card();
+        screen.addView(section(
+                R.drawable.ic_sec_compat,
+                getString(R.string.settings_section_screen),
+                "SCREEN"));
+        screenTimeout = toggle(getString(R.string.setting_screen_timeout), true);
+        screenTimeoutSeconds = numberInput(getString(R.string.setting_screen_timeout_seconds_hint));
+        screen.addView(screenTimeout);
         screenTimeoutSecondsRow = conditionalCardRow(numberInputRow(
                 getString(R.string.setting_screen_timeout_seconds_label),
                 screenTimeoutSeconds));
-        compatibility.addView(screenTimeoutSecondsRow, matchWrap());
-        content.addView(compatibility, marginBottom(dp(12)));
+        screen.addView(screenTimeoutSecondsRow, matchWrap());
+        content.addView(screen, marginBottom(dp(12)));
 
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
@@ -661,7 +599,7 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
         page.setBackgroundColor(settingsBackgroundColor());
         LinearLayout appBar = (LinearLayout) settingsAppBar(
                 getString(R.string.lyric_ui_settings_title),
-                getString(R.string.settings_appbar_version, BuildConfig.VERSION_NAME),
+                null,
                 () -> getOnBackPressedDispatcher().onBackPressed());
         previewRestoreButton = createPreviewRestoreButton();
         LinearLayout.LayoutParams previewButtonParams = new LinearLayout.LayoutParams(
@@ -745,7 +683,8 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
     }
 
     /**
-     * Mockup bottom bar: tonal restart + filled save, pinned below the ScrollView, with the
+     * Mockup bottom bar: one filled save (restart moved to the management Home, plan §14.18),
+     * pinned below the ScrollView, with the
      * UNSAVED badge floating over its top-right corner while the draft differs from saved.
      */
     private View createBottomActionBar() {
@@ -762,19 +701,6 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
         bar.setElevation(dp(8));
         installBottomSurfaceInsets(bar);
 
-        Button restartSystemUi = pillButton(
-                getString(R.string.action_restart_system_ui),
-                0x33F2C14E,
-                0xFF9A6A12,
-                Typeface.NORMAL);
-        restartSystemUi.setOnClickListener(view -> requestSystemUiRestart());
-        LinearLayout.LayoutParams restartParams = new LinearLayout.LayoutParams(
-                0,
-                dp(46),
-                0.9f);
-        restartParams.rightMargin = dp(9);
-        bar.addView(restartSystemUi, restartParams);
-
         Button save = pillButton(
                 getString(R.string.action_apply_save),
                 0xFFF2C14E,
@@ -782,7 +708,7 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
                 Typeface.BOLD);
         save.setElevation(dp(4));
         save.setOnClickListener(view -> save());
-        bar.addView(save, new LinearLayout.LayoutParams(0, dp(46), 1.25f));
+        bar.addView(save, new LinearLayout.LayoutParams(0, dp(46), 1f));
         // The bar sits 8dp below the wrapper top so the UNSAVED badge can float above its
         // top edge while staying fully inside the wrapper (no negative margins / clipping).
         FrameLayout.LayoutParams barParams = new FrameLayout.LayoutParams(
@@ -2168,79 +2094,6 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
 
     */
 
-    private void requestModuleStatus() {
-        if (moduleStatusQueryPending) return;
-        moduleStatusQueryPending = true;
-        try {
-            Intent intent = new Intent(LyricUiSettings.ACTION_REQUEST_MODULE_STATUS)
-                    .setPackage("com.android.systemui")
-                    .putExtra(
-                            LyricUiSettings.EXTRA_RESULT_RECEIVER,
-                            ResultReceiverTransport.forRemoteProcess(
-                                    createModuleStatusResultReceiver()));
-            intent.addFlags(
-                    Intent.FLAG_RECEIVER_REGISTERED_ONLY | Intent.FLAG_RECEIVER_FOREGROUND);
-            sendBroadcast(intent);
-            getWindow().getDecorView().postDelayed(() -> {
-                if (!moduleStatusQueryPending) return;
-                moduleStatusQueryPending = false;
-                showModuleStatusInactive();
-            }, MODULE_STATUS_QUERY_TIMEOUT_MS);
-        } catch (RuntimeException error) {
-            moduleStatusQueryPending = false;
-            Log.w(TAG, "Could not request module status", error);
-            showModuleStatusInactive();
-        }
-    }
-
-    private ResultReceiver createModuleStatusResultReceiver() {
-        return new ModuleStatusResultReceiver();
-    }
-
-    private void showModuleStatusInactive() {
-        setActivationStatus(
-                getColor(R.color.settings_text_muted),
-                getString(R.string.settings_module_status_inactive));
-    }
-
-    private void setActivationStatus(int dotColor, String label) {
-        if (activationDot == null || activationText == null) return;
-        if (activationDot.getBackground() instanceof GradientDrawable) {
-            ((GradientDrawable) activationDot.getBackground()).setColor(dotColor);
-        }
-        activationText.setText(label);
-    }
-
-    /** Callbacks stay in the settings app; only framework proxies are sent to SystemUI. */
-    private final class SystemUiRestartResultReceiver extends ResultReceiver {
-        private final long requestId;
-
-        SystemUiRestartResultReceiver(long requestId) {
-            super(new Handler(getMainLooper()));
-            this.requestId = requestId;
-        }
-
-        @Override
-        protected void onReceiveResult(int resultCode, Bundle resultData) {
-            if (pendingSystemUiRestartRequestId != requestId
-                    || resultData == null
-                    || resultData.getLong(
-                    LyricUiSettings.RESULT_SYSTEM_UI_RESTART_REQUEST_ID,
-                    -1L) != requestId) {
-                return;
-            }
-            pendingSystemUiRestartRequestId = -1L;
-            if (resultCode == LyricUiSettings.RESULT_SYSTEM_UI_RESTART_ACKNOWLEDGED
-                    && resultData.getBoolean(
-                    LyricUiSettings.RESULT_SYSTEM_UI_RESTART_ACCEPTED,
-                    false)) {
-                showSnack(
-                        getString(R.string.snack_restart_acknowledged),
-                        SNACK_DURATION_SHORT_MS);
-            }
-        }
-    }
-
     private final class SettingsApplyResultReceiver extends ResultReceiver {
         private final long revision;
 
@@ -2278,30 +2131,6 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
                             ? getString(R.string.snack_save_applied)
                             : getString(R.string.snack_save_rejected, reason),
                     applied ? SNACK_DURATION_SHORT_MS : SNACK_DURATION_LONG_MS);
-        }
-    }
-
-    private final class ModuleStatusResultReceiver extends ResultReceiver {
-        ModuleStatusResultReceiver() {
-            super(new Handler(getMainLooper()));
-        }
-
-        @Override
-        protected void onReceiveResult(int resultCode, Bundle resultData) {
-            if (!moduleStatusQueryPending || resultData == null) return;
-            moduleStatusQueryPending = false;
-            int loadedVersionCode = resultData.getInt(
-                    LyricUiSettings.RESULT_MODULE_VERSION_CODE,
-                    -1);
-            if (loadedVersionCode > 0 && loadedVersionCode < BuildConfig.VERSION_CODE) {
-                setActivationStatus(
-                        getColor(R.color.settings_error),
-                        getString(R.string.settings_module_status_active_restart));
-            } else {
-                setActivationStatus(
-                        getColor(R.color.settings_success),
-                        getString(R.string.settings_module_status_active));
-            }
         }
     }
 
@@ -2390,47 +2219,6 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
         int selectedIndex() {
             return selectedIndex;
         }
-    }
-
-    private void requestSystemUiRestart() {
-        long requestId = ++systemUiRestartRequestSequence;
-        pendingSystemUiRestartRequestId = requestId;
-        try {
-            Intent intent = new Intent(LyricUiSettings.ACTION_RESTART_SYSTEM_UI)
-                    .setPackage("com.android.systemui")
-                    .putExtra(
-                            LyricUiSettings.EXTRA_SYSTEM_UI_RESTART_REQUEST_ID,
-                            requestId)
-                    .putExtra(
-                            LyricUiSettings.EXTRA_SYSTEM_UI_RESTART_RESULT_RECEIVER,
-                            ResultReceiverTransport.forRemoteProcess(
-                                    createSystemUiRestartResultReceiver(requestId)));
-            intent.addFlags(
-                    Intent.FLAG_RECEIVER_REGISTERED_ONLY | Intent.FLAG_RECEIVER_FOREGROUND);
-            sendBroadcast(intent);
-            showSnack(
-                    getString(R.string.snack_restart_requesting),
-                    SNACK_DURATION_SHORT_MS);
-            getWindow().getDecorView().postDelayed(() -> {
-                if (pendingSystemUiRestartRequestId != requestId) return;
-                pendingSystemUiRestartRequestId = -1L;
-                showSnack(
-                        getString(R.string.snack_restart_no_response),
-                        SNACK_DURATION_LONG_MS);
-            }, SYSTEM_UI_RESTART_ACK_TIMEOUT_MS);
-        } catch (RuntimeException error) {
-            if (pendingSystemUiRestartRequestId == requestId) {
-                pendingSystemUiRestartRequestId = -1L;
-            }
-            Log.w(TAG, "Could not request SystemUI restart", error);
-            showSnack(
-                    getString(R.string.snack_restart_failed),
-                    SNACK_DURATION_LONG_MS);
-        }
-    }
-
-    private ResultReceiver createSystemUiRestartResultReceiver(long requestId) {
-        return new SystemUiRestartResultReceiver(requestId);
     }
 
     private void save() {
@@ -2541,91 +2329,6 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
     private int indexOfRefresh(int value) {
         for (int i = 0; i < refreshRateValues.length; i++) if (refreshRateValues[i] == value) return i;
         return 0;
-    }
-
-    private View statusHeader() {
-        LinearLayout header = card();
-        header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(dp(16), dp(14), dp(12), dp(14));
-
-        ImageView icon = new ImageView(this);
-        icon.setImageResource(R.mipmap.ic_launcher);
-        icon.setContentDescription(getString(R.string.settings_module_icon_description));
-        icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        icon.setPadding(dp(4), dp(4), dp(4), dp(4));
-        GradientDrawable iconBackground = new GradientDrawable();
-        iconBackground.setColor(getColor(R.color.ic_launcher_background));
-        iconBackground.setCornerRadius(dp(10));
-        icon.setBackground(iconBackground);
-        icon.setClipToOutline(true);
-        icon.setElevation(dp(2));
-        header.addView(icon, new LinearLayout.LayoutParams(dp(40), dp(40)));
-
-        LinearLayout details = new LinearLayout(this);
-        details.setOrientation(LinearLayout.VERTICAL);
-        details.setPadding(dp(12), 0, dp(8), 0);
-        TextView name = text(getString(R.string.settings_status_name), 13.5f, settingsTextColor());
-        name.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        name.setSingleLine(true);
-        name.setEllipsize(TextUtils.TruncateAt.END);
-        details.addView(name, matchWrap());
-
-        LinearLayout activation = new LinearLayout(this);
-        activation.setGravity(Gravity.CENTER_VERTICAL);
-        activationDot = new View(this);
-        GradientDrawable dotBackground = new GradientDrawable();
-        dotBackground.setShape(GradientDrawable.OVAL);
-        dotBackground.setColor(getColor(R.color.settings_text_muted));
-        activationDot.setBackground(dotBackground);
-        activationDot.setElevation(dp(2));
-        LinearLayout.LayoutParams dotParams = new LinearLayout.LayoutParams(dp(8), dp(8));
-        dotParams.rightMargin = dp(6);
-        activation.addView(activationDot, dotParams);
-        activationText = text(
-                getString(R.string.settings_module_status_checking),
-                12,
-                getColor(R.color.settings_text_secondary));
-        activation.addView(activationText, matchWrap());
-        details.addView(activation, matchWrap());
-
-        activationPulse = ObjectAnimator.ofFloat(activationDot, View.ALPHA, 1f, 0.35f, 1f);
-        activationPulse.setDuration(2_400L);
-        activationPulse.setRepeatCount(ValueAnimator.INFINITE);
-        activationPulse.start();
-
-        header.addView(details, new LinearLayout.LayoutParams(
-                0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                1f));
-        LinearLayout language = new LinearLayout(this);
-        language.setGravity(Gravity.CENTER_VERTICAL);
-        language.setContentDescription(getString(R.string.settings_language_description));
-        language.setPadding(dp(10), dp(5), dp(10), dp(5));
-        ImageView globe = new ImageView(this);
-        globe.setImageResource(R.drawable.ic_language);
-        globe.setColorFilter(0xFF9A6A12);
-        language.addView(globe, new LinearLayout.LayoutParams(dp(14), dp(14)));
-        TextView languageText = text(
-                getString(R.string.settings_language_current),
-                11,
-                getColor(R.color.settings_secondary));
-        LinearLayout.LayoutParams languageTextParams =
-                new LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT);
-        languageTextParams.leftMargin = dp(4);
-        language.addView(languageText, languageTextParams);
-        GradientDrawable languageBackground = new GradientDrawable();
-        languageBackground.setColor(Color.TRANSPARENT);
-        languageBackground.setStroke(dp(1), getColor(R.color.settings_secondary));
-        languageBackground.setCornerRadius(dp(99));
-        language.setBackground(languageBackground);
-        language.setOnClickListener(view -> toggleSettingsLocale());
-        header.addView(language, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                dp(32)));
-        return header;
     }
 
     private LinearLayout row(String label, View control) {
@@ -3053,21 +2756,6 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
         row.addView(chevron, chevronParams);
         row.setOnClickListener(view -> onClick.run());
         return row;
-    }
-
-    private void updateArtworkSummary() {
-        if (artworkSummary == null) return;
-        io.github.andrealtb.lockscreenlyrics.systemui.artwork.ArtworkDisplaySettings artwork =
-                ArtworkSettingsRepository.load(this);
-        if (!artwork.enabled()) {
-            artworkSummary.setText(R.string.artwork_settings_link_sub_off);
-            return;
-        }
-        ArtworkSettingsRepository.Selection selection = ArtworkSettingsRepository.check(this, artwork);
-        artworkSummary.setText(artwork.active()
-                && selection.state() == ArtworkSettingsRepository.ProviderState.READY
-                ? getString(R.string.artwork_settings_link_sub_on, selection.provider().label())
-                : getString(R.string.artwork_settings_link_sub_problem));
     }
 
     private String visualLayersSummaryText(LyricUiConfig config) {

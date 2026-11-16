@@ -12,6 +12,10 @@ import io.github.andrealtb.lockscreenlyrics.render.WordLyricModel;
 import io.github.andrealtb.lockscreenlyrics.render.WordLyricRenderSupport;
 
 import java.util.WeakHashMap;
+import io.github.andrealtb.lockscreenlyrics.diagnostics.CompatibilityStatus;
+import io.github.andrealtb.lockscreenlyrics.diagnostics.CompatibilityStatus.Path;
+import io.github.andrealtb.lockscreenlyrics.diagnostics.CompatibilityStatus.Outcome;
+import io.github.andrealtb.lockscreenlyrics.diagnostics.CompatibilityStatus.Reason;
 
 /**
  * Orchestrates one official lyric {@code TextView#onDraw} interception:
@@ -136,6 +140,7 @@ final class OfficialLyricDrawCoordinator {
                     textView,
                     lyricsRecycler,
                     "visible lyric draw after surface transition")) {
+                CompatibilityStatus.global().draw(textView, Path.NATIVE, Outcome.FALLBACK, Reason.NATIVE_FALLBACK);
                 host.officialRendererFallback(
                         "hook-inactive",
                         textView,
@@ -158,6 +163,7 @@ final class OfficialLyricDrawCoordinator {
                 lyricsRecycler = host.findContainingLyricsRecyclerView(textView);
             }
             if (lyricsRecycler != null) {
+                CompatibilityStatus.global().draw(textView, Path.NATIVE, Outcome.FALLBACK, Reason.RAW_LYRIC_MISSING);
                 host.officialRendererFallback(
                         "model-null",
                         textView,
@@ -182,18 +188,28 @@ final class OfficialLyricDrawCoordinator {
             LyricRenderTransactions.Status binding =
                     host.lyricDrawBindingStatus(textView, lyricsRecycler, model);
             if (binding == LyricRenderTransactions.Status.WAITING) {
+                CompatibilityStatus.global().draw(textView, Path.CUSTOM, Outcome.WAITING, Reason.SNAPSHOT_PENDING);
                 // Wait for the real dataset/bind commit. A shared string or cached frame cannot
                 // transfer an outgoing holder into the incoming song's render transaction.
                 return null;
             }
             if (binding == LyricRenderTransactions.Status.UNSUPPORTED) {
+                CompatibilityStatus.global().draw(textView, Path.NATIVE, Outcome.FALLBACK, Reason.DATASET_UNSUPPORTED);
                 host.officialRendererFallback("dataset-unsupported", textView, model, "");
                 return proceed.proceed();
             }
         }
+        if (!FeatureDegradation.global().allowed(CompatibilityStatus.Feature.CUSTOM_DRAW)) {
+            // C-04: custom drawing failed on several bindings in this plugin generation. Every row
+            // now takes the same path a single failed binding takes, until an explicit recovery.
+            CompatibilityStatus.global().degraded(CompatibilityStatus.Feature.CUSTOM_DRAW, textView,
+                    Path.NATIVE, CompatibilityStatus.Scope.RENDER_DISPATCH);
+            return proceed.proceed();
+        }
         synchronized (failedBindings) {
             WordLyricModel failedModel = failedBindings.get(textView);
             if (failedModel == model && model != null) {
+                CompatibilityStatus.global().draw(textView, Path.NATIVE, Outcome.REJECTED, Reason.FRAME_REJECTED);
                 return proceed.proceed();
             }
             if (failedModel != null && failedModel != model) {
@@ -207,6 +223,9 @@ final class OfficialLyricDrawCoordinator {
             BridgePerfTrace.end(noteTraced);
         }
         if (model == null) {
+            CompatibilityStatus.global().draw(textView, suppressingTrackHandoff || recyclerFadeInProgress
+                    ? Path.CUSTOM : Path.NATIVE, suppressingTrackHandoff || recyclerFadeInProgress
+                    ? Outcome.WAITING : Outcome.FALLBACK, Reason.RAW_LYRIC_MISSING);
             host.officialRendererFallback(
                     "model-null",
                     textView,
@@ -221,6 +240,7 @@ final class OfficialLyricDrawCoordinator {
         if (LockscreenIntegrationPolicy.shouldDeferBrightLyricPixelsForGeometryCommit(
                 host.pendingBrightLyricGeometryModel() == model,
                 aodLowFrameRateMode)) {
+            CompatibilityStatus.global().draw(textView, Path.CUSTOM, Outcome.WAITING, Reason.SNAPSHOT_PENDING);
             // A replacement model is published before its content-driven row heights can be
             // committed on the main thread. Drawing into the previous song's holder geometry for
             // one frame makes translated or wrapped songs visibly jump when the next layout lands.
@@ -260,6 +280,7 @@ final class OfficialLyricDrawCoordinator {
                 if (frame != null && frame.model != model) frame = null;
             }
             if (frame == null) {
+                CompatibilityStatus.global().draw(textView, Path.CUSTOM, Outcome.REJECTED, Reason.FRAME_REJECTED);
                 host.officialRendererFallback(
                         "frame-miss-suppressed",
                         textView,
@@ -281,6 +302,8 @@ final class OfficialLyricDrawCoordinator {
             } finally {
                 BridgePerfTrace.end(renderTraced);
             }
+            // Returning from the renderer is dispatch evidence, NOT proof of visible pixels.
+            CompatibilityStatus.global().draw(textView, Path.CUSTOM, Outcome.DISPATCHED, Reason.NONE);
             host.markBoundLyricFrameReady(textView, frame);
             if (LyricTimingTuningConstants.OfficialLyric.DRAW_FRAME_REUSE_ENABLED) {
                 host.rememberRecentOfficialDrawFrame(textView, frame);
@@ -313,12 +336,14 @@ final class OfficialLyricDrawCoordinator {
             }
             return null;
         } catch (Throwable t) {
+            CompatibilityStatus.global().draw(textView, Path.NATIVE, Outcome.FALLBACK, Reason.FRAME_REJECTED);
             host.officialRendererFallback(
                     "draw-error",
                     textView,
                     model,
                     t.getClass().getSimpleName());
             host.onCustomDrawError(textView, model, t);
+            FeatureDegradation.global().failed(CompatibilityStatus.Feature.CUSTOM_DRAW, t.getClass().getSimpleName());
             // The renderer owns no host exception. Disable this binding/model after one failure
             // and immediately let the original TextView draw into the restored Canvas state.
             synchronized (failedBindings) {

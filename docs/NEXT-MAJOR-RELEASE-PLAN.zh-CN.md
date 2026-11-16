@@ -1,0 +1,3082 @@
+# 下一大版本更新计划：ColorOS 兼容闭环、上手引导与 Provider 商店
+
+> 状态：**M0 部分用户设备确认；M1 C-01/C-02/C-03 代码与本地回归通过，Provider 只读回读/短时诊断导出/构建身份对照已在用户设备跑通（含一次诊断启动回归的定位与修复）；不是全型号或整项设备通过**。编制日期：2026-11-11；实施/证据更新：2026-11-14。2026-11-14 追加第五条主线“代码结构与性能治理”（第 15 节，仅方案）。当前接手入口见 [任务交接](<../../HANDOFF-M1-AGENT.zh-CN.md>)。目标版本暂称 **5.0.0**，尚未修改正式版本、发布契约或公开资产。
+> 本文承接用户明确提出的四项需求；不是发布公告，不证明已有正式 UI、商店或全专用模块动态作用域。已完成计划、开发技能安装与隔离 Debug 探针；2026-11-13 新增用户设备的 staticScope=true 单次允许闭环证据（第 14.0 节），不是整个 M0 或全设备验收。本次仅记录用户材料，不代安装、不发布、不操作真机。
+
+## 0. 版本目标与完成定义
+
+下一大版本从“配置丰富的 Bridge + 用户自行寻找 Provider”升级为“**ColorOS 原生歌词增强 + 可解释的兼容状态 + 引导式插件管理**”。
+
+必须同时交付：
+
+1. ColorOS 系统体系内不同型号设备的兼容优化；不扩展到其他 ROM 或通用 Android 锁屏方案。
+2. 新安装，以及从旧版本首次更新到本大版本时的新手引导；保留既有用户配置，支持跳过、恢复和重新进入。
+3. Bridge 内置 Provider 商店，统一下载、安装和独立更新。下一大版本的公开 Release **不再单独附带 Provider APK 或 Provider 全量 ZIP**。
+4. **仅专用播放器 Provider** 进入动态作用域编排；通用歌词与动态封面 Provider 保留独立桌面入口、配置与运行方式，商店仅管理其下载安装更新，不接管其作用域或内部配置。
+5. 为以上流程新增首页、商店、状态/诊断与引导 UI：**新管理页面采用 Kotlin + Jetpack Compose Material 3，选择性采用 Material 3 Expressive，现有 Views 页面渐进迁移**；逐步拆分设置页职责，不借机重写歌词渲染器。
+6. Bridge 代码结构与性能治理（2026-11-14 用户追加）：以拆分 `LockscreenLyricsModule.java` 为重点，做保持行为的结构迁移和有采样依据的性能修正；方案见第 15 节，尚未落代码。
+
+完成标准不是“下载成功”或“作用域请求返回成功”，而是：用户能识别当前插件版本、安装/授权/生效阶段、下一步操作，以及功能未生效的具体条件；已知良好设备的基础链路不回退。
+
+### 0.1 首次编制时源码基线（2026-11-11）
+
+- Bridge：44aca8e4828a1b1257264bcc629c7cf5f7778061，工作树在本轮开始时干净。
+- Providers：b9f82cc2208df4c767c6a371db89dae03555a994；已有未跟踪 artifacts 目录保留不动。
+- Bridge 当前版本：4.5.4 / 149。Provider 矩阵当前包含 14 个歌词模块，其中 13 个专用播放器模块、1 个通用歌词模块；另有 1 个独立动态封面应用。
+- 当前主链路在开发者本地设备可用属于用户反馈的已验证基线；不外推为所有 ColorOS 型号已验收。
+- 本文采用当前矩阵，不沿用“旧套件版本号等于每个 Provider 实际版本”的假设。现有通用 Provider 已是独立内部版本 1.1.3 / 5。
+
+### 0.2 已确认的 UI 技术选型（2026-11-11）
+
+用户已确认采用本轮推荐：**Compose Material 3 为新管理界面的标准组件底座，Expressive 适度使用，旧 Views 渐进迁移**。这是对原计划“新增页面也继续使用 Views”的调整，不是所有 UI/运行代码都转换为 Compose；Compose UI 尚未接入，正式管理面与歌词运行代码未改；M0 的独立 scope 调试仪表不作为 UI 原型。具体范围、互操作、依赖冻结与验收见第 8、10–13 节。
+
+## 1. 边界：管理面可以扩展，歌词运行面不回退
+
+### 1.1 保留的运行架构
+
+~~~text
+专用 Provider → 播放器自己的 MediaSession / MediaMetadata["lyricInfo"]
+通用 Provider → 在自己的 system_server 链路补全选定播放器的 metadata
+                                      ↓
+                              ColorOS SystemUI
+                                      ↓
+                          可选 Bridge 通用增强
+
+动态封面应用 → 已有 artwork-contract / 服务授权链路 → Bridge
+~~~
+
+- Bridge 的 Hook scope 仍只有 system 与 com.android.systemui；不因为商店接入播放器进程。
+- Provider 的播放捕获、网络取词、identity、generation 和异步提交仍由对应 Provider 持有；Provider 不依赖 Bridge 安装才能发布标准 lyricInfo。
+- 商店需要的 Provider applicationId、下载地址、签名和宿主清单，只能存在于 **Bridge 普通 App 管理面**。不得注入为 SystemUI 的歌词来源路由表或私有 transport。
+- 不恢复 direct-v4、旧歌词广播、运行时外置脚本或动态加载下载 APK 中的 Hook 类。
+- 安装包经 Android 包安装器安装；不得用 DexClassLoader 将 Provider 装入 Bridge。
+- Debug 默认关闭，诊断开关不得改变选词、时钟、渲染、AOD 或降级决策。
+
+### 1.2 不纳入本版的范围
+
+- 非 ColorOS ROM、没有厂商原生歌词页的设备，以及跨厂商锁屏替代实现。
+- 静默 Root 安装、无人确认地启用模块/扩 scope、自动重启 SystemUI/system_server。
+- 云端下发可执行兼容补丁、任意第三方插件市场、任意 URL 安装。
+- 默认实时推送服务、账号系统、强制全量插件更新或自动卸载不兼容插件。
+- 一次性重写所有旧 Views 页面，或将 SystemUI Hook、歌词 Canvas 渲染、AOD 与 Provider 业务迁移到 Compose；不调整 Hook API 大代际或改写所有 Provider 播放策略。
+
+## 2. 首次规划时的代码基线与迁移落点
+
+下表保留首次规划时的静态基线；不代表实施后的当前状态。最新 M1 代码、验证结果和未完成项见 [C-01/C-02 实施记录](<M1-C01-C02-IMPLEMENTATION.zh-CN.md>)。
+
+| 领域 | 已确认现状与源码 | 下一步及原因 |
+| --- | --- | --- |
+| Bridge 入口/权限 | [Manifest](<../app/src/main/AndroidManifest.xml#L1-L41>) 只有现有模块设置入口；没有 INTERNET、REQUEST_INSTALL_PACKAGES 或商店安装组件 | 增加普通 App 管理入口、网络与安装权限；不要把网络放入 Hook 启动路径 |
+| 设置页职责 | [主设置 Activity](<../app/src/main/java/io/github/andrealtb/lockscreenlyrics/LyricUiSettingsActivity.java#L190-L257>) 持有草稿、预览、模块状态和外观配置；当前约 3,283 行 | 作为外观页保留，新增管理首页/商店，提取状态和流程控制器 |
+| UI 基础 | [SettingsBaseActivity](<../app/src/main/java/io/github/andrealtb/lockscreenlyrics/SettingsBaseActivity.java#L38-L110>) 已统一语言、窗口与 edge-to-edge；[当前依赖](<../app/build.gradle.kts#L94-L105>) 使用 Material Components 1.11.0，[主题](<../app/src/main/res/values/themes.xml#L3-L17>) 已是 Material 3 浅色 | 新管理页改用 Compose Material 3；保留既有浅色/语言/窗口约束并统一 tokens，旧 Views 分步接入；不为商店改动 LyricUiConfig |
+| 诊断 | [StructuredBridgeLog](<../app/src/main/java/io/github/andrealtb/lockscreenlyrics/diagnostics/StructuredBridgeLog.java>) 已有双日志出口、区域开关、脱敏与节流；[现有调试页](<../app/src/main/java/io/github/andrealtb/lockscreenlyrics/BridgeDebugSettingsActivity.java>) 已能查询配置应用状态 | 补运行构建身份、功能终态、短时诊断与统一导出，不另造常驻逐帧日志 |
+| 兼容解析 | [SystemUI 解析/缓存](<../app/src/main/java/io/github/andrealtb/lockscreenlyrics/LockscreenLyricsModule.java#L1030-L1060>)、[C17 角色校验](<../app/src/main/java/io/github/andrealtb/lockscreenlyrics/systemui/artwork/ArtworkC17Access.java#L31-L99>) 已有 DexKit/旧路径及实际 View 归属验证 | 在其上统一 capability/result 模型，不推倒重写，也不只看型号名 |
+| Provider 范围 | [机器矩阵](<../../ColorOS-Live-Lyrics-Providers/release/v5-provider-matrix.json>) 的 xposedStaticScope 当前统一为 true | 改成每类/每模块 scope 策略；专用模块与通用模块不能一起全局翻转 |
+| 构建校验 | [统一 convention](<../../ColorOS-Live-Lyrics-Providers/gradle/provider-app-convention.gradle.kts#L61-L98>) 按矩阵全局校验 staticScope，另校验 scope.list | 同时迁移生成逻辑、校验器和测试，不能只手改 module.prop |
+| 模块 App 的 LSP 服务 | [ProviderModuleApplication](<../../ColorOS-Live-Lyrics-Providers/provider-settings-api102/src/main/kotlin/io/github/andrealtb/coloroslyrics/provider/settings102/ProviderModuleApplication.kt>) 已注册 XposedServiceHelper；[共享设置模块](<../../ColorOS-Live-Lyrics-Providers/provider-settings-api102/build.gradle.kts#L40-L46>) 将 service 限于 App 路径 | 可复用本模块自己的服务接入，不引入被 Hook 播放器路径 |
+| Readify 例外 | [ReadifyApplication](<../../ColorOS-Live-Lyrics-Providers/player-readify/src/main/java/io/github/andrealtb/coloroslyrics/provider/readify/ReadifyApplication.java>) 是独立 Application；[其构建](<../../ColorOS-Live-Lyrics-Providers/player-readify/build.gradle.kts>) 应用 convention 但不依赖共享设置 UI | 必须单独接入管理/授权 adapter，不能只改公共 Application 后声称全矩阵完成 |
+| 独立入口 | [Universal Manifest](<../../ColorOS-Live-Lyrics-Providers/universal-provider/src/main/AndroidManifest.xml#L26-L34>) 和 [动态封面 Manifest](<../../ColorOS-Live-Lyrics-Providers/artwork-provider-am/src/main/AndroidManifest.xml#L12-L17>) 都有 LAUNCHER | 原样保留；Universal 的 system scope 不参加专用播放器动态授权；动态封面是服务应用，不是待勾选播放器 scope 的模块 |
+| API 版本 | [Provider 依赖目录](<../../ColorOS-Live-Lyrics-Providers/gradle/libs.versions.toml#L19-L20>) 使用 libxposed api/service 102.0.0；[Bridge 依赖](<../app/build.gradle.kts#L94-L105>) 尚无 service 客户端 | 按锁定版本验证，不把上游 master 新版本说明当作已安装框架能力 |
+| 分发耦合 | [Bridge 契约](<../release/bridge-release-contract.json>) 目前规定 16 APK / 19 资产；[校验器](<../scripts/validate-release-contract.ps1#L46-L49>) 强校验数量与同套件关系 | 迁移为 Bridge Release 与 Provider catalog 两份发布契约 |
+| 当前 CI | [Bridge 发布流程](<../.github/workflows/release.yml#L38-L116>) 冻结 Provider 源码；[Providers CI](<../../ColorOS-Live-Lyrics-Providers/.github/workflows/android-release.yml#L50-L123>) 构建矩阵和 ZIP，主要上传 Actions artifacts | 增加独立、可审计的 Provider 正式发布和签名目录原子晋级；Actions 临时产物不是生产下载源 |
+| 架构守卫 | [BridgeArchitectureGuardTest](<../app/src/test/java/io/github/andrealtb/lockscreenlyrics/BridgeArchitectureGuardTest.java#L32-L45>) 当前禁止整个 app/src/main 出现 Provider applicationId | 按管理面/Hook 面重划测试边界；旧 transport 禁令仍全局保留，不靠字符串拼接逃避守卫 |
+
+## 3. 目标模块分类与职责
+
+| 类型 | 当前范围 | 商店职责 | scope/设置职责 |
+| --- | --- | --- | --- |
+| 专用播放器 Provider | 矩阵中的 13 个专用模块 | 下载、安装、更新、宿主匹配、启动模块自身授权流程、显示结果 | Provider 自己请求自己模块的 scope；既有播放/调试策略归 Provider |
+| 通用歌词 Provider | universal-provider | 只提供下载安装更新及版本状态 | 独立 App 选择播放器和歌词源；system scope 维持独立管理，Bridge 不代加播放器 scope |
+| 动态封面 Provider | artwork-provider-am | 只提供下载安装更新及版本状态 | 独立 App 配置/登录/绑定；已有 artwork 服务授权不等于 LSP 作用域 |
+| Bridge | 本体 | 不作为 Provider 商品重复安装 | 自身保持 system / com.android.systemui；框架启用与原有配置不混进播放器 scope |
+
+专用模块的完整首发清单：player-salt、player-cone、kuwo-music、player-lx、player-poweramp、player-metrolist、player-kugou、player-qq、player-netease、player-apple、player-spotify、player-qishui、player-readify。清单来源是上述机器矩阵，后续生成目录与包可见性声明也必须由矩阵导出。
+
+**产品入口统一，不等于合并 APK，也不等于改变 Provider 的业务进程。**
+
+## 4. 主线一：ColorOS 型号兼容专项（C 系列）
+
+### C-01 构建身份与型号环境快照（P0）
+
+- 为 Bridge 与所有 Provider 生成唯一 buildId：源码提交、可追溯的 dirty 摘要、构建变体、resolverRevision；最终 APK SHA-256 留在签名发布清单，不反向写入自身 APK。
+- 分别显示“已安装构建”“注入进程观测到的构建”“配置已应用 revision”；安装更新不等于旧进程已经加载新代码。
+- 型号是索引，不是全部适配判据。记录 ColorOS 版本/构建、SDK、SystemUI 与插件版本/内容指纹、框架版本及能力、屏幕与字体缩放、分辨率、导航方式、AOD/折叠姿态等与功能相关的维度。
+- 不采集 IMEI、设备序列号等永久设备标识。组件哈希只在适当后台/缓存路径计算，不在绘制或启动热路径整包反复读取。
+- 对相同“ColorOS 版本号/插件 versionName”但内容不同的型号，保留不同兼容记录。范围不扩大为其他 ROM。
+
+C-01 当前实施（2026-11-13）：已补全矩阵身份、Bridge 安装/注入对照、Provider 自身签名保护只读回读及已观察 loader 的显式后台指纹采样；完整厂商姿态不可得时保持 unknown。代码/本地回归已过，平台 IPC、更新窗口和真实字段可读性必须实机确认，不标全项验收。详见 [当前记录](<M1-C01-C03-DEVICE-READY.zh-CN.md>)；[前批复核](<M1-C01-C02-IMPLEMENTATION.zh-CN.md>) 保留历史差距。
+
+### C-02 统一能力与最终原因（P0）
+
+每项增强输出 requested、supported、eligible、selectedPath、lastOutcome、reason、observedAt 与证据范围；未知、尚未就绪、不支持、用户关闭分别表示。
+
+最小原因集合应覆盖：CONFIG_DISABLED、RAW_LYRIC_MISSING、LINE_PROGRESS_DISABLED、AOD_LOW_FRAME_RATE、HOST_NOT_FOUND、SNAPSHOT_PENDING、PALETTE_UNAVAILABLE、DATASET_UNSUPPORTED、FRAME_REJECTED、NATIVE_FALLBACK、TARGET_NOT_OBSERVED。
+
+- Hook 安装、模型解析、颜色可读、实际进入自绘、应用配置、请求行重绘是不同阶段；不能把某个中间 marker 当最终效果。
+- 最终原因在正常决策处产生，状态查询只读；不得为了诊断打开原本不执行的业务分支。
+- 用现有受保护状态通道扩展聚合快照；Provider 运行状态通过其自身管理/诊断能力提供，不恢复歌词 transport。
+
+C-02 当前实施（2026-11-13）：自绘/取色/上浮/逐行/翻译进度、翻译按钮、动态封面均已从正常决策点接入有界模型并本地验证。准备、调度、绘制指令、可见性赋值都不是视觉验收；未实际观测仍为 unknown。当前仍需真实画面及播放器动作回归。
+
+### C-03 短时诊断包与离线摘要（P0）
+
+当前实施（2026-11-13）：已落地默认关闭的 60 秒/128 事件缓存、通用标记、预览/用户选择导出，以及白名单离线 JSON/ZIP 摘要。23 项隐私/预算/旧输入回归通过；实际设备捕获和导出待验收，详见 [续实施记录](<M1-C01-C03-DEVICE-READY.zh-CN.md>)。
+
+- 优先交付现有 LSPosed 导出包的离线摘要器，再提供手机“开启短时诊断 → 复现 → 标记异常 → 导出”流程。
+- 详细事件缓存仅在用户开启诊断后启用，建议初始窗口 60 秒、每进程有界容量；具体预算经性能基线确认。只记录关键状态变化，不常驻逐帧打印。
+- 包含构建/环境/实际配置、进程和启动 epoch、功能终态、关键链路事件、缺失项清单；导出前允许预览与删去附加信息。
+- 优先使用单设备单次启动的 elapsedRealtime 与进程 epoch。不同 Provider 的 generation 不能直接视为全链路同一个计数器，关联不足标 unknown。
+- 普通 App 无权默认读取其他所有进程日志。沿现有框架日志与经授权的采集能力收集；不可用部分标记“未采集”，不能假称完整同窗证据。
+- 不记录完整歌词、原始媒体 ID、Token、Cookie、URL query 或私人媒体路径；不默认上传遥测。
+
+### C-04 局部降级与恢复（P1）
+
+- 在现有守卫上统一功能级失败范围：取色退手动色，上浮退普通绘制，按钮不支持保官方槽位，自绘不安全退官方歌词。
+- 错误隔离到功能/绑定/组件版本；恢复绑定到明确事件并限次，不单次异常后全局永久拉黑，也不每帧无限重试。
+- 更新插件/classloader、surface 交接、异步回调均验证所有权和 epoch。不要用一组固定延迟掩盖状态竞争。
+- 不因首次透明、0×0 或过渡态强制重排官方列表；不重复接管滚动/行高/AOD 私有状态。
+
+### C-05 兼容样本与回归（P1）
+
+- 按实际 SystemUI/插件内容指纹建立只读契约样本库；可授权使用的 APK 留本地或私有环境，公开仓库只留合法的结构摘要/哈希/测试元数据。
+- 增加重复、乱序、迟到、失效回调测试：歌词先到/封面后到、旧曲异步结果、新旧数据集交接、View detach/attach、快速切歌、暂停后补资源、AOD 往返。
+- 关键不变量：不串曲/串封面、不越过 View 所属边界、失效回调不写当前状态、诊断开关不改变行为。
+- 文本与状态机回放不等于 GPU/布局视觉验收。兼容声明对应的必需样本缺失时，不允许用 skipped 测试宣称已覆盖。
+
+### C-06 ColorOS 型号验收矩阵（贯穿各阶段）
+
+- 保留开发者本地已知良好设备；按不同组件指纹、屏幕/折叠能力与字体缩放组合选择少量代表型号。
+- 以当前已有支持证据的 ColorOS 组件族为范围，未知型号先只读识别与安全降级；不承诺所有历史 ColorOS 都支持。
+- 固定场景：冷启动首曲、锁屏进入、连续切歌、暂停/继续、译文显隐、逐行/逐字、AOD 往返、解锁再锁屏。
+- 每次明确候选 APK 哈希、配置、框架版本和复现窗口；同一 RC 不给不同用户偷偷替换成不同内容。
+
+## 5. 主线二：新安装/大版本更新引导（G 系列）
+
+### 5.1 流程不是欢迎页轮播
+
+~~~text
+G1 环境检查与边界说明
+ → G2 启用/确认 Bridge（框架确认由框架负责）
+ → G3 选择自己实际使用的播放器
+ → G4 安装匹配的专用 Provider，或说明独立通用/封面应用的使用方式
+ → G5 专用 Provider 自请求 scope、回读、提示宿主进程重新启动
+ → G6 用户播放一次并检查原生歌词/Bridge 增强的实际状态
+~~~
+
+- 第一步明确：只适用于项目支持的 ColorOS 原生歌词实现，需要支持项目 API 的框架；Bridge 不取代播放器，商店的“通用”不意味着全应用无条件支持。
+- 识别已安装宿主，只推荐对应模块；未安装的宿主可浏览但不默认安装 Provider。
+- 一个播放器已有专用 Provider 时，不默认引导再启用通用 Provider。无法可靠读取另一个独立应用的绑定状态时，标记“待用户确认冲突”，不猜测已消除冲突。
+- Bridge 原生静态 scope 的启用提示与播放器 Provider 的动态 scope 步骤分开。
+- 基础引导不要求开启字符上浮、逐字、Debug 或所有增强；相关开关依赖在用户进入对应设置时解释。
+- 通用歌词与动态封面分支在下载安装说明后转为“请从独立应用入口完成配置/授权”；商店不嵌入其设置和 scope 页面。动态封面的已有 Bridge 侧消费设置继续保留，不等于接管来源应用。
+
+### 5.2 新安装与升级迁移分开
+
+引导状态单独持久化，不放入 LyricUiConfig，也不能只存一个 firstLaunch 布尔值。建议包含 flowRevision、lastAcknowledgedMajor、各步骤结果/证据时间、待处理安装/授权 requestId、可恢复的用户选择。
+
+| 场景 | 行为 |
+| --- | --- |
+| 真正新安装 | 显示完整流程，可跳过/后退；未完成项留在首页，不锁死外观页 |
+| 4.x 首次升级本大版本 | 先发现现有配置/已安装 Provider；展示更新引导与待修复项，不从零重装 |
+| 同大版本补丁升级 | 不重复完整引导；仅迁移新 flowRevision 真正新增的必要步骤 |
+| 目录/网络不可用 | 使用内置或上次已验证目录的有限信息，允许保留现有运行链路与稍后设置 |
+| 从安装器/框架/独立应用返回 | 重新查询真实安装、服务和授权状态，不凭 Activity 返回码自动打勾 |
+| 杀进程、旋转/折叠、系统回收 | 恢复事务与步骤，过期请求不能重复弹安装/作用域确认 |
+| 用户跳过、拒绝或取消 | 明确剩余问题和重入入口，不反复强制弹窗；不显示虚假“全部完成” |
+
+升级必须保留外观、字体、翻译记忆、清理规则、动态封面已有授权与旧 scope。目录接管已安装包不要求卸载；签名不一致时只提示，绝不自动清数据。
+
+**引导完成度与运行健康是两个概念。** 用户可以完成说明但暂未播放；未观察到目标进程只能显示“待验证”，不能伪装成歌词链路已成功。
+
+## 6. 主线三：Provider 商店（S 系列）
+
+### 6.1 首发商品范围与版本策略
+
+- 首版只收录项目官方 13 个专用模块、通用歌词模块和独立动态封面应用，共 15 项；具体集合仍由矩阵生成，不在客户端另写第二套业务清单。
+- 每个商品以稳定 providerId + applicationId 标识；版本排序使用对应应用的 longVersionCode，显示其自身 versionName/buildId，不使用 Bridge suiteVersion 判断新旧。
+- 新 scope/管理入口进入专用 Provider APK 后，必须为这些 APK 分别提升版本，不能以相同 versionCode 替换已发布二进制。
+- 专用模块可以共享宿主家族（例如矩阵中的多个发行包），选择用户实际安装/使用的包；同一个包的修改版仍由原 Provider profile/进程策略判定，不靠商店包名放宽运行权限。
+- 通用和动态封面只提供下载安装更新；保留其独立桌面图标与配置流程。专用模块不新增一排桌面图标，保留明确的 INFO/框架设置前门及必要的自身授权界面。
+
+### 6.2 目录来源与供应链安全（发版硬门禁）
+
+推荐生产形态：**官方 HTTPS 对象存储/CDN + 不可变版本目录 + 可验签 catalog**。实际域名、地域可达性与运营者由实施前确定；不是承诺本轮已经有服务器。
+
+- 公开 GitHub/LSP Release 只向用户分发 Bridge 本体及其必要校验/说明资产，不再附单独 Provider APK。**（2026-11-14 用户决定 D1 = 方案 M）** Provider 商店的默认下载后端为 Providers 仓库自身的公开 GitHub Release，按 Provider 独立打 tag；可选地再套一层免费 CDN 作为加速镜像。完整性只看签名目录，不看托管。
+- Providers CI 仍产出独立 APK，但正式发布到商店 artifact 存储。GitHub Actions 需鉴权、会过期的 artifacts 仅作构建/RC 中间产物，不作为客户端长期下载接口。
+- HTTPS 与 APK SHA-256 不能单独代替目录真实性。目录需独立签名，客户端固定受信目录公钥；APK 还需校验证书、包名、versionCode、大小和内容哈希。
+- 目录 envelope 固定规范：schemaVersion、catalogRevision、issuedAt、expiresAt、keyId、原始 payload 字节的编码与签名。签名覆盖确定字节序列，不让不同 JSON 序列化造成验签歧义。
+- 使用已审核、适配最低 SDK 的签名实现；算法和密钥轮换先在 M0/M2 确认，不能默认最低 API 原生支持最新算法，也不能自行设计加密。
+- 维护最后接受的 revision，拒绝重放降序目录；过期目录只可离线显示已安装状态，阻止新安装/更新，不影响现有歌词功能。
+- APK 签名证书与目录签名密钥是两套信任。不能通过一个被新目录声明的任意证书绕过客户端既有信任；证书轮换需受信升级/验证过的 lineage 策略。
+- URL 与重定向限制到发布配置中的 HTTPS 受信主机；无用户随意填写源，无下载后执行命令，无将鉴权 Token 放客户端。受信主机列表随**签名目录**下发（客户端另有内置的最小列表），以便以后增加 CDN 镜像时不必升级 Bridge；目录验签失败时只用内置列表。
+- 首次目录可采用随 Bridge 打包的已签名快照；远端更新需显式展示网络/来源状态。新商品若超出已生成包可见性范围，需要客户端升级或明确标为无法识别，不能误报未安装。
+
+### 6.3 目录最小信息模型（草案，不是现存文件）
+
+~~~json
+{
+  "schemaVersion": 1,
+  "catalogRevision": 1,
+  "entries": [{
+    "providerId": "salt",
+    "kind": "dedicated-lyrics",
+    "applicationId": "<由机器矩阵生成>",
+    "versionName": "<插件自身版本>",
+    "versionCode": 0,
+    "buildId": "<可追溯构建身份>",
+    "channel": "stable",
+    "minSdk": 27,
+    "minStoreProtocol": 1,
+    "managementProtocol": 1,
+    "scopePolicy": "self-request-selected-hosts",
+    "supportedHosts": ["<编译期支持范围>"],
+    "requires": {"frameworkApi": 102},
+    "artifact": {
+      "url": "<官方HTTPS不可变地址>",
+      "bytes": 0,
+      "sha256": "<实际APK摘要>",
+      "signerSha256": ["<预置受信正式证书>"]
+    },
+    "sourceCommit": "<Providers提交>",
+    "releaseNotes": "<经限制的纯文本说明>"
+  }]
+}
+~~~
+
+- 示例中的零值与占位符只是结构说明；正式校验必须拒绝这些值。
+- minStoreProtocol 是管理流程兼容要求，不代表 Provider 发布歌词在运行时依赖 Bridge；可选增强的 Bridge/artwork 协议版本要求单独标记。
+- kind、scopePolicy、入口协议、schema 和版本约束由同一机器契约生成；远端目录不能给旧 APK 增加它未编译支持的宿主。
+- “官方推荐、当前已验证、不兼容、未知”分别表达；未验证的新宿主版本不能标成永久支持。
+
+### 6.4 下载与安装事务
+
+~~~text
+可安装 → 下载中 → 完整性/包身份/证书校验 → 等待用户安装确认
+      → 安装器处理中 → PackageManager 确认已安装
+      → 专用模块：待框架启用/待自身 scope 请求/待宿主重新启动/待运行验证
+      → 独立应用：安装管理完成，内部配置从独立入口完成
+~~~
+
+- 下载到 App 私有临时目录，校验完才转为可安装文件；中断/重复点击/空间不足有可恢复事务，不半包进入安装器。
+- 优先使用 PackageInstaller 会话；兼容方案必须同样保留用户确认与状态校验。新增 REQUEST_INSTALL_PACKAGES，按需检查 canRequestPackageInstalls 并引导到系统授权；拒绝后不循环拉起。
+- 安装器 STATUS_PENDING_USER_ACTION 是等待用户操作，不是失败也不是成功；失败区分取消、签名冲突、SDK 不兼容、空间不足、系统拦截。
+- 不请求静默安装权限，不用 Root 绕过 ColorOS 安装确认。通知权限只在用户选择更新提醒时申请，不绑定首次打开。
+- 安装完成同时检查平台最终状态与 PackageManager 的实际包/版本/签名；Activity RESULT_OK、下载 100% 或 PACKAGE_ADDED 单独都不是充分证明。
+- Package visibility 由已知 Provider/宿主集合生成定向 queries；不为了商店复制通用应用的 QUERY_ALL_PACKAGES。当前用户/资料之外的双开和工作资料先明确标为未支持或待验证，不把不可见当未安装。
+- 安装回调、包变更与 App 重启重入必须幂等。保存 sessionId/requestId，超时后先 reconcile，不能直接重新发起第二个安装。
+
+### 6.5 更新提醒与故障回退
+
+- 插件独立发布后，Bridge 无须发布新版即可发现其兼容更新。首版提供打开商店时检查、手动刷新；用户可选择后台更新检查与通知。
+- 后台采用有网络约束、退避/抖动和合理频率的调度；建议初始检查间隔 24 小时，实际由 ColorOS 调度决定，**不承诺实时必达**。无法后台运行时下次打开补查。
+- 用户关闭通知、无通知权限、网络失败或插件目录不可用时，不阻断已安装插件工作。提醒与自动下载安装分开，默认不静默更新。
+- stable 与测试渠道分离；有本地更高版本时不强制降级；本地同包不同签名标“无法覆盖安装”，不提示一键清数据。
+- Android 通常拒绝低 versionCode 覆盖安装；产品不能承诺任意一键降级。首选将已知良好源码重新发布为更高 versionCode 的签名恢复版；卸载降级只能由用户知情决定并先备份。
+- 撤回某条目录记录可禁止后续安装并告警，不通过网络远程无提示关闭用户正在运行的功能。
+
+## 7. 动态作用域：仅专用模块自请求（A 系列）
+
+### 7.0 用户已确认的目标：LSP 原生“作用域请求”通知
+
+2026-11-11 用户提供的截图明确了目标交互：由 **LSP 框架发出“作用域请求”原生通知**，正文表示“某模块请求将所选播放器添加至其作用域”，用户使用框架的“允许 / 拒绝 / 不再询问”操作。截图是交互验收参照，不是本项目 Provider 已完成 API 接入或设备验收的证据。
+
+- 必须由对应专用 Provider 的 requestScope 调用触发框架请求；通知内的请求模块身份应是该 Provider，而不是 Bridge 冒充或替它改 scope。
+- Bridge 不能用自绘对话框、NotificationCompat 仿制通知或自己的勾选页，替代这次真正的框架授权。播放器选择页仅选择意向，不是 scope 已批准的证明。
+- 用户选择“安装并配置”后，允许在安装完成、Bridge 仍在前台且上下文有效时自动接续 Provider 的最小授权承接流程，不要求用户再手动找 Provider 或重新勾选同一播放器。该承接界面只取得本模块 service、展示状态并请求框架授权，不重复制造一套“允许/拒绝”权限页。
+- 只选择“安装”或用户已离开前台时，不从后台强拉 Activity；留“继续配置”入口，由用户触发后发起原生请求。
+- 允许后回读 scope；拒绝/不再询问后停止自动请求，不用轮询反复弹通知，也不绕过框架记录。API 未暴露“不再询问”的精确原因时，只能标记未获批准/需人工处理，不解析错误文案伪造状态。
+- 框架可能因版本以通知或其他原生授权形态呈现，实际目标框架须验证截图所示路径；文案、按钮和样式由框架控制。本项目不承诺跨所有实现逐像素相同。
+- 没看见框架通知时，要区分框架通知权限/通知渠道、模块启用前置条件、service 未连接和 API 失败；申请 Bridge 自己的更新通知权限不能替代 LSP 的通知权限。
+- Universal 和动态封面不进入这条请求流程。
+
+### 7.1 已核实 API 与不能承诺的内容
+
+当前依赖的 [libxposed service 102.0.0 官方源码](<https://raw.githubusercontent.com/libxposed/service/3318940876192e29cf6ab07637e899e22a87ebf0/service/src/main/java/io/github/libxposed/service/XposedService.java>) 提供：
+
+- getScope()：当前模块自己的 scope。
+- requestScope(List<String>, OnScopeEventListener)：请求添加 scope，回调 approved 列表或失败原因。
+- removeScope(List<String>)：当前模块移除 scope。
+- getRunningTargets()：可用时查询本模块已 Hook 的运行目标；不等于能管理其他模块。
+
+**API 没有一个可供 Bridge 传入任意 Provider 包名的跨模块 scope 修改参数，也没有这里可用的静默 enableModule 通用接口。** Bridge 不能借自己的 service 替另一个独立 APK 授权。
+
+[现代模块官方指南](<https://raw.githubusercontent.com/wiki/LSPosed/LSPosed/Develop-Xposed-Modules-Using-Modern-Xposed-API.md>) 说明服务在模块 App 启动后交付。API 声明可用不代表所有用户框架都完整实现；必须对实际支持的框架做 M0 PoC。
+
+staticScope 在官方指南中描述为限制用户把模块应用到声明范围之外；不能无证据断言所有框架在 true 时都会拒绝对声明内宿主的 requestScope。**本版设计仍明确迁移专用模块为按模块声明的动态授权策略（建议 staticScope=false），保留编译期宿主白名单与 scope.list 建议范围，最终结合框架验证决定元数据细节。** Universal 和 Bridge 保持原静态策略，不全局翻转。
+
+2026-11-13 设备证据补充：用户提交的隔离探针在 LSPosed 2.2.1 / API 102、staticScope=true 下，对声明内 com.salt.music 发出了原生通知，且允许回调及 getScope 回读通过（第 14.0 节）。这排除了“为触发原生请求必须先改 false”的前提；上述策略建议仍待最终管理需求与其余测试决定，不据单例修改生产矩阵。
+
+### 7.2 可实施的交互序列
+
+1. 用户在 Bridge 选择已安装宿主和对应专用 Provider，完成下载/安装确认。
+2. Bridge 核验已安装 Provider 的包名、证书与 managementProtocol。“安装并配置”在有效前台流程中继续；“仅安装”或中断流程提供“继续配置”。
+3. 在上述用户意图范围内启动该 Provider 的显式最小管理/授权 Activity；服务注册发生在 **Provider 自己的 App 进程**，不是 Bridge 或播放器进程，不要求重新选择已经确定的宿主。
+4. Provider 校验请求来源和一次性 requestId，并从自己的编译期矩阵派生允许宿主；只请求用户选中的、受支持的宿主，拒绝 system/SystemUI 或任意外来包。
+5. Provider 读取 getScope，只为缺少的宿主调用 requestScope；保留用户已有 scope，不自动删除额外勾选。
+6. **触发用户截图所示的 LSP 原生作用域请求**，等待用户在框架通知中允许/拒绝/不再询问；不由 Bridge 代选。回调只代表此次请求结果，回读 getScope 验证所需子集，部分批准按实际结果显示。
+7. Provider 返回最小管理结果，Bridge 重新核对安装身份与 requestId；回调切换主线程后更新 UI，不传可序列化的 service/binder 业务对象。
+8. scope 已配置后提示播放器相关进程需要重新启动；不能自动强停播放器。观察目标运行和发布/渲染证据，才提升到相应“已验证”状态。
+
+### 7.3 请求与结果的安全边界
+
+- proposed ManagementProtocol v1 只携带协议版本、requestId、操作类型、所选宿主、配置结果及可解释原因；不能携带歌词或替代 MediaSession。
+- 导出的管理入口使用受控签名权限并验证调用包/UID、包签名及允许操作；同签名不自动代表任意同签名应用都有权传任意宿主。
+- 框架设置或 Provider 自身前门可保留人工 scope 流程；独立使用 Provider 不要求先安装 Bridge。
+- 不信任 Intent 的裸字符串包名、RESULT_OK 或远端目录对 scope 的声明。结果不能让 Bridge 绕过 Provider 自身白名单。
+- 拒绝、取消、Binder 死亡、服务迟到、回调丢失、超时和进程重建都需状态机处理；未确认时标待操作或 unknown，而不是“已激活”。
+
+### 7.4 必须覆盖的现状差异
+
+- 共享设置模块增加一个唯一 service listener 的复用层和 scope controller，不在 Activity 每次创建时重新注册。
+- Readify 当前是独立 Application，必须专门接入同等服务/授权 adapter，保留原独立设置行为；不能漏掉这个专用模块。
+- 按每个模块写入 scopePolicy/staticScope/managementProtocol，并迁移 convention、矩阵校验、R8 入口保留规则及最终 APK 校验。
+- 保留异常 protective、现有 ProcessPolicy/RuntimeProfile 和不自动热重载的基线；scope 放开不等于放宽 Hook 的进程门禁。
+- Universal 不接入此管理协议；其 system scope、播放器绑定和设置仍从独立应用/框架管理。动态封面应用没有此类 LSP scope 请求步骤。
+
+### 7.5 框架未就绪时的降级与发布门禁
+
+服务未交付或模块尚未启用时显示确定的操作说明，允许用户打开框架管理器完成启用并返回重查；不能把“服务未连接”直接判成模块被禁用。
+
+不支持动态请求的框架提供人工 scope 操作路径，明确标注限制。**如果目标支持框架的 M0 PoC 没有通过，不能通过写一个假成功 UI 宣称满足动态作用域要求；本版是否缩减范围或调整框架要求需重新确认。**
+
+安装完成、框架连接、模块启用、scope 批准、目标运行、加载新构建、业务有效是独立状态。getRunningTargets 没有目标可能只是播放器没启动，不能直接判失败。
+
+## 8. UI 新增与职责重构（U 系列）
+
+### 8.0 标准组件库与采用范围（已确认）
+
+- **主方案：Kotlin + Jetpack Compose + 官方 Material 3。** 新首页、Provider 商店/详情/安装任务、新手引导、状态与诊断采用同一组件与主题体系。
+- **Material 3 Expressive 选择性使用**：用于主操作层级、适量形状/排版、进度反馈与状态转场；不把所有按钮、卡片都做成大尺寸、大动画，不用满屏模糊/玻璃制造管理工具的视觉负担。Expressive 是 Material 3 的设计/组件方向，不另外混入一套无关 UI 底座。
+- **稳定依赖优先**：通过 Compose BOM 管理适用依赖，冻结与 AGP、Kotlin、Compose compiler、JDK 和最低 SDK 兼容的组合；逐项核实所选版本的 Expressive API，不以 master 源码代表稳定版可用，也不为单个新控件全局追 Alpha/RC。确需实验性 API 时单独列出、局部封装并评审，不默认全局 opt-in。
+- 不采用 Miuix 作为本版主组件库，不直接依赖 ROM 私有 ColorOS 控件，也不把网页组件库搬进原生 App。标准组件之上定制项目自己的颜色、圆角、间距和状态表达，不照搬 Pixel 页面。
+- 现有外观设置、预览及子页先保留；通过独立页面和必要的 AndroidView / ComposeView 互操作分步迁移。不是“所有 Java 改 Kotlin”，也不是一次性更换所有 Activity。
+- Compose 只服务 Bridge 普通 App 的管理 UI。SystemUI Hook、歌词 Canvas 绘制、AOD、Provider 业务及其独立应用不因本次选型一并重写。LSP 作用域授权仍是第 7 节的框架原生通知，不由 Compose 模拟。
+
+### 8.1 信息架构
+
+~~~text
+Bridge 唯一管理入口（建议新增桌面 LAUNCHER，LSP 模块设置进入同一首页）
+├─ 首页：当前 ColorOS/Bridge 状态、继续设置、当前播放器、待处理操作
+├─ Provider 商店：适合我的播放器 / 全部 / 已安装 / 更新
+├─ 外观：保留当前预览、预设、歌词/翻译/动态封面消费设置
+└─ 状态与帮助：功能可用性、原因、自检、短时诊断、导出、版本与来源
+
+按需页面：新手引导、商品详情、下载/安装任务、专用插件授权、升级迁移摘要
+独立应用：Universal 与动态封面原有桌面入口不合并
+~~~
+
+- 四个顶级入口有文字和图标；折叠大屏可用等价 navigation rail，保持相同信息层级。
+- 现有 LyricUiSettingsActivity 保留为外观页兼容入口，现有子页和配置语义不破坏；模块设置入口迁移到首页时为旧显式调用保留路由。
+- 新增 Bridge 桌面入口是推荐产品决策，需在 UI 原型评审确认；不要误把“旧版没有桌面图标”当成安装失败。
+- 不把商店网络、安装事务、框架服务和引导流程继续堆进现有大 Activity；提取独立 controller/repository/状态模型。
+
+### 8.2 关键页面内容
+
+| 页面 | 必须显示 | 主要操作 |
+| --- | --- | --- |
+| 首页 | 已安装/运行构建是否一致、配置应用情况、引导剩余项、最近健康状态 | 继续设置、进入商店、查看原因 |
+| 商品卡片 | 插件自身版本、对应播放器、是否已安装、专用/通用/封面分类、兼容/签名异常 | 下载、更新或继续专用模块配置，不能一个按钮隐藏所有失败阶段 |
+| 专用商品详情 | 宿主家族、已选择宿主、支持/未知版本、更新说明、实际 scope/待重启状态 | 前台明确发起安装或自身授权 |
+| 通用/封面详情 | 独立应用标识、实际版本、安装/更新状态、独立使用说明 | 仅下载安装更新，不嵌入内部设置或 LSP scope |
+| 安装任务 | 下载/校验/系统确认/安装处理等分阶段进度，可取消或恢复 | 重试具体失败阶段，不伪造百分比式“激活中” |
+| 状态与诊断 | 每个功能的支持条件、运行结果、原因、证据是否缺失 | 自检/短时采集/导出，非自动改配置 |
+
+### 8.3 视觉与交互约束
+
+- 保留当前固定浅色、edge-to-edge 与系统字体；新管理页面采用 Compose Material 3，旧 Views 与新 UI 使用一致的颜色/排版/间距规范。本版不引入网络字体或网页式 Hero/营销轮播，不自动扩大为全旧页重写。
+- 触摸目标至少 48dp，正文正常对比度至少 4.5:1；状态同时用文字和图标，不只依赖红绿颜色。
+- 引导提供步数、返回、稍后设置/跳过；跨外部 App 的长流程有持久化状态和恢复入口，不用一条 Toast 代替错误说明。
+- 保留草稿/预览的保存与放弃语义，切换顶级导航不能悄悄提交或丢掉外观修改；返回时恢复列表位置和选择。
+- 显示加载、离线、空目录、无匹配宿主、签名不符、过期目录、通知关闭等真实状态。
+- 适配中文/英文、大字体、TalkBack、手势/三键导航、横屏/折叠、系统减少动画；状态正确性不能依赖动画完成回调。
+- UX 资料检索中“步骤进度、允许跳过和返回”适用于本项目；通用搜索产生的网页 Hero、网络字体和营销配色不采用。实际外观待原型/设备确认，不在本文伪称已有截图验收。
+
+### 8.4 渐进迁移与设计系统落地（U-01 至 U-05）
+
+1. **U-01 小原型先行**：先以明确标注的样例数据制作“首页 + 商店列表”两个最小原型，确认视觉密度、主操作、状态文字、大字体和导航；同时验证 Compose 接入与当前构建工具链。样例状态不作为真实安装或授权证据。
+2. **U-02 统一主题与复用组件**：在官方 Material 3 控件上建立 AppTheme、Scaffold、状态卡、Provider 卡、步骤/任务进度行、原因提示等薄封装，统一颜色/字级/形状/间距/动效 tokens。优先复用官方 Button、Switch、Slider、Card、Dialog、BottomSheet 和导航组件，不重新手写另一套基础控件库。
+3. **U-03 新管理面先完成**：以独立 UI 状态模型驱动首页、商店、引导和诊断；网络、包安装、框架服务与事务归 repository/controller，不能藏进 Composable 或因重组重复执行安装/作用域请求。
+4. **U-04 旧 Views 保留与互操作**：既有外观页可先独立打开；仅在确有复用价值时用 AndroidView 承载原预览/View，或用 ComposeView 承载局部新内容。明确生命周期和状态所有权，不能同时维护两份配置真值或重复设置 insets。草稿保存/放弃、预览和返回行为保持原语义。必要的 MDC-Android 升级只作为旧页过渡，不作为新页面的长期底座。
+5. **U-05 按页验收再迁移**：先迁移收益明确的页面，逐页比较外观、行为和性能。没有价值或风险较高的旧自定义绘制无需为了技术统一强迁；本大版本不要求清零所有 Views。
+
+实施要求：
+
+- Kotlin/Compose/Material 3 依赖只从 Bridge 管理 UI 边界进入，不让 Hook/bootstrap/render 路径引用新 UI、Activity、Composable 或启动主题相关对象；架构测试检查引用与初始化边界，不只依赖包名约定。
+- 页面使用生命周期感知的状态订阅；remember/rememberSaveable 只承接适当页面状态，安装 session、引导步骤和授权 requestId 的可恢复性继续由原计划的持久化事务负责。重组、旋转或返回页面不能重复发送外部操作。
+- 不因 UI 框架迁移修改 LyricUiConfig schema、现有偏好通道、真实 PlaybackState 或歌词时序；也不借机更改通用/动态封面独立 App 的 UI 技术栈。
+- 冻结稳定依赖组合后验证正式签名/R8、最低支持 SDK 与入口可达；实际测量 APK 大小、设置 App 冷启动、列表滚动和内存，与旧 UI 基线比较，不承诺引入 Compose 零成本。
+- 原型样式确认后形成可复用规范；浅色、无障碍、减少动画与错误反馈属于硬约束，不以追求 Expressive 外观为由削弱。
+
+### 8.5 开发技能安装、使用与边界（2026-11-11 创建，2026-11-12 增补）
+
+已在当前 Agent 的用户技能目录安装以下三个来源的适用技能，并保留许可、来源、固定提交、安装时间与入口摘要记录。**这是开发期技能，不是 Android 组件库/运行依赖，不打包进 APK。**
+
+| 来源 | 固定提交 / 许可 | 安装与实际使用 |
+| --- | --- | --- |
+| [hamen/material-3-skill](<https://github.com/hamen/material-3-skill/tree/14385f2bf3804d8779f8b4db2604211f1e70b4c1>) | 14385f2bf3804d8779f8b4db2604211f1e70b4c1 / MIT | 安装 material-3；已通过技能工具加载，用 Compose 优先、语义 tokens、自适应布局与十类审查规范细化本节 |
+| [Kotlin/kotlin-agent-skills](<https://github.com/Kotlin/kotlin-agent-skills/tree/087f5689c1934135ed58718cdf524525e452b7e9>) | 087f5689c1934135ed58718cdf524525e452b7e9 / Apache-2.0 | 安装该提交下全部 10 个技能；首批实际加载 kotlin-tooling-java-to-kotlin，采用小范围逐文件迁移与行为/互操作保持约束 |
+| [chrisbanes/skills](<https://github.com/chrisbanes/skills/tree/50d54366e577460b769ce05b50da007de9939783>) | 50d54366e577460b769ce05b50da007de9939783 / Apache-2.0 | 2026-11-12 精选安装 11 项 Kotlin/Compose/Android 技术技能，见第 8.5.4 节；不安装其完整工作流插件 |
+
+2026-11-11 首批安装 11 个技能并核对 59 个上游文件；2026-11-12 新增 11 个技能并核对 27 个上游文件，均与固定源码副本 SHA-256 一致。本专项累计新增 22 个技能，不包含原有其他技能；未覆盖已有技能，新装项已被当前技能目录发现。只复制技能/参考资料，**未执行仓库附带脚本，未启用附带的 MCP 或工作流插件配置**，不为阅读技能运行 npx 安装链或修改 App 工具链。
+
+#### 8.5.1 按任务激活，不把技能集合当通用 Kotlin 写码规范
+
+| 技能 / 分组 | 本项目使用条件 |
+| --- | --- |
+| material-3 | 编写/评审新 Compose 页面时加载；按 theme、scaffold、component、layout 或 audit 任务读取对应参考资料；只使用 Compose/Android 分支 |
+| kotlin-tooling-java-to-kotlin | 只有明确选定旧管理 UI/控制器的 Java 文件需要转换时使用；扫描相关框架、保持可空性/可变性/注解及 JVM 调用边界，逐文件编译和回归；不是批量转换 Hook 的授权 |
+| kotlin-tooling-agp9-migration | 仅在单独确认需要 AGP 9 迁移或出现对应兼容问题时使用；先核对真实插件与构建版本，不因新增 Compose 就机械升级 AGP 或拆成 KMP 工程 |
+| kotlin-tooling-immutable-collections-0-5-x-migration | 只有实际存在对应依赖升级任务时使用，不为了套技能新增或升级集合库 |
+| kotlin-tooling-kotlin-toolchain、其 plugin-authoring、gradle-to-kotlin-toolchain-project / plugin | 本项目现为既有 Gradle 工程，默认不适用；不改成 Kotlin Toolchain/Amper，不替换项目构建入口 |
+| kotlin-tooling-cocoapods-spm-migration、kotlin-tooling-native-build-performance、kotlin-backend-jpa-entity-mapping | 当前 Android 管理 UI 无对应 iOS/Native/JPA 工作，安装但不激活，不引入跨平台或后端需求 |
+
+Kotlin 官方仓库目前主要是工具链/迁移专项集合，**不包含一个覆盖所有 Compose 业务写法的万能规范**。新 Kotlin UI 的具体 API、协程/生命周期和编译器兼容事实仍须按锁定依赖查官方文档；技能是参考，不能覆盖项目指令、用户授权与实际代码证据。技能示例中的自动提交、脚本、依赖升级或外部服务配置不自动获得执行许可。
+
+#### 8.5.2 编写 Kotlin + Compose Material 3 的工作顺序
+
+1. **开始前**：加载 material-3 确认设计语言；按 using-chrisbanes-skills 将具体状态、组件、异步或测试问题路由到对应主要技能，只有独立问题才叠加技能。按需读取对应 references 并记录提交。先确认当前 BOM/API，不把技能里的新 API 名称当已可直接编译；纯 Kotlin 数据层工作不因提到 UI 就强加载 Compose 规则。
+2. **主题与布局**：颜色使用 MaterialTheme.colorScheme 及正确的 onX/X 配对，字级和形状使用主题角色；全局间距采用统一 tokens，以 8dp 为主节奏、必要的 4dp 微调也集中定义，不在每个页面散落魔法值。保留固定浅色和系统字体，不因技能描述了动态色/深色就自动开启壁纸取色、深色模式或网络字体。
+3. **适配与组件**：优先官方 Material 3 组件和与锁定版本匹配的 WindowSizeClass/adaptive API；按实际窗口宽度/折叠姿态安排 bar、rail 或列表详情。正确处理 Scaffold padding、系统栏与 IME，避免与旧 Views 重复加 insets；不用 Web/CSS 模板代替原生 Compose。
+4. **状态与迁移**：继续遵守第 8.4 节的生命周期、持久事务和单一配置真值；重组不得重复安装或请求 scope。只在真正转换旧 Java UI 文件时使用 Java-to-Kotlin 技能，保留行为、可空性、可变性、注解目标与需要的 JVM 静态/字段接口，先编译回归再迁移下一项；不要求为技能示例自动 commit。
+5. **完成后审查**：按 material-3 的颜色、排版、形状、层级、组件、布局、导航、动效、无障碍、主题十类输出问题与证据；结合大字体、TalkBack、减少动画和 ColorOS 设备检查。审查分数只是辅助，不代替真实框架授权、安装器和运行验证，不在未有 UI 的当前文档阶段生成虚假合规分数。
+
+#### 8.5.3 与里程碑的关系
+
+- 技能安装和本轮规划使用已完成；M0 的构建验证/原型、M5 的 Kotlin/Compose 页面、M6 的 UI/设备验收仍未实现。
+- M0 先以 material-3 指导的首页/商店原型固定 tokens、导航和可用 API 清单；只有需要迁移构建工具时才另行激活相应 Kotlin tooling 技能。
+- M5 每个 UI 切片记录使用的技能/参考与发现的问题；M6 留存 MD3 审查结果及实际测试证据。未来升级技能需要重新审阅并更新来源提交，不自动跟随仓库最新内容。
+
+#### 8.5.4 Chris Banes Kotlin / Compose 专项技能（2026-11-12 增补）
+
+已从 [chrisbanes/skills 固定提交](<https://github.com/chrisbanes/skills/tree/50d54366e577460b769ce05b50da007de9939783>) 选择安装以下 11 项（Apache-2.0），不是安装整个工作流插件。已通过技能工具加载 using-chrisbanes-skills、compose-state-and-effects、kotlin-concurrency-and-flow，并据其状态所有权与交付语义要求细化下述约束。
+
+| 技能 | 本项目适用场景 |
+| --- | --- |
+| using-chrisbanes-skills | 按具体决策选择一个主要技能，仅在同一变更存在独立问题时叠加第二个，不每次把全部技能加载一遍 |
+| compose-state-and-effects | 页面状态所有权、状态提升、remember、Effect 生命周期、订阅/清理；新管理页面的基础规范 |
+| compose-component-design | 可复用卡片/进度行等组件的 Modifier 归属、可变内容 slot 和公开 API，避免大量形状布尔开关 |
+| compose-ui-testing-patterns | 优先纯状态驱动内容的语义/回调测试；布局外观使用截图，生命周期/安装平台交互再用集成测试 |
+| compose-performance | 有具体重组、稳定性报告、读写阶段或 trace 问题时测量和局部修复；不靠批量加 Stable/Immutable 注解假装优化 |
+| compose-animations | 状态转场、显隐、内容身份与可打断动效，遵守现有减少动画要求，不将动画结束当业务成功 |
+| compose-focus-navigation | 只有确有键盘/焦点恢复/无障碍焦点需求时使用，不因此扩展为 TV/桌面产品 |
+| kotlin-concurrency-and-flow | 协程所有权、取消、状态与一次性事件、StateFlow/SharedFlow/Channel 的具体交付条件 |
+| kotlin-control-flow | 安装/授权/兼容结果等封闭状态的穷尽分支和空值处理；未知平台输入仍保留明确 fallback |
+| kotlin-api-design | 管理面领域类型、行为所有权和 Android 平台服务边界，避免无业务含义的 helper 或过度抽象 |
+| android-benchmark-comparison | 实际比较两个 Android 配置/候选的性能时使用；控制型号、温度、电源、负载和顺序，记录分布，不以一次最快值定默认；真机操作仍需授权 |
+
+**这批补充与前两批的分工**：material-3 负责设计语言；Chris Banes 的专项技能补充 Compose/Kotlin 代码结构、异步状态、测试和有证据的性能诊断；Kotlin 官方仓库的 tooling 技能继续仅用于匹配的迁移任务。它们不能替代锁定版本的官方 API 文档或本项目的实际测试。
+
+新管理面采用以下具体约束：
+
+- 将依赖/业务状态的 screen wiring、组合期 UI 对象与纯内容分开。纯内容接收不可变 UI 状态和回调，可用样例数据及普通 UI 测试调用；LazyListState、FocusRequester 等对象归组合期，不塞进持久业务状态。是否加 Preview 注解先检查 tooling 依赖，不为文档或小改动擅自扩大构建范围。
+- 下载/安装/授权事务有明确 owner、取消与重入边界；可渲染状态与一次性命令分开。选择 Flow/Channel 前先说明消费者数量、无人订阅时是否允许丢失、缓冲/重放与同步读取需求，不预设某一种流包治所有问题。
+- **必须跨进程重建恢复的安装/授权结果，继续以持久化事务 + requestId/sessionId + 实际回读为权威**；内存 Channel 或 SharedFlow 都不是持久化，不能把关键接续动作只存在 replay=0 的临时事件里，也不能承诺单靠某种流实现端到端 exactly-once。
+- 组件绘制只投影当前状态，Effect 绑定其应重启/释放的语义身份；重组、切页、旋转和回收均不能无意再次安装或请求 scope。
+- 性能按同一个可观察场景测量后只改最小原因；源码能证明多一次失效/布局，不等于已证明卡顿或无限循环。仓库自己的模型评测百分比不算本项目兼容/性能验收结果。
+
+**本轮刻意未安装** gradle-run、changelog、grounded-writing、release-kotlin-library、deliver-spec、to-plan、implement-with-subagents、subagent-delegation、run-github-project、shepherd 等工作流/写作项。部分已装技术技能会交叉引用 gradle-run；这不表示其构建包装器已接入。项目仍以既有 Windows/CJK 构建入口和上层任务约束为准，不执行缺失脚本、不静默补装其工作流依赖；未来若要接入须先评估兼容性并明确授权。未运行 npm、上游脚本、评测、构建或设备基准，也未修改全局代理编排规则。
+
+## 9. 发布体系与旧版本迁移（R 系列）
+
+### 9.1 契约拆分，不再套件锁步
+
+未来建议形成三个明确角色（名称为拟新增，尚不存在）：
+
+~~~text
+Bridge release contract      → Bridge 版本、正式证书、Bridge Release 资产
+Provider source matrix       → 模块身份/宿主/进程策略/自身版本/分类/scope 策略
+Provider publish/catalog     → 不可变 APK、证书/摘要、兼容条件、目录签名与 revision
+~~~
+
+- 取消“每个 Bridge Release 必须有全部 Provider、总数 16 APK/19 资产、Bridge 与 Provider suiteVersion 相同”的旧分发校验；替换为分别完整、可交叉追溯的发布契约。
+- 14 个歌词模块 + 动态封面的完整 CI 验证仍保留，**停止随 Bridge 分发不等于停止构建/测试 Provider**。
+- 独立 Provider 更新只需要其源码/依赖验证、版本提升、正式签名、artifact 发布和 catalog 原子晋级，不要求新 Bridge tag。
+- 共享 provider-core 或授权组件变化时，按依赖影响范围重建并测试全部受影响模块，不把共享变更伪装成只改一个 Provider。
+- 正式 APK 沿用当前受信发布证书体系；测试/Debug 证书进入单独测试渠道，生产商店拒绝混入。
+- 新发布流先上传并验证不可变 APK，再签名并晋级目录；失败时旧目录不变，不能公布下载不到的版本。
+- 目录发布也需要审计与授权门禁；不是任意 push main 自动对所有用户推送更新。
+
+### 9.2 CI 与文档的实施清单
+
+- 拆分 [现有 Bridge workflow](<../.github/workflows/release.yml>) 对 Provider 全量发布的依赖；保留发布前源冻结、签名、RC 与 LSP 元数据核验。
+- 将 [现有 Providers workflow](<../../ColorOS-Live-Lyrics-Providers/.github/workflows/android-release.yml>) 从“全量打包 ZIP”扩展为“受影响模块独立发布 + 定期全矩阵验证”；补精确集合/身份校验，不沿用只判断至少 14 个 APK 的收集条件。
+- 迁移 [资产构建脚本](<../scripts/build-release-assets.ps1>)、[Bridge 校验器](<../scripts/validate-release-contract.ps1>)、两仓库矩阵/版本校验与 [发布流程](<RELEASE_PROCESS.md>)；实施前逐项读实际脚本，不只改 YAML。
+- 更新 Providers 适配指南中全局静态 scope 的说明；更新两仓库 README、安装教程、Release Notes 和 LSPRepo 的下载/安装说明。
+- 对历史公开 Release 不覆盖、不删资产；它们属于旧版本归档。新版本说明明确用户从 Bridge 商店安装/更新 Provider。
+- 新文档必须区分“商店已安装”和“框架已加载”；不把安装器授权与 LSP 作用域授权合成一个步骤。
+
+### 9.3 存量插件接管
+
+1. 本地先枚举已知 applicationId，验证版本和签名；同包同受信证书可直接纳入已安装列表，不要求卸载。
+2. 老 Provider 无 managementProtocol 时标“旧版，需更新以使用引导式作用域”；仍保留其原有功能与人工入口。
+3. 升级到动态策略前保存/回读 scope；不通过清空框架数据库重建，不擅自缩减用户既有勾选。
+4. 本地更高测试版本、第三方签名版本和不可见资料空间分别标注，不能误提示“已最新且已兼容”。
+5. 旧版 Bridge 不因服务端只发新目录而突然失去现有 Provider 功能；新商店协议不支持时提示管理端升级，不强改原 MediaSession 链路。
+6. Universal 与动态封面的偏好、账号与授权保持在其独立 App，不复制到 Bridge 造成第二份权威配置。
+
+## 10. 拟落地代码单元与测试所有权
+
+下列为新增边界建议，不是已经存在的类；具体命名可在实施时微调，但职责不能重新并回大 Activity。
+
+| 计划单元 | 职责 | 约束/对应测试 |
+| --- | --- | --- |
+| management/catalog | 目录验签、版本/兼容决策、已安装商品投影 | 无 Hook 依赖；恶意目录/重放/过期/证书测试 |
+| management/download + install | 下载缓存、PackageInstaller 会话与恢复 | 仅 Bridge 普通 App；取消/系统确认/进程回收测试 |
+| management/onboarding | flowRevision、升级迁移、步骤状态与恢复 | 与 LyricUiConfig 解耦；新装/升级/跳过测试 |
+| management/provider | 专用模块管理请求编排与结果核验 | 不替其他模块调用 scope API；请求伪造/重放测试 |
+| Provider settings102 scope adapter | 本模块 service、允许宿主、自请求/回读 | 只在模块 App；全专用矩阵与 Readify 例外测试 |
+| compatibility / diagnostics | buildId、capability/result、原因与脱敏快照 | Debug 不改变业务；缺证据为 unknown |
+| management/ui + design system | Kotlin/Compose Material 3 新管理页、薄组件封装与统一 tokens；Expressive 局部使用 | 仅普通 App UI；Compose 语义/状态测试、稳定 API、生命周期与无障碍测试 |
+| UI controllers/repositories + View interop | 新管理面与旧外观页间投影、草稿恢复和必要互操作 | 重组不得重复安装/请求 scope；旧配置单一真值，预览/返回/insets 不回归 |
+| publish/catalog tooling | 矩阵导出、APK 身份校验、目录签名与原子晋级 | 正式签名、集合完整、来源 SHA、最小支持版本门禁 |
+| Hook 面运行时组件（E 系列） | 从 `LockscreenLyricsModule` 迁出的渲染器、播放、模型发布、Recycler、handoff、屏幕超时、翻译 action 等状态 owner | 不反向依赖入口类；入口类预算守卫只降不升；详见第 15 节 |
+
+[现有架构守卫](<../app/src/test/java/io/github/andrealtb/lockscreenlyrics/BridgeArchitectureGuardTest.java#L105-L156>) 应改为：管理面允许官方 Provider 目录身份；Hook/bootstrap/render 路径不得依赖商店网络、安装器或 Provider App 注册表；旧 v4 transport 标记继续全局禁止。相关 guard 不可简单删除。
+
+## 11. 里程碑、依赖与发版门禁
+
+未承诺工期。2026-11-12 已开始 M0 的隔离 scope 探针本地切片（第 14.0 节）；它不等于 M0 全部通过。下表正式功能及设备/供应链/UI 门禁仍为 **待完成**。
+
+| 里程碑 | 任务/交付 | 依赖 | 通过标准 |
+| --- | --- | --- | --- |
+| M0 基线与可行性 | 冻结本地已知良好基线；PoC 原生 LSP scope 通知/三类选择/回读；确定托管与签名；按第 8.5 节技能规范验证 Compose 接入和首页/商店原型（样例明确标注） | 无 | 框架有真实证据；UI tokens/导航/API 清单及样式获确认，工具链/最低 SDK 组合可用；四类应用边界确认 |
+| M1 ColorOS 兼容基础 | C-01/02/03：buildId、实际配置/capability、最终原因、离线摘要/短时诊断协议 | M0 基线 | 可区分旧注入进程、配置未到与能力不支持；开关不改行为 |
+| M2 商店供应链 | 单模块版本策略、签名 catalog、artifact 存储、CI 原子晋级、内置可信快照 | M0 托管/密钥 | 错签/重放/过期/半发布不可安装；不依赖公开 Provider Release |
+| M3 商店安装更新 | 已安装发现、商品/详情、下载、安装、恢复、独立更新提醒 | M1、M2 | 包安装与版本/签名回读闭环，通用/封面只管理安装 |
+| M4 专用动态 scope | 13 个专用模块按矩阵适配、Readify 例外、管理协议与安全校验 | M0 PoC、M3 | 每个模块均以自己的服务授权；无跨模块代设；拒绝/部分批准/服务死亡可恢复 |
+| M5 引导与 UI 集成 | 按 material-3 规范编写 Kotlin/Compose Material 3 新管理页与引导；选择性 Expressive；旧 Views 仅按实际需要结合 Kotlin 迁移技能渐进衔接 | M0 UI 验证、M1、M3、M4 | 不强制重装/清配置，旧草稿/预览保留，重组不重复外部操作；附十类 MD3 审查问题与证据 |
+| M6 回归与 RC | C-04/05/06、正式签名/R8、ColorOS 型号矩阵、存量升级、发布文档与 LSP 下载说明 | 全部前项 | 已知良好设备不回归；目录和全部商品身份核验；用户完成最终 RC 设备确认 |
+
+里程碑状态（2026-11-14）：**M1 已由用户判定通过**（PJZ110 单机证据，见 [M1 退出验收清单 §6](<M1-EXIT-DEVICE-CHECKLIST.zh-CN.md>)；其他机型与正式签名/R8 形态未覆盖）。**M0 已完成（2026-11-14）**：scope 探针与首页/商店原型已用户设备确认；基线已冻结；D1 托管（方案 M：Providers 仓库独立 tag 的 GitHub Release）与 D2 目录签名已由用户决定（第 14.5 节）。下一项为 M2。
+
+E 系列（第 15 节）不单列里程碑：E-0 随 M1，E-1/E-2 在 C-04/C-05 开工前，E-3 至 E-7 与 M2–M4 并行，E-8 随 M5；M6 RC 冻结后不再做结构迁移。排期与截断规则见第 15.5 节。
+
+优先推进 M0/M1，兼容专项先落地；M2/M3 不等待所有渲染兼容细节做完。商店上线前必须有诊断数据面，避免新安装流程又成为新的不可解释问题来源。
+
+## 12. 验收矩阵（发布前必须给出通过/失败/未覆盖）
+
+| 组 | 最小验收内容 |
+| --- | --- |
+| ColorOS 型号 | 已知良好设备、相同版本号不同插件指纹、不同缩放/屏幕/AOD 能力；仅目标 ColorOS 组件族，不增加其他 ROM 目标 |
+| 新装 | 无 Provider、已有播放器、多宿主家族、用户跳过、无网络、尚未启用 Bridge |
+| 升级 | 4.x 保留外观/翻译/封面、旧 Provider 接管、旧 scope 保留、同大版本不重复引导、备份恢复后不假报就绪 |
+| 专用 scope | 13 个模块全覆盖，尤其 Readify；框架原生通知确由对应 Provider 请求触发；允许/拒绝/不再询问、取消、部分批准、超时、Binder 死亡/迟到、回读失败、不重复催授权 |
+| 安全 | 非 Bridge/非受信调用者、伪造 requestId、外来包/system scope、篡改 catalog/APK、错签名、过期/降序目录 |
+| 安装 | 未授权安装源、ColorOS 系统确认/拦截、取消、空间不足、低 SDK、重复回调、安装期间进程死亡、版本未变化 |
+| 独立应用 | Universal 和动态封面桌面入口、账号/绑定/设置保留；商店不发 LSP 播放器 scope 请求 |
+| 更新 | 独立 Provider 发布而 Bridge 不升级、后台被限制、通知权限拒绝、本地更高/不同签名版本、目录不可用、恢复版高 versionCode |
+| UI | Compose 语义与状态测试、中文/英文、大字体、TalkBack、手势/三键、旋转/折叠、外部页面返回、减少动画；十类 MD3 审查；旧 Views/Java-Kotlin 互操作、草稿/预览/insets 不回归；重组不重复安装或 scope 请求 |
+| 运行回归 | 原生歌词、逐字/逐行、上浮、取色、翻译按钮、切歌/暂停、AOD、静态/动态封面；不改宿主真实 PlaybackState |
+| 性能 | 无商店网络/安装 I/O 或 Compose UI 初始化进入 SystemUI 绘制/Hook 热路径；诊断容量有界；测量新 UI 的 APK 增量、设置 App 冷启动、列表滚动/内存，并与已知良好设备基线比较 |
+| 结构治理（E 系列） | 入口类预算守卫生效且未上调；已完成各刀的 Hook ID、日志 event、安装顺序清单与基线一致；同场景 `PERF_SAMPLE` 与掉帧率不劣于 E-0 基线；未完成的切片逐项标“未覆盖” |
+| 发布 | 正式证书而非默认测试签名；R8 后管理/模块入口可达；APK/目录双校验；公开 Release 无 Provider APK/ZIP；artifact 可达后才晋级目录 |
+
+需要动态 API/安装流程的测试必须最终覆盖正式签名且 R8 处理后的候选。普通 JVM/Robolectric 测试只能证明对应行为，不能代替框架授权或 ColorOS 安装器真机验证。
+
+## 13. 实施前需要冻结的决策与风险
+
+| 决策/风险 | 本文决定/推荐 | 门禁/剩余验证 |
+| --- | --- | --- |
+| D1 商店托管位置与地区可达性 | **用户已确认（2026-11-14）：方案 M**：Providers 仓库（`Andrea-lyz/ColorOS-Live-Lyrics-Providers`）公开 GitHub Release，每个 Provider 独立 tag（如 `salt-v1.1.3`）；大陆网络由用户自行解决，或以后加一层免费 CDN 作为镜像；不开 14 个 LSP 仓库 | 不使用 assets.lsposed.org 作为商店后端；CDN 选型与可达性待定且非 M2 门禁；不以“GitHub artifacts 能下载”代替生产方案 |
+| D2 目录签名与密钥 | **用户已确认（2026-11-14）**：受保护 GitHub Environment 签名（晋级须用户审批）；目录过期 180 天、时钟偏差 ±24 小时；算法按推荐 ECDSA P-256（用户未提异议）；Bridge 内置主用 + 备用两把公钥 | 最低 SDK 算法支持、轮换、过期/时钟偏差与反重放需测试；私钥不入库 |
+| D3 Bridge 管理入口 | **用户已确认（2026-11-14）**：新增 Bridge 桌面入口，设置中可选隐藏桌面入口；框架模块设置进入同一首页；管理面四入口为首页 / 商店 / 外观 / 状态 | 隐藏后仍须能从 LSPosed 模块设置进入；通用/封面独立入口不动；桌面入口在首页接入真实状态后再上线，不把样例页放上桌面 |
+| D4 框架支持矩阵 | libxposed 102.0.0 现有依赖起步，按实际能力验证 | requestScope 的框架交互/启用前置条件不可猜；不把 scope 请求等同静默启用模块 |
+| D5 静态 scope 迁移 | 专用模块逐项动态策略；Universal/Bridge 保持独立静态 | 不仅改文本；验证 convention、APK metadata、旧授权保留与 ProcessPolicy |
+| D6 更新提醒 | 手动/打开检查，用户选择后台通知 | ColorOS 后台限制不可保证实时，不新增默认常驻服务 |
+| D7 兼容契约 | 各 Provider 自身版本 + 管理协议 + 实际宿主能力 | 不强制所有 Provider 与 Bridge 同版，不让更新越过 APK 编译期宿主范围 |
+| D8 供应链或服务不可用 | 停止新安装/更新，保留已安装链路与离线状态 | 不默认清缓存/数据、不改播放状态、不隐藏证据缺口 |
+| D9 UI 标准组件底座 | **用户已确认：新管理页使用 Compose Material 3，选择性使用 Expressive** | 实施时冻结稳定依赖组合/API 清单，先验收首页/商店原型；不重新默认选择 Miuix 或新页全用 Views |
+| D10 UI 迁移范围 | **用户已确认：旧 Views 渐进迁移，Hook/歌词 Canvas/AOD/Provider 业务不重写** | 生命周期、单一配置真值、R8 与性能实测通过；不是一口气全项目 Kotlin/Compose 化 |
+| D11–D15 结构与性能治理 | **用户已确认（2026-11-14）按第 15.8 节推荐采用**：E-0 为硬门禁、其余可按刀截断；渲染器外移提前；入口类 ≤ 1,500 行、可变字段 ≤ 30；迁移期保持 Java；分包放到 E-8 | 方向已定，代码尚未开始；E-0 的预算数值以实际计数实现为准重新取值 |
+
+上表待验证项不是要求用户现在逐条选配置；采用推荐方案继续细化即可。但 M0 未通过、托管/密钥未具备时，不应提前宣布商店可发布。
+
+## 14. 文档交付与下一步
+
+本文和既有 README 保留正式功能“规划中”的入口，开发技能见第 8.5 节。当前 M1 已修改构建身份生成、诊断页面、原有决策点观测和受保护诊断回读；新增插件定向可见性与按模块隔离的诊断权限。歌词业务策略、几何、生产 scope、CI 与发布契约未改；不得把本地验证当作整项或设备验收。
+
+当前状态与接手顺序以 [M1 任务交接](<../../HANDOFF-M1-AGENT.zh-CN.md>) 为准；C-01/C-02/C-03 的实现与本地证据见 [M1 续实施记录](<M1-C01-C03-DEVICE-READY.zh-CN.md>)，[前批复核](<M1-C01-C02-IMPLEMENTATION.zh-CN.md>) 仅作历史对照。
+
+2026-11-13 出现并已修复一次由本批诊断引入的真实回归：新诊断在 `Application.attach` 调用宿主 `getApplicationContext()` 抛 NPE，导致 Provider 业务 Hook 未安装。根因、最小修复与设备确认见 [Salt 回归记录](<../../ColorOS-Live-Lyrics-Providers/docs/M1-SALT-ATTACH-DIAGNOSTICS-REGRESSION.zh-CN.md>)。该事件说明：**新增的可选诊断必须证明失败不改变业务，且只有设备证据才能确认恢复**。
+
+进入实施时建议按 M0 → M1 开分支；每个阶段补状态机/契约测试、记录实际设备证据，再合并下一层流程。发布仍遵守 [当前发布流程](<RELEASE_PROCESS.md>) 的授权与最终 RC 门禁，待 M6 同步新版流程，不提前执行发布。
+
+### 14.0 首个实施切片：隔离的原生 scope 探针（2026-11-12）
+
+- 基线提交与既有工作树内容已记录，不创建 tag、不回滚用户修改。
+- 新增可选 provider-scope-probe：独立测试包、仅 Debug、无歌词 Hook，复用模块 App 的现有 service owner，宿主与 scope.list 从 Salt 矩阵样本生成。
+- 请求只由前台手动点击触发；提交前持久化单次标记，生命周期不重放；批准/失败均回读，缺失/迟到/死亡标未知，不仿制 LSP 通知。
+- staticScope=true/false 两份隔离 Debug APK 已构建并通过签名/身份/打包元数据检查；28 项 JVM 测试在两种配置下均通过。验证日志、摘要与真机清单见 [M0 scope PoC 实施记录](<../../ColorOS-Live-Lyrics-Providers/docs/M0-SCOPE-POC.zh-CN.md>)。2026-11-13 用户截图与摘要已确认 LSPosed 2.2.1 / API 102、SDK 37 下 staticScope=true 的原生通知→允许→回读。后续用户手动确认允许、拒绝、不再询问均正常；已补充 OnePlus 13（PJZ110）、PJZ110_17.0.0.103(CN01)、LSPosed 2.2.1 (7941) 的设备事实并停止探针试验。真实专用 Provider 管理授权集成尚未开始。
+- 未改生产 staticScope、发布链路或 UI 技术选型。Compose 原型、托管与目录密钥仍待后续 M0 切片，不能标 M0 全部完成。
+
+### 14.1 外部 API 证据（查询于 2026-11-11）
+
+- [libxposed service 102.0.0：固定提交的 XposedService](<https://raw.githubusercontent.com/libxposed/service/3318940876192e29cf6ab07637e899e22a87ebf0/service/src/main/java/io/github/libxposed/service/XposedService.java>)：getScope、requestScope、removeScope、运行目标查询；接口属于当前模块。
+- [现代 Xposed 模块官方指南](<https://raw.githubusercontent.com/wiki/LSPosed/LSPosed/Develop-Xposed-Modules-Using-Modern-Xposed-API.md>)：模块 App 的服务交付、现代 metadata 与 staticScope 语义。Wiki 为可变文档，不作为某个用户框架行为已通过的证据。
+- [XposedServiceHelper 固定源码](<https://raw.githubusercontent.com/libxposed/service/0cfe0a4cd099f030f47251a6d5b35e259ec219c8/service/src/main/java/io/github/libxposed/service/XposedServiceHelper.java>)：listener 注册与服务生命周期；该链接为较新固定提交，实施时仍应以锁定依赖版本核对，不顺手升级依赖。
+- [AOSP PackageInstaller（Android 15 固定源码）](<https://raw.githubusercontent.com/aosp-mirror/platform_frameworks_base/android-15.0.0_r1/core/java/android/content/pm/PackageInstaller.java>)：用户操作等待/成功等平台安装状态。仅引用已读取的接口事实，不代表 ColorOS 安装器差异已验收。
+
+### 14.2 UI 选型依据与确认范围（2026-11-11）
+
+- [Compose Material 3 官方依赖目录](<https://dl.google.com/dl/android/maven2/androidx/compose/material3/material3/maven-metadata.xml>)：用于区分稳定与预发布版本；本计划不把当前版本列表固定成未来实施时的唯一选项。
+- [Material Components for Android 官方说明](<https://github.com/material-components/material-components-android#readme>)：Views 库已进入维护模式，新功能方向转向 Compose，因此新管理面不再以旧库作为长期扩展底座。
+- [Material Components 1.14.0 说明](<https://github.com/material-components/material-components-android/releases/tag/1.14.0>)：已有 Expressive 主题/样式，可作为既有 Views 的过渡参考，不据此推导同名 Compose API 在任意版本均稳定可用。
+- 用户确认的是“Compose Material 3 + 适量 Expressive + 旧 Views 渐进迁移”的方向，不等于确认了最终视觉稿、依赖版本或同意重写歌词业务；这些仍须按 M0/M5/M6 验收。
+
+### 14.3 M0 Compose 接入验证（2026-11-14，本地）
+
+状态：**本地构建与测试通过；未在设备上打开过该页面；未提交**（分支 `feat/m0-compose-integration`，基于 `c572437`）。这是 U-01 的“工具链验证”部分，首页/商店原型尚未开始。
+
+冻结的依赖组合（候选，待原型阶段复核）：
+
+| 项 | 版本 | 说明 |
+| --- | --- | --- |
+| AGP / Gradle | 8.13.2 / 9.2.0 | 不变；不做 AGP 9 迁移 |
+| Kotlin Android 插件、Compose 编译器插件 | 2.3.20 | 与 Providers 仓库相同 |
+| Compose BOM | 2025.12.01 | 实际解析 `compose.ui` 1.10.0、`androidx.core` 1.16.0；material3 1.4.0（稳定版；Expressive 组件主要在 1.5 预发布线，原型阶段再核对） |
+| activity-compose | 1.9.2 | 刻意不用 1.12.x：其 AAR 要求 compileSdk 36 |
+| compileSdk / targetSdk / minSdk | 35 / 35 / 26 | 均不变；构建期 AAR 元数据检查通过 |
+| Kotlin jvmTarget | 17 | 与既有 Java 17 一致 |
+
+改动范围：
+
+- 根 `build.gradle.kts` 声明两个 Kotlin 插件；`app/build.gradle.kts` 应用插件、打开 `buildFeatures.compose`、加入 BOM/ui/material3/activity-compose。
+- 新增 `app/src/main/kotlin/.../management/ManagementPreviewActivity.kt`：固定浅色 `MaterialTheme(lightColorScheme())`、edge-to-edge + `Scaffold` padding，只显示一段注明“样例、不显示真实状态”的文字。Manifest 中 `exported=false`，**目前没有任何入口**，用户还打不开它。它直接继承 `AppCompatActivity`：既有 `SettingsBaseActivity` 是包内可见的 Java 类，统一语言/窗口处理留给原型阶段决定。
+- 字符串新增中英文各两条；没有改 `LyricUiConfig`、偏好通道、Hook、渲染或 AOD 代码。
+- 架构守卫 `BridgeArchitectureGuardTest.composeManagementUiStaysOutOfHookAndRenderCode`：`management` 包以外的任何源码不得引用 `androidx.compose`、`management` 包或该 Activity；Xposed 入口 `java_init.list` 不得指向 `management`。同一 APK 会被加载进 SystemUI，这条守卫保证 Compose 只在普通 App 进程里被引用。
+
+本地验证：
+
+- `writeSourceIdentityReport :app:testDebugUnitTest :app:assembleDebug`：944 tests / 0 fail / 6 skip（新增守卫 1 项）。
+- `:app:minifyReleaseWithR8`：通过（未打包、未签名正式 Release；`ManagementPreviewActivity` 类名保留在 R8 输出中）。
+- 体积，与基线提交 `c572437` 在临时 worktree 中用相同任务对比：R8 后 dex 2,400,096 → 3,364,904 字节（约 +0.92 MiB、+40%）；新增原生库 `libandroidx.graphics.path.so` 四个 ABI 合计约 37 KB；Debug APK 8.9 MB → 17.3 MB（Debug 不做压缩，不代表发布体积）。正式签名 APK 的最终增量未测。
+- sourceDigest `4d4e64ca…`（287 输入，dirty）。
+
+未覆盖 / 待原型阶段：真机打开 Compose 页面、冷启动与内存、大字体/TalkBack、正式签名 + R8 下的入口可达性；material3 稳定版可用的 Expressive API 清单；Compose 页面是否沿用 `SettingsBaseActivity` 的语言与窗口处理。
+
+### 14.4 M0 首页与商店原型（2026-11-14，本地，待用户看外观）
+
+状态：**本地构建与测试通过；尚未在设备上打开；未提交**（同分支 `feat/m0-compose-integration`）。按 U-01 要求只做“首页 + 商店列表”，全部为样例数据，用来确认视觉密度、主操作、状态文字、大字体和导航。
+
+实现：
+
+- 入口：Bridge 调试页新增按钮“管理界面原型（样例数据）”，打开 `ManagementPreviewActivity`。不加桌面图标（D3 待原型评审），不改 LSP 模块设置入口。
+- 导航：四个顶级入口“首页 / 商店 / 外观 / 状态”，带文字和图标；窗口宽度 ≥ 600dp 时改为左侧 navigation rail，内容最大宽度 840dp。宽度判断目前用 `screenWidthDp`，没有引入 adaptive/WindowSizeClass 库。
+- 首页：运行构建是否一致、设置是否应用（图标 + 文字，不只靠颜色）、“还有 N 步设置未完成 → 继续设置”、“N 项功能未生效 → 查看原因”（跳到状态页）、“N 个插件有更新 → 进入商店”。
+- 商店：筛选“适合我的播放器 / 全部 / 已安装 / 更新”；卡片显示名称、专用/通用/动态封面标签、对应播放器、已安装与最新版本、异常说明（签名不同、未检测到播放器、通用/封面“在它自己的应用里设置”）。每张卡最多一个主操作：未安装→下载，有更新→更新，专用已安装→继续配置；签名不同和通用/封面已是最新时**不提供按钮**，也不提供清数据。样例覆盖全部 4 种安装状态和 3 种类型。
+- 外观：一张卡片打开现有 `LyricUiSettingsActivity`，不复制任何外观配置。状态：占位文字，诊断仍在调试页。
+- 所有页面顶部有“样例数据”横幅；任何下载/更新/继续设置按钮只弹出“原型：没有执行任何操作”。
+- 主题：固定浅色，颜色取自现有 `res/values/colors.xml`（主色琥珀 `settings_primary_deep` 配深色文字、辅色青色、背景与卡片同设置页），间距集中为 4/8/12/16/24dp tokens。系统字体，无动态取色、无深色模式、无 Expressive 组件（material3 1.4.0 稳定版）。
+- 语言：抽出 `SettingsLocaleContext`，Views 设置页与 Compose 页面共用同一个语言偏好；`SettingsBaseActivity` 改为调用它，行为不变。
+- 页面状态只有选中的页签和筛选（`rememberSaveable`），旋转/重建后保留；没有任何外部操作会因重组重复执行。
+- 架构守卫改为：`management` 包以外只有 `BridgeDebugSettingsActivity` 这一个普通 App 页面可以打开它，且仍不得引用 Compose。
+
+本地验证：
+
+- `writeSourceIdentityReport :app:testDebugUnitTest :app:assembleDebug :app:minifyReleaseWithR8`：949 tests / 0 fail / 6 skip（新增 `PrototypeModelTest` 5 项：主操作映射、通用/封面不在商店配置、签名不同无操作、筛选语义、样例覆盖）。没有 Compose UI/截图测试（需要额外测试依赖，留到 U-02）。
+- R8 后 dex 3,806,068 字节：比 14.3 的 Compose 空页 +0.44 MB，比接入 Compose 前的基线 2,400,096 字节合计约 +1.41 MB。Debug APK 23.9 MB（未压缩，含完整 material-icons-core）。
+- 候选：`artifacts/m0-prototype-20261114/Bridge-v4.5.4-M0-prototype-debug.apk`，SHA-256 `98488fed…831775e7`，Debug 证书 `5a6fd43f…`，sourceDigest `3f177baa…`。
+
+自查（按 material-3 十类，仅源码阅读，未上设备；不打分）：颜色均用主题角色且成对使用，主按钮为琥珀底深色字；排版只用主题字级；形状用主题 shapes；层级靠卡片与背景的明暗差，没有阴影；组件均为官方 Material 3；布局有最大宽度和 rail；导航四入口；动效只有组件默认；无障碍上图标都有文字伴随（图标 `contentDescription` 为空，由文字承担），触控尺寸用组件默认 48dp，**大字体、TalkBack、对比度未在设备上检查**；主题固定浅色。
+
+请用户在设备上确认（需当次授权安装）：
+
+1. 从调试页进入原型，四个页签能切换，返回键回到调试页。
+2. 首页与商店的信息密度、按钮主次、状态文字是否清楚；样例横幅是否足够醒目。
+3. 系统字体放大到最大后有无截断或重叠。
+4. 中文/英文切换（设置页语言开关）后原型跟随。
+5. 旋转或分屏后页签与筛选保留。
+6. 主色琥珀 + 青色辅色与现有设置页是否一致、是否需要调整。
+7. 是否同意以“首页 / 商店 / 外观 / 状态”四入口作为 5.0 管理面结构，以及是否新增桌面入口（D3）。
+
+**用户设备反馈（2026-11-14，PJZ110，候选 `98488fed…`）：**
+
+| 项 | 结果 |
+| --- | --- |
+| 1 进入、切换、返回 | 通过 |
+| 2 信息密度与内容 | 要求首页显示**当前模块状态**与 **SystemUI 加载状态**（文字 + 图标）→ 已改，见下 |
+| 3 最大字体 | 无截断、无重叠 |
+| 4 中英文切换 | 原型跟随 |
+| 5 旋转 / 分屏 | 页签与筛选保留 |
+| 6 配色 | 与现有设置页一致 |
+| 7 结构与入口 | 同意四入口结构；**要新增桌面图标，并在设置中可选隐藏桌面入口**（D3 已定） |
+
+大字体、TalkBack 与实际对比度中，只有“最大字体无截断”有用户证据；TalkBack 与对比度仍未检查。
+
+**按反馈修改（r2，本地）：** 首页状态卡改为三行，各自图标 + 文字：模块状态（已启用且作用域含系统界面 / 未启用或缺作用域 / 未知）、SystemUI 加载状态（已加载当前版本 / 仍在运行旧版本需重启 / 尚未加载 / 未知：没有回应）、设置应用。删除原“运行构建”一行（被 SystemUI 加载状态取代）。样例刻意显示“仍在运行旧版本”以展示警告样式。新增 `PrototypeModelTest` 1 项：已安装未加载、未加载都算“需要处理”，未知不算正常。950 tests / 0 fail / 6 skip，Debug 与 R8 通过；候选 `artifacts/m0-prototype-20261114/Bridge-v4.5.4-M0-prototype-r2-debug.apk`（`901b4999…`），sourceDigest `bca57c08…`。仍是样例数据，**尚未接入真实状态**；未上设备。
+
+**首页状态卡接入真实状态（r3，本地，2026-11-14）：** 只有首页状态卡改为实时；首页其余卡片与商店仍是样例，首页横幅改为“状态卡是本机实时查询结果；下方卡片和商店仍是样例数据”。
+
+- 数据来源：新增 App 侧 `ModuleStatusQuery`（Java），发送调试页已在用的只读 `ACTION_REQUEST_MODULE_STATUS` 广播到 SystemUI，读取回包中的注入构建 `cll_runtime_build_id` 与已应用设置 revision `cll_ui_config_revision`，并核对回包进程为 `com.android.systemui`。已安装构建取本 App 进程的 `BuildConfig.BUILD_ID`（即已安装 APK）。不新增任何 SystemUI 侧代码。
+- 判定（`homeStatus`，纯函数）：
+  - 查询中 → 三行都显示“正在查询…”。
+  - 2.5 秒无回包或发送失败 → 模块状态“系统界面没有回应：可能未启用、作用域没有勾选系统界面，或启用后还没重启”（警告），另两行未知。App 进程读不到框架的启用/作用域状态，所以**不会显示“未启用”**。
+  - 有回包 → 模块状态“已在系统界面中运行”；构建相同为“已加载当前安装的版本”，不同为“仍在运行旧版本，重启手机后生效”（警告），任一侧缺失为未知；设置 revision ≥ 0 为“已应用它启动后收到的最近一次设置”，-1 为“启动后还没收到过设置推送，正在使用启动时读取的设置”（中性，不算失败）。
+- 时机：每次 `onResume` 重新查询（从 LSPosed 返回或重启后能刷新），另有“重新检查”按钮；暂停时作废未完成的请求，迟到回包和超时都不会覆盖新结果。
+- 已知局限：设置行只能说明 SystemUI 启动后是否收到过推送，不能证明“你刚才那次修改”已生效（App 侧不保存最近一次发送的 revision）；需要逐次回执时再加持久化。
+- 本地验证：954 tests / 0 fail / 6 skip（`PrototypeModelTest` 现为 10 项，新增查询中、无回包、构建相同/不同、构建缺失、启动后未推送 5 项），Debug 与 R8 通过。候选 `artifacts/m0-prototype-20261114/Bridge-v4.5.4-M0-prototype-r3-live-status-debug.apk`（`4c98f6ad…`），sourceDigest `f991bfe2…`。未上设备。
+- 设备上预期：覆盖安装 r3 后不重启，SystemUI 仍运行此前加载的构建，首页应显示“仍在运行旧版本”；重启后应变为“已加载当前安装的版本”。在 LSPosed 中关闭模块并重启后应显示“没有回应”。
+- **用户设备确认（2026-11-14，r3 `4c98f6ad…` 由 agent 经当次授权 adb 安装）**：三项均通过——未重启时显示“仍在运行旧版本”，重启后“已加载当前安装的版本”，在 LSPosed 关闭模块并重启后显示“没有回应”。
+
+**商店接入真实安装状态与打开按钮（r4，本地，2026-11-14，按用户要求）：**
+
+- 用户要求：所有专用插件加“调试”按钮，进入各自的调试页、各自开启 debug；通用歌词与动态封面加“打开”按钮，直接跳到各自主页。
+- 商店列表改为官方 15 项（`ProviderDirectory`，与 `v5-provider-matrix.json` 一致），安装状态与版本由本机 PackageManager 实时读取，“适合我的播放器”按矩阵中的宿主包是否已安装判断。样例商店数据已删除。
+- 按钮：
+  - 专用插件已安装 →“调试”，打开该插件自己导出的 `MAIN + INFO` 页（即 LSPosed 打开的那一页），debug 开关在插件页内由用户自己切换；商店不读写任何插件配置。12 个专用插件是调试页。
+  - **Readify 例外**：它的 INFO 页只有模块信息和只读运行诊断，没有调试开关，所以按钮写“模块信息”，卡片注明原因。
+  - 通用歌词、动态封面已安装 →“打开”，使用其桌面启动入口。
+  - 未安装 →“下载”，提示“商店目录尚未接入”；“更新”筛选显示“目录未接入，暂不能检查更新”。签名不同、有更新这两种状态需要目录，暂不产生。
+  - 打不开（页面不存在、无权限）时提示“无法打开 X 的页面”，不崩溃。
+- 包可见性：Manifest 新增一段定向 `<queries>`，列出 15 个插件包与 17 个宿主播放器包；不使用 `QUERY_ALL_PACKAGES`。
+- 架构守卫按第 10 节重划：Provider applicationId 只允许出现在 `management` 包与 Manifest 的 `<queries>` 中；Hook/bootstrap/render 代码仍禁止，其他 v4 transport 标记全局禁止不变。
+- 新增 `ProviderDirectoryContractTest`：目录与 Providers 矩阵逐项相同（模块、包名、宿主包），Manifest `<queries>` 覆盖全部插件与宿主。构建在替换盘符下看不到相邻仓库时需通过环境变量 `CLL_PROVIDER_MATRIX` 指定矩阵路径，否则该测试跳过；本次已指定并通过。
+- 本地验证：957 tests / 0 fail / 6 skip，Debug 与 R8 通过（R8 dex 3,816,736 字节）。候选 `artifacts/m0-prototype-20261114/Bridge-v4.5.4-M0-prototype-r4-store-debug.apk`（`0d00b3dc…`），sourceDigest `8af97562…`。未上设备。
+- **用户设备确认（2026-11-14，r4 `0d00b3dc…`，agent 经当次授权 adb 安装）**：安装状态与版本、专用插件“调试”进入各自调试页、通用歌词/动态封面“打开”、筛选与返回均通过；Readify 卡片在“全部”中可见（“适合我的播放器”因本机未装宿主不显示，符合设计）。**M0 首页/商店原型由用户确认通过。**
+
+### 14.5 M0 剩余决策：D1 托管 与 D2 目录签名（2026-11-14，用户已决定）
+
+> 状态：**决策已定（见第 14.5.1 节），尚未实现，未申请任何仓库或密钥**。本节为第 13 节 D1/D2 的展开，是 M2 的输入。
+
+**先说一个前提，它决定了 D1 可以放松多少：** 第 6.2 节要求目录独立签名、APK 校验包名/versionCode/大小/SHA-256/证书。客户端只信“验签通过的目录 + 摘要一致的 APK”，所以**存储和 CDN 只负责“能不能下到”，不负责“下到的是不是真的”**。托管被篡改、被劫持或镜像被替换，结果只会是校验失败、拒绝安装，不会装上假包。因此 D1 可以按可达性和成本选，也可以同时挂多个镜像。
+
+**现有事实（静态确认）：**
+
+- 体量：4.5.4 的 15 个 Provider/封面 APK 合计约 26 MB，单个 0.15–4.7 MB；一个用户通常只装 1–3 个，单次下载约 2–6 MB。目录本身预计几 KB。
+- 签名：Bridge 与所有 Provider 目前共用一张正式证书（`bridge-release-contract.json` 的 `releaseCertificateSha256`），由 Actions secrets 签名。
+- 客户端：Bridge `minSdk = 26`；Provider 矩阵 `minSdk` 27/30。目录验签在 Bridge 普通 App 进程（管理页）中做，算法须在 API 26 可用。
+- 用户主体是 ColorOS 国行设备，中国大陆可达性是主要风险。
+
+#### D1 托管：可选方案
+
+| 方案 | 大陆可达性 | 费用/门槛 | 运维 | 主要代价 |
+| --- | --- | --- | --- | --- |
+| A. 公开 GitHub Release（独立的商店仓库，每版不可变 tag） | 差且不稳定，常需代理 | 免费 | 最低，可复用现有 Actions | 与第 6.2 节“不以公开 Provider Releases 作为默认后端”冲突；大陆用户体验差 |
+| B. Cloudflare R2 + 自有域名 | 一般，时好时坏 | 需域名；10 GB 存储与出站流量基本免费 | 低 | 大陆速度无保证；需要一个域名 |
+| C. 大陆对象存储 + CDN（阿里云 OSS / 腾讯云 COS 等） | 最好 | 自定义域名需 ICP 备案（实名）；按流量计费，以本体量每月很低 | 中：备案、账号、计费 | 备案与实名门槛；账号归属需明确 |
+| D. 香港区域对象存储（不走大陆 CDN） | 较好 | 无需备案；流量单价高于大陆但体量小 | 中 | 晚高峰可能慢 |
+| E. 多镜像：目录为每个 APK 列出多个 URL（同一 SHA-256），客户端按顺序回退 | 取决于组合 | 组合成本 | 中：每次发布需同步到全部镜像，晋级前逐个校验 | 发布工具更复杂；须保证“全部镜像就绪”后才晋级目录 |
+
+**推荐：E = B 为主 + A 作为回退**（或 C/D 为主 + B 回退，若你愿意备案或付费）。理由：完整性不依赖托管，多镜像几乎只增加发布脚本工作；B 与 A 都免费，且不需要备案。若采用 A 作为回退，需修改第 6.2 节的措辞：A 只作为“由签名目录指向的镜像”，不作为默认或唯一来源，用户也不直接从 Release 页面挑包。
+
+**需要你决定的：** ① 是否已有或愿意注册一个域名；② 是否接受 ICP 备案（决定 C 是否可行）；③ 每月可接受的费用上限（可以是 0）；④ 账号和域名归谁（建议归你本人账号，CI 只拿最小权限的上传凭据）。
+
+**无论选哪种都必须做（M2 门禁）：** 对象路径带版本且不可变（不覆盖已发布对象）；先上传并逐个镜像校验 SHA-256，最后才晋级目录；客户端只接受发布配置中列出的 HTTPS 主机与重定向；托管不可用时只阻止新安装或更新，不影响已装功能（第 13 节 D8）。
+
+#### D2 目录签名：可选方案
+
+**算法（客户端须在 API 26 上原生可用，不自行实现密码学）：**
+
+| 方案 | API 26 原生支持 | 依赖 | 评价 |
+| --- | --- | --- | --- |
+| ECDSA P-256 + SHA-256（`SHA256withECDSA`） | 是 | 无 | **推荐**。签名短，平台实现成熟；硬件密钥（如 YubiKey PIV）也支持 |
+| Ed25519 | 否（平台从 API 33 才有） | 需引入 Tink 等库，增加 APK 体积和审计面 | 算法更现代，但为它增加依赖不划算 |
+| RSA-PSS 3072 | 是 | 无 | 可用；签名和公钥较大，无额外收益 |
+
+**签名位置（决定 CI 被攻破时的影响）：**
+
+| 方案 | 做法 | 优点 | 代价 |
+| --- | --- | --- | --- |
+| S1. CI 自动签名 | 目录私钥放在 Actions secrets | 全自动 | 目前 APK 签名密钥也在 CI；一次 CI 泄露即可同时伪造 APK 和目录，第 6.2 节“两套信任”实际失效 |
+| S2. 受保护 Environment 签名 | 私钥放在带必需审核人的 GitHub Environment，晋级任务须你点批准 | 自动化程度高，每次晋级有人工确认 | 仍是同一平台托管的密钥，只多了一道审批 |
+| S3. 本地离线签名 | CI 只产出待签目录；你在本机（或硬件密钥）用脚本签名后上传 | 目录密钥与 CI 完全隔离 | 每次发布和续期都要手动一步 |
+
+**推荐：P-256 + S3**；若手动一步太麻烦则用 S2。理由是本项目已经让 CI 持有 APK 签名密钥，目录签名再放进 CI 就失去独立性。
+
+**密钥与时效（推荐值，可调）：**
+
+- Bridge 内置**两把**目录公钥：主用钥与离线备用钥，envelope 中用 `keyId` 区分。主钥泄露或丢失时切换到备用钥签名，并随下一版 Bridge 更换新的一对；不做在线吊销服务。
+- 目录不能引入新的 APK 证书：客户端只接受内置的正式证书 SHA-256。所以即使目录密钥泄露，攻击者也只能“回滚到旧的真包”或“不让更新”，不能装上假包；revision 只增不减可以挡住回滚。
+- `expiresAt = issuedAt + 180 天`，允许 ±24 小时时钟偏差。过期后只停新安装和更新，已装状态照常显示。180 天意味着即使没有新版本，也至少每半年重签一次；若选 S3，这是一个需要提醒的人工步骤。
+- 随 Bridge 打包一份已签名的目录快照，作为首次启动的数据和 revision 下限。
+
+**需要你决定的：** ① 算法（推荐 P-256）；② S1/S2/S3 选哪个；③ 是否有硬件密钥（没有也可以用本地加密文件，离线备份到你选的位置）；④ 过期周期（推荐 180 天）。
+
+**无论选哪种都必须测试（M2 门禁）：** 错签名、未知 keyId、篡改 payload 一个字节、revision 降序重放、过期与时钟偏差边界、APK 摘要/大小/证书/包名/versionCode 不符、零值或占位字段，均须拒绝。正式私钥不入库；仓库只放正式公钥（内置到 Bridge）和测试用的一次性密钥对。
+
+#### 14.5.1 用户回复（2026-11-14）与 LSPosed 官方仓库方案分析
+
+**用户回复：** D2 选“受保护 Environment”，过期周期 180 天；D1 与域名问题均回复“利用 LSP 官方公开仓库（modules.lsposed.org），官方似乎对大陆做了优化”，即不另购域名或对象存储。
+
+**已核实的事实（2026-11-14 读取 `modules.lsposed.org/module/io.github.andrealtb.lockscreenlyrics.json`）：**
+
+- 本项目已在用该仓库：Bridge 的 LSP 仓库 `Xposed-Modules-Repo/io.github.andrealtb.lockscreenlyrics` 每版附 19 个资产（含全部 Provider 与动态封面），由 `release.yml` 用 `LSP_REPO_TOKEN` 发布。
+- 网站 JSON 中每个资产有两个地址：`originalDownloadUrl`（GitHub 原地址）与 `downloadUrl`（`assets.lsposed.org/...` 代理地址，带 `sign=` 与 `t=` 参数）。代理地址带签名参数，含义与有效期未公开，**不能作为固定地址写进签名目录**。
+- 动态封面（`io.github.andrealtb.artwork.am`）是普通 App（绑定服务），不是 Xposed 模块；矩阵中其 `distribution` 为 `bridge-release`。它不能单独申请 LSP 模块仓库。
+- “对大陆做了优化”：本机无法验证，标为 **unknown**，需要用户用手机在移动数据和 Wi-Fi 下分别实测 `assets.lsposed.org` 的下载速度。
+
+**两个变体：**
+
+| 变体 | 做法 | 优点 | 代价 |
+| --- | --- | --- | --- |
+| L1. 继续挂在 Bridge 的 LSP 仓库 | 维持现状，商店目录指向 Bridge 每版附带的 Provider 资产 | 零新增仓库，现有流程可用 | Provider 无法独立发版：每次只改一个 Provider 也要发一个 Bridge LSP Release，LSPosed 管理器会把它显示成 Bridge 更新；与第 6.1 节、第 11 节 M2“独立 Provider 更新不要求新 Bridge tag”冲突 |
+| L2. 每个 Xposed Provider 各自一个 LSP 仓库 | 13 个专用 + 通用 = 14 个仓库，仓库名等于包名；动态封面仍挂在 Bridge 的 LSP 仓库 | 每个 Provider 独立版本；用户在 LSPosed 管理器里也能原生看到和更新；同样走 assets.lsposed.org | 14 个仓库需逐个向 LSPosed 维护者提交并获批；CI token 需对 14 个仓库有写权限；LSP 列表中出现 14 条；动态封面更新仍需随 Bridge 发版 |
+
+**两种变体共同需要解决的问题：**
+
+1. **许可（硬前置）：** 商店是第三方 App 直接使用 LSPosed 的下载代理和网站 JSON，不是 LSPosed 管理器本身。须由用户先向 LSPosed 维护者确认允许；这是对外沟通，由用户本人进行。
+2. **非稳定接口：** `modules.lsposed.org` 的 JSON 是网站内部格式，没有公开的稳定性承诺。客户端只把它当作“换取下载地址”的提示：目录中固定写入 GitHub 原地址 + 资产名 + 大小 + SHA-256；下载时查询网站 JSON，按资产名找到代理地址；代理不可用或格式变化时回退到 GitHub 原地址。完整性只看目录中的摘要和证书，不信网站 JSON 的任何字段。
+3. **可信主机：** 发布配置的 HTTPS 白名单为 `modules.lsposed.org`、`assets.lsposed.org`、`github.com` 及其 Release 下载重定向主机；不接受其他重定向。
+4. **索引延迟与原子晋级：** 网站 JSON 由 LSPosed 定期重新生成，发布后不会立即出现。晋级流程为：发布 Release → 轮询网站 JSON 直到资产名和大小一致 → 下载代理地址并核对 SHA-256 → 才签名并晋级目录。超时则不晋级。
+5. **目录本身放哪里：** 目录只有几 KB 且已签名，托管不影响真实性。建议放在 Providers 仓库的固定路径，客户端通过 jsDelivr（`cdn.jsdelivr.net/gh/...`）读取，`raw.githubusercontent.com` 作为回退；首次启动使用随 Bridge 打包的签名快照。这样仍无需域名。jsDelivr 在大陆的可达性同样标 **unknown**，需实测。
+
+**推荐：L2**（动态封面保持 L1 方式）。理由：独立版本是商店的核心目标，L1 会让每次 Provider 更新都表现为 Bridge 更新。前置条件：先完成第 1 项许可确认，再提交 14 个仓库申请；若维护者不同意第三方使用代理，退回第 14.5 节方案 B（R2）或 E。
+
+**用户已选 L2（2026-11-14）。** 用户随后回复：① LSPosed 维护者**允许**第三方 App 使用其下载代理与网站 JSON（用户转述，未见书面记录，本文不存档对外沟通内容）；② 无需实测，用户判断 `assets.lsposed.org` 稳定。据此 D1 冻结。jsDelivr（目录读取）在大陆的可达性仍为 **unknown**；客户端保留 `raw.githubusercontent.com` 回退与内置签名快照，M2 设备验收时顺带观察。
+
+#### 14.5.2 D1 最终决定（2026-11-14）：方案 M
+
+用户在对比 L2（14 个 LSP 仓库）后改选**方案 M**，理由是项目为爱发电，不值得维护 14 个仓库；大陆网络问题由用户自行处理，或以后套一层免费 CDN。第 14.5.1 节的 L1/L2 分析保留作历史记录，**不再执行**；LSPosed 维护者许可与 `assets.lsposed.org` 均不再是商店依赖。
+
+- **托管：** `Andrea-lyz/ColorOS-Live-Lyrics-Providers` 的公开 GitHub Release。tag 采用 `<providerId>-v<versionName>`，每个 Release 只附一个 Provider APK；已发布 Release 不覆盖，修复用新版本。
+- **目录：** 签名目录放在同一仓库的固定路径，客户端经 jsDelivr 读取、`raw.githubusercontent.com` 回退，首次使用内置签名快照。
+- **CDN（可选，以后）：** 只作为镜像地址加入目录；受信主机列表随签名目录下发，加镜像不需要升级 Bridge。CDN 只是传输通道，不参与信任。
+- **Bridge Release：** 按第 6.2 节不再附 Provider APK；动态封面的分发方式（目前 `bridge-release`）在 M2 中改为同样走 Providers 仓库的独立 tag，具体以 M2 实施为准。
+- **与 D2 的关系：** 不变（受保护 Environment、P-256、180 天）。
+
+### 14.6 M2 第一刀：目录签名格式、客户端验签与签名工具（2026-11-14，本地）
+
+> 状态：**本地实现与测试通过，未接入 UI、网络或安装流程，未上设备，未提交**。正式目录密钥尚未生成，生产信任集为空。
+
+**格式（D2）：** 信封 `envelopeVersion`=1、`keyId`、`algorithm`=`ECDSA_P256_SHA256`、`payload`（目录 JSON 原始 UTF-8 字节的 base64）、`signature`（DER）。签名内容为 `CLL-CATALOG-V1
+` + payload 字节；客户端先验签，再只解析已签字节，不依赖 JSON 规范化。payload schema 1 在第 6.3 节草案基础上落为：`catalogRevision`、`issuedAtEpochSeconds`/`expiresAtEpochSeconds`、`channel`、`trustedHosts`、`entries[]`（`providerId` 即矩阵 `module`、`kind`、`applicationId`、`versionName`、`versionCode`、`minSdk`、`minStoreProtocol`、`sourceCommit`、可选 `releaseNotes`、`artifact{urls[], bytes, sha256, signerSha256[]}`）。`scopePolicy`、`supportedHosts`、`requires` 等留待 M3/M4 需要时以新字段加入（未知字段忽略）。
+
+**Bridge（分支 `feat/m2-catalog-verification`）：** 新增 `management/catalog/`，纯 JVM，无 Android/网络/存储/Hook 依赖：
+
+- `CatalogVerifier`：整份拒绝，不存在“部分可信”。拒绝原因：过大、信封格式/版本/算法、未知 keyId、签名错误、payload 非 UTF-8/非 JSON、schema、渠道不是 stable、有效期非法或超过 190 天、早于 issuedAt 超过 24 小时、revision 降序（ROLLBACK）、同 revision 不同内容（REVISION_CONFLICT）、条目字段非法或为 0/占位、URL 非纯 https 或主机不在已签 `trustedHosts`、签名证书不在客户端内置集合、重复条目。过期超过 24 小时仍接受但标 `EXPIRED`（调用方据此只显示已安装状态、阻止安装/更新）。数字只接受整数类型，不接受 org.json 会自动转换的字符串或小数。
+- `CatalogTrust`：生产目录公钥表为空（待在受保护 Environment 生成主用 + 备用两把后填入）；只接受 P-256（按群阶校验）；内置正式 APK 证书与 `bridge-release-contract.json` 由测试绑定。
+- `ArtifactCheck`：流式测量大小与 SHA-256（超限即停），以及包名/versionCode/签名者核对；签名者必须全部在条目允许集合内。从 APK 读取包信息的 Android 适配留到 M3。
+- `entry.supportedBy()`：要求更新商店协议的条目照常列出但不可安装。
+
+**Providers（分支 `feat/m2-catalog-tooling`）：** 新增 `scripts/catalog/`：`catalog-envelope.mjs`（与客户端同一套规则，签名前校验并用派生公钥自检）、`sign-catalog.mjs`（私钥来自 `--key` 或 secret `CLL_CATALOG_SIGNING_KEY`，不覆盖已有输出）、`verify-catalog.mjs`、`README.zh-CN.md`、测试与夹具。夹具使用标明 TEST-ONLY 的一次性密钥；Bridge 只复制公钥与签出的信封，证明 Node 签名与 Kotlin 验签字节一致。
+
+**本地验证：** Bridge `:app:testDebugUnitTest :app:assembleDebug` 通过，976 tests / 0 fail / 6 skip（新增 `CatalogVerifierTest` 15 项、`ArtifactCheckTest` 4 项，均未跳过；设置了 `CLL_PROVIDER_MATRIX`）。Providers `node --test scripts/catalog/catalog-envelope.test.mjs` 7 项通过（Node 24）。新代码尚无运行时调用方，未单独跑 R8。
+
+**已知差异：** JVM 上的 org.json 对重复键报错，Android 平台 org.json 后者覆盖前者；签名覆盖原始字节且签名工具只输出 `JSON.stringify` 结果（不会有重复键），因此不影响真实性，记录备查。
+
+**M2 第二刀（2026-11-14，本地，未提交）：** Providers `scripts/catalog/` 新增 `catalog-payload.mjs`、`apk-facts.mjs`、`build-catalog-payload.mjs` 与测试。由矩阵和实际 APK 生成下一版目录：包名、版本、minSdk 读 `aapt2 dump badging`，签名者读 `apksigner`，大小与 SHA-256 直接计算；必须与矩阵一致、只由正式证书签名；在已验签的上一版目录上生成，revision 加 1，其余条目原样保留；已发布 versionCode 不能降低或换字节重发，无变化时拒绝新 revision；另提供只续期的 `renewPayload`。下载地址为 `github.com/<repo>/releases/download/<providerId>-v<versionName>/<文件名>`。
+
+- 本地验证：Node 测试 14 项通过（目录信封 7 + 生成 7）。用本机 `logs/release-lsp-4.5.4/` 的 4.5.4 **正式签名** APK 端到端跑通“读 APK → 生成 → 测试密钥签名 → 验签”，Salt 1.1.2/8 与动态封面 1.0.6/10 的大小与 SHA-256 与文件一致。
+- 按规则被拒绝的实例：4.5.4 公开的 Universal 是 1.1.2/4，矩阵已升到 1.1.3/5，因此拒绝；M1 的 debug 签名 Salt 拒绝；同内容重发拒绝；被篡改的上一版目录验签失败并拒绝。
+- 未覆盖：没有在 CI 中运行；没有接入任何发布 workflow；正式目录密钥仍未生成。
+
+**M2 第三刀（2026-11-14，本地，未提交，未在 GitHub 运行）：** Providers 新增 `.github/workflows/provider-store-release.yml`、`release/catalog-trust.json`（只含公钥，目前为空）、`scripts/catalog/resolve-release-tag.mjs`、`generate-catalog-key.mjs` 与测试；`build-catalog-payload`/`verify-catalog` 支持 `--trust`，信任文件与 Bridge 都用 base64 SPKI 格式存公钥。
+
+- 触发：`main` 上的 tag `<module>-v<versionName>`，必须与矩阵版本一致；`providers-v*` 旧套件 tag 排除。
+- build：要求 tag 指向的提交在 main 上；跑目录工具测试与整份 `testV5Matrix`（共享代码，第 9.1 节），动态封面另跑自身测试与协议镜像；正式签名构建单模块，只收一个 APK，按目录规则核对身份与证书。
+- publish：创建不可覆盖的 Release（仅 1 个 APK + `.sha256`），再从公开地址下载核对 SHA-256。
+- promote：受保护 Environment `provider-catalog`（审批 + `CLL_CATALOG_SIGNING_KEY` + 变量 `CLL_CATALOG_KEY_ID`）；以重新下载到的已发布字节为数据源，验签 `store-catalog` 分支上的当前目录后生成并签名下一版，普通 push 到 `store-catalog:catalog/stable.json`；全局串行。客户端读取地址预定为 jsDelivr `gh/<repo>@store-catalog/catalog/stable.json`，`raw.githubusercontent.com` 回退（jsDelivr 对分支有缓存延迟，revision 单调保证不会回退）。
+- 本地验证：Node 测试 17 项通过；workflow YAML 能解析（本机无 actionlint）；在临时仓库模拟了“首次建 `store-catalog` 孤儿分支 → 再次快进晋级”的 git 步骤，并据此把检出改为 `worktree add -B`；`generate-catalog-key.mjs` 拒绝 `test-` 前缀、拒绝写入仓库目录、不覆盖已有文件。
+- Bridge 新增测试把 `CatalogTrust` 的生产公钥与正式证书绑定到 Providers `release/catalog-trust.json`（两边目前都为空公钥表、同一证书）；Bridge 977 tests / 0 fail / 6 skip，Debug 构建通过。
+- **未覆盖：** workflow 从未在 GitHub 上运行；Environment、secret、变量、正式密钥均未创建（需用户操作，见工具 README）；`store-catalog` 分支不存在；Release 说明与目录说明的模板未定。
+
+**M2 第 ③ 项（2026-11-14，本地，未提交）：** 用户已在本机生成正式目录密钥对 `cll-catalog-2026a`（主用）与 `cll-catalog-2026b`（离线备用），并已在 GitHub 上建好 Environment `provider-catalog`、secret 与变量（用户转述，agent 未登录 GitHub 核对）。两把公钥（base64 SPKI，P-256）已填入 Providers `release/catalog-trust.json` 与 Bridge `CatalogTrust.PRODUCTION_CATALOG_KEYS`，与用户贴出的生成输出逐字一致，绑定测试通过。生产信任集不再为空，测试夹具（`test-only-2026`）仍被生产信任拒绝。未用正式私钥签出任何目录。Bridge 977 tests / 0 fail / 6 skip，Node 17 项通过。
+
+**M2 第 ⑤ 项：拆分 Bridge 发布契约（2026-11-14，本地，未提交）：** Bridge 分支 `feat/m2-split-release-contract`（基于 `6598dbd`），Providers 分支 `feat/m2-catalog-tooling` 追加一处未提交改动。
+
+- `bridge-release-contract.json` 升为 schema 2：删除 `providerBundleAsset`、`providerApkCount`、`artworkProviderApkCount`；新增 `providerDistribution = provider-store`；`totalApkCount = 1`、`totalReleaseAssetCount = 3`（Bridge APK、`release-assets-v<version>.json`、`SHA256SUMS`）。`suiteVersion` 字段名保留，含义即 Bridge 版本。
+- `validate-release-contract.ps1`：校验 schema 2、退役字段不得回归；跨仓库只核对动态封面模块身份，不再要求 Bridge 与 Provider 套件版本相同；正式模式要求矩阵中动态封面 `distribution = provider-store`。新增 `-PreviewProviders` 开关，供仍附带 Universal/动态封面预览 APK 的旧预览链路（`preview.yml`、`artwork-provider-candidate.yml`，本次只加该开关，未改其行为）保留原有版本对照。
+- `build-release-assets.ps1`：只接收并核对 Bridge APK，不再生成 Provider ZIP；manifest schema 2 记录 `providerDistribution` 与契约测试所绑定的 Provider commit。
+- `release.yml`：删除 `build-providers` 作业；Bridge 构建作业只读检出冻结的 Provider commit 并设置 `CLL_PROVIDER_MATRIX`，使商店目录与目录信任绑定测试在 CI 中真正运行而非跳过。
+- Providers 矩阵：动态封面 `distribution` 改为 `provider-store`。矩阵中的 `suiteVersion`、`bundleAsset` 与按套件命名的 `asset` 仍供旧的整矩阵构建 `android-release.yml` 使用，作为“定期全矩阵验证”保留（第 9.2 节），未改。
+- `RELEASE_PROCESS.md`：资产白名单、RC 步骤、复核步骤改为 3 项；新增第 12 节“Provider 商店发布”；写明合入顺序门禁。
+- 本地验证：正式模式与预览模式校验器均通过；用本机 4.5.4 正式签名 Bridge APK 跑新资产脚本，产出恰好 3 项、manifest schema 2。应拒绝的情况均被拒绝：输入多一个 Provider APK、对照 Providers `main`（仍为 `bridge-release`）的正式模式、契约重新出现 `providerApkCount`。当时以为 Bridge 单元测试只读取该契约的证书字段，未重跑 Gradle；第 ④ 项重跑时发现 `Phase7DocumentationContractTest` 仍按旧套件规则检查发布文档（要求出现 19 项与动态封面资产名）而失败，已改为检查新规则（“恰好 3 项”、`provider-store-release.yml`、`provider-store`）。
+- **合入顺序门禁：** schema 2 只能在 M3（商店可安装 Provider）之后进入正式发布；Providers 的矩阵改动须先进入其 `main`。README、安装教程与 LSPRepo 下载说明尚未改（第 9.2 节，留到 M6）。
+
+**M2 第 ④ 项：内置签名快照与 revision 持久化（2026-11-14，本地，未提交）：** 同在 Bridge 分支 `feat/m2-split-release-contract`。
+
+- `CatalogStore`（纯 JVM）：在“已持久化目录 / 本 Bridge 内置快照 / 远端新目录”中选用目录。每个候选都以持久化的 revision 下限验签，因此镜像或较旧的内置快照都不能让商店回退；下限只升不降，且先写入再使用。较新的内置快照（随 Bridge 升级带来）会抬高下限。持久化失败时不使用未落盘的新目录（`CatalogOffer.PersistFailed`）。过期目录可用于显示但 `installable = false`。
+- `FileCatalogPersistence`：单个 JSON 文件，放在 `noBackupFilesDir/store`（备份恢复不能重置或伪造下限），写临时文件后 `Files.move(ATOMIC_MOVE, REPLACE_EXISTING)` 替换；读取到损坏内容视为无。`BundledCatalogSnapshot` 读取 APK assets 中的 `catalog/stable.json`。两者尚无运行时调用方（M3 接入）。
+- 快照来源：正式私钥只在受保护 Environment 中，本地不签快照。`release.yml` 在构建 Bridge 前从冻结 Provider commit 所在仓库取 `store-catalog` 分支的当前目录，用 `catalog-trust.json` 验签后写入 `app/build/generated/catalogSnapshot/catalog/stable.json`；`app/build.gradle.kts` 把该目录加入 assets。正式发布缺快照即失败，RC 只警告。
+- 本地验证：Bridge 987 tests / 0 fail / 6 skip（新增 `CatalogStoreTest` 10 项），Debug 构建通过；放入测试快照后 APK 含 `assets/catalog/stable.json`，删除后重建即不含；release.yml 可解析。**未覆盖：** 快照嵌入步骤未在 GitHub 运行（`store-catalog` 分支尚不存在）；内置快照未在设备上读取过。
+
+**M2 剩余：** 所有切片均已在本地完成；workflow 均未在 GitHub 运行，首个正式目录尚未发布。下一步为 M3（商店安装更新：已安装发现、下载、PackageInstaller、恢复、更新提醒），届时接入 `CatalogStore` 与 `ArtifactCheck`。
+
+### 14.7 M3：目录接入商店、下载校验、安装事务与后台更新提醒（2026-11-14，本地，已提交 `2516ad2`）
+
+分支：Bridge `feat/m3-store-install`（基于 `e242f60`）。Providers 未改。
+
+**第一刀：目录投影与远端刷新**
+
+- `StoreProjection.kt`（纯函数 `storeItems`）把内置目录（`ProviderDirectory`）投影到本机与已验签目录。只有 `providerId` 和 `applicationId` 都与内置目录一致的条目才算数，目录不能把已知插件指向别的包；本 Bridge 不认识的条目只计数（“需要更新 Bridge 后才能显示”）。
+- 安装状态按各插件自己的 versionCode 判定：未安装 / 已安装 / 有更新 / 本机更新 / 签名不同。本机签名（只取当前签名，不含轮换历史）不全在条目允许集合内、或读不到，都判为签名不同，不提供更新。
+- 是否可下载（`Availability`）：无目录、目录过期（只读）、目录中没有、需要更新 Bridge（`minStoreProtocol`）、系统版本过低（`minSdk`）时都不提供下载/更新按钮。签名不同和本机更新时仍可打开插件自己的页面（例如本地 debug 构建的 Provider），但不提供覆盖安装或清数据。
+- 首页“N 个插件有更新”改为实时计数，为 0 时不显示。
+- `CatalogRefresher` 与 `CatalogSources`：从 jsDelivr 和 raw GitHub 两个镜像获取 `store-catalog` 分支上的 `catalog/stable.json`，每个响应都交给 `CatalogStore`，保留最高的有效 revision。镜像落后（ROLLBACK）算“已是最新”；一个镜像成功即不报其他镜像的失败。地址与 Providers `release/catalog-trust.json` 的分支/路径由测试绑定。
+- `HttpsTransport`：只允许 `https`、默认端口、无 userinfo；不自动跟随重定向，每一跳都检查主机白名单；错误信息只写主机，不写路径或 query。目录响应超过 256 KiB 即停止。
+- `StoreRuntime`：进程内唯一的目录存储，所有读写串行，避免两个页面同时改 revision 下限。打开商店时最多每 10 分钟自动检查一次，另有“检查更新”按钮。
+- 商店顶部原“样例数据”横幅改为目录卡片：目录版本、来源（随 Bridge 内置 / 本机保存 / 刚从网络获取）、是否过期、最近一次检查的结果（含被拒原因）。
+
+**第二刀：下载、校验与 PackageInstaller 事务（`management/install`）**
+
+- `ApkDownloader`：下载到 App 私有缓存 `cacheDir/provider-store` 的 `.part` 文件，按条目大小限制流式计算 SHA-256；大小与摘要都与签名目录一致后才改名为 `<providerId>-<versionCode>.apk`。按目录顺序尝试镜像，坏镜像会换下一个；取消、空间不足、内容不符时删除半成品。已校验过的缓存文件可直接复用（例如用户在安装确认里取消后重试）。
+- 交给安装器前用 `getPackageArchiveInfo` 读取包名、versionCode 和签名，经 `ArtifactCheck.checkPackage` 核对；读不出或不一致都删除文件，不进入安装器。
+- `StoreOperations`：进程级、一次只运行一个操作，Activity 重建不会重复发起。未获“安装未知应用”授权时停在“需要授权”，按钮打开系统设置；返回后若已允许则继续，未允许不会再次弹出。
+- 安装使用 `PackageInstaller` 会话（`MODE_FULL_INSTALL`，Android 12 起显式 `USER_ACTION_REQUIRED`，始终由用户确认）。状态由不导出的 `InstallStatusReceiver` 接收：
+  - `STATUS_PENDING_USER_ACTION` 显示“等待你确认”，不算成功也不算失败；确认界面只在管理页可见时启动一次，用户退出后可以“重新打开”或“取消”（放弃会话）。
+  - 失败分别显示：取消、签名冲突/降级、不兼容、空间不足、被系统拦截、安装包无效、其他。
+  - `STATUS_SUCCESS` 之后还要回读 PackageManager，versionCode 必须等于条目，签名必须在允许集合内，才显示“已安装并核对”；否则显示“安装器报告完成，但未核对到”。专用插件成功后提示去 LSPosed 启用并勾选播放器（scope 自请求属于 M4）。
+- 会话记录（`InstallRecordFile`，`noBackupFilesDir/store/install-session.json`）在提交前写入。App 被杀后重新打开时 `reconcile`：已装上则补记成功；会话还在但确认界面已丢失，则放弃会话并显示“被中断，可重试”；会话不在且没装上同样显示中断。**从不对同一记录提交第二个会话。**
+- 权限：Manifest 新增 `INTERNET` 与 `REQUEST_INSTALL_PACKAGES`，只供普通 App 进程使用；架构守卫新增：`HttpURLConnection`、`HttpsURLConnection`、`java.net.URL`、`openConnection(`、`PackageInstaller` 只允许出现在 `management` 包内。这取代了动态封面方案中“Bridge 不加 INTERNET”的旧约束（第 2 节表格已列明 5.0 需要网络与安装权限）；Hook 路径仍不联网。
+- 后台任务里出现意外运行时异常时，操作显示“安装失败”，不会让 App 崩溃；重定向地址格式错误按网络错误处理。
+
+**本地验证：** `writeSourceIdentityReport :app:testDebugUnitTest :app:assembleDebug :app:minifyReleaseWithR8` 通过，1009 tests / 0 fail / 6 skip。新增 `StoreProjectionTest` 7 项、`CatalogRefresherTest` 6 项、`InstallFlowTest` 9 项（下载/镜像回退/缓存复用/取消、安装器状态映射、成功回读、reconcile、记录文件），`PrototypeModelTest` 按新规则调整为 11 项，架构守卫新增上述标记。R8 dex 3,901,460 字节（比 r4 +84,724）。合并后的 Manifest 已确认含两项新权限与 `exported=false` 的接收器。
+
+**未覆盖 / 待设备：**
+
+- 正式目录尚未发布（`store-catalog` 分支不存在），本地 Debug 构建也没有内置快照，所以设备上目前只会显示“没有可用目录”，点“检查更新”会得到网络失败。**真实的下载与安装要等首个正式目录发布之后才能在设备上验证**；在那之前可验证的只有目录卡片、无目录状态和已安装状态。
+- PackageInstaller 全流程、ColorOS 安装确认界面、“安装未知应用”授权往返、取消/返回、进程被杀后的 reconcile、`getPackageArchiveInfo` 在各 Android 版本上能否读到签名：均未在设备上运行。读不到签名时会按失败处理（不安装），如在某版本上出现需要再评估。
+- 没有 Compose UI 测试；下载未做断点续传。
+
+**第三刀：后台更新提醒（同分支，本地，未提交）**
+
+- `management/reminder/UpdateReminders.kt`：商店页新增“后台检查插件更新”开关，**默认关闭**。开启时，Android 13 起才申请通知权限（只在用户打开开关时申请，拒绝后开关保持关闭并提示）；关闭时取消任务、撤下通知并清除已提醒记录。
+- 调度：`JobScheduler` 周期任务，约 24 小时一次、6 小时浮动窗口，要求有网络，持久化（为此新增 `RECEIVE_BOOT_COMPLETED`）。实际执行时间由 ColorOS 决定，**不承诺实时到达**；没有镜像响应时交给系统按指数退避重试。打开管理页时若任务丢失会补建。未引入 WorkManager 依赖。
+- 每次检查：刷新目录（与前台同一个串行化的 `StoreRuntime`），读取本机安装状态，只提醒“可安装、签名一致、本机较旧”的更新（签名不同、本机较新、目录过期都不提醒）。
+- 去重（纯函数 `planNotice`）：同一插件的同一版本只响铃一次；已提醒过的更新只静默刷新已显示的通知，用户划掉后不再重发；该插件出现更新的版本时再提醒；更新装好后从通知中去掉，全部没有时撤下通知。没有通知权限时不记“已提醒”，以后获得权限仍能提醒。
+- 通知只打开管理页的商店页（`EXTRA_OPEN_STORE`），**不会自动下载或安装**。偏好存在独立的 `provider_store` SharedPreferences，不进入 LyricUiConfig；提醒失败不影响任何歌词功能。
+- Manifest 新增 `POST_NOTIFICATIONS`、`RECEIVE_BOOT_COMPLETED` 与不导出的 `UpdateCheckJobService`（`BIND_JOB_SERVICE`）。
+
+本地验证：同一组 Gradle 任务通过，1012 tests / 0 fail / 6 skip（新增 `UpdateNoticeTest` 3 项）；R8 dex 3,941,028 字节（比第二刀 +39,568）；合并后的 Manifest 已确认含两项新权限与该服务。**未覆盖：** 任务调度、通知显示、权限申请、点通知跳到商店页都没在设备上运行；ColorOS 对后台任务的限制（例如未加入自启动白名单时可能长期不执行）是 unknown。
+
+**M3 剩余：** 首个正式目录发布后的设备验收（下载、安装确认、授权往返、取消、被杀后恢复、后台提醒）。功能切片已全部在本地实现。
+
+### 14.8 M3 真机测试点：TEST-ONLY 目录（2026-11-14，本地，未提交；用户设备确认通过）
+
+目的：正式目录发布前，在真机上走完一次真实的“下载 → 校验 → 系统安装 → 回读”。不推送、不打 tag、不用正式私钥。
+
+- 分支 Bridge `feat/m3-store-device-test`（基于 `2516ad2`）。
+- 只在 Debug 且构建时设置 Gradle 属性 `cllStoreTestCatalog=true`（Windows 下用环境变量 `ORG_GRADLE_PROJECT_cllStoreTestCatalog=true`，因为 `dev.cmd` 会拆开 `=`）时，`BuildConfig.STORE_TEST_TRUST` 为 true，商店额外信任 Providers 仓库里公开的 TEST-ONLY 目录公钥 `test-only-2026`。该公钥只在 `app/src/debug` 源集中；`app/src/release` 的同名对象为空。Release 构建即使带着该属性也固定为 false，已确认 R8 后的 Release dex 中没有该 keyId。`StoreTestTrustTest` 2 项检查 release 源集为空、debug 密钥就是测试夹具密钥且不是正式密钥。
+- 测试构建的 revision 下限另存在 `noBackupFilesDir/store-test`，测试目录永远不会挡住正式目录。商店目录卡片顶部会显示红色“测试构建”警告。
+- 测试目录（`artifacts/m3-store-test-20261114/test-stable.json`，revision 1，30 天有效，payload SHA-256 `d7cbc44a…`）用 TEST-ONLY 私钥签名，Providers 的 `verify-catalog.mjs` 用测试公钥验证通过、用 `release/catalog-trust.json` 验证被拒（unknown keyId）。只有两个条目，都指向 Bridge 仓库 **v4.5.4 正式 Release 中已存在的资产**（正式证书 `ff38544b…`，本地用 apksigner 核对过）：
+  - LX Provider 1.2.1（versionCode 4，145,290 字节，`6b84d229…`）
+  - QiShui Provider 1.1.2（versionCode 4，169,277 字节，`9cbc021a…`）
+  
+  下载会经过 github.com → release-assets 主机的重定向，正好覆盖白名单逐跳检查。
+- 候选：`artifacts/m3-store-test-20261114/Bridge-M3-store-test-debug.apk`，SHA-256 `18645c6b…`，Debug 证书 `5a6fd43f…`（与设备上 r4 相同，可直接覆盖安装）。嵌入的 `assets/catalog/stable.json` 与测试目录逐字节相同。构建后已从 `app/build/generated/catalogSnapshot` 删除测试快照，之后的普通构建不会带上它。
+- 本地验证：1014 tests / 0 fail / 6 skip，测试版 Debug 构建通过；带属性的 Release R8 构建通过且不含测试密钥。
+
+**设备检查清单（需用户当次授权安装 Bridge；两个 Provider 由用户在商店里自己点安装）：**
+
+1. 商店页：红色“测试构建”警告；目录卡显示“第 1 版（随 Bridge 内置），签名已验证”；LX、QiShui 显示“未安装 · 商店 x.y”和“下载”按钮；其余插件显示“商店目录中暂无这个插件”，已安装的仍显示原来的打开/调试按钮。
+2. “检查更新”：正式镜像上还没有目录，预期显示“网络检查失败，继续使用现有目录”，测试目录保持可用。
+3. 点 LX“下载”：进度、核对，然后：
+   - 若 Bridge 尚未获“安装未知应用”授权：卡片显示“去允许安装”；跳到系统设置允许后返回，应自动继续；不允许则不再弹出。
+   - 出现系统（ColorOS）安装确认：取消一次 → 卡片显示“已取消”，再点下载应直接复用已校验文件（不重新下载）。
+   - 再次确认安装 → “已安装 1.2.1，并核对了版本与签名”和 LSPosed 提示；卡片变为已安装并出现“调试”按钮。
+4. 在安装确认界面按返回或切走后回到商店：应显示“等待你确认”，“打开安装确认”能重新打开，“取消”能结束。
+5. （可选）点 QiShui 下载、在安装确认出现时从最近任务划掉 Bridge，再打开商店：应显示“安装过程被中断，可以重试”，不会自动再弹第二个安装。
+6. 后台提醒开关：打开时请求通知权限（Android 13+）；拒绝后开关保持关闭。由于测试目录里没有本机已安装的旧版本，这一步不会产生更新通知，只验证开关与权限。
+7. 测试结束后，LX/QiShui 插件是否卸载由用户决定（未在 LSPosed 启用时不会影响任何播放器）。
+
+**用户设备确认（2026-11-14，PJZ110 `f05be72a`，候选 `18645c6b…`，agent 经当次授权 `adb install -r`）：第 1–6 项全部通过。** 即：测试构建警告与内置目录显示正确；正式镜像无目录时显示网络失败且测试目录仍可用；LX 的下载、校验、“安装未知应用”授权往返、ColorOS 安装确认中取消后复用已校验文件、确认安装后回读版本与签名均通过；退出确认后可重新打开或取消；进程被划掉后显示中断且未再次发起安装；提醒开关的通知权限申请与拒绝处理正确。
+
+仍未覆盖：后台提醒的实际调度与通知显示（测试目录中没有本机旧版本可提醒）；签名冲突、空间不足、系统拦截等失败分支；正式目录（`store-catalog` 分支、正式密钥签名、jsDelivr/raw 镜像）的端到端流程；其他 ColorOS 型号与 Android 版本。
+
+### 14.9 商店正式名称与 LSPosed 启用状态提醒（2026-11-14，本地，未提交）
+
+分支：Bridge `feat/m3-store-names`（基于 `60679b1`），Providers `feat/m3-module-status`（基于 `358d9aa`）。
+
+**正式名称（用户要求）：** 商店卡片、提示和更新通知改用“<播放器正式名> Provider”，中英文分开（例如 洛雪音乐 Provider / LX Music Provider、光锥音乐 Provider / ConePlayer Provider、汽水音乐 Provider / Soda Music Provider）；播放器名本身是英文的中英一致（Salt Player、Poweramp、Metrolist、Apple Music、Spotify、Readify）。矩阵里的 `displayName` 短名不变（发布资产文件名依赖它）；各插件自身的应用名（桌面/LSPosed 中显示）未改，需要时随下一轮 Provider 发版统一。`StoreNamesTest` 检查 15 项都有不重复的正式名且中英文都以“ Provider”结尾。
+
+**启用状态提醒（用户要求：只作引导提醒，不证明 Hook 已在播放器中运行）：**
+
+- Providers 新增 `provider-module-status` 库（只依赖 libxposed service，不进入 Hook 路径）。它把 `ModuleStatusProvider` 合并进每个模块的 Manifest，authority 为 `<applicationId>.cll.module-status`，`call("status")` 返回协议 1：`connected`（LSPosed 是否已把服务交给本模块 App 进程）、`apiVersion`，以及 `scope`（仅 connected 时返回）。调用方必须与本模块签名相同（`checkSignatures(callingUid, myUid)`），否则抛 SecurityException。模块进程刚被这次调用拉起时，最多等 1.5 秒服务到达；只读，不改配置，不记录调用方或 scope。
+  - 12 个用 `settings102` 的专用插件：`ProviderModuleApplication` 把已有的服务回调同时转给 `ModuleStatus`（libxposed 只允许一个 listener）。
+  - 通用播放器 Provider、Readify：在各自 Application.onCreate 调用 `ModuleStatus.register()`。
+  - 动态封面不是 LSPosed 模块，不适用。
+  - **这些插件都需要发新版本**，用户才会在商店里看到状态；旧版本显示“这个版本的插件还不支持”。
+- Bridge：对已安装的 LSPosed 插件逐个查询（每次回到管理页都重查，从 LSPosed 管理器返回即可看到变化），卡片显示：已启用 / 未启用（引导去 LSPosed 启用并勾选播放器）/ 已启用但作用域里没有勾选本机已安装的支持播放器（只对专用插件，且本机装了支持的播放器时）/ 插件版本不支持或被系统限制 / 签名与 Bridge 不同 / 无法检测。查不到时从不显示为“未启用”。
+- **依据与假设：** 判定依赖“LSPosed 只为已启用模块的 App 进程连接服务”。这一点来自 libxposed 的服务模型，**尚未在设备上用“关闭模块”验证**，见下方清单。ColorOS 的“关联启动”限制可能阻止 Bridge 拉起插件进程，此时显示“被系统限制”。
+
+**本地验证：** Providers `testV5Matrix assembleV5MatrixDebug` 通过（新模块 4 项测试），14 个插件 Debug APK 的合并 Manifest 都含该 provider；Bridge 1019 tests / 0 fail / 6 skip（新增 `ProviderEnablementTest` 3 项、`StoreNamesTest` 2 项），Debug 与 R8 通过。
+
+**设备测试候选：** `artifacts/m3-enablement-20261114/`
+- `Bridge-M3-enablement-test-debug.apk`（`77e4145c…`）：带 §14.8 测试目录信任，Debug 证书 `5a6fd43f…`。
+- `Salt-Provider-enablement-debug.apk`（`5460d06a…`）：Salt Provider 1.1.2（versionCode 8）Debug 构建，同一 Debug 证书，含状态接口。只有同签名才能查询，所以真机验证用 Debug 版 Salt；若设备上现有 Salt 是正式签名，覆盖安装会被系统拒绝，**不得为此卸载或清数据**。
+
+**设备检查清单：**
+1. 商店卡片名称为正式中文名（切到英文后为英文名）。
+2. Salt（Debug 新版）在 LSPosed 中**已启用**并勾选 Salt Player：卡片显示“已在 LSPosed 中启用”。
+3. 在 LSPosed 中**取消启用** Salt 模块后返回管理页：显示“未在 LSPosed 中启用…”。（验证“未启用时服务不连接”这一假设。注意：Salt 插件进程若仍在运行，可能还持有之前的连接；若显示仍为已启用，请在系统设置里“强行停止”Salt Provider 后再回到管理页，并告诉我是哪种情况。）
+4. 重新启用但取消勾选 Salt Player（本机已装 Salt Player 时）：显示“作用域里没有勾选本机已安装的播放器”。之后恢复原设置。
+5. 商店装的 LX 1.2.1（v4.5.4 正式版，无接口）：显示“这个版本的插件还不支持…”。
+
+**§14.9 设备结果（2026-11-14，PJZ110，用户实测）：**
+- 冷启动时卡片一直显示“无法检测”：ColorOS 不允许 Bridge 拉起插件进程（关联启动限制）。先打开插件调试页再返回后，显示“已启用”。
+- 在 LSPosed 中禁用 Salt Provider 后，只要插件进程还在，就仍显示“已启用”；**强行停止**插件后才显示“未启用”。说明 LSPosed 只在插件进程启动时连接服务，不会断开正在运行的进程。
+- 结论：插件自报只能作为没有 Root 时的退路。用户不满意这个效果，决定改用 Root 读取（见 §14.10）。
+
+### 14.10 Root 只读 LSPosed 状态、首页 Root 状态与“去 LSPosed”跳转（2026-11-14，本地，未提交）
+
+**用户决定：**
+- Bridge 申请 Root，只用来**读取** LSPosed 中各插件的启用状态与作用域；首页显示 Root 状态；以后做进引导教程（M5）。
+- 不自动启用插件、不写 LSPosed 配置。曾讨论过“安装后用 Root 默认打开 LSP 开关”，因有绕过 LSPosed 确认、改坏配置、依赖内部格式的风险，已放弃。
+- 改为提供跳转按钮，直接打开 LSPosed 管理器中对应模块的详情页，由用户自己一步打开开关。
+
+**新边界（取代“Bridge 不使用 Root”）：**
+- Root 只在普通 App 进程（`management/root`）中使用，且只做两件事：用 `su -c cat` 把 LSPosed 的配置文件复制进 Bridge 私有缓存读取，以及启动 LSPosed 管理器。
+- 不运行 LSPosed 自带的命令行工具，不打开原文件写入，不改任何启用状态或作用域。
+- 架构守卫新增 `ProcessBuilder("su"`，它只能出现在 management 包内。
+
+**r3 设备结果与改道（2026-11-14）：**
+- r3 按 JingMatrix/Vector 源码去找 `cli`，设备上显示“没有找到 LSPosed 命令行工具”。
+- 经用户授权在设备上只读检查：装的是 lsposed.zip 一支的 **LSPosed v2.2.1 (7941)**，模块目录 `zygisk_lsposed`，作者 “LSPosed Developers”，自带的工具叫 `lspctl`。它的帮助里写明“不是稳定的控制协议……不要基于它构建 App 或无人值守的集成”，所以**用户决定不用自带工具，改为读取本地配置文件**。
+- 用户授权的检查中，把 `modules_config.db`（含 WAL）复制到电脑上，只看了表结构和我们插件的行，看完即删除。该版本的表结构：
+  - `modules(module_pkg_name, apk_path)`
+  - `modules_state(module_pkg_name, user_id, enabled, scope_request_blocked)`
+  - `scope(module_pkg_name, app_pkg_name, user_id)`
+  - 数据库为 WAL 模式，设备上没有 `sqlite3`。
+- 另外拉取了 `manager.apk`、`daemon.apk`，但字符串已混淆，看不出启动方式；设备上的临时副本已删除。
+- 跳转写法在设备上执行成功（系统接受，没有报错）：`am start -n com.android.shell/.BugreportWarningActivity -c org.lsposed.manager.LAUNCH_MANAGER -d module://<pkg>:<user>`。打开的是主页还是模块页，待用户确认。
+
+**实现（r4）：**
+- `RootAccess`：只有用户点“授权 Root”时才执行 `su -c id -u`，可能触发 Magisk/KernelSU/APatch 弹窗。之后每次回到管理页静默复查已授权状态，不主动弹窗。状态：未请求 / 已授权 / 被拒绝或超时 / 未检测到 su。stderr 一律丢弃。
+- `LsposedConfig`：
+  - 先用 `su -c cat` 复制 `/data/adb/lspd/config/modules_config.db-wal`，再复制主文件（单个文件最大 32 MiB），都放进 `cacheDir/lspd-read`。
+  - 用 Android SQLite 打开这份私有副本（以读写方式打开，好让 SQLite 回放 WAL）；按表结构识别两种布局：2.2.x 的 `modules_state` 和 1.x/Vector 的 `modules.mid/enabled`。
+  - 只用参数化查询读取被问到的我们插件、当前 Android 用户的行；读完立即删除整个副本目录。
+  - 在 LSPosed 中登记过但没有状态行时，视为“未启用”；没登记时视为“未知”。布局不认识时不猜测。
+- 商店：已授权 Root 且读到配置时，以 LSPosed 配置为准，禁用或启用后回到管理页立即反映；否则退回 §14.9 的插件自报。“未启用”“作用域没勾选”“无法检测”的卡片有“去 LSPosed 启用 / 去 LSPosed 勾选播放器”按钮。跳转时先尝试独立安装的管理器 App（不需要 root），否则用上面验证过的 root 写法；打不开时提示手动打开 LSPosed 并找到该模块。
+- 首页状态卡有“Root 权限”一行和“授权 Root”按钮；读不到配置时说明原因，并已改用插件自报。
+
+**M5 引导教程要求（记录，未实现）：** 引导中加入一步“授权 Root（只读查看 LSPosed 状态）”，说明用途和“不会修改任何设置”。拒绝也不影响其他步骤，之后可从首页再授权。插件安装完成后，引导到“去 LSPosed 启用”。
+
+**本地验证：** Bridge 1023 tests / 0 fail / 6 skip（`LsposedConfigTest` 4 项：识别两种布局并拒绝未知布局、状态行到启用状态的映射、`id -u` 判定），Debug 与 R8 通过。Android SQLite 读取副本这一步只能在设备上验证。
+
+**设备候选：** `artifacts/m3-enablement-20261114/Bridge-M3-root-db-test-debug-r4.apk`（`bb0de514…`，含 §14.8 测试目录信任）。
+
+**设备检查清单：**
+1. 首页：r3 已授权过 Root，应直接显示“已授权”。若显示“没能读取 LSPosed 配置”，告诉我。
+2. 商店：Salt 卡片显示“已在 LSPosed 中启用”。在 LSPosed 中禁用 Salt Provider 后直接回到 Bridge，**不强行停止**，应立刻显示“未在 LSPosed 中启用”。
+3. 点“去 LSPosed 启用”：应打开 LSPosed 管理器并停在 Salt Provider 模块页（或其作用域页）；打开开关后返回，应显示“已启用”。
+4. 取消勾选 Salt Player：显示“作用域里没有勾选…”，按钮为“去 LSPosed 勾选播放器”。之后恢复原设置。
+5. LX（正式签名、v4.5.4 无状态接口）：有 Root 时也应正确显示启用与否，说明不再依赖插件版本。
+
+**r4 设备结果（2026-11-14，用户实测）：**
+- Root 显示已授权。从 LSPosed 返回后，LX 正确显示启用状态，说明 Root 读取配置可行。
+- 但一次从 LSPosed 返回时，静默复查 Root 失败，商店退回插件自报，显示“无法检测”；重新点授权后正常。具体原因（超时还是拒绝）没有日志，unknown。
+- 跳转打开的是 LSPosed **主页**，没有定位到模块页；这一支 2.2.1 对 `module://` 链接的处理方式未知。
+
+**r5（本地）：** 静默复查最多试 3 次（每次 10 秒，间隔 1 秒）；如果本页面之前已授权、且失败全是超时，不降级。刷新任务串行，避免回到页面与操作完成时同时发起两个 su。跳转成功后提示“在‘模块’里找到 X，打开开关后返回”。1023 tests / 0 fail / 6 skip，R8 通过；候选 `Bridge-M3-root-db-test-debug-r5.apk`（`8290aa2a…`，含新任务启动管理器）。模块页定位需要在设备上再做几次 `am start` 试验。
+
+**跳转结论（2026-11-14，用户在 PJZ110 上实测）：**
+- 设备上另外装有独立的管理器 App `org.lsposed.manager`。它的 `MainActivity` 对外开放，但 Manifest 里没有声明任何可接收的链接。
+- 用户执行 `am start -n org.lsposed.manager/.ui.activity.MainActivity -d module://<pkg>:0 -f 0x10008000`（在新任务里启动）后，仍然停在**主页**。所以 2.2.1 不支持从外部定位到某个模块页。
+- r4 用的是桌面启动的 Intent，管理器已在后台时只会被调到前台。r5 改为在新任务里启动它（仍附带 `module://` 链接，以后的版本如果支持就会生效）。打开后一律提示“在‘模块’里找到 X，打开开关后返回”。没有独立管理器时，用 root 的寄生方式打开，结果同样是主页。
+- **r5 设备结果：** 用户从 LSPosed 模块页右下角 ▷ 进入 Bridge 后点跳转，看到的仍是之前那一页（Bridge 的模块页），不是主页。原因：管理器进程还活着，会恢复最后显示的页面。
+- **r6（用户提议）：** 已授权 Root 时，先 `su -c am force-stop org.lsposed.manager`，再用 `NEW_TASK | MULTIPLE_TASK` 在独立任务里打开。这只停掉管理器的界面进程，框架守护进程独立运行、不受影响；Bridge 页面留在原来的任务里，按返回仍能回到 Bridge。没有 Root 时保持 r5 的做法。候选 `Bridge-M3-root-db-test-debug-r6.apk`（`08a36d8d…`），1023 tests / 0 fail / 6 skip，R8 通过。
+- **r6 设备结果（用户实测）：** 第 1–3 项全部通过：从 ▷ 进入后跳转打开的是 LSPosed 主页；打开开关并返回后，卡片立刻更新；Root 一直显示“已授权”。
+
+### 14.11 商店列表显示各插件图标（2026-11-14，本地，未提交）
+
+- 用户要求在商店列表中显示各插件的图标。图标沿用插件自身的启动图标，也就是目标播放器的官方图标（AGENTS“模块图标使用目标播放器官方 launcher 资源”）。
+- 做法：从 Providers 仓库各模块的 `res` 复制出启动图标，改名为 `store_icon_<id>`（及 `_fg` / `_bg` / `_bmp`），放进 Bridge 的 `res/drawable*` 和 `values/store_icons.xml`。只复制前景和背景，不复制单色层。Cone 和 Poweramp 的位图只复制 xxxhdpi 一档；通用 Provider 用它清单里的 `provider_launcher` 位图。每个 XML 都注明了来源模块。
+- 不联网取图，也不读已安装插件的图标，所以没安装的插件同样有图标。代价是插件以后改图标时，Bridge 要跟着重新复制一次。
+- `DirectoryEntry` 和 `StoreItem` 新增了 `iconRes`；卡片标题左边显示 40dp 的图标。自适应图标通过平台 Drawable 绘制，套用设备的图标形状。Readify 插件本身用的是系统播放图标，所以商店里显示一个通用的播放图标。
+- 本地验证：Bridge 1024 tests / 0 fail / 6 skip（`StoreNamesTest` 新增一项：只有 Readify 没有专属图标，其余各不相同），Debug 与 R8 通过；已确认 APK 内含 32 个 `store_icon` 资源。
+- 设备候选：`artifacts/m3-enablement-20261114/Bridge-M3-store-icons-test-debug-r7.apk`（`61ef122d…`，含 §14.8 测试目录信任）。已经当次授权 adb 安装，**用户设备确认没有问题**（图标一致、形状、清晰度、深色模式）。
+
+### 14.12 首个正式商店发布准备：洛雪音乐 Provider 1.2.2（2026-11-14，本地，未提交、未发布）
+
+**选择：** 用户同意以 LX 首发。其余 13 个 Provider 跟随各自下一次版本更新发布；有 Root 时启用状态不依赖插件版本。
+
+**Providers 分支 `release/lx-store-1.2.2` = `270c540`（已提交，未推送）：**
+- 从 `d534e5c` 开出，cherry-pick 模块状态接口为 `be58f3b`。所以相对 `main` 包含 `215b0c9`（M1 诊断与启动失败放行）、`d534e5c`（目录工具与发布 workflow）、`be58f3b`。**不含 `358d9aa`**：它把动态封面改为商店分发，只能在 schema 2 的 Bridge 5.0 发布前进入 `main`，否则 4.x 套件发布校验会失败。
+- `270c540`：LX 升到 1.2.2 (5)（`player-lx/build.gradle.kts` 与矩阵同步），新增 `release/notes/player-lx/1.2.2.md`（中英双语），更新 `scripts/catalog/README.zh-CN.md` 的 GitHub 就绪清单。
+- `resolve-release-tag` 对 `player-lx-v1.2.2` 解析为 `ColorOS-Live-Lyrics-Provider-LX-v1.2.2.apk`、`:player-lx:assembleRelease`。
+
+**本地验证：** `testV5Matrix assembleV5MatrixDebug :player-lx:minifyReleaseWithR8` 通过；目录工具测试 17/17；`validate-v5-release-contract.ps1` 通过。正式签名 APK 和目录生成只能在 workflow 中做（本地不碰正式签名与目录私钥）。Bridge 侧仓库名、分支、两把公钥与 Providers 一致（静态确认）。
+
+**GitHub 只读核对发现的阻塞（需用户在 GitHub 设置）：**
+1. 仓库级没有 `SIGNING_KEY` / `KEY_STORE_PASSWORD` / `ALIAS` / `KEY_PASSWORD`，构建任务会失败。
+2. Environment `provider-catalog` 没有必需审核人（D2 要求审批）。
+3. `provider-catalog` 启用了自定义部署规则但一条也没有，tag 触发的晋级会被拒绝；需允许 tag `*-v*`。
+
+**发布步骤（每步需用户当次授权）：** 推送分支并开 PR 合入 `main` → 在合入后的 `main` 提交上打 `player-lx-v1.2.2` 并推送 → workflow 构建、建 Release、复核下载 → 审批晋级，生成 `store-catalog` 的 revision 1。
+
+**设备验收（发布后）：** 用不含测试目录的 Bridge 构建刷新正式目录，下载安装 LX 1.2.2，查看启用状态；在洛雪中播放、切歌确认歌词正常。M1 的启动改动只在 Salt 上验证过，LX 与 Release/R8 组合尚无设备证据。
+
+**发布结果（2026-11-14，用户授权推送、合并、打 tag，并在 GitHub 上审批晋级）：**
+- PR #10 合入 `main`（`e277e2a`），打 `player-lx-v1.2.2`。用户按提示在 GitHub 补了 4 个签名 secret、Environment 审核人与 tag 规则。
+- 第 1 次运行：构建与正式签名通过，“Check APK identity”报 `no signer certificate in apksigner output`。PR #11（`d9b240f`）放宽解析并在失败时列出验证行；第 2 次运行显示原因：运行器的 **build-tools 37.0.0 apksigner 不再打印 `Signer #N certificate SHA-256 digest` 行**。PR #12（`ba6c1cb`）同时读 stdout/stderr，缺证书行时依次退回更旧的 apksigner，并在 workflow 中安装 build-tools 36.1.0。每次修复前确认该 tag 尚无 Release，再移动 tag。
+- 第 3 次运行在“Matrix tests”因依赖解析失败（Maven Central 上存在的 `jsr305:3.0.2` 等报 Could not find），判断为临时问题，同一提交重跑失败任务后通过。
+- **已发布：** Release `player-lx-v1.2.2`，附件 `ColorOS-Live-Lyrics-Provider-LX-v1.2.2.apk`（160090 字节，SHA-256 `1219a197…501f5`）与 `.sha256`；本地复核包名、1.2.2 (5)、minSdk 27、唯一签名者 `ff38544b…`。
+- **目录：** `store-catalog` 分支 `35a1909`，revision 1，`cll-catalog-2026a` 签名，1 个条目（LX，`sourceCommit` `ba6c1cb`），`verify-catalog.mjs` 验签通过；git、raw.githubusercontent.com、jsDelivr 三处字节相同。
+- **设备候选：** `artifacts/m3-enablement-20261114/Bridge-M3-prod-catalog-debug-r8.apk`（`0f0d9caf…`，基于 `bf6837c`；`STORE_TEST_TRUST=false`、不内置目录，只信任正式密钥）。已经当次授权 adb 安装，**用户设备确认全部通过**（PJZ110）：刷新正式目录、LX 显示 1.2.1 → 1.2.2 可更新、下载校验与 ColorOS 安装、启用状态（Root 路径）、在洛雪中播放与切歌歌词正常。M3 的正式目录端到端链路由此闭合；LX 也是 M1 启动改动在 Salt 之外、Release/R8 下的第一份设备证据。
+
+### 14.13 M4 第一刀：插件自己申请作用域（管理协议 v1，2026-11-15，本地，未提交）
+
+**范围：** 共用 `provider-settings-api102` 的 12 个专用插件（Salt、Cone、酷我、洛雪、Poweramp、Metrolist、酷狗、QQ、网易云、Apple、Spotify、汽水）。Readify 用自己的 Application，留到下一刀；通用 Provider 与动态封面不进入此流程（§7.0）。`staticScope` 保持 `true`（§14.0 设备证据：声明内宿主可发原生请求），矩阵不改。
+
+**Providers `feat/m4-scope-request`（基于 `main` 的 `ba6c1cb`）：**
+- `scope/ScopeRequestProtocol`：协议 v1 的 action 与 extra 名；允许的宿主只取本 APK 内编译的 `META-INF/xposed/scope.list`（构建约定已校验它等于矩阵）；请求 id 8–64 位，宿主最多 16 个，不得重复，必须全部在列表内，否则整体判无效（不截断）；`android`、`system`、SystemUI 永不允许。
+- `scope/ScopeRequestController`：M0 探针控制器的生产版。先读 scope，只为缺少的宿主调 `requestScope`，结果一律以回调后的重新读取为准；保留已有 scope，从不删除。结果：已包含 / 已批准 / 部分批准 / 未批准（拒绝或不再询问，API 102 无法区分）/ 待定（120 秒无回应）/ 服务未连接（10 秒）/ 失败 / 请求无效。“已批准但回读没有”判失败。迟到回调忽略。
+- `scope/ScopeRequestActivity`：导出的入口（随库合并进 12 个插件的清单）。只接受 `startActivityForResult` 且调用方是本插件或签名一致的应用（Bridge）；页面只说明“请在 LSPosed 通知中选择允许”，不自绘允许/拒绝。重建或按返回时回复“待定”。
+- 插件自己的调试页加了“申请播放器作用域（LSPosed 原生请求）”按钮，不装 Bridge 也能用。
+
+**Bridge `feat/m4-scope-request`（基于 `32f9b65`）：**
+- `ScopeRequestContract` 镜像协议字符串；`parseScopeReply` 只信任同一请求 id、协议 v1、且只含所问宿主的回复，否则视为未知。
+- 商店卡片在“已启用但作用域没勾选本机播放器”时多一个“申请播放器作用域”按钮，只传本机已安装的受支持播放器；插件旧版本没有入口时提示更新或去 LSPosed 勾选。回复只用来提示，卡片随后重新读取 LSPosed 状态。
+
+**本地验证：** Providers `testV5Matrix assembleV5MatrixDebug :player-salt:minifyReleaseWithR8` 通过，`ScopeRequestControllerTest` 7/7；Salt Debug APK 内含 `ScopeRequestActivity`（exported）与 `scope.list`（`com.salt.music`）。Bridge 1028 tests / 0 fail / 6 skip（`ScopeRequestContractTest` 4 项，含跨仓库常量与状态枚举比对），Debug 与 R8 通过。
+
+**设备候选（`artifacts/m4-scope-20261115/`，均为 debug 签名，与设备上现有 Salt、Bridge 同签名）：** `Bridge-M4-scope-debug-r1.apk`（`8f91d0e7…`），`Salt-M4-scope-debug-r1.apk`（`147288c6…`，1.1.2 / 8）。待授权安装后验证：在 LSPosed 中取消 Salt Provider 对 Salt Player 的勾选 → 商店卡片出现“申请播放器作用域” → 点按出现 LSPosed 原生“作用域请求”通知 → 允许后回到 Bridge 显示已包含且卡片恢复“已启用” → 再取消勾选并选“拒绝”显示未获批准 → 插件调试页按钮在已勾选时显示“已包含”。正式签名插件与 debug Bridge 签名不同，会被插件拒绝，这是预期。
+
+**r1 设备结果（用户实测）：** 第 1、2、4 项通过：卡片出现按钮，点按后出现 LSPosed 原生“作用域请求”通知，允许后卡片恢复“已启用”；插件调试页在已勾选时提示已包含。第 3 项（拒绝）：插件页自动关闭，卡片仍为作用域未勾选，但**没有出现任何提示**。原因在 Bridge：提示由 `LaunchedEffect(message)` 弹出，代码先清空 `message` 再弹，清空改变了键，提示随即被取消（从插件页返回时界面在重组，所以立刻消失；第 2 项的提示很可能也没显示，只是卡片状态对了）。r2 改为提示消失后再清空。1028 tests / 0 fail；候选 `Bridge-M4-scope-debug-r2.apk`（`effc7d47…`），Salt 不变。 **r2 设备结果：用户确认允许与拒绝两条路径的提示与卡片状态均正确。** 第一刀（12 个共用设置库的插件 + Bridge 发起）设备验证完成，仅 Salt 实测。
+
+### 14.14 M4 第二刀：Readify 接入，协议代码独立成库（2026-11-15，本地，未提交）
+
+- 作用域请求代码从 `provider-settings-api102` 移到新库 **`provider-scope-request`**（包 `io.github.andrealtb.coloroslyrics.provider.scoperequest`），并入 `testV5Matrix`。服务改从 `ModuleStatus.awaitService` 取得：共用 Application 已把服务转给它，Readify 的 `ReadifyApplication` 也已调用 `ModuleStatus.register()`，所以两边用同一份实现，Readify 不依赖共用设置库，保持独立。
+- `provider-settings-api102` 与 `player-readify` 依赖该库；Readify 的说明页加了“Request player scope (LSPosed prompt)”按钮。
+- Bridge：`offersScopeRequest` 不再排除 Readify（全部专用 Provider）；跨仓库常量测试改读新路径。
+- **本地验证：** Providers `testV5Matrix assembleV5MatrixDebug :player-salt:minifyReleaseWithR8` 通过，`ScopeRequestControllerTest` 7/7；13 个专用模块的 Debug APK 都含 `ScopeRequestActivity`，通用 Provider 与动态封面不含。Bridge 测试与 Debug 通过，`ScopeRequestContractTest` 4 项实际运行。
+- **设备覆盖缺口：** 设备上的 Readify Provider 是正式签名，debug 包无法覆盖安装（按边界不卸载），且设备未安装 Readify（`com.readin.app`），所以 **Readify 路径只有本地证据**。Salt 因服务来源改动需回归：候选 `Salt-M4-scope-debug-r2.apk`（`0cf39501…`）、`Bridge-M4-scope-debug-r3.apk`（`cbc8f16c…`）。
+- **r3 设备结果（用户实测）：** 允许后常见其他插件卡片变为“无法检测启用状态：这个版本的插件还不支持”，首页 Root 行显示“已授权，但没能读取 LSPosed 配置”；点“重新检查”无效，退出 Bridge 重进才恢复。原因（静态分析，无日志）：申请结果回调里调用了一次 `refreshEnablement()`，随后 `onResume` 又调用一次；协程取消停不住阻塞中的读取，两次 `LsposedConfig.read` 同时清空、复制同一个 `cacheDir/lspd-read`，读取失败。“重进才好”推测是 SQLite 在本进程保留了被删文件的 WAL 共享内存状态（未证实）。r4：读取加进程内锁、每次用独立子目录；回调不再自行刷新，交给 `onResume`。候选 `Bridge-M4-scope-debug-r4.apk`（`363ae56b…`），Salt 不变。 **r4 设备结果：用户确认多次允许后 Root 读取与其他卡片均保持正常，拒绝与插件页按钮回归通过。**
+
+### 14.15 M4 收口：接线守卫与现状（2026-11-15，本地，未提交）
+
+- 新增 `ScopeRequestWiringTest`（`provider-scope-request`，并入 `testV5Matrix`）：从矩阵读出 14 个 Provider，凡 `processPolicy.kind` 不是 `system-server-bound-list` 的专用模块必须依赖 `provider-settings-api102` 或 `provider-scope-request`（即带入口），通用 Provider 必须都不依赖。新增专用模块忘接、通用模块误接都会让矩阵测试失败。本地 8/8 通过。
+- **未做、且建议不做：** “安装后自动接续申请作用域”（§7.2 第 2–3 步）。刚安装的插件尚未在 LSPosed 中启用，服务不会连上，立即申请只会得到“服务未连接”；启用必须由用户在 LSPosed 中完成（§14.10 决定不自动启用）。现有路径已覆盖：安装 → 卡片提示“去 LSPosed 启用” → 启用后若作用域缺失，卡片出现“申请播放器作用域”。M5 引导中按这个顺序串起来即可。
+- **矩阵元数据：** §7.4 设想的 `scopePolicy` / `managementProtocol` 字段未加入矩阵。接入与否已由上面的守卫按 `processPolicy.kind` 推出，`staticScope` 维持矩阵全局 `true`；如以后某个专用模块需要不同策略，再加字段。
+- **M4 现状：** 13 个专用 Provider 本地全部带入口；设备只验证了 Salt（允许、拒绝、插件页按钮、Root 读取并发修复）。正式生效需要各插件发新版；在此之前，已发布的旧版插件在商店里会提示“请更新或去 LSPosed 勾选”。M4 门禁“每个模块均以自己的服务授权；无跨模块代设；拒绝/部分批准/服务死亡可恢复”：机制满足；部分批准只有单元测试证据（设备上只有单宿主的 Salt）。
+
+### 14.16 M5 第一刀：设置向导（G1–G6）接真实状态（2026-11-15，本地，未提交）
+
+**分支：** Bridge `feat/m5-setup`（基于 `e139c74`）。技能：已加载 material-3（只用 Compose 分支；固定浅色不变）。
+
+**做法：**
+- `onboarding/SetupModel`（纯 Kotlin）：六步 BRIDGE、ROOT（可选）、PLAYERS、INSTALL、ENABLE、PLAYBACK（可选）。每一步的状态都由当前事实**推导**：模块回应与 SystemUI 构建、Root 状态、已安装的播放器与插件、商店卡片上的启用状态。状态分已完成 / 需要处理 / 正在检查 / 等待前面的步骤 / 已跳过 / 本机不需要。从 LSPosed、安装器或插件返回不会自动打勾，只有重新读取才会变化。
+- 只持久化用户自己的选择：所选播放器、跳过的可选步骤、“我已看到歌词”的时间（`onboarding/SetupStore`，独立 SharedPreferences `management_setup`，含 `flowRevision`=1；不进 LyricUiConfig）。
+- 4.x 升级用户：没有保存过选择时，把“已装插件所对应、且本机已装的播放器”视为已选，不从第一步重来（§5.2）。已存的选择若播放器已卸载则忽略。
+- 第 6 步明确是“用户确认”，文案说明 Bridge 不据此判定链路生效（§5.2 引导完成度与运行健康分开）。
+- 页面 `onboarding/SetupScreen`：CenterAlignedTopAppBar + 返回（含系统返回）、总进度、每步编号/勾选徽标 + 状态文字（不只靠颜色）、说明、FilterChip 选择播放器、动作按钮（打开 LSPosed、重新检查、授权 Root、去商店处理、我已看到歌词），可选步骤可“跳过/撤销跳过”。页面只把动作交给 Activity，自身不发起外部操作；重组不会重复执行。
+- 首页：去掉“样例数据”横幅和样例的“功能未生效”卡，“还有 N 步设置未完成”改为真实计数，点“继续设置”打开向导。`SampleData` 与两条样例字符串删除。
+
+**本地验证：** Bridge 1033 tests / 0 fail / 6 skip（`SetupModelTest` 5 项：新机按序、选择后安装与启用状态、4.x 升级不重来、Bridge/Root/可选步骤、已卸载播放器的旧选择），Debug 与 R8 通过。
+
+**MD3 自查（源码层面，未做设备审查）：** 颜色全部取 `MaterialTheme.colorScheme` 角色；字级取 typography 角色；间距用 `Spacing` tokens；状态同时有文字与图标；按钮为官方 Button/OutlinedButton/TextButton，触摸目标为组件默认 48dp；宽屏限制 840dp。待设备检查：大字体、TalkBack 朗读顺序、横屏。
+
+**设备候选：** `artifacts/m5-setup-20261115/Bridge-M5-setup-debug-r1.apk`（`8b30de29…`，debug，无测试目录）。
+
+**r1 设备结果（用户实测）：** 1–6 步状态与跳过/撤销/确认均正常。问题：① 一个播放器只显示“音乐”，是荣耀版网易云 `com.hihonor.cloudmusic`；两个“光锥音乐”分别是普通版与 `.gp` 版，仅凭应用名分不清。② “确认选择”没有任何反馈。③ 全部完成后首页没有入口再进入向导；点“重新检查”时首页会闪出“还有 1 步未完成”（检查中的步骤被计入）。r2：选项第二行显示包名；确认后提示“已保存：N 个播放器”，选择未变时按钮不可点；未完成计数只算“需要处理”；全部完成时首页显示“设置向导的步骤都已处理”卡片和“查看设置向导”。`SetupModelTest` 6/6，候选 `Bridge-M5-setup-debug-r2.apk`（`1391f029…`）。
+
+**r2 设备结果：** 用户确认功能全部通过。反馈“首页有点空”，给出参考截图（卡片化、信息化、悬浮 dock）。
+
+**r3 首页仪表盘与悬浮 dock：**
+- `HomeDashboard`：大标题 + 副标题；“歌词链路”主卡（状态徽标：运行中 / 检查中 / 旧版本 / 无回应，标题：已就绪 / 需要重启 SystemUI / Bridge 未运行，下方 SystemUI 构建与设置推送两行，右侧 72dp 圆形“重新检查”按钮）；有未完成步骤时显示琥珀色“继续设置”卡（进度条）；2×2 信息块：插件（已装数，需处理数或已启用数）、更新（可用数）、Root（状态，未授权时点按授权）、设置向导（x/6）。每块点按进入对应位置。Root 已授权但读不到配置时追加说明卡。所有数字都来自实时读取。
+- `FloatingDock`：圆角胶囊悬浮在内容上方，四个顶级入口（图标 + 文字），选中项用 secondaryContainer 胶囊；宽屏（≥600dp）仍用 NavigationRail。各页底部留出 dock 空间，提示条显示在 dock 之上。
+- 旧 `HomeContent` / `ActionCard` / `HomeState` 删除；“设置全部完成后的入口”改由“设置向导”信息块常驻提供。
+- 只用官方 Material 3 组件（Card、FilledIconButton、Surface、LinearProgressIndicator），没有引入实验性 floating toolbar API；颜色、字级、形状取主题角色（卡片 `shapes.extraLarge`）。
+- 本地：Bridge 1036 tests / 0 fail / 6 skip（新增 `HomeDashboardTest` 2 项），Debug 与 R8 通过。候选 `artifacts/m5-setup-20261115/Bridge-M5-home-debug-r3.apk`（`70c0eaad…`）。外观待用户设备确认。
+- **r3 设备反馈：** dock 不是真正悬浮：各页底部整体留出了 dock 与导航条的空间，内容滚不到 dock 下面，露出一条背景；dock 内按钮只占上半部分，下方留白过多。**r4：** Scaffold 不再吃系统栏 inset，内容铺到屏幕底部、从 dock 下面滚过，只在列表末尾加滚动留白（dock 高度 + 导航条）；顶部单独留状态栏；dock 用 `navigationBarsPadding` 定位；按钮填满 dock 高度并居中，dock 内高 56dp、内边距 6dp。候选 `Bridge-M5-home-debug-r4.apk`（`ac677e22…`）。 **r4 设备结果：用户确认悬浮 dock、内容滚动与居中均通过。**
+
+### 14.17 M5 第二刀：“状态”页（2026-11-15，本地，未提交）
+
+**分支：** Bridge `feat/m5-status`（基于 `6b9be43`）。
+
+**数据来源（不新增通道，不改 SystemUI 侧）：** SystemUI 对 `ACTION_REQUEST_MODULE_STATUS` 的回复本来就包含 C-02 的能力行（`CompatibilityStatus.putStatus`，schema 1），此前 App 只读了构建号与配置修订号。`ModuleStatusQuery.Listener` 增加带完整回复 Bundle 的默认方法（旧调用方不受影响），管理页把能力行解析为 `status/CapabilityRow`。行内时间是 SystemUI 的 `elapsedRealtime`，与 App 同一系统时钟，用来显示“N 秒前记录”。
+
+**页面（`status/StatusScreen`）：**
+- 运行的版本：已安装的 Bridge 构建号、SystemUI 正在运行的构建号（检查中/无回应如实显示），旧版本时提示重启；“重新检查”。
+- 功能状态：7 项（歌词自绘、封面取色、字符上浮、逐行进度、译文进度、翻译按钮、动态封面），每项为图标 + 文字结论（已在设置中关闭 / 最近 60 秒没有记录 / 等待中 / 已退回系统原生效果 / 未生效 / 已执行到某阶段 / 未知）、原因、记录时间。顶部写明这是 SystemUI 内部的决策记录，不等于画面效果；SystemUI 未回复或旧构建不提供时明确说明，不显示空白。
+- 插件：已安装插件及其启用状态（与商店同源），点按进入商店。
+- 诊断：说明短时诊断（60 秒、默认关闭、预览后导出脱敏摘要）的用途，按钮打开现有 `BridgeDebugSettingsActivity`，不在新页重复实现。
+- 只读：本页不修改任何设置。
+
+**本地验证：** Bridge 1039 tests / 0 fail / 6 skip（`CapabilityModelTest` 3 项：结论映射与记录时长、未知功能与时钟倒挂、与 SystemUI 侧 Feature/Outcome/Reason 枚举一一对应且每个原因都有文案），Debug 与 R8 通过。候选 `artifacts/m5-status-20261115/Bridge-M5-status-debug-r1.apk`（`a933c026…`）。设备上的实际行内容待验证。
+
+**r1 设备反馈：** “逐行进度”与“动态封面”时而“已执行到”、时而“等待中”，与实际效果不一致（用户在逐字歌词下看到“等待中”）。原因：SystemUI 对同一功能按多个对象分别记录（每个歌词行、卡片/沉浸两个封面界面和播放器生命周期），快照的结论取“最近一次记录的那个对象”，App 原样显示，所以随最近记录者跳变。逐行进度只用于逐行时间轴的行，逐字歌词的行记作“等待 / 未观测到目标”，实为不适用。**r2（只改 App 侧投影，SystemUI 不变）：** 用回复中已有的 `outcomeSummary`（60 秒内存活对象的结果计数），只要有对象执行到某阶段就显示“已执行到”（取最远阶段），并写“N 处已执行，M 处未执行”；原因只在结论来自最近记录者时显示；逐行进度只剩等待时显示“当前歌词不是逐行时间轴，不使用此项”，名称改为“逐行歌词进度”。`CapabilityModelTest` 6/6，候选 `Bridge-M5-status-debug-r2.apk`（`694a241b…`）。
+
+**r2 设备结果：** 用户确认逐行进度与动态封面显示正常；提出增加“逐字歌词进度”。**r3（改动 SystemUI 侧，仅诊断记录）：** `CompatibilityStatus.Feature` 末尾追加 `WORD_PROGRESS`（不改变已有序号），新增 `wordProgress(owner, drawn, aod)`；`LockscreenLyricsModule` 在两处已有的“当前行是否绘制进度”决定之后调用 `recordWordProgress`：只记录当前行、逐字时间轴、且不是“单字极短整行高亮”的行；记录走既有的无分配写路径，不改变任何绘制判断。结论：已准备（会绘制逐字填充）或等待（息屏低帧率）。App 侧列在“逐行歌词进度”之前，名称“逐字歌词进度”；镜像测试改为按名称集合比对。本地 1043 tests / 0 fail / 6 skip（`CompatibilityStatusTest` 新增 1 项、`CapabilityModelTest` 覆盖新项），Debug 与 R8 通过。**需要重启 SystemUI 后才会出现该行**（旧注入构建不发送）。候选 `Bridge-M5-status-debug-r3.apk`（`993f142f…`）。 **r3 设备结果：用户重启 SystemUI 后确认全部通过（逐字歌词进度显示正确，锁屏逐字效果与以前一致）。**
+
+### 14.18 M5 第三刀：“外观”页（2026-11-15，已提交 `a8b177f`，未推送）
+
+**分支：** Bridge `feat/m5-appearance`（基于 `0d883d1`，即 §14.17 的提交）。
+
+**做法（U-04：旧页保留，配置单一真值）：** 外观标签从占位卡片改为**只读摘要**，不在 Compose 里编辑任何外观配置。修改仍在原 `LyricUiSettingsActivity` 中进行，预览、草稿、保存/放弃、返回确认全部沿用旧语义；所以切换底部标签既不会悄悄提交，也不会丢掉修改。
+- 新增 `AppearanceSnapshot`（Java，根包）：`LyricUiConfig`、`LyricUiPreset`、`ArtworkSettingsRepository` 都是包内可见，由它读出**已保存**的配置（不是打开中的草稿）并转成公开的纯值。预设用旧页同一个 `LyricUiPreset.detect`，动态封面状态与旧页“动态封面”行的判断一致（未开启 / 已开启 · 插件名 / 需要检查插件）。
+- 新增 `management/appearance/AppearanceModel`（把快照投影为卡片行，纯函数）与 `AppearanceScreen`。
+- 页面：当前风格预设及说明 + “打开外观设置”；颜色与光晕（歌词颜色色块、光晕颜色或跟随封面、模糊、缩放）；排版（字号、翻译字号、字重、对齐）；动效与刷新（动效档位、刷新上限）；进度与动画（逐行进度、翻译进度、字符上浮）；动态封面；更多设置（播放器翻译、开头信息清理、配置备份与恢复）。前四类卡片打开旧外观页；动态封面、播放器翻译、开头清理、配置备份直接打开各自的旧子页（它们本来就是独立页面，自己保存，不经旧主页草稿）。调试日志入口已在“状态”页，这里不重复。
+- 每次回到管理页（`onResume`）在 IO 线程重新读取快照，所以旧页保存后返回即显示新值。
+- 清理：删掉不再使用的 `PlaceholderContent`、`SampleBanner` 和对应文案 `mgmt_appearance_body`、`mgmt_sample_banner`（样例数据此前已移除）。
+
+**本地验证：** Bridge 1047 tests / 0 fail / 6 skip（新增 `AppearanceSnapshotTest` 4 项：默认配置识别为默认预设、修改值与 `%d` 文案的参数类型、光晕颜色/跟随封面、插件异常时不显示插件名），Debug 与 `:app:minifyReleaseWithR8` 通过。候选 `artifacts/m5-appearance-20261115/Bridge-M5-appearance-debug-r1.apk`（`7bb9337d…`）。
+
+**r1 设备结果：** 用户确认数值一致、保存/放弃后返回刷新正确、各入口正确、底部不被 dock 遮挡。反馈：风格预设、颜色与光晕、排版、动效与刷新、进度与动画五张卡片都打开同一个外观页，入口重复。**r2：** 选择合并而不是拆分（拆分需要让 3,283 行的旧页按分区定位，并与其悬浮预览的滚动逻辑交互，风险高）：合并为一张“歌词外观”卡片，顶部为“风格：<预设>”及说明，下面按原分区分组列出各项，底部只有一个“打开外观设置”按钮，卡片本身不可点按。动态封面与“更多设置”各自通往不同页面，保持不变。`AppearanceGroup` 去掉了不再需要的 target。本地 1047 tests / 0 fail / 6 skip，Debug 与 R8 通过。候选 `Bridge-M5-appearance-debug-r2.apk`（`dc04333e…`）。
+
+**r2 设备结果：** 用户确认 1–5 项通过。反馈：入口既已统一，旧外观页里的播放器翻译、开头信息清理、备份与恢复、动态封面、调试入口应移除；移除顶部状态卡（模块状态 + 语言）和标题栏版本号；语言设置放到外观一级页；整理旧页剩余各项的分类与顺序。**r3：**
+- **旧外观页 `LyricUiSettingsActivity`（3,283 → 3,058 行）：** 删除状态卡及其 SystemUI 状态查询（模块状态已在首页/状态页）、标题栏版本号、动态封面卡、“兼容与屏幕”中的五个子页链接（含备份的 `onActivityResult` 重建）。剩余各项重新分组排序为：风格预设 → 颜色与光晕 → 排版 → **进度与动画**（逐行进度、翻译进度、字符上浮及强度，原在“兼容与屏幕”）→ 动效与刷新 → **屏幕**（保持屏幕点亮及秒数）。控件、绑定、草稿/保存逻辑与配置字段不变，只改变所在卡片和顺序。
+- **入口路由（计划 D3 已确认的“框架模块设置进入同一首页”）：** 旧页去掉调试入口后，原先“旧页 → 调试页 → 管理页”的唯一路径会断，所以 LSPosed 的 `MODULE_SETTINGS` 入口从旧页移到管理首页（`ManagementPreviewActivity` 改为 exported）；旧页保留 exported 供显式调用，不再是框架入口。各子页的 `parentActivityName` 改为管理页。**桌面图标仍未添加**（D3 待决）。
+- **调试页：** 删除 M0 的“管理页原型”按钮；仅 Debug 构建出现的“动态封面 · 调试”页改从这里进入。
+- **外观标签：** 新增“界面语言”卡片（中文 / English，写入原来的语言偏好后重建页面，所有设置页共用）；摘要分组顺序与旧页一致，并新增“屏幕”组（关 / 一直点亮 / N 秒）。
+- **清理：** `SettingsBaseActivity.toggleSettingsLocale` 改为 `SettingsLocaleContext.setEnglish`；删除 13 条不再引用的文案；`BridgeConfigBackupContractTest` 改为断言备份入口在外观标签、不在旧页；架构守卫中“可进入管理页的旧页”清单清空。
+
+本地 1048 tests / 0 fail / 6 skip（`AppearanceSnapshotTest` 5 项：新增分组顺序与屏幕常亮），Debug 与 R8 通过。候选 `Bridge-M5-appearance-debug-r3.apk`（`4e8ca56e…`）。待设备验证：LSPosed 模块设置打开管理首页；旧页新分组与保存/预览照常；语言切换后各页语言一致；调试页的动态封面入口（仅 Debug）。
+
+**r3 设备反馈（4 项）与 r4：**
+1. 英文下 dock 的“Appearance”两端被裁：选中项用整圆胶囊形状，弧线裁到长标签的首尾。改为 20dp 圆角矩形，标签单行不折行。
+2. “重启系统界面”移到首页：旧页底栏只留“应用并保存”（占满宽度），删除旧页的重启请求与回执代码；新增 `SystemUiRestartRequest`（同一广播与回执，回调只触发一次，2.5 秒无回执视为未响应）。首页状态卡加按钮：SystemUI 运行旧构建时为主按钮，其余时候为次要按钮，检查中禁用；点按先弹确认框；收到回执后 5 秒重新检查状态。
+3. 调试页“日志区域”各行贴边：原代码把开关行内边距设为 0。改为沿用通用开关行内边距，行间加分隔线。
+4. 首页插件卡片“1 个需要处理”在插件只是未启用时也显示红字：把“需要处理”拆成两类——已启用但作用域里没有播放器（插件无法工作）仍为红色警告；已安装但未启用（可能是用户的选择）改为灰色信息图标 +“N 个未启用”。卡片提示改为三级（无 / 提示 / 警告）。
+
+本地 1048 tests / 0 fail / 6 skip（`HomeDashboardTest` 改为分别统计），Debug 与 R8 通过。候选 `Bridge-M5-appearance-debug-r4.apk`（`ca269091…`）。 **r4 设备结果：用户确认全部通过。**
+
+### 14.19 M5 收口：MD3 十类审查（2026-11-15，本地，未提交）
+
+**分支：** Bridge `feat/m5-wrapup`（基于 `a8b177f`）。**方法：** 加载 material-3 技能，按 §8.5.2 第 5 步的十类逐项阅读管理 UI 源码（`management/` 下首页、商店、外观、状态、设置向导与主题，约 2,400 行），用脚本计算 WCAG 对比度。只做源码与计算，**未在设备上检查**；按 §8.5.2 不打分。
+
+| 类别 | 结论与证据 | 处理 |
+| --- | --- | --- |
+| 颜色 | **问题（已修）：** `primary` 是浅琥珀 `#F2C14E`，与白色对比度仅 1.68:1。Material 把 `primary` 用作描边按钮/文字按钮的文字、进度条、开关轨道，外观页分组小标题也用它，均不达 4.5:1（文字）或 3:1（组件）。`outline`、`outlineVariant`、`inverseSurface`（Snackbar）、`tertiary`、`surfaceVariant` 未设置，沿用 Material 默认的紫调基线。其余文字配对：`onSurfaceVariant` 6.05:1、`error` 4.90:1、`secondary` 5.54:1、深色字配琥珀 11.25:1，均达标。 | `primary` 改为深金 `#8A5A00`（白底 5.93:1，新增 `settings_primary_text`），`onPrimary` 白；琥珀保留为 `primaryContainer` 和主按钮填充（新增 `BrandButton`，14 处替换，深色字 11:1，与旧页“应用并保存”一致）；补齐中性灰 `outline`/`outlineVariant`/`inverseSurface` 等，`tertiary` 用品牌青，`inversePrimary` 用琥珀 |
+| 排版 | 全部使用 `MaterialTheme.typography` 字级，没有 `sp` 硬编码；系统字体 | 无 |
+| 形状 | 卡片用 `shapes.extraLarge`，状态胶囊与色块用 `CircleShape`；dock 选中项曾为魔法值 20dp | dock 改为 `shapes.large` |
+| 层级 | 卡片与背景靠明度区分；只有悬浮 dock 用 8dp 阴影（浮在滚动内容上，属 MD3 允许的保护性阴影） | 无 |
+| 组件 | 均为官方 Material 3（Card、Button、FilterChip、Switch、AlertDialog、NavigationRail、Snackbar、TopAppBar） | 无 |
+| 布局 | 内容最大宽 840dp；≥600dp 用 rail；间距统一走 `Spacing`。宽度判断仍是 `screenWidthDp`，未用 WindowSizeClass（§14.4 已记录） | 维持，M6 视折叠屏结果再定 |
+| 导航 | 四个顶级入口有文字和图标；设置向导有返回按钮和 `BackHandler`；LSPosed 模块设置已进首页 | 无 |
+| 动效 | 只有组件默认动效，状态不依赖动画完成回调 | 设备上检查“减少动画” |
+| 无障碍 | 纯图标按钮（刷新、向导返回）有 `contentDescription`；其余图标都有文字伴随（描述置空避免重复朗读）；可点卡片有 `Role.Button`；FilterChip 等受 48dp 最小触控区约束。**未验证：** 大字体、TalkBack 朗读顺序、横屏 | 列入设备清单 |
+| 主题 | 固定浅色、无动态取色（§8.3 决定） | 无 |
+
+**范围外但记录：** 旧 Views 页的辅助说明文字用 `settings_text_muted #9AA0A6`（白底 2.64:1，10.5sp），包括外观页“进度与动画”里的两条依赖说明。属于旧页面统一配色，本次不改；建议 M6 前与旧页其他灰字一起处理。
+
+**本地验证：** Bridge 1048 tests / 0 fail / 6 skip，Debug 与 R8 通过。候选 `artifacts/m5-wrapup-20261115/Bridge-M5-wrapup-debug-r1.apk`（`27975e8e…`）。视觉变化：描边/文字按钮、进度条、开关和外观页小标题从浅琥珀变为深金色；实心主按钮仍是琥珀。
+
+**设备检查清单（M5 收口，需用户执行）：**
+1. 颜色：上述按钮、进度条、开关、小标题清晰可读，主按钮观感与旧页一致。
+2. 系统字体调到最大：首页四个小卡片、dock 标签、商店卡片按钮、设置向导选项不截断、不重叠。
+3. TalkBack：首页从上到下朗读顺序合理；dock 四项读出名称与选中状态；刷新按钮读出“重新检查”。
+4. 横屏：内容不被导航条或摄像头挖孔遮挡；dock 或 rail 正常。
+5. 三键导航与手势导航各一次：dock 与列表末尾不被导航条遮住。
+6. 开发者选项关闭动画（动画缩放设为“关闭”）：切换页面、展开确认框、商店安装进度正常。
+
+**仍待用户决定：**
+- **D3 桌面图标：** LSPosed 模块设置已进入管理首页；是否新增桌面入口（设置里可隐藏）。
+- **升级提示：** 4.x 用户升级后，在 LSPosed 点模块设置看到的从“外观设置”变为管理首页。是否在首页加一次性“新版说明”卡片（可关闭，只显示一次）。
+
+**§14.19 设备结果：** 用户确认清单 1–6 项通过（r1 `27975e8e…`）。
+
+### 14.20 M5 收口：桌面图标（D3）与一次性“新版说明”（2026-11-15，本地，未提交）
+
+**用户决定（2026-11-15）：** 新增桌面图标，首页提供隐藏开关；首页加一次性“新版说明”卡片。
+
+- **桌面图标：** 新增 `activity-alias` `.management.LauncherEntry`（MAIN/LAUNCHER，指向管理首页，名称 “Live Lyrics Bridge”）。首页底部“在桌面显示图标”开关通过 `PackageManager.setComponentEnabledSetting(..., DONT_KILL_APP)` 启用/停用这个 alias；LSPosed 的 `MODULE_SETTINGS` 入口在 Activity 本身，隐藏图标不影响从 LSPosed 进入。首页 Activity 的标题由“管理界面预览”改为 “Live Lyrics Bridge”（最近任务里显示）。
+- **新版说明：** 只给从旧版升级的人看：`lastUpdateTime > firstInstallTime` 且未点过“知道了”。全新安装在首次打开时直接记为已看过，之后 5.x 小版本更新也不会再弹。内容五条：LSPosed 模块设置改进管理页、外观在“外观”标签；新增商店；状态页与短时诊断；桌面图标可隐藏；原有外观/翻译/开头清理设置保留。点“知道了”后不再显示（`management_home` 偏好）。
+- **已知限制：** 部分桌面在停用 alias 后需要片刻才刷新图标；Android 10+ 对“没有桌面入口但申请了权限”的应用可能显示系统生成的应用信息图标，ColorOS 是否这样需设备确认。
+
+本地 1050 tests / 0 fail / 6 skip（新增 `HomeExtrasTest` 2 项：只对升级且只一次、默认显示图标），Debug 与 R8 通过。候选 `artifacts/m5-wrapup-20261115/Bridge-M5-wrapup-debug-r2.apk`（`f21a4c58…`）。待设备验证：安装后桌面出现图标并打开首页；开关隐藏/恢复图标；隐藏后 LSPosed 仍可进入；新版说明卡片显示一次，点“知道了”后重进不再出现（本机是覆盖安装，所以会显示）。
+
+**r2 设备结果：用户确认全部通过（桌面图标、隐藏/恢复、隐藏后 LSPosed 仍可进入、新版说明只显示一次）。M5 完成，已提交 `87b7645`（未推送）。**
+
+## 15. 主线五：代码结构与性能治理（E 系列）
+
+> 状态：**仅分析与方案，未落任何代码**；第 15.8 节 D11–D15 已于 2026-11-14 由用户确认按推荐采用。落档日期：2026-11-14。本节是用户在 M1 期间追加的第五条主线：在下一大版本内完整治理 Bridge 的代码结构与性能，重点拆分 `LockscreenLyricsModule.java`。
+> 证据范围：全部为**静态分析**（文本/括号深度扫描，不是 AST；数字允许小幅误差）加上既有 [Phase 6 性能台账](<4.0/PHASE-6-PERFORMANCE-LEDGER.md>) 的历史设备数据。本轮没有运行构建、采样或设备测试。第 15.4 节的性能候选项在采样确认前都只是候选，不是已证实的瓶颈。
+> 范围：Bridge 仓库。Providers 仓库本轮**未做**同等盘点，见第 15.9 节。
+
+### 15.0 与本文其他约束的关系
+
+- 第 0 节第 5 条“不借机重写歌词渲染器”、第 1.2 节“不将 SystemUI Hook、歌词 Canvas 渲染、AOD 迁移到 Compose”继续有效。E 系列是**保持行为的结构迁移**加**有采样依据的性能修正**，不改语言、不改 Hook API 代际、不改 `LyricUiConfig` schema、不改 scope。
+- 结构迁移与算法/参数/时序调整**不得出现在同一次提交**。任何一刀只做其中一类。
+- 本节承接并更新 [4.0 拆解方案](<4.0/LOCKSCREEN-LYRICS-MODULE-DECOMPOSITION.zh-CN.md>)（基线 `e597c5b`，15,735 行）。该文的职责地图、字段所有权表、反模式清单和行为回归矩阵仍然适用，本节不重复，只给出新基线、未执行原因的对策、与 5.0 里程碑的排期和新增的性能部分。两者冲突时以本节为准。
+
+### 15.1 当前基线（2026-11-14，工作树，HEAD `44aca8e` + 未提交修改）
+
+**体量与增长。** `LockscreenLyricsModule.java` 现为 17,968 行，占 Bridge 主源码（186 个 Java 文件，53,175 行）的约 34%。
+
+| 版本 | 行数 | 说明 |
+| --- | ---: | --- |
+| v4.0.0 | 14,565 | |
+| v4.3.0（= 4.0 拆解方案基线） | 15,735 | 方案于 2026-09-18 入库 |
+| v4.5.0 | 16,948 | |
+| v4.5.4 | 17,439 | |
+| HEAD `44aca8e` | 17,869 | |
+| 当前工作树 | 17,968 | M1 诊断接入 +99 |
+
+4.0 拆解方案入库后，该文件又被 29 次提交改动（+2,618 / −484），净增约 2,200 行。方案建议的 `hook/`、`runtime/`、`recycler/` 目录和其中的组件**一个都没有出现**。同期新功能（动态封面）是以独立包 `systemui/artwork/` 落地的，说明“新功能进新包”可行，但“旧代码迁出”没有发生。结论：**只有方案不够，必须有阻止继续增长的机器门禁**（见 E-0）。
+
+**结构计数**（入口类顶层，不含内嵌类内部）：
+
+| 项 | 数量 |
+| --- | ---: |
+| 字段声明 | 约 371（常量 117；可变实例字段约 174；`volatile` 147；集合类字段 53；专用锁对象 17） |
+| 方法 | 564（其中 `static` 148）；中位数 15 行；≥50 行 50 个；≥100 行 7 个 |
+| 内嵌类型 | 13 个，共 4,149 行；`OfficialLyricTextRenderer` 独占 3,762 行（114 个方法、约 84 个字段，6 个方法 ≥100 行） |
+| 匿名 Host 回调块 | 5 个，共约 320 行（`OfficialLyricDrawCoordinator.Host` 一个就 184 行） |
+| Hook 安装点（`.intercept(`） | 40；Hook ID 常量 28 |
+| `synchronized` 使用 | 132 处，分布在 20 个以上不同的锁对象上 |
+| Handler 投递（`post`/`postDelayed`） | 67 处 |
+| `catch (Throwable` | 108 处 |
+| 反射调用点 | 64 处 |
+| 日志调用 | `maybeLog*` 70 处，其余 `info`/`warn`/调试约 130 处 |
+
+最长的顶层方法：`cacheSystemUiLyricModelLocked` 160 行、`runActiveLyricRefresh` 143、`handlePlayerTranslationSettingsChanged` 131、`onSystemUiLoadLyricInBg` 129、`resolveOfficialLyricDrawFrame` 128、`tryInstallLyricsRecyclerViewHook` 116、`installSystemUiWordLyricHooks` 101。渲染器内：`drawSegment` 190、`draw` 135、`resolveSlotHeight` 135、`drawMainLyricPass` 131、`prepareLyricGroupDraw` 128、`drawLiftedGraphemes` 100。
+
+注意两点与 4.0 基线的差异：`cacheSystemUiLyricModelLocked` 在 Phase 6 slice 5 做过拆分，4.0 基线时为 116 行，现在是 160 行；Phase 6 已外移的 `OfficialLyricDrawCoordinator`、`NativeLyricModelAssembler` 等仍通过大型匿名 Host 回到入口类读写状态，状态所有权没有随类一起迁出。
+
+**职责分区**（按当前行号区间估算，合计约等于文件总行数）：
+
+| 分区 | 约行数 | 当前位置（行号仅供定位，以方法名为准） |
+| --- | ---: | --- |
+| 内嵌渲染器 `OfficialLyricTextRenderer` | 3,760 | 13936–17698 |
+| LyricsRecyclerView：定位、对齐、几何、Hook 安装、反射 | 2,810 | 5842–7521、8343–8809、9532–10191 |
+| 字段、常量、Host 组装 | 1,010 | 1–1006 |
+| 翻译 action：媒体层与偏好 / View 发现与指纹 | 940 / 660 | 1492–1999、2355–2783 / 5186–5841 |
+| 歌词模式、加载、provider 绑定 + 模型缓存与提交 | 740 + 390 | 3547–4283、12178–12567 |
+| SystemUI Hook 安装 + KuWo/封面/插件 ClassLoader 兼容 | 1,510 | 2784–3546、7522–7932、8009–8342 |
+| 设置/配置应用、广播接收器、调试配置 | 900 | 2001–2354、11365–11790、13749–13873 |
+| active refresh、View 注册表、surface 重激活 | 830 | 10192–11016 |
+| 诊断日志（`maybeLog*`、描述、门面） | 810 | 12941–13748 |
+| DrawFrame 选择与 TextView 绑定 | 720 | 8810–9531 |
+| 播放状态、MediaController、时钟 | 670 | 4284–4879、7933–8008 |
+| 生命周期、system_server/OPlus 策略、AOD 支持 | 490 | 1007–1491 |
+| 屏幕超时 / WakeLock | 480 | 11791–12177 及其接收器 |
+| 切歌 handoff 与官方行抑制 | 370 | 12568–12940 |
+| 通用反射工具 | 350 | 11017–11364 |
+| 全局 View/TextView/ImageView Hook 回调 | 310 | 4880–5185 |
+| 其余小内嵌类 | 300 | 13903–13935、17699–17968 |
+
+**测试耦合。** 140 个测试类中有 15 个引用入口类，其中 12 个**直接读取入口源码文本**做契约断言：`BridgeArchitectureGuardTest`、`CharLiftRendererContractTest`、`LyricUiConfigContractTest`、`OfficialImmersiveLyricEntryContractTest`、`OfficialLyricRowTypefaceContractTest`、`OfficialLyricScalePivotHookContractTest`、`OfficialLyricsRecyclerFieldsContractTest`、`OplusPkgActionsRuleReplayContractTest`、`OplusPluginMediaInfoContractTest`、`PluginClassLoaderFactoryHookContractTest`、`SystemUiLyricSupportGateContractTest`、`TranslationActionRedirectContractTest`。任何迁移都会让它们失败，这是每一刀必须同步处理的固定成本，也是此前迁移没有发生的原因之一。
+
+**入口类以外的结构问题。**
+
+- 根包 `io.github.andrealtb.lockscreenlyrics` 平铺 93 个文件，设置页 Activity（普通 App 进程）与 Hook 侧类（SystemUI 进程）混在同一个包。第 10 节要求的“管理面 / Hook 面”守卫目前只能靠文件名清单实现。
+- `LyricUiSettingsActivity.java` 3,283 行：归第 8 节 U 系列处理，E 系列不重复规划，只要求两边不同时改同一文件。
+- `NativeLyricModelAssembler.java` 1,626 行、`DynamicArtworkRuntime.java` 1,013 行：已是独立类，暂列观察项，按第 15.4 节采样结果决定是否处理。
+- R8 只保留 `XposedModule` 子类入口（`java_init.list` 经 `-adaptresourcefilecontents` 改写），内部类移动不影响保留规则；但正式 R8 形态仍需按 M6 门禁验证。
+
+### 15.2 目标形态与完成定义
+
+入口类最终只保留：三个生命周期回调、进程/scope 门禁、组件构造与依赖注入、极少量跨组件事件转发、全局紧急降级。目标组件与字段所有权沿用 4.0 拆解方案第 4、5、7、8 节，这里只列与当前代码对应的调整：
+
+- 已存在且应成为真正 owner 的类：`OfficialLyricDrawCoordinator`、`LyricRenderTransactions`、`SystemUiLyricPublicationGate`、`NativeLyricModelAssembler`、`LyricSurfaceDrawTransaction`、`LyricsRecyclerFieldAccessor`、`SystemUiRuntimeBootstrap`。E 系列优先把它们从“通过 Host 回读入口状态”改为“自己持有状态”，再新增类。
+- 4.0 方案中的 `LyricModelStore` 应与现有 `LyricRenderTransactions` 合并考虑：`currentWordLyricModel` 在入口类仍有 76 处引用，而 `lyricRenderTransactions` 已有 38 处，两套模型真值并存是首要清理对象。
+- 包结构同时落实第 10 节守卫：Hook 侧进 `bootstrap/`、`hook/`、`runtime/`、`recycler/`、`render/`、`systemui/`、`players/`；普通 App 侧进 `settings/`（旧 Views）与第 10 节的 `management/`。守卫从“文件名清单”改为“按包判定”。
+
+**完成定义**（全部满足才算 E 系列完成）：
+
+1. `LockscreenLyricsModule.java` ≤ 1,500 行，顶层可变字段 ≤ 30，无内嵌业务类；这是预算上限，不是每一刀的目标。
+2. 没有任何组件以入口类或“全量状态对象”为依赖；单个 Host/Port 接口方法数 ≤ 12。
+3. 模型、播放、Recycler、handoff、屏幕超时、翻译 action、诊断、渲染器各有唯一状态 owner；每个可变字段在源码中能指出唯一写入组件。
+4. 12 个源码文本契约测试全部迁到新文件或改为行为测试，入口类不保留影子实现。
+5. 性能不劣于迁移前基线（判定方法见第 15.4 节），已确认的候选项按采样结论处理或书面放弃。
+6. 第 12 节“运行回归”组在用户设备上通过；正式签名 + R8 候选通过。
+
+### 15.3 实施切片（E-0 至 E-8）
+
+每一刀的通用规则：
+
+- **纯移动**的刀：方法体、字段初始值、锁、日志 event 与字符串、Hook ID、安装顺序逐字不变，只改访问点。用脚本比对迁移前后方法体（忽略缩进与限定名前缀）作为机械等价证据，结果附在该刀的记录里。
+- 每刀结束跑 `:app:testDebugUnitTest :app:assembleDebug`，重算 `verify-build-identity`，并更新入口类预算文件（只允许下降）。
+- 中高风险的刀必须有用户设备冒烟后才能进入下一刀；设备操作仍需当次授权。本地通过不等于设备通过。
+- 一刀失败时整刀回退，不在入口类留半迁移状态。
+
+| 切片 | 内容 | 入口类预计减少 | 风险 | 设备验证 |
+| --- | --- | ---: | --- | --- |
+| **E-0 止血与保护网** | ① 在 `BridgeArchitectureGuardTest` 增加入口类预算守卫：行数、顶层字段数、方法数、内嵌类行数不得超过入库的预算值，预算只能下调。② 12 个源码契约测试改为通过一个“源码定位表”读取目标文件，后续迁移只改表。③ 生成 Hook ID 清单、日志 event 清单、安装顺序清单三份基线，作为后续每刀的比对对象。④ 写入方法体等价比对脚本。⑤ 按第 15.4 节采集性能基线。不移动任何业务代码。 | 0 | 低 | 仅性能基线采集 |
+| **E-1 渲染器机械外移** | `OfficialLyricTextRenderer` 及其内部类原样移到 `render/`，外部访问收敛为一个窄 `RendererHost`。它已是 `static` 内嵌类，不持有入口实例，是体量最大而耦合最浅的一块。不拆 painter、不改任何常量。 | 约 3,760 | 中（体量大，但纯移动） | 需要：逐字、逐行、上浮、发光、译文、AOD 低帧率 |
+| **E-2 无状态与低耦合部分** | 通用反射工具按系统边界归入各自 accessor（不建通用 `ReflectionUtils`）；`maybeLog*` 与描述函数归入 `diagnostics/`；system_server/OPlus 策略 Hook 与 AOD 支持归入 `OplusMediaPolicyHooks`；小内嵌值类各归其主。 | 约 1,900 | 低到中 | 需要：模块加载、白名单/黑名单、AOD 入口 |
+| **E-3 屏幕超时** | `ScreenTimeoutController` 带走接收器、WakeLock、keyguard 缓存、pulse、evidence 窗口。输入只有配置、歌词模式与可见证据。 | 约 480 | 高（WakeLock） | 需要：续租、灭屏、解锁、条件失效后释放 |
+| **E-4 翻译 action** | 先 `TranslationActionViewTracker`（View 发现、指纹、presentation），再 `TranslationActionController`（rule-0、偏好、rebind）。 | 约 1,600 | 中到高 | 需要：按钮显隐、切换、切歌后重绑、各播放器策略 |
+| **E-5 播放与模型发布** | `SystemUiPlaybackController`（MediaController、时钟、reset guard）→ 模型真值并入 `LyricRenderTransactions`/store → `LyricPublicationPipeline` → 加载 Hook 只剩读参、调 pipeline、一次 `proceed`。`canCommit(loadEpoch)` 提交前复核不可丢。KuWo/插件兼容与 `PluginHookGenerationManager` 在此刀一并迁出。 | 约 3,300 | 高 | 需要：快速切歌、同曲 metadata 更新、暂停/seek、KuWo、清理配置重放 |
+| **E-6 Recycler 与 View 注册表** | `LyricViewRegistry`（弱引用与快照）→ `LyricsRecyclerHookInstaller` → `LyricsRecyclerController` → `LyricSurfaceReadinessController`。SystemUI 对定位、滚动、adapter 通知、行变换的所有权不变。 | 约 2,800 | 高 | 需要：attach/detach、亮屏/AOD 往返、沉浸入口、对齐与行高 |
+| **E-7 handoff、绑定与 active refresh** | `LyricSurfaceHandoffController`（显式状态机）、`OfficialLyricBindingController`、`ActiveLyricRefreshScheduler`；设置应用改为发布 `RuntimeConfigSnapshot`，各组件自行应用。全局 View Hook 回调归入专用 installer。 | 约 3,100 | 高 | 需要：切歌淡入、迟到接管、transient miss、刷新率档位 |
+| **E-8 收尾** | 入口类收敛到完成定义；根包按 Hook 面/App 面分包并把守卫改为按包判定；第 15.4 节中确认有效的性能项落地；painter 是否继续拆分按采样结论书面决定。 | 余量 | 中 | 需要：第 12 节运行回归全组 + 正式 R8 候选 |
+
+预计减少量为按第 15.1 节职责分区行号区间的估算，只计方法与内嵌类；文件开头约 1,000 行的字段、常量与 Host 组装未计入各刀，它们随各自 owner 一起迁出。实际以每刀后的预算文件为准。
+
+顺序理由：E-1 放在最前，是因为它一次拿掉五分之一体量且不涉及状态所有权，能最早降低其余各刀的合并冲突面；E-3 至 E-7 按“输入输出越独立越先做”排列，与 4.0 方案的 Slice 1–6 一致，只是把渲染器外移从最后提到最前、把诊断日志迁移并入 E-2。
+
+### 15.4 性能治理
+
+**原则。** 先在同一可观察场景建立基线，再只改被采样证实的最小原因；源码能看出多一次加锁或分配，不等于已证明掉帧。性能修正与结构迁移分开提交。诊断默认关闭，关闭时不得读纳秒时钟或拼接字符串。
+
+**已有手段**（全部沿用，不另造）：`BridgePerformanceSampler` 的五项 `PERF_SAMPLE`（`text-view-draw`、`frame-resolve`、`renderer-draw`、`active-refresh`、`model-parse`）；`BridgePerfTrace` 的 `CLL:*` atrace 区段；`scripts/capture-lockscreen-perf.ps1 -Mode jank`（Perfetto，FrameTimeline）。
+
+**已有设备数据**（2026-10-13，PJZ110，单轮样本，来自 Phase 6 台账 8A）：停用 Bridge 时 AOD 切换窗掉帧 5.7%、其他 1.9%；Bridge 增量约 0.5–4 个百分点；歌词绘制 p50 约 521µs；剩余热点为当前行主歌词（上浮开启时约 60% 在上浮）与偶发 glow 光栅化（1–6ms/次）。这些是迁移前的参考值，E-0 需要在当前代码上重采，不能直接当作 5.0 基线。
+
+**E-0 需要采集的基线场景**（每项记录候选 APK 哈希、配置、框架版本）：
+
+| 场景 | 观察量 |
+| --- | --- |
+| 锁屏无歌词（Bridge 启用但无 lyricInfo） | SystemUI 主线程 doFrame 均值、全局 Hook 回调耗时；用于度量“休眠路径”开销 |
+| 锁屏逐字歌词，上浮开/关 | 五项 `PERF_SAMPLE`、掉帧率、RenderThread |
+| 切歌（连续 10 次） | `model-parse`、主线程长任务、handoff 窗口掉帧 |
+| 亮屏 ↔ AOD 往返 | 切换窗掉帧率、主线程 binder 次数 |
+| SystemUI 冷启动 | Hook 安装与 DexKit 解析耗时（目前**没有**现成采样点，需新增一个仅在 tracing 开启时生效的区段） |
+| 长时间播放（约 30 分钟） | SystemUI 进程 Java 堆与 bitmap 占用趋势 |
+
+**判定标准。** 不预设绝对数字。每刀结构迁移后，同场景同设备的五项 `PERF_SAMPLE` 均值与掉帧率不得劣于 E-0 基线超过单轮测量噪声（噪声幅度在 E-0 用重复采样确定）；超出即视为该刀回归，先定位再继续。
+
+**候选项**（静态阅读得到，全部**待采样确认**）：
+
+| 编号 | 候选 | 静态依据 | 处理方式 |
+| --- | --- | --- | --- |
+| P-1 | 全局 View Hook 的休眠快路径 | SystemUI 内所有 `TextView.onDraw`/`setText`、`View.onAttachedToWindow`/`onDetachedFromWindow`/`setVisibility`/`setContentDescription`、`ImageView.setImageDrawable`/`setImageBitmap` 都经过 Bridge 回调（`installSystemUiWordLyricHooks`）。其中 `onImageViewSetImage` 每次调用都先进入 `translationActionViewsLock` 并查弱引用表，没有前置的无锁判断；`isLyricsRecyclerView` 每次调用都在全局 `synchronized` 内查类缓存 | 用“无歌词”场景量化。若可测，改为先做一次 `volatile` 状态判断再进入锁；类匹配缓存改为无锁读。不改变 Hook 集合与安装时机 |
+| P-2 | 关闭调试时仍然拼接日志字符串 | `info(area, event, String)`、`translationButtonDebug(String)` 的签名接收已拼好的字符串，后者内部才包成 Supplier；调用点 28 + 约 56 处，其中部分位于全局 Hook 回调内（如 `onViewSetContentDescription`） | 逐点核对是否已被开关前置保护；未保护且在高频路径的改为 Supplier 重载。事件名与输出格式不变 |
+| P-3 | 锁与 `volatile` 过多 | 132 处 `synchronized`、20+ 锁对象、147 个 `volatile` 字段；其中有多少状态实际只在主线程读写**尚未逐个核实** | 不单独做。随 E-3 至 E-7 明确每个组件的线程归属后，主线程独占状态去锁，跨线程状态收敛为不可变快照。先加调试期线程断言，再删锁 |
+| P-4 | 通用反射工具每次调用都遍历类层级 | `readFieldValue`、`tryInvokeNoArgByName`、`invokeTwoIntByName`、`findMethod` 等无缓存；Phase 6 已为 Recycler 索引字段和 `getAdapter` 做过缓存并验证有效 | 随 E-2 归入各 accessor 时按同样方式加类级缓存（含 missing 结果）；只处理采样中出现的调用点 |
+| P-5 | active refresh 调度 | `runActiveLyricRefresh` 143 行，经 Handler 延时驱动，内部混合 View 搜索与日志 | 随 E-7 迁出后，用 `active-refresh` 采样评估不可见时是否完全停止、是否有重复投递。不预设改用 Choreographer |
+| P-6 | 渲染器剩余热点 | Phase 6 台账“未做”项：上浮静止字合并绘制、下一行 glow 预热 | E-1 纯移动完成后再评估；只在 `renderer-draw` 采样显示收益时做，且与移动分开提交 |
+| P-7 | 模型解析重复 | 台账遗留项：按签名缓存解析结果、displayLyric 与 supplemental 视图共享 | 随 E-5 评估，以 `model-parse` 采样为准 |
+| P-8 | SystemUI 启动期开销 | 40 个 Hook 安装点与 DexKit 解析都在 SystemUI 启动路径上，目前没有量化数据 | 先新增采样点量化；未量化前不改安装时机，不做懒安装 |
+| P-9 | 常驻内存 | 多个静态 `WeakHashMap` 缓存、glow bitmap 缓存、翻译图标指纹缓存，容量上限不统一 | 盘点每个缓存的上限与失效条件，随各 owner 迁出时写明；以长时间播放场景验证 |
+
+明确不做：打开 `DRAW_FRAME_REUSE_ENABLED` 换取表面性能；为性能改变 Recycler 所有权、AOD 私有状态或 handoff 时序；为减少 Hook 数量而放宽 LyricsRecyclerView 归属门禁。
+
+### 15.4.1 性能基线（2026-11-15，场景 1–7 已采集）
+
+**口径说明：**
+- 基线采在 E-2c（`9a2e3a1`）之后的代码上，不是 E-0 时的代码。E-1、E-2 都是纯移动，并已通过设备冒烟，但迁移前没有同口径的数据。
+- 因此本基线只用于比较 E-3 及之后的各刀；E-1、E-2 的性能影响记为“未测”。
+- Phase 6 台账里的 2026-10-13 数据仍只作参考。
+
+**构建：** Bridge `feat/perf-baseline`（基于 `9a2e3a1`），已提交，未推送。
+- 新增两个只在 atrace 采集 `com.android.systemui` 时才生效的区段：
+  - `CLL:systemUiBootstrap`，在 `SystemUiRuntimeBootstrap.initialize` 中；
+  - `CLL:systemUiDexKitResolve`，在 `SystemUiDexKitAdapter.resolve` 中。
+- 两处原有的方法体都原样移到了私有方法里。
+- 没有放在入口类里，入口类预算不变。
+- 本地 1056 tests / 0 fail / 6 skip，Debug、R8 通过，`verify-build-identity` 通过。
+- 候选 `artifacts/perf-baseline-20261115/Bridge-perf-baseline-debug-r1.apk`（`5f9f41d6…`）。
+- 这是 Debug 构建，不经 R8，与正式包的差异在第 15.6 节的 R8 抽查里另算。
+
+**采集方式：**
+- 采集用现有 `scripts/capture-lockscreen-perf.ps1 -Mode jank`。它会交互式地要求输入 READY，需要用户在自己的终端运行。
+- 关闭 Bridge 调试日志与录屏。
+- 用同一首逐字歌词、同一亮度与刷新率；每次运行前在 `-Notes` 里写清配置。
+- 结果放在工作区 `.perf/runs/`，属于私人设备数据，不入库。
+
+| # | 场景（`-Label`） | 时长 | 次数 | 操作 |
+| --- | --- | --- | --- | --- |
+| 1 | `idle-no-lyrics` | 45 s | 1 | 暂停播放或使用无歌词的播放器，停在锁屏 |
+| 2 | `word-lift-on` | 45 s | 3 | 逐字歌词播放中，字符上浮开，停在锁屏。重复 3 次，用来估计单轮噪声 |
+| 3 | `word-lift-off` | 45 s | 1 | 同上，字符上浮关 |
+| 4 | `track-switch` | 90 s | 1 | 锁屏上连续切歌 10 次，每次间隔约 5 秒 |
+| 5 | `aod-roundtrip` | 60 s | 1 | 播放中按电源键在亮屏与 AOD 间往返约 10 次 |
+| 6 | `systemui-cold` | 30 s | 2 | 开始录制后，立即在 Bridge 首页点“重启系统界面” |
+| 7 | 长播放内存 | 30 min | 1 | 不用 Perfetto：开始和结束时各取一次 `dumpsys meminfo com.android.systemui` 的 Java 堆与 Graphics。需要当次授权 adb |
+
+**分析：**
+- 由 trace 计算以下指标，并写回本节作为 E-3 及之后各刀的对比基线：
+  - FrameTimeline 掉帧率，分整窗和 AOD 切换窗；
+  - SystemUI 主线程 `doFrame` 均值；
+  - `CLL:lyricRender`、`CLL:lyricFindFrame`、`CLL:lyricNoteVisible` 等区段的 p50/p95；
+  - 场景 6 的 `CLL:systemUiBootstrap` 与 `CLL:systemUiDexKitResolve` 耗时。
+- 噪声幅度用场景 2 的三次结果估计。
+
+**采集与分析：**
+- 用户于 2026-11-15 在 PJZ110（f05be72a）上用基线构建 `5f9f41d6…` 完成场景 1–6，共 10 份 trace。其中 `idle-no-lyrics` 多出一份 05:53 的早期样本，一并计入。
+- 用本机已有的 `trace_processor_shell` 执行 `.perf/analysis/baseline.sql`。逐份结果在 `.perf/analysis/baseline-*.txt`，不入库。
+- 指标口径：
+  - 帧取 SystemUI `NotificationShade` 图层的 FrameTimeline；
+  - “卡顿帧”指 jank_type 不是 None 或 Buffer Stuffing 的帧；
+  - `doFrame` 取 SystemUI 主线程的 `Choreographer#doFrame`；
+  - `CLL:` 区段为 Bridge 的 atrace 区段。
+
+| 场景 | 帧数 | 卡顿帧 % | doFrame 均值 / p95 ms | `CLL:lyricRender` 次数，均值 / p50 / p95 ms | `lyricMainPassActive` 均值 / p95 ms | SystemUI CPU 总 / 主线程 s |
+| --- | ---: | ---: | --- | --- | --- | --- |
+| idle-no-lyrics（2 次） | 1902 / 2072 | 5.99 / 4.83 | 3.00 / 8.93；3.38 / 9.16 | 无 | 无 | 15.7 / 5.4；15.7 / 5.0 |
+| word-lift-on-1 | 2795 | 0.11 | 2.87 / 4.91 | 3392，0.566 / 0.486 / 1.436 | 0.391 / 0.960 | 24.6 / 6.7 |
+| word-lift-on-2 | 2811 | 0.25 | 6.89 / 10.32 | 3395，0.449 / 0.413 / 0.839 | 0.305 / 0.552 | 23.3 / 6.0 |
+| word-lift-on-3 | 2807 | 0.14 | 2.66 / 4.71 | 3386，0.499 / 0.430 / 1.298 | 0.339 / 0.882 | 23.4 / 5.9 |
+| word-lift-off | 2861 | 0.21 | 2.82 / 4.85 | 3500，0.400 / 0.354 / 0.901 | 0.227 / 0.446 | 24.4 / 6.1 |
+| track-switch（90 s） | 6587 | 5.27 | 4.60 / 11.49 | 7600，0.320 / 0.273 / 0.657 | 0.212 / 0.384 | 50.3 / 14.0 |
+| aod-roundtrip（60 s） | 5207 | 14.08 | 4.71 / 14.99 | 4960，0.318 / 0.296 / 0.568 | 0.166 / 0.273 | 43.5 / 13.0 |
+
+**冷启动（场景 6，2 次）：**
+- `CLL:systemUiBootstrap` 分别为 136.7 ms 和 131.1 ms，其中 `CLL:systemUiDexKitResolve` 为 127.8 ms 和 121.7 ms，约占 93%。
+- 两者都在新 SystemUI 进程的主线程上，录制开始后 1.6 s 或 2.8 s 出现。
+- 这两份 trace 的帧和 CPU 数字属于被结束的旧进程，不作基线。
+
+**读数与噪声（只陈述数据，未做归因）：**
+- 场景 2 的三次运行之间：
+  - `CLL:lyricRender` 均值 0.45–0.57 ms，p50 0.41–0.49 ms，相对波动约 ±12%；
+  - 卡顿帧 0.11–0.25%；
+  - 主线程 `doFrame` 均值在 2.7–6.9 ms 之间大幅波动，第 2 次明显偏高，但同一次的 `lyricRender` 没有变高。
+- 因此以后的对比判据如下：
+  - Bridge 区段的 p50 / 均值，超过约 ±15% 才视为变化；
+  - 卡顿帧比例在稳定播放场景下以 0.3% 为噪声上限；
+  - `doFrame` 均值不单独作为回归依据。
+- 字符上浮开与关相比：`lyricRender` 均值多约 0.05–0.17 ms，`lyricMainPassActive` 多约 0.08–0.16 ms，与 Phase 6 台账“上浮占当前行主要成本”的结论方向一致。
+- 无歌词锁屏的卡顿帧（4.8–6.0%）反而高于播放歌词时（0.1–0.25%）。这时没有任何 `CLL:` 区段执行，来源不在 Bridge 的绘制路径；是否与锁屏其他动画或刷新率档位有关，未查。
+- 切歌和 AOD 往返窗口的卡顿帧分别为 5.3% 和 14.1%。这两个场景本身含系统过渡动画；没有关闭 Bridge 的同口径对照，所以不能归因于 Bridge。
+- P-8 有了第一份数据：SystemUI 每次启动时，Bridge 在主线程上花约 130 ms，主要是 DexKit。按 SystemUI 版本缓存 DexKit 结果可能省掉大部分，列为候选，未实施。
+
+**场景 7（长播放内存，用户授权 adb）：**
+- 逐字歌词持续播放，锁屏或 AOD 下进行。
+- 开始快照 06:13:04 UTC，结束快照 06:43:10 UTC，相隔 30 分钟。两次都是同一个 SystemUI 进程（pid 25243），中途没有重启。
+- 原始输出在 `.perf/runs/20261115T061303Z-meminfo-long-play/`。
+- 第一次误在未播放时取的快照已另存为 `…-meminfo-not-playing-discarded`，不计入。
+
+| SystemUI | 开始（KB） | 30 分钟后（KB） | 变化 |
+| --- | ---: | ---: | ---: |
+| TOTAL PSS | 743,684 | 913,257 | +169,573 |
+| Java 堆 | 117,528 | 145,632 | +28,104 |
+| Native 堆 | 261,468 | 374,268 | +112,800 |
+| Graphics | 162,558 | 172,590 | +10,032 |
+| Views | 3,011 | 3,744 | +733 |
+| AppContexts | 65 | 74 | +9 |
+
+**结论：只是一个需要跟进的信号，不是结论。**
+- 30 分钟内 SystemUI 的 Native 堆增加约 110 MB，View 数增加 733 个，增长明显。
+- 但这里只有两个时间点，`dumpsys meminfo` 不会触发 GC，也没有关闭 Bridge 的对照。所以既不能判定是否泄漏，也不能归因于 Bridge。
+- 在 Android 8 以后，Bitmap 像素计入 Native 堆。Bridge 侧的候选来源有光晕位图缓存、封面取色、翻译图标指纹缓存（见第 15.4 节 P-9），未核实。
+
+**跟进（P-9，未实施）：** 按以下方法重测：
+- 每 5–10 分钟取一次，共 30–60 分钟；
+- 每次取之前先触发 GC（需要授权，方式另定）；
+- 再在“Bridge 模块关闭”的条件下用同一首歌做对照；
+- 必要时取 heap dump，看 Bitmap 与 View 的持有者。heap dump 含私人数据，只在本地分析，不入库。
+
+**静态排查（2026-11-15，源码阅读，未上设备）：**
+- Hook 侧持有 View 的集合：入口类的 `lyricsRecyclerViews`、`activeLyricTextViews`、`lyricRootViews`、`translationActionViews`、`VIEW_BLUR_DISABLED`、`translationBitmapMatchCache`，以及 `render/LyricRenderTransactions`、`ArtworkLyricColorTargets`、`ArtworkTransitionRegistry`。
+  - 它们都是 `WeakReference` 或 `WeakHashMap`，不会单独阻止回收。
+- 强引用集合都有移除路径：
+  - `ArtworkSessionRegistry.hosts` / `sessions` 在 detach 时移除；
+  - `DynamicArtworkRuntime.hosts` 在 detach 时移除；
+  - `KuWoArtworkSnapshotStore` 有上限，淘汰最旧项；
+  - `activeLyricRefreshCandidates` 是复用的临时列表。
+- 仅凭源码看不出无上限的强引用缓存。detach 是否每次都触发，需要设备数据。
+
+**用户要求缩短重测时长（2026-11-15）。** 改为：
+- 每轮 12 分钟，在第 0、3、6、9、12 分钟各取一次，共 5 个点；
+- 每次取之前先触发 GC；
+- “Bridge 开启”和“Bridge 关闭”各一轮，可以只先做开启这一轮，看曲线是否继续上升。
+
+**重测结果（Bridge 开启，用户授权 Root 触发 GC，2026-11-15）：**
+- 06:49:13 至 07:01:21 UTC，同一个 SystemUI 进程（pid 25243），逐字歌词持续播放。
+- 每次取点前执行 `su -c 'kill -10 <pid>'` 让 ART 做一次 GC，6 秒后读 `dumpsys meminfo`。
+- 原始数据在 `.perf/runs/20261115T064906Z-meminfo-gc-series-bridge-on/`。
+
+| 时间点 | TOTAL PSS | Java 堆 | Native 堆 | Graphics | Views |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 0 分钟 | 780,513 | 107,364 | 297,004 | 170,662 | 3,418 |
+| 3 分钟 | 799,690 | 95,544 | 326,072 | 170,834 | 3,545 |
+| 6 分钟 | 798,863 | 94,748 | 325,892 | 170,866 | 3,545 |
+| 9 分钟 | 794,429 | 93,492 | 318,596 | 170,866 | 3,545 |
+| 12 分钟 | 797,112 | 93,864 | 319,432 | 170,866 | 3,547 |
+
+（单位：KB；Views 为个数）
+
+**读数：**
+- GC 之后，第 3 到 12 分钟各项基本持平：PSS 在 ±3 MB 内，Java 堆下降后稳定，Native 堆在 319–326 MB，Views 稳定在 3,545 左右。没有出现持续上升。
+- 前一轮 30 分钟测量的结束点（未 GC）Native 堆为 374 MB，这一轮 GC 后为 297–326 MB。Bitmap 像素会随 Java 对象回收一起释放，因此前一轮的增长大部分很可能是尚未回收的对象，而不是被持有的内存。
+- 第 0 到第 3 分钟有一次上升（Native +29 MB，Views +127），之后稳定。原因未查，可能是锁屏/AOD 状态切换带来的一次性分配。
+
+**结论：**
+- 在 12 分钟、GC 后的窗口内，没有看到 Bridge 开启时的持续内存增长，暂不做“Bridge 关闭”的对照。
+- 这只覆盖了 12 分钟。更长时间的稳定性留到 M6 的长时回归里再测，P-9 保持“观察”。
+
+### 15.5 与里程碑的排期关系
+
+| 时点 | E 系列工作 | 约束 |
+| --- | --- | --- |
+| M1（当前） | E-0 | 与 C-01/02/03 收尾并行；预算守卫一旦入库，C-04 及之后的新代码不得再进入入口类 |
+| C-04/C-05 开工前 | E-1、E-2 | C-04 的“功能级降级与恢复”和 C-05 的回放测试都要落在决策点上；先把渲染器与无状态部分移走，避免两条线反复改同一个 18,000 行文件 |
+| M2–M4（商店与 scope，主要在普通 App 侧） | E-3 至 E-7，每刀独立设备冒烟 | 与 Hook 面改动少的阶段错开；C-04 的降级状态归属按 E 系列的 owner 落位 |
+| M5（UI 集成） | E-8 的分包 | 与 U 系列协调，不同时改 `LyricUiSettingsActivity` |
+| M6 RC 冻结后 | 不再做任何结构迁移 | 未完成的切片顺延到下一版本，并在第 12 节标“未覆盖” |
+
+E 系列不阻塞商店与引导功能；若进度不足，允许 5.0 只完成到某一刀（每刀结束都是可发布状态），但 E-0 的预算守卫必须在 5.0 内生效。
+
+### 15.6 验证与门禁
+
+- 每刀：`git diff --check`；`:app:testDebugUnitTest :app:assembleDebug`；`verify-build-identity`；Hook ID、日志 event、安装顺序三份清单与 E-0 基线一致；`scope.list`、`module.prop`、`java_init.list` 不变；新类不反向依赖入口类；预算文件下调。
+- 纯移动的刀附方法体等价比对结果。
+- 行为回归沿用 4.0 拆解方案第 10.3 节矩阵（模块加载、无 lyricInfo、快速切歌、同曲 metadata 更新、播放/暂停/seek、AOD/亮屏、Recycler attach/detach、翻译开关、灭屏/解锁、KuWo/插件 loader、渲染器异常降级）。
+- 诊断开关开与关两种状态下行为一致（M1 的教训：可选诊断必须证明失败与开关都不改变业务）。
+- C-02 的 `CompatibilityStatus` 七个槽位的观测点随决策代码一起迁移，迁移前后同场景的状态序列一致。
+- 设备验证由用户执行或当次授权；本地构建、单元测试、`PREPARED`/`DISPATCHED`/`DRAW_COMMANDS` 都不是视觉验收。
+
+### 15.7 风险与对策
+
+| 风险 | 对策 |
+| --- | --- |
+| 方案再次只停留在文档，文件继续增长 | E-0 预算守卫是硬门禁；新功能评审以“是否触碰预算”为检查项 |
+| 纯移动中混入行为变化，事后难以归因 | 移动与修改分提交；方法体等价比对；每刀设备冒烟 |
+| 把入口类换成一个全量状态对象或万能 Host | 完成定义第 2 条；沿用 4.0 方案“必须避免的状态反模式” |
+| 源码文本契约测试成为迁移阻力，或被改成无意义断言 | E-0 先改为定位表；能改成行为测试的优先改 |
+| 与 C-04/C-05、U 系列并行造成大面积合并冲突 | 第 15.5 节排期；同一文件同一时间只属于一条线 |
+| 去锁引入竞态 | 先加线程断言并在调试构建运行，再删锁；跨线程状态只走不可变快照与既有 epoch 复核 |
+| R8 或框架热重载形态下的差异 | 每个高风险刀后抽查 R8-only 构建；正式形态在 M6 验证 |
+| 性能“优化”缺少证据 | 所有 P 项以 E-0 基线与同场景采样为准，未证实的不做 |
+
+### 15.8 决策（2026-11-14 用户已确认按推荐采用）
+
+下表“推荐”列即已确认的决定。“说明”列保留当时的理由与备选，供以后需要调整时参考；调整须用户再次确认。
+
+| 决策 | 推荐 | 说明 |
+| --- | --- | --- |
+| D11 E 系列是否作为 5.0 的发布门禁 | E-0 为硬门禁；E-1 至 E-8 尽力完成，可按刀截断 | 全部设为硬门禁会让 5.0 的发布时间取决于最敏感的时序迁移 |
+| D12 渲染器外移提前到最前 | 提前（E-1） | 与 4.0 方案“最后做”的顺序相反；理由见第 15.3 节。若更看重先验证低风险流程，可改为 E-2 先行 |
+| D13 入口类完成上限 | ≤ 1,500 行、可变字段 ≤ 30 | 数字可调；重点是有一个入库的、只降不升的预算 |
+| D14 迁移期间语言 | 保持 Java | 与第 0.2、8 节一致，Kotlin 仅用于新管理 UI；结构迁移不叠加语言迁移 |
+| D15 根包分包时机 | 放到 E-8 | 提前做会与所有在途改动冲突，且对运行行为没有收益 |
+
+### 15.8.1 E-0 实施记录（2026-11-15，已提交 `634a9d0`，未推送）
+
+**分支：** Bridge `feat/e0-guardrails`（基于 `87b7645`）。只加测试、基线文件和脚本，**不改任何 `app/src/main` 代码**，所以不需要设备回归。
+
+1. **入口类预算守卫**：`guard/EntryClassGuardTest.entryClassStaysWithinItsBudget` 用 `guard/JavaOutline`（去掉注释和字面量后按括号深度扫描，不是 AST）统计 `LockscreenLyricsModule.java`，与 `app/src/test/resources/guard/entry-class-budget.properties` 比较。入库值（2026-11-15）：行数 17,989、顶层字段 373、方法 565、内嵌类型 13 个共 4,168 行；与第 15.1 节的静态估计（约 371 / 564 / 13 个 4,149 行）一致，差异来自计数口径。超出预算即失败；低于预算超过余量（行 60、字段 3、方法 3、内嵌类型 0、内嵌行 30）也失败，提示把预算调低，所以预算只降不升。扫描器有一条小样本自检测试。
+2. **契约测试定位表**：新增 `guard/BridgeSourceMap`，按将来迁移的刀分区（RENDERER=E-1、OPLUS_POLICY=E-2、TRANSLATION_ACTION=E-4、PLUGIN_COMPAT=E-5、RECYCLER=E-6，另有 CONFIG_CONSUMERS、SYSTEMUI_RUNTIME），目前全部指向入口类。第 15.1 节列出的 12 个源码文本契约测试（共 15 处读取）改为 `BridgeSourceMap.read(Area.X)`，断言本身一字未改；以后某刀移走代码只改这张表。另有测试检查表中每个文件都存在。
+3. **三份基线**（`app/src/test/resources/guard/`，测试逐字比对，变化时把当前值写到 `app/build/e0-guard/*.actual` 供审阅后覆盖）：
+   - `hook-ids.txt`：28 个 `HOOK_ID_*` 常量的值与引用次数；
+   - `log-events.txt`：`BridgeEvents` 全部定义，以及全部源码中每个事件常量和字面事件名的使用次数；
+   - `hook-install-order.txt`：40 处 `.intercept(` 按所在方法分组、按源码顺序列出 `setId` 与回调。按方法名分组，所以整方法搬到别的类不会改变清单。
+4. **方法体等价脚本**：`scripts/guard/method-bodies.py --base <ref> [--head <ref>]`。按“方法名 + 参数类型”匹配两个版本中的全部方法，不管在哪个文件或类；从左花括号起比较方法体，去掉注释、合并空白，并忽略 `this.` / `LockscreenLyricsModule.`（可用 `--strip` 追加，例如 `host.`）。方法体有变化或消失则退出码为 1，并输出 diff。自检：`HEAD` 对工作区 2,722 个方法全部一致；`0d883d1 → 87b7645` 正确报出 M5 里实际改动的 Java 方法（10 处改动、14 处删除）。
+5. **性能基线：构建与采集清单已备（第 15.4.1 节），待设备采集。** 按第 15.4 节的六个场景采集：锁屏无歌词、逐字歌词且上浮开/关、连续切歌 10 次、亮屏与 AOD 往返、SystemUI 冷启动、约 30 分钟长播放。使用现有 `scripts/capture-lockscreen-perf.ps1 -Mode jank` 和 Bridge 调试页的性能区域；每项记录 APK 哈希、配置与框架版本。抓取 Perfetto/logcat 需要用户当次授权。另外，冷启动场景目前没有现成采样点，需要先新增一个只在开启 tracing 时生效的区段。
+
+本地 Bridge 1056 tests / 0 fail / 6 skip（新增 6 项守卫测试），Debug 与 R8 通过。
+
+### 15.8.2 E-1 实施记录：渲染器纯移动（2026-11-15，已提交，未推送）
+
+**分支：** Bridge `feat/e1-renderer-move`（基于 `634a9d0`）。
+
+- **移动：** 内嵌类 `OfficialLyricTextRenderer`（入口类第 13938–17718 行，3,781 行，含其内部类型）原样移到同包新文件 `OfficialLyricTextRenderer.java`。只做三处机械改动：整体左移 4 个空格；`private static final class` 改为包内可见的顶层 `final class`；文件头复制入口类的 import，并加 `import static ...LockscreenLyricsModule.*`，让方法体里对入口类静态成员的不带限定名引用保持原样。
+- **访问点：** 入口类里渲染器用到的 11 个 `private static` 成员去掉 `private`，改为包内可见，方法体不变：`dp`、`sp`、`nullToEmpty`、`shortenForLog`、`isLyricLayoutDiagnosticsEnabled`、`isLyricVerboseDiagnosticsEnabled`、`setOfficialLyricSlotHeight`、`findLyricsRecyclerItemView`、`findContainingLyricsRecyclerView`、`applyFocusedOfficialLyricViewEffects(TextView, float, boolean)`、`AOD_WORD_PROGRESS_TO_LINE_ANIMATION_MS`。
+- **名称解析核对：** 新文件只有这一条静态导入；入口类 12 个内嵌类型与新文件的单类型导入、同包顶层类型均不重名，渲染器也不引用其中任何一个。因此移动后没有任何简单名会解析到别的成员。
+- **与第 15.3 节的差异（有意）：**
+  - 放在同包而不是 `render/` 子包：渲染器依赖大量包内可见的类型（如 `LyricUiConfig`），移进子包就得把它们改成 public，这不再是纯移动；分包按 D15 留到 E-8。
+  - 收窄为显式 `RendererHost`：会改动方法体，按“移动与修改不同提交”的规则，另开一个提交做。
+- **证据：**
+  - `scripts/guard/method-bodies.py --base 634a9d0`：2,598 个方法未变，124 个移动且方法体一致，0 个改动，0 个删除。
+  - Hook ID、日志事件、Hook 安装顺序三份基线未变。
+  - 12 个源码契约测试的断言未改，只把定位表的 RENDERER 改为“新文件 + 入口类”，SYSTEMUI_RUNTIME 与 CONFIG_CONSUMERS 加入新文件。
+  - 入口类预算按守卫要求下调：17,989 → 14,207 行，内嵌类型 13 → 12 个，4,168 → 387 行；字段与方法数不变。
+  - `scope.list`、`module.prop`、`java_init.list` 未改；`verify-build-identity` 通过（353 个输入）。
+  - 本地 1056 tests / 0 fail / 6 skip，Debug 与 R8 通过。
+- **候选：** `artifacts/e1-renderer-20261115/Bridge-E1-renderer-debug-r1.apk`（`d12646fa…`）。安装后需要重启 SystemUI 才会加载新的 Hook 代码。
+
+**设备冒烟（第 15.3 节 E-1 行，需用户执行）：**
+1. 逐字歌词：当前行逐字填充正常。
+2. 逐行歌词：开启“普通逐行歌词进度”时进度正常。
+3. 字符上浮：开启后效果与以前一致。
+4. 发光：光晕颜色、跟随封面正常。
+5. 译文：翻译行与翻译进度正常。
+6. AOD 低帧率：熄屏显示下歌词正常，亮屏与 AOD 来回切换不闪。
+7. 状态页：“歌词自绘”“逐字歌词进度”等显示已执行。
+
+**设备结果：用户重启 SystemUI 后确认 1–7 项全部通过（2026-11-15）。**
+
+### 15.8.3 E-2 拆分与 E-2a：静态值类型外移（2026-11-15，E-2a 已提交，未推送）
+
+**E-2 拆成四小刀，按纯移动的可行性排序：**
+- **E-2a：静态内嵌值类型。** 可以纯移动，本次完成。
+- **E-2b：通用反射工具归入各 accessor。**
+- **E-2c：`maybeLog*` 与描述函数归入 `diagnostics/`。**
+- **E-2d：system_server / OPlus 策略 Hook 与 AOD 支持归入 `OplusMediaPolicyHooks`。**
+
+E-2b 到 E-2d 都读写入口类的实例状态或调用 `hook()`，不能只靠移动完成，需要先定义窄 Host。每一刀会分两次提交：先只移动（必要时加 Host 访问），再收窄。
+
+**E-2a 内容：** Bridge `feat/e2-entry-cleanup`（基于 `cefb9e4`）。
+- 把入口类里 10 个 `static` 内嵌类型原样移到同包独立文件（共 315 行），做法与 E-1 相同：左移、改为包内可见的顶层类、静态导入入口类。这 10 个类型是 `ImmersiveEntryIndex`、`SystemUiLyricLoadContext`、`OplusMediaWhitelistBypassList`、`MetadataTrackIdentity`、`NormalizedTextSnapshot`、`LyricsRecyclerMatch`、`BoundLyricFrameStamp`、`LyricSurfaceReadinessSnapshot`、`LyricSurfaceReadinessState`、`LyricTextMatch`。
+- 无需放宽任何访问修饰符。
+- 两个非静态内部类 `PlaybackControllerBinding`（E-5）与 `LyricSurfaceReactivationTask`（E-6）依赖入口实例，随各自的 owner 一起迁移。
+
+**E-2a 证据：**
+- 方法体比对：2,700 个未变，22 个移动且一致，0 个改动。
+- 三份基线未变；契约测试未改。
+- 入口类预算下调：14,207 → 13,882 行，内嵌类型 12 → 2 个（73 行）。
+- `verify-build-identity` 通过（363 个输入）。
+- 本地 1056 tests / 0 fail / 6 skip，Debug 与 R8 通过。
+- 候选 `artifacts/e2-cleanup-20261115/Bridge-E2a-types-debug-r1.apk`（`3642c6d5…`）。
+
+**设备冒烟（需重启 SystemUI）：**
+1. 模块加载：状态页显示正常。
+2. 播放与歌词显示。
+3. 切歌。
+4. 亮屏与 AOD 往返。
+5. 沉浸歌词入口。
+6. 历史/白名单播放器：被系统列入黑名单的播放器仍有锁屏卡片（`OplusMediaWhitelistBypassList`）。
+
+**设备结果：用户重启 SystemUI 后确认 1–6 项全部通过（2026-11-15）。**
+
+### 15.8.4 E-2b–d 调研结论与建议（2026-11-15；E-2d1 已按此实施，见 15.8.5）
+
+基于 `76dc1a0` 的源码阅读与脚本统计。
+
+**E-2b 反射工具（建议推迟到 E-5/E-6）：**
+- 第 11017–11340 行是一整块 `private static` 工具，约 320 行：`describeViewForLog`、`invoke*ByName`、`findMethod`、`read*Field`、`readFieldValue`、`readFieldOrMissing`、`hasNoArgMethod`、`readRecyclerAdapter`、`readLyricsRecyclerCurrentIndex`、`currentApplicationContext` 等。
+- 技术上可以纯移动，但调用方遍布 Recycler、翻译按钮、OPlus 媒体对象各处。原样移走只会得到第 15.2 节明确不要的通用 `ReflectionUtils`。
+- 按系统边界拆分，需要 E-6 的 `LyricsRecyclerController` 与 E-4 的 `TranslationActionViewTracker` 先存在。
+- 因此建议：
+  - 两个日志描述函数随 E-2c 移入 `diagnostics/`；
+  - 两个 Context 函数随 E-2d；
+  - 其余在 E-4/E-6 各自迁出时一起带走，同时按 P-4 加类级缓存。
+
+**E-2d OPlus 策略 Hook（建议再拆成两刀）：** 第 1110–1600 行共 18 个方法、478 行。依赖分两类：
+- **纯策略放行**：历史白名单、黑名单放行、AOD 媒体支持、RUS 白名单、歌词入口、歌词支持门禁，共约 260 行。实例依赖只有 `hook()`、日志函数（`info` / `infoAlways` / `warn` / `error`）、`isCurrentLyricProviderPackage` 和各自的“已安装 / 已记录”标志。
+  - 建议做 **E-2d1**：新类 `OplusMediaPolicyHooks`，持有这些标志。
+  - 它通过约 5 个方法的 `PolicyHost`（hook、日志、当前 Provider 包名）访问入口类。
+  - 方法体只在调用处多一个 `host.` 前缀，用 `method-bodies.py --strip host.` 证明其余不变。
+  - 对应契约测试的定位表改为 OPLUS_POLICY。
+- **翻译按钮相关**：`onOplusMediaUpdatePkgActionsRule`、`installSystemUiTranslationToggleActionHook`、`onOplusMediaCreateActionsFromState`，约 220 行。它们读写翻译按钮的 rule-0 集合、偏好、`translationToggleActionBinder` 等 E-4 状态。
+  - 建议**并入 E-4**，与 `TranslationActionController` 一起迁，避免先造一个之后要拆的宽 Host。
+
+**E-2c 诊断日志：**
+- `maybeLog*` 约 70 处调用，读大量运行时字段。
+- 建议在 E-2d1 之后做：先把只读入参、不读实例状态的格式化与描述函数移入 `diagnostics/`；读状态的部分随各 owner 迁移。
+
+**下一步建议：E-2d1。**
+- 风险中等：Hook 回调运行在 SystemUI 中。
+- 需要设备冒烟：
+  - Salt 等历史白名单播放器有锁屏卡片；
+  - 黑名单播放器有卡片；
+  - AOD 显示媒体；
+  - 专用插件播放器显示歌词入口。
+
+### 15.8.5 E-2d1 实施记录：OPlus 放行 Hook 外移（2026-11-15，已提交，未推送）
+
+**分支：** Bridge `feat/e2d1-policy-hooks`，基于 `6d8fb99`。
+
+**先做的测试修正 `6d8fb99`（只改测试）：**
+- Hook 安装顺序基线原来按“类名.方法名”分组，与第 15.8.1 节“整方法搬到别的类不改变清单”的说法不符。
+- 现在改为只按方法名分组，回调接受任意接收者（`this::`、`owner::`、`Outer.this::`）。
+- 重新生成的清单只去掉了 `LockscreenLyricsModule.` 前缀，其余逐行相同。
+
+**新类 `OplusMediaPolicyHooks`（同包，包内可见）：**
+- 原样迁入 11 个方法：
+  - system_server：历史白名单安装与回调、媒体黑名单安装与回调、读取 manifest 选择加入；
+  - SystemUI：AOD 媒体面板白名单的安装、按方法 Hook 与回调；
+  - RUS 白名单、歌词入口、歌词支持门禁这三个回调。
+- 同时迁入它们独占的 9 个状态字段（安装标志、日志去重集合）和 7 个常量（服务类名、方法名、3 个 Hook ID、入口值 52）。
+- 通过 4 个方法的 `Host` 访问模块：`hook`、`info`、`infoAlways`、`error`。类内有同名的私有转发方法，所以迁入的方法体逐字不变。
+- 被入口类调用的 6 个方法去掉 `private`。
+- `synchronized (this)` 现在锁本对象而不是模块对象。这几段只保护各自的安装标志，不与入口类的其他同步块共享状态。
+
+**入口类的改动：**
+- `installOplusMediaPolicyBypassHooks` 留在入口类，因为它还安装翻译按钮的 pkg-actions Hook（属于 E-4）。它只把 3 个回调的接收者从 `this::` 改为 `oplusMediaPolicyHooks::`。
+- `onSystemServerStarting` 和 SystemUI 启动 Host 改为调用 `oplusMediaPolicyHooks.*`。
+- 新增一个持有 `OplusMediaPolicyHooks` 的字段，其 Host 是匿名类。
+- `isModuleManagedPlayerPackage`、`moduleManagedPlayerKind`、`readFieldValue` 去掉 `private`。
+
+**契约测试：**
+- `SystemUiLyricSupportGateContractTest` 的定位字符串去掉了 `private `，因为处理方法改为包内可见。断言本身未改。
+- 定位表中 OPLUS_POLICY 改为“新类 + 入口类”，SYSTEMUI_RUNTIME 加入新类。
+
+**证据：**
+- 方法体比对 `--base 6d8fb99 --strip oplusMediaPolicyHooks. --strip oplusMediaPolicyHooks:: --strip this::`：
+  - 11 个方法移动且一致，0 个改动；
+  - 新增 5 个方法：构造函数和 4 个一行转发；
+  - 不加 `--strip` 时只报出两处调用点。
+- 三份基线不变。
+- 入口类预算下调：13,882 → 13,605 行，字段 373 → 358，方法 565 → 554。
+- `verify-build-identity` 通过（364 个输入）。
+- 本地 1056 tests / 0 fail / 6 skip，Debug 与 R8 通过。
+
+**候选：** `artifacts/e2-cleanup-20261115/Bridge-E2d1-policy-debug-r1.apk`（`b04ae0b5…`）。
+
+**设备冒烟：**
+- 历史白名单和黑名单的 Hook 运行在 system_server 中，`onSystemServerStarting` 只在开机时执行，**所以必须重启手机**，单独重启 SystemUI 不够。
+- 重启后检查：
+  1. Salt 等历史白名单播放器有锁屏卡片，且暂停后仍留在历史中。
+  2. 被系统列入黑名单的播放器有卡片。
+  3. AOD 熄屏时显示媒体面板。
+  4. 专用插件播放器（如酷狗概念版）有歌词入口，并显示歌词。
+  5. 状态页正常。
+
+**设备结果：用户重启手机后确认 1–5 项全部通过（2026-11-15）。**
+
+### 15.8.6 E-2c 实施记录：日志描述函数外移（2026-11-15，已提交，未推送）
+
+**分支：** Bridge `feat/e2c-log-descriptions`（基于 `01926e3`）。
+
+**移动了什么：**
+- 8 个只拼日志文字的 `static` 函数，共 118 行，原样移入同包新类 `LyricLogDescriptions`（final、包内可见、私有构造）。
+- 这 8 个函数是：`describeViewForLog`、`describeLayoutParamsForLog`、`describeSeedlingIcon`、`describeProbeLines`、`describeMetadataArtwork`、`describeDecisionLine`、`describeModelWindow`、`shortenForLog`。
+- 它们都是 static，编译器保证不读实例状态。
+
+**调用方怎么处理：**
+- 入口类和 `OfficialLyricTextRenderer` 各加一条 `import static ...LyricLogDescriptions.*`，调用处不改。
+- `OfficialLyricDrawCoordinator` 本来就有自己的私有 `shortenForLog`，不受影响。
+- 新类需要的 5 个入口类成员去掉 `private`：`extractIconBitmap`、`firstNonNullBitmap`、`firstNonEmpty`、`objectId`、`PROBE_FIELD_MISSING`。
+
+**有意留下的函数：** `whitelistGetterLabel`、`kuWoArtworkSnapshotKey`、`isTranslationActionDescription` 带业务含义（启动标签、缓存键、按钮识别），不是纯日志，留给各自的 owner。
+
+**位置与计划不同：** 放在同包而非 `diagnostics/`，原因同 E-1：依赖的类型是包内可见的，分包留到 E-8。
+
+**证据：**
+- 方法体比对：8 个移动且一致，0 个改动，新增 1 个（私有构造）。
+- 三份基线不变。
+- 入口类预算下调：13,605 → 13,481 行，方法 554 → 546。
+- `verify-build-identity` 通过（365 个输入）。
+- 本地 1056 tests / 0 fail / 6 skip，Debug 与 R8 通过。
+
+**候选：** `artifacts/e2-cleanup-20261115/Bridge-E2c-logdesc-debug-r1.apk`（`ea07903a…`）。
+
+**设备冒烟（重启 SystemUI）：**
+1. 状态页正常。
+2. 锁屏歌词正常。
+3. 调试页打开任一日志区域、点“开始 60 秒诊断”，结束后预览摘要能生成。这些函数只在开启诊断时执行。
+
+**设备结果：用户重启 SystemUI 后确认 1–3 项全部通过（2026-11-15）。**
+
+### 15.8.7 E-3 实施记录：屏幕超时外移（2026-11-15，已提交，未推送）
+
+**分支：** Bridge `feat/e3-screen-timeout`（基于 `3adb0f8`）。
+
+**移动了什么：** 新类 `ScreenTimeoutController`（同包、final、包内可见）接手智能屏幕超时的全部状态：
+- 26 个方法：
+  - WakeLock 获取、续租、释放；
+  - user-activity 脉冲；
+  - 自定义超时窗口；
+  - keyguard 状态缓存；
+  - 歌词证据窗口（可见 TextView 时间戳与模型宽限期）；
+  - 解锁后复核；
+  - 限频日志。
+- 16 个字段、1 个脉冲 `Runnable`、7 个 `SCREEN_TIMEOUT_*` 常量。
+- `Host` 接口只有 9 个方法：
+  - 4 个读取：歌词模式常亮标志、播放状态、是否有逐字模型、是否有官方歌词；
+  - `hasSupportedSystemUiPlayer`；
+  - `deactivateSystemUiLyricModeAfterSurfaceHidden`；
+  - `ensureScreenTimeoutReceiver`；
+  - `info`、`error`。
+- 主线程 `Handler` 由构造参数传入。
+
+**与计划不同：接收器留在入口类。**
+- SCREEN_OFF / SCREEN_ON / USER_PRESENT 接收器除了屏幕超时，还负责：
+  - AOD 低帧率模式；
+  - 亮灭屏 settle 窗口；
+  - 锁屏状态；
+  - 翻译按钮重绑。
+- 整体移过来会让屏幕超时控制器调用翻译与 AOD 代码，归属反而更乱。
+- 所以接收器原样留在入口类，其中屏幕超时的语句改为经 `screenTimeout.` 调用，执行顺序与原来逐句一致。
+- 接收器归属在 E-4（翻译 action）或 E-7 时再定。
+
+**访问点：**
+- 入口类对已移动成员的引用一律加 `screenTimeout.` 前缀，其余文字不变。
+- 入口类仍直接读写的控制器字段有 8 个：
+  - `screenTimeoutSmartEnabled`、`screenTimeoutCustomSeconds`（设置应用）；
+  - `screenTimeoutPausedByScreenOff`、`screenTimeoutPausedByUserPresent`（接收器、歌词模式激活、可见 TextView 记录、`isAodLowFrameRateLyricMode`）；
+  - `lastVisibleOfficialLyricTextViewAt`、`screenTimeoutLyricEvidenceGraceUntilElapsedMs`（可见证据、节流与模型宽限）；
+  - `screenTimeoutPowerManager`（AOD 判定）；
+  - `screenTimeoutKeyguardManager`（`isDeviceKeyguardLocked` 共用同一个缓存）。
+- 这些字段改成具名方法，留到“唯一写入组件”收口（完成定义第 3 条）时做，不混进这次纯移动。
+- 入口类为此放宽了 3 处 `private`：`TAG`、`currentApplicationContext()`、`applicationContextOf()`。
+
+**证据：**
+- 方法体比对（`--strip screenTimeout. --strip host.`）：
+  - 24 个移动后一致；
+  - 2 个改动，`hasScreenTimeoutWakeLockBaseConditions` 和 `maybeLogScreenTimeoutSkip`。改动只是把入口类字段读取换成 `host.` 调用，`(currentWordLyricModel != null)` 换成 `host.hasCurrentWordLyricModel()`，拼出的日志文字不变；
+  - 0 个删除；
+  - 新增 6 个，即控制器构造函数和 5 个同名转发。
+- 三份基线（Hook ID、日志 event、安装顺序）不变。
+- 入口类预算下调：13,481 → 13,114 行，字段 358 → 335，方法 546 → 520。
+- `BridgeSourceMap` 的 `SYSTEMUI_RUNTIME` 加入新文件。
+- `verify-build-identity` 通过（366 个输入）。
+- 本地 1056 tests / 0 fail / 6 skip，Debug 与 R8 通过。
+
+**候选：** `artifacts/e3-screen-timeout-20261115/Bridge-E3-screentimeout-debug-r1.apk`（`9ddde0dd…`）。
+
+**设备冒烟（重启 SystemUI；需要开启智能屏幕超时；高风险，必须通过才进下一刀）：**
+1. 锁屏逐字歌词播放中，屏幕超过系统灭屏时间后仍保持亮屏（续租）。
+2. 设置了自定义秒数时，到时后按系统超时正常灭屏。
+3. 按电源键灭屏后不会自己亮起；再亮屏回到锁屏，歌词与常亮都恢复。
+4. 解锁进入桌面后，按系统超时正常灭屏（解锁释放）。
+5. 锁屏上暂停播放，或切到无歌词的歌，之后按系统超时正常灭屏（条件失效释放）。
+6. 关闭智能屏幕超时后，锁屏按系统超时正常灭屏。
+
+**结果：** 用户安装候选 `9ddde0dd…`、重启 SystemUI 后，设备冒烟 1–6 项通过（2026-11-15）。
+
+### 15.8.8 E-4a 实施记录：翻译按钮 View 追踪外移（2026-11-15，已提交，未推送）
+
+**分支：** Bridge `feat/e4-translation-tracker`（基于 `94f32a2`）。E-4 按计划分两步，这是第一步 `TranslationActionViewTracker`；第二步 `TranslationActionController`（rule-0、偏好、rebind）另做。
+
+**移动了什么：** 新类 `TranslationActionViewTracker`（同包、final、包内可见），共 24 个方法、11 个字段、3 个常量：
+- 识别翻译按钮：内容描述前缀、图标 alpha 指纹，以及位图、矢量图的匹配缓存；
+- 已追踪的 View 集合；
+- VISIBLE→INVISIBLE 重定向的记录与回退；
+- 强制显隐，以及开/关状态的图标与无障碍描述。
+- `Host` 有 8 个方法：
+  - `shouldManageTranslationActionViewVisibility`、`describeTranslationButtonState`；
+  - `currentWordLyricModel`、`currentTranslationPreferencePackage`；
+  - `userWantsTranslationButton`、`isLyricInfoTranslationEnabled`；
+  - `isNearRememberedLyricsRecyclerView`、`translationButtonDebug`。
+- 构造参数另传 `translationToggleActionBinder`（独立类，不是入口类）和主线程 `Handler`。
+
+**留在入口类的：**
+- 喂给追踪器的 View Hook 回调：`onViewSetVisibility` 的重定向、`onViewSetContentDescription`、`onImageViewSetImage`。它们随 E-7 的全局 View Hook installer 迁走。
+- 以 Recycler 注册表为锚的扫描与恢复：`discoverTranslationActionViewsNearRememberedLyrics`、`scheduleTranslationActionViewRecovery`、`isNearRememberedLyricsRecyclerView`，随 E-6 迁走。
+- 歌词模式门禁与状态描述：`shouldManageTranslationActionViewVisibility`、`describeTranslationButtonState`。
+- 这些回调仍直接读写追踪器的 7 个字段（锁、重定向集合、presentation 两个表、追踪标志、指纹）。改成具名方法留到收口时做。
+
+**访问点：**
+- 入口类对已移动成员的引用加 `translationTracker.` 前缀，`this::refreshTranslationActionViewVisibility` 改为 `translationTracker::…`。
+- `isTranslationActionDescription` 是静态函数，入口类改为静态导入。
+- action binder 的 Host 中，`rememberTranslationIconFingerprint` 转发的接收者从 `LockscreenLyricsModule.this` 改为 `translationTracker`。
+- `TranslationActionRedirectContractTest` 的定位串去掉了 `private `（同 E-2d1 的先例），断言不变。
+- `BridgeSourceMap` 的 `TRANSLATION_ACTION` 改为“追踪器 + 入口类”，`SYSTEMUI_RUNTIME` 加入新文件。
+
+**证据：**
+- 方法体比对（`--strip translationTracker. --strip this:: --strip translationTracker:: --strip host.`）：
+  - 23 个移动后一致；
+  - 1 个改动：`applyTranslationActionViewVisibility` 把 3 处 `currentWordLyricModel` 字段读取换成 `host.currentWordLyricModel()`；
+  - 0 个删除；
+  - 新增 8 个：构造函数和 7 个同名转发。
+- 三份基线不变。
+- 入口类预算下调：13,114 → 12,596 行，字段 335 → 322，方法 520 → 496。
+- `verify-build-identity` 通过（367 个输入）。
+- 本地 1056 tests / 0 fail / 6 skip，Debug 与 R8 通过。
+
+**候选：** `artifacts/e4-translation-tracker-20261115/Bridge-E4a-tracker-debug-r1.apk`（`b5d61931…`）。
+
+**设备冒烟（重启 SystemUI；用带翻译的逐字歌词）：**
+1. 锁屏媒体卡片上翻译按钮正常出现；点它，歌词译文切换，按钮图标随开/关变化。
+2. 切到没有译文的歌，翻译按钮隐藏，播放器自己的按钮（如收藏）正常显示，上一首/播放/下一首仍居中。
+3. 再切回有译文的歌，翻译按钮回来。
+4. 灭屏再亮屏、解锁再锁屏后，按钮状态正确。
+5. 在设置里关闭“显示翻译按钮”，锁屏上按钮隐藏；重新打开后恢复。
+
+**结果：** 用户安装候选 `b5d61931…`、重启 SystemUI 后，设备冒烟 1–5 项通过（2026-11-15）。
+
+### 15.8.9 E-4b 实施记录：rule-0 与翻译偏好外移（2026-11-15，已提交，未推送）
+
+**分支：** Bridge `feat/e4-translation-controller`（基于 `fdd3a2d`）。
+
+**移动了什么：** 新类 `TranslationActionController`（同包、final、包内可见），共 18 个方法、11 个字段：
+- **OPlus pkg-actions 规则：**
+  - `onOplusMediaUpdatePkgActionsRule` Hook 回调；
+  - 原始快照与上次应用的参数；
+  - 带防重入的 replay；
+  - 解锁时恢复原生规则；
+  - rule-0 的三个包集合（已知、待刷新、已刷新）及其 ensure / drop / refresh / mark。
+- **翻译偏好存储：**
+  - 每个播放器的 lyricInfo 译文开关读取、加载与缓存；
+  - 翻译按钮开关及其全局默认值；
+  - 偏好键名与包名规整（两个 static）；
+  - 是否把偏好应用到渲染器的判定。
+- `Host` 有 6 个方法：`isDeviceKeyguardLocked`、`currentTranslationPreferencePackage`、`defaultTranslationEnabled`、`translationButtonDebug`、`info`、`error`。
+- 构造参数另传 `officialLyricTextRenderer`（独立类）。
+
+**留在入口类的（E-4 原计划的其余部分）：**
+- 设置广播处理 `handlePlayerTranslationSettingsChanged`（131 行），以及 `clearTranslationPreferenceOverrides`、`setLyricInfoTranslationEnabled`、`toggleLyricInfoTranslation`。它们同时改 `lyricUiConfig`、渲染器配置、布局 generation、Recycler 锚点和设置回执，属于 E-7 的“设置应用改为发布快照”。
+- MediaData rebind：`requestOplusTranslationActionRebind`、`requestDirectMediaDataUpdateState` 等。它读取播放控制器绑定，属于 E-5。
+- `installSystemUiTranslationToggleActionHook` 与 `onOplusMediaCreateActionsFromState`。后者读取当前模型、Provider payload 和最近的 media button，随 E-5 的模型真值一起迁。
+- 这些代码仍直接读写控制器的 4 个字段：
+  - 偏好的两个缓存；
+  - 按钮开关缓存；
+  - `oplusUpdatePkgActionsRuleMethod`，由入口类安装 Hook 时写入。
+
+**访问点：**
+- 入口类引用加 `translationController.` 前缀。
+- 安装处改为 `translationController::onOplusMediaUpdatePkgActionsRule`。
+- 两个 static 改为静态导入。
+- 已有两个匿名 Host（action binder、E-4a 追踪器）中的同名转发，接收者从 `LockscreenLyricsModule.this` 改为 `translationController`。
+- `TRANSLATION_PREFERENCES_NAME`、`TRANSLATION_PREFERENCE_KEY` 去掉 `private`。
+- 两个契约测试的定位串去掉 `private `，断言不变：
+  - `OplusPkgActionsRuleReplayContractTest` 定位 Hook 回调；
+  - `SystemUiLyricSupportGateContractTest` 以它作为上一个处理函数的结束标记。
+- `BridgeSourceMap` 的 `OPLUS_POLICY`、`TRANSLATION_ACTION`、`SYSTEMUI_RUNTIME` 加入新文件。
+
+**一处语义差异（已核对）：**
+- `ensureTranslationPreferenceLoaded` 里的 `synchronized (this)` 文字不变，但锁对象从模块实例变成了控制器实例。
+- 入口类其余 `synchronized (this)` 块中，只有 `installSystemUiTranslationToggleActionHook` 会调到它。所以加锁顺序固定为“模块 → 控制器”。
+- 控制器的这段同步块内不再获取模块锁：只读静态 Context、两个无锁的 Host 读取，再调用渲染器。所以不存在锁顺序反转。
+- 其他写偏好缓存的入口类代码原本就不在锁内，行为不变。
+
+**证据：**
+- 方法体比对（`--strip translationController. --strip this:: --strip translationController:: --strip host.`）：
+  - 0 个删除；
+  - 唯一改动是 `defaultTranslationPreferenceValue`：两处 `lyricUiConfig.defaultTranslationEnabled` 换成 `host.defaultTranslationEnabled()`；
+  - 新增 6 个：构造函数和 5 个同名转发。
+- 三份基线（Hook ID、日志 event、安装顺序）不变。
+- 入口类预算下调：12,596 → 12,339 行，字段 322 → 312，方法 496 → 478。
+- `verify-build-identity` 通过（368 个输入）。
+- 本地 1056 tests / 0 fail / 6 skip，Debug 与 R8 通过。
+
+**候选：** `artifacts/e4-translation-controller-20261115/Bridge-E4b-controller-debug-r1.apk`（`8f613bfe…`）。
+
+**设备冒烟（重启 SystemUI；带翻译的逐字歌词）：**
+1. 锁屏翻译按钮出现，点它译文切换。重启 SystemUI 后，开关状态被记住。
+2. 解锁进桌面后，媒体卡片恢复播放器原生按钮（rule-0 恢复）；再锁屏，翻译按钮回来。
+3. 切到另一个支持翻译的播放器，各自的译文开关互不影响。
+4. 在 App 的“播放器翻译设置”里改某个播放器的默认译文或按钮开关，锁屏立即生效。
+5. 保留原生按钮行的播放器（如有）在锁屏上仍保持原生按钮行。
+
+**结果：** 用户安装候选 `8f613bfe…`、重启 SystemUI 后，设备冒烟 1–5 项通过（2026-11-15）。
+
+### 15.8.10 E-5a 实施记录：MediaController 绑定外移（2026-11-15，已提交，未推送）
+
+**分支：** Bridge `feat/e5-playback-controller`（基于 `35a4c9e`）。
+
+**为什么先只做绑定：**
+- 计划中 E-5 约 3,300 行，第一步是 `SystemUiPlaybackController`（MediaController、时钟、reset guard）。
+- 逐方法看依赖后，“时钟”与“reset guard”不能和绑定一起干净地移走：
+  - 播放状态写入（`rememberSystemUiPlaybackState` 两个重载）在同一个方法里还要做官方歌词 handoff、清渲染目标、清 seedling 提示、观察进度跳变（Recycler）、更新屏幕超时；
+  - `resetSystemUiPlaybackPositionForTrackChange` 同时清活动行、Recycler 索引与 adaptive follow；
+  - 时钟字段（`lastPlaybackIsPlaying`、`lastComputedPosition*` 等）被渲染热路径多处直接读取。
+- 现在硬搬只能造一个十几个方法的宽 Host。所以 E-5a 只移 MediaController 绑定；时钟与 reset guard 等模型真值（E-5 第二步）一起定 owner 后再迁。
+
+**移动了什么：** 新类 `SystemUiPlaybackController`（同包、final、包内可见）。
+- 7 个方法：
+  - `scheduleSystemUiPlaybackControllerDiscovery`、`discoverSystemUiPlaybackController`（活动会话查找与 750 ms 节流）；
+  - `ensureSystemUiPlaybackControllerCallback`、`clearSystemUiPlaybackControllerBinding`；
+  - `isCurrentPlaybackControllerBinding`、`onBoundPlaybackSessionDestroyed`；
+  - `sameSessionToken`。
+- 5 个字段：绑定锁、当前绑定、epoch、两个发现节流字段。
+- 内部类 `PlaybackControllerBinding`：原样移入，去掉 `private`，因为入口类仍用这个类型。入口类的内嵌类型 2 → 1。
+- `Host` 有 5 个方法：`onBoundPlaybackStateChanged`、`rememberSystemUiPlaybackState`、`rememberMediaControllerPlaybackState`、`info`、`error`。
+- 主线程 `Handler` 由构造参数传入。
+
+**留在入口类的：**
+- `rememberMediaControllerPlaybackState`：判断当前 Provider，然后建绑定并写入状态。
+- `onBoundPlaybackStateChanged`：写入状态、刷新歌词 View。
+- 全部时钟与 reset guard 代码。
+- `requestOplusTranslationActionRebind` 仍在锁内直接读当前绑定（`playbackController.` 前缀），改为具名查询留到收口。
+
+**证据：**
+- 方法体比对（`--strip playbackController. --strip this:: --strip playbackController:: --strip host.`）：11 个移动后一致（含内部类的构造函数与 `matches`），**0 个改动**，0 个删除，新增 6 个（构造函数与 5 个同名转发）。
+- 三份基线不变。
+- 入口类预算下调：12,339 → 12,161 行，字段 312 → 308，方法 478 → 471，内嵌类型 2 → 1（内嵌行 73 → 37）。
+- `BridgeSourceMap` 的 `SYSTEMUI_RUNTIME` 加入新文件。
+- `verify-build-identity` 通过（369 个输入）。
+- 本地 1056 tests / 0 fail / 6 skip，Debug 与 R8 通过。
+
+**候选：** `artifacts/e5-playback-controller-20261115/Bridge-E5a-playback-debug-r1.apk`（`8d69eaf2…`）。
+
+**设备冒烟（重启 SystemUI；逐字歌词）：**
+1. 重启 SystemUI 后开始播放，锁屏歌词能跟上进度（绑定建立）。
+2. 锁屏上暂停、继续，歌词随之停走。
+3. 拖动进度条或在播放器内 seek，歌词跳到对应行。
+4. 快速连续切歌 3–5 次，歌词每次都换到新歌且进度从头开始。
+5. 切到另一个播放器播放，锁屏歌词跟随新播放器；关掉原播放器后不残留。
+
+**结果：** 用户安装候选 `8d69eaf2…`、重启 SystemUI 后，设备冒烟 1–5 项通过（2026-11-15）。
+
+### 15.8.11 E-5 后续与 E-6a 实施记录：歌词 View 注册表外移（2026-11-15，已提交，未推送）
+
+**E-5 第二步暂缓：**
+- 计划中 E-5 的下一步是把播放时钟和切歌复位保护（reset guard）交给 `SystemUiPlaybackController`。核对后发现它不能纯移动：
+  - `estimatePlaybackPositionMillis` 还读取 Provider payload 的快照位置，以及 Recycler 索引对应的模型行；
+  - 时钟的每一处写入都嵌在 handoff、渲染目标、Recycler 跟随的逻辑里。
+- 只搬字段会让全部写入仍留在入口类，没有收益。
+- 用户选择先做 E-6a。E-5 至 E-7 的边界（时钟、reset guard、模型真值、handoff、设置快照的 owner 与 Host 大小）需要先写设计，再实施 E-5b。
+
+**E-6a 分支：** Bridge `feat/e6a-view-registry`（基于 `268da50`）。
+
+**移动了什么：** 新类 `LyricViewRegistry`（同包、final、包内可见，**不需要 Host**）。
+- 7 个方法：
+  - `hasAttachedLyricsRecyclerView`、`isRememberedLyricsRecyclerView`、`isNearRememberedLyricsRecyclerView`；
+  - `snapshotLyricsRecyclerViews`、`firstAttachedLyricsRecyclerView`；
+  - `rememberLyricRootView`、`snapshotLyricRootViews`。
+- 4 个字段：两个弱引用列表及各自的锁。
+- 这些方法只读写这两个列表，和它们的锁。
+
+**留在入口类的：**
+- `rememberLyricsRecyclerView`：还要绑定 adapter 并记录日志。
+- `hasStableActiveLyricRefreshSurface`：要回退到活动 TextView。
+- 若干在锁内直接遍历列表的代码：E-4a 留下的翻译按钮扫描、Recycler 对齐与刷新等。
+- 它们改用 `lyricViews.lyricsRecyclerViewsLock` / `lyricViews.lyricsRecyclerViews` 访问，锁对象与遍历逻辑不变；改成具名查询随 E-6 后续步骤做。
+- E-4a 追踪器的 Host 转发 `isNearRememberedLyricsRecyclerView`，接收者改为 `lyricViews`。
+
+**证据：**
+- 方法体比对（`--strip lyricViews. --strip this:: --strip lyricViews::`）：7 个移动后一致，**0 个改动**，0 个删除，0 个新增。
+- 三份基线不变。
+- 入口类预算下调：12,161 → 12,027 行，字段 308 → 305，方法 471 → 464。
+- `BridgeSourceMap` 的 `RECYCLER` 改为“入口类 + 注册表”，`SYSTEMUI_RUNTIME` 加入新文件。
+- `verify-build-identity` 通过（370 个输入）。
+- 本地 1056 tests / 0 fail / 6 skip，Debug 与 R8 通过。
+
+**候选：** `artifacts/e6-view-registry-20261115/Bridge-E6a-registry-debug-r1.apk`（`e9b28375…`）。
+
+**设备冒烟（重启 SystemUI；逐字歌词）：**
+1. 锁屏歌词出现并滚动跟随当前行。
+2. 亮屏与 AOD 往返 3 次，歌词每次都恢复，位置正确。
+3. 切歌后新歌歌词淡入，没有残留旧行。
+4. 翻译按钮仍能被识别和切换（扫描依赖注册表）。
+5. 点开沉浸式歌词入口再返回，锁屏歌词正常。
+
+**结果：** 用户安装候选 `e9b28375…`、重启 SystemUI 后，设备冒烟 1–5 项通过（2026-11-15）。
+
+### 15.8.12 E-5 至 E-7 边界设计（2026-11-15，设计已提交，按刀实施）
+
+**为什么要先设计：**
+- E-0 至 E-6a 都是纯移动，被移走的部分各自只有少数外部写入。
+- 剩下的时钟、模型真值、Recycler 回调、handoff 和设置应用互相写对方的字段。再按“整块原样移走”做，只能得到转发十几个回调的宽 Host。
+- 本节先给出每个字段的唯一 owner，以及跨 owner 的交互方式，再据此排刀。
+
+#### 1. 度量（入口类 `f042951`，脚本扫描，不是 AST）
+
+- 剩余 **204 个实例字段、464 个方法**。
+- 按“方法写得最多的字段所属区域”归类后，各区域的方法行数：
+
+| 区域 | 方法数 | 行数 | 代表字段 |
+| --- | ---: | ---: | --- |
+| 模型与加载 | 81 | 2,697 | `currentWordLyricModel`、`currentLyricProvider*`、`systemUiHasOfficialLyric`、`lastSystemUi*` 元数据、清理快照、插件 generation |
+| Recycler | 104 | 2,121 | `lastLyricsRecyclerIndex`、primed/adaptive follow、行样式、沉浸入口、adapter 绑定 |
+| 活动行刷新 | 34 | 859 | `activeLyricLine*`、`activeRendererWordLine`、`activeRendererTargetsByRecycler`、TextView 缓存 |
+| 设置应用 | 18 | 797 | `lyricUiConfig`、`runtimeLyricUiConfig`、渲染器配置、`translationLayoutGeneration` |
+| 播放时钟 | 21 | 540 | `lastPlaybackIsPlaying/Speed`、`lastComputedPosition*`、reset guard、seedling 提示 |
+| 歌词模式 | 19 | 379 | `systemUiLyricModeKeepAwakeActive`、表面再激活、provisional draw、AOD 低帧率 |
+| handoff | 15 | 276 | `officialLyricHandoff*`、`officialLyricDrawSuppressedUntil`、亮行几何提交、接管淡入 |
+| 封面 | 10 | 155 | 动态封面运行时 |
+| 未归类 | 162 | 2,544 | 日志时间戳、Hook 安装标志、反射缓存、通用工具 |
+
+- **跨区域写入少，而且集中在几个事件点**：
+  - 切歌复位 `resetSystemUiPlaybackPositionForTrackChange`：写时钟，还写活动行 3 个字段、Recycler 3 个字段；
+  - 播放状态写入 `rememberSystemUiPlaybackState`：写时钟；判定为重播时，再清活动行、清渲染目标、开始 handoff；最后观察进度跳变（Recycler）；
+  - Recycler 的 `rememberLyricsRecyclerTargetIndex` / `primeLyricsRecyclerView`：写活动行与 seedling 提示；
+  - 插件 generation 激活 `activatePluginHookGeneration`：重置 Recycler、位置控制器的 Hook 标志；
+  - 模型替换标志 `lyricModelReplacementInProgress`：在模型发布路径写、handoff 读；
+  - 接管淡入 `pendingCustomLyricTakeoverFade`：在 Recycler 可见性 watchdog 与 handoff 两处写。
+- **读取面最宽的两个字段**：
+  - `currentWordLyricModel` 在入口类出现 88 次；
+  - `systemUiLyricModeKeepAwakeActive` 出现 26 次，但只有 2 个写入点（激活 / 隐藏）。
+
+#### 2. Owner 与交互规则
+
+**规则：**
+1. 每个可变字段只有一个写入组件。
+2. 其他组件只通过 owner 的只读查询，或不可变快照读取。
+3. 跨 owner 的连带动作用**入口类组合根里的显式事件**表达，按现有执行顺序依次调用各 owner，不引入通用事件总线。
+4. 单个 Host ≤ 12 个方法，超过就说明边界画错。
+
+| Owner（目标类） | 拥有的状态 | 对外只读 | 接收的事件 |
+| --- | --- | --- | --- |
+| `LyricSurfaceModeController`（新） | 歌词模式常亮标志、表面再激活回调与 generation、provisional draw、AOD 低帧率、`screenTurnedOffForLockState`、模式重绑 runnable | `isActive()`、`isAodLowFrameRate()`、`hasProvisionalSurface(now)` | `activateFromSurface`、`deactivateAfterHidden`、亮灭屏（由 E-3 接收器调用） |
+| `SystemUiPlaybackController`（已有，E-5a） | 现有绑定，加上时钟、reset guard、seedling 提示、`playbackClockTrackKey` | `isPlaying()`、`speed()`、`rawPositionMillis(now)`（无法给出时返回 -1）、`isResetGuardActive(now)` | `onTrackReset(title, artist, reason)`、`onPlaybackState(...)`（两阶段，见下）、`noteSeedlingActiveLine(...)` |
+| `LyricModelStore`（并入 `LyricRenderTransactions` 或其旁） | 当前模型、Provider 包名与 payload、官方歌词标志、SystemUI 元数据、清理快照、`lyricModelReplacementInProgress` | `ModelSnapshot`（不可变：模型、payload、包名、官方歌词标志、替换中标志） | 只由 `LyricPublicationPipeline` 写入 |
+| `LyricSurfaceHandoffController`（新） | handoff generation、开始时间、释放重试、绘制抑制截止、亮行几何提交、接管淡入 | `isDrawSuppressed(now)`、`isHandoffActive()` | `beginTrackHandoff(reason)`、`onRecyclerVisibilityWatchdog(...)`（替代 watchdog 直接写淡入标志） |
+| `ActiveLyricRefreshScheduler`（新） | 活动行与时间、活动渲染行、渲染目标表（含 `activeRendererTargetsByRecycler`）、TextView 绑定缓存 | `activeLine()`、`targetsFor(recycler)` | `onTrackReset`、`onRecyclerPrimed(line)`、`onPlaybackRestart` |
+| `LyricsRecyclerController`（新，配合 `LyricViewRegistry`） | Recycler 索引、primed/adaptive follow、行样式、沉浸入口状态、Recycler 回调 | `currentIndex()` | `onTrackReset`、`onPositionJump(prev, next)` |
+| `PluginHookGenerationManager`（新，E-5 原计划） | 插件 generation，以及各 Hook 的“已安装 / 已尝试”标志 | `isRecyclerHookAvailable()` 等 | `activateGeneration(loader)` |
+| `RuntimeConfigSnapshot` 发布者（E-7） | `lyricUiConfig`、运行时配置、加载时间 | 不可变快照 | 设置广播 |
+
+**两阶段播放状态写入**（解决 E-5b 不能纯移动的问题）：
+- 原 `rememberSystemUiPlaybackState` 的顺序是：
+  1. 读上一位置；
+  2. 判断是否忽略过期位置；
+  3. 判断是否重播；如果是，清活动行与渲染目标，并开始 handoff；
+  4. 平滑处理；
+  5. 写时钟；
+  6. 写日志；
+  7. 观察进度跳变；
+  8. 更新屏幕超时。
+- 改为：
+  - `PlaybackPlan plan = playbackController.plan(state, ..., previousPosition, now)`：纯计算，不写字段，产出“忽略过期 / 重播 / 平滑后位置 / 活动位置 / 是否跳变”；
+  - 组合根按原顺序执行连带动作：重播时调刷新调度与 handoff；
+  - `playbackController.commit(plan)`：写时钟；
+  - 组合根再执行跳变观察与屏幕超时。
+- 这样写入顺序与现在逐步一致，时钟只有一个写入者。
+- `estimatePlaybackPositionMillis` 留在组合根，作为组合函数：Provider payload 快照 → `rawPositionMillis` → 模型按 Recycler 索引给出的行。它本来就跨三个 owner。
+
+**切歌复位事件 `onTrackReset`：** 现在一个方法写三处。改为组合根依次调用：
+1. 时钟复位；
+2. 刷新调度清活动行；
+3. Recycler 清索引与 follow；
+4. 清 seedling 提示。
+
+顺序与现有赋值顺序一致。
+
+#### 3. 修订后的刀序（替代第 15.3 节中 E-5 至 E-7 的内部顺序）
+
+按“外部写入最少”排列：
+
+| 刀 | 内容 | 外部写入点 | 风险 | 设备验证要点 |
+| --- | --- | --- | --- | --- |
+| **E-6b** | `LyricSurfaceModeController`：模式标志与再激活、provisional draw、AOD 低帧率、锁屏状态 | 2 个（激活 / 隐藏） | 中 | 亮屏 / AOD 往返、隐藏后停刷新、切歌时短暂丢失表面 |
+| **E-7a** | `LyricSurfaceHandoffController`：handoff 与绘制抑制、亮行几何提交；watchdog 改发事件 | 2 个字段 | 高 | 切歌淡入、迟到接管、transient miss |
+| **E-5b** | 时钟、reset guard、seedling 提示并入 `SystemUiPlaybackController`；两阶段写入；`onTrackReset` 事件 | 4 个事件点 | 高 | 暂停 / seek、快速切歌、同曲重播、AOD 低帧率进度 |
+| **E-7b** | `ActiveLyricRefreshScheduler`：活动行、渲染目标、TextView 缓存 | 2 个事件 | 高 | 逐字推进、刷新率档位、AOD |
+| **E-5c** | `PluginHookGenerationManager`：插件 generation 与 Hook 标志；KuWo / 插件兼容 | 1 个（generation 激活） | 中 | 重启 SystemUI、插件重载、KuWo |
+| **E-6c** | `LyricsRecyclerController` 及其 Hook installer：Recycler 回调、索引、follow、行样式、沉浸入口 | 由 E-5b、E-7b 的事件替代 | 高 | attach / detach、对齐与行高、沉浸入口 |
+| **E-5d** | `LyricModelStore` + `LyricPublicationPipeline`：模型真值、提交前 `canCommit(loadEpoch)` 复核；加载 Hook 只剩读参、调 pipeline、一次 `proceed` | 模型读取面最宽，放在其余 owner 都已就位之后 | 高 | 快速切歌、同曲 metadata 更新、清理配置重放 |
+| **E-7c** | `RuntimeConfigSnapshot`：设置广播只发布快照，各 owner 自行应用 | — | 中 | 设置页全部开关、播放器翻译设置 |
+
+- E-8 不变。
+- 每刀仍遵守第 15.3 节的通用规则，变化如下：
+  - E-5b、E-7a、E-7b 含少量**有意的结构改写**（两阶段写入、事件替代直接赋值），不再是纯移动。它们的等价证据改为“方法体比对 + 改写处逐条对照原执行顺序的说明 + 设备冒烟”。
+  - 改写只调整调用位置，不改常量、判定条件和日志文字。
+- 每刀开工前，先用本节的脚本口径重新统计该 owner 的读写点，确认 Host ≤ 12。超出就先回到本节修改设计，不硬做。
+
+#### 4. 未决与风险
+
+- `currentWordLyricModel` 有 88 处读取。E-5d 之前的各刀继续直接读入口类字段，经 Host 的 `currentWordLyricModel()` 读取。E-5d 再统一改为 `ModelSnapshot`。每刀都要防止 Host 因此变宽。
+- 160 余个未归类方法中，大部分是日志与反射工具。它们随各 owner 迁移时一起带走（第 15.8.4 节的 E-2b 结论不变），不单独成刀。
+- 本节的归类来自文本扫描。少数字段可能被分错区域，实施时以逐方法阅读为准。
+- 锁对象：E-6b、E-7a 涉及 `synchronized` 方法与 `this` 锁。每刀都要像 E-4b 那样逐个核对加锁顺序。
+
+### 15.8.13 E-6b 实施记录：歌词模式状态外移（2026-11-15，已提交，未推送）
+
+**分支：** Bridge `feat/e6b-surface-mode`（基于设计提交 `a94a651`）。按第 15.8.12 节的修订刀序做的第一刀。
+
+**移动了什么：** 新类 `LyricSurfaceModeController`（同包、final、包内可见），是以下状态的**唯一写入者**：
+- 10 个字段：
+  - 歌词模式常亮标志 `systemUiLyricModeKeepAwakeActive`；
+  - 两个模式日志时间戳；
+  - 表面再激活的 pending、generation、回调列表及其锁；
+  - provisional draw 的 Recycler 与截止时间；
+  - AOD 低帧率标志。
+- 原样移入 5 个方法：`maybeLogLyricModeKeepAwake`、`cancelLyricSurfaceReactivationCallbacks`、`clearLyricSurfaceProvisionalDraw`、`isProvisionalLyricSurfaceDraw`（HEAD 上已无调用，原样保留）、`setAodLowFrameRateLyricMode`。
+- 新增 8 个状态转换方法：`markLyricModeActive`、`markLyricModeInactive`、`noteLyricSurfaceSignal`、`markProvisionalLyricSurface`、`beginLyricSurfaceReactivation`、`postLyricSurfaceReactivation`、`forgetLyricSurfaceReactivation`、`finishLyricSurfaceReactivation`。
+  - 每个方法的语句都来自入口类原来的内联赋值，原样搬过来，顺序不变。
+- `Host` 只有 `info` 一个方法。构造参数另传渲染器与主线程 `Handler`。
+
+**入口类的 5 处有意改写**（第 15.8.12 节允许的结构改写；只换调用位置，常量、条件、日志文字不变）：
+
+| 方法 | 原内联语句 | 改为 | 顺序 |
+| --- | --- | --- | --- |
+| `activateSystemUiLyricModeFromSurface` | `changed = !active; active = true;` …… `lastSystemUiLyricModeLogAt = now;` | `markLyricModeActive()` …… `noteLyricSurfaceSignal(now)` | 中间的 `screenTimeoutPausedByUserPresent = false` 位置不变 |
+| `deactivateSystemUiLyricModeAfterSurfaceHidden` | `changed = active; active = false;` …… `lastSystemUiLyricModeLogAt = now;` | `markLyricModeInactive()` …… `noteLyricSurfaceSignal(now)` | 中间的 rebind generation 与 runnable 处理仍在入口类，位置不变 |
+| `activateSystemUiLyricModeFromPendingDraw` | 读 provisional、取 `now`、按条件写两个字段 | `markProvisionalLyricSurface(recycler, now)` | 同一段语句，`now` 在调用处取 |
+| `scheduleLyricSurfaceReactivation` | `cancel…(); pending = true; generation = …;` 以及循环内加锁 add 与 `postDelayed` | `beginLyricSurfaceReactivation()`；循环内 `postLyricSurfaceReactivation(callback, delay)` | 不变 |
+| `LyricSurfaceReactivationTask.run` | 加锁 remove(this)；最后一轮 `pending = false; clear…();` | `forgetLyricSurfaceReactivation(this)`；`finishLyricSurfaceReactivation()` | 不变 |
+
+**其余访问：**
+- 入口类对这些字段的读取（约 30 处，含 E-3 与 Hook 的 Host 实现）一律改为 `surfaceMode.` 前缀；
+- 移动脚本断言入口类里不再有任何对控制器字段的赋值、自增，也不再对回调列表调用 add / remove / clear。
+- 入口类放宽了 2 个常量的 `private`：`LYRIC_SURFACE_PROVISIONAL_DRAW_GRACE_MS`、`LYRIC_VISIBILITY_RECOVERY_DELAYS_MS`。
+
+**与设计不同：** `screenTurnedOffForLockState` 和模式重绑 runnable 仍留在入口类。
+- 前者是锁屏状态，由 `isDeviceKeyguardLocked` 与翻译重绑使用；
+- 后者只由 `refreshLyricRenderingAfterModeChange` 拥有，归 E-7b。
+
+**锁：** 唯一移动的锁是再激活回调锁，加锁的语句块原样搬进控制器的方法，不涉及 `synchronized (this)`。
+
+**证据：**
+- 方法体比对（`--strip surfaceMode. --strip this:: --strip surfaceMode::`）：
+  - 9 个移动后一致；
+  - 改动 5 个，正好是上表 5 处；
+  - 0 个删除；
+  - 新增 10 个：构造函数、`info` 转发与 8 个转换方法。
+- 三份基线不变。
+- 入口类预算下调：12,027 → 11,963 行，字段 305 → 296，方法 464 → 459（内嵌行 37 → 34）。
+- `verify-build-identity` 通过（371 个输入）。
+- 本地 1056 tests / 0 fail / 6 skip，Debug 与 R8 通过。
+
+**候选：** `artifacts/e6b-surface-mode-20261115/Bridge-E6b-mode-debug-r1.apk`（`ea7c82f8…`）。
+
+**设备冒烟（重启 SystemUI；逐字歌词；建议开启智能屏幕超时）：**
+1. 锁屏进入歌词页后歌词逐字推进；智能屏幕超时生效（模式激活）。
+2. 亮屏与 AOD 往返 3 次：AOD 下低帧率显示正常；回到亮屏后歌词立即恢复，不需要等几秒。
+3. 划走 / 收起歌词页后，常亮释放、按系统超时灭屏（模式隐藏）。
+4. 快速切歌时，歌词页不闪退、不卡在空白（短暂丢失表面时保持模式）。
+5. 熄屏一会儿再亮屏、解锁再锁屏后，歌词页能自己恢复（再激活回调）。
+
+**结果：** 用户安装候选 `ea7c82f8…`、重启 SystemUI 后，设备冒烟 1–5 项通过（2026-11-15）。
+
+### 15.8.14 E-7a 实施记录：handoff 状态外移（2026-11-15，已提交，未推送）
+
+**分支：** Bridge `feat/e7a-handoff`（基于 `0ab4e88`）。这是修订刀序的第二刀，做法与 E-6b 相同。
+
+**移动了什么：** 新类 `LyricSurfaceHandoffController`（同包、final、包内可见），是以下状态的**唯一写入者**：
+- 8 个字段：
+  - handoff generation、开始时间、释放重试 generation；
+  - 官方歌词绘制抑制截止时间；
+  - 迟到接管淡入标志；
+  - 亮行几何提交的锁、generation、待提交模型。
+- 原样移入 2 个方法：`beginBrightLyricGeometryCommit`、`cancelBrightLyricGeometryCommit`。
+- 移入 1 个只改读取方式的方法：`isCurrentBrightLyricGeometryCommit`，当前模型改为经 Host 读取。
+- 新增 8 个状态转换方法：`beginTrackHandoff`、`clearTrackHandoff`、`nextHandoffGeneration`、`markReleaseRetry`、`clearReleaseRetry`、`clearDrawSuppression`、`clearTakeoverFade`、`claimBrightLyricGeometryCommit`。
+- `Host` 只有 `currentWordLyricModel` 一个方法（入口类以 lambda 提供）。
+
+**入口类的 7 处有意改写**（只换调用位置，常量、条件、日志文字和前后语句不变）：
+
+| 方法 | 原内联语句 | 改为 |
+| --- | --- | --- |
+| `beginOfficialLyricTrackHandoff` | 不需要 handoff 时 `fade = false`；开始时依次写开始时间、重试、抑制截止、fade，再 `++generation` | `clearTakeoverFade()`；`beginTrackHandoff(now)`（返回 generation）。`armRowRebind` 写入仍在其前 |
+| 同上，超时 lambda | 依次清抑制、开始时间、重试、fade | `clearTrackHandoff()` |
+| `finishOfficialLyricTrackHandoff` | 同样四个字段清零，再 `++generation` | `clearTrackHandoff()`；`nextHandoffGeneration()`。读 `finishedGeneration`、`startedAt` 仍在其前 |
+| `scheduleOfficialLyricHandoffReleaseRetry` | 判重并登记重试；lambda 内重试复位为 -1 | `markReleaseRetry(generation)`；`clearReleaseRetry()` |
+| `shouldSuppressOfficialLyricForTrackHandoff` | 截止过期时清抑制、开始时间、重试（不动 fade） | `clearDrawSuppression()` |
+| `scheduleLyricsRecyclerVisibilityWatchdog`、`fadeInLateCustomLyricTakeover` | `fade = false` | `clearTakeoverFade()` |
+| `finishBrightLyricGeometryCommit` | 加锁判 generation、模型，然后清待提交模型 | `claimBrightLyricGeometryCommit(model, generation)`。锁块原样移入，锁对象仍是专用的提交锁 |
+
+**其余访问：**
+- 入口类的其他访问都是读取，加 `handoff.` 前缀。
+- 移动脚本断言入口类不再对控制器字段赋值或自增。
+- `SYSTEMUI_LYRIC_MODEL_HANDOFF_MAX_MS` 去掉 `private`。
+- **留在入口类：**
+  - suppress / restore / fade / invalidate 等 View 操作与可见性 watchdog，随 E-6c 迁；
+  - `lyricTrackRowRebindEligibleUntilElapsedMs`，属 Recycler；
+  - `lyricModelReplacementInProgress`，属模型，E-5d 处理。
+
+**过程中的一处脚本缺陷（已修正，无语义影响）：**
+- 前缀脚本把以 `0L, ` 开头的续行误判为声明，漏改了一处读取，编译报错后手工补上前缀。
+- 这类漏改只会表现为编译错误，因为字段已不在入口类。所以此前各刀编译通过，就说明没有漏改。
+
+**证据：**
+- 方法体比对（`--strip handoff. --strip this:: --strip handoff:: --strip host.`）：
+  - 2 个移动后一致；
+  - 改动 8 个：上表 7 处，加上 `isCurrentBrightLyricGeometryCommit` 的模型读取；
+  - 0 个删除；
+  - 新增 9 个：构造函数与 8 个转换方法。
+- 三份基线不变。
+- 入口类预算下调：11,963 → 11,911 行，字段 296 → 289，方法 459 → 456。
+- `verify-build-identity` 通过（372 个输入）。
+- 本地 1056 tests / 0 fail / 6 skip，Debug 与 R8 通过。
+
+**候选：** `artifacts/e7a-handoff-20261115/Bridge-E7a-handoff-debug-r1.apk`（`309c2636…`）。
+
+**设备冒烟（重启 SystemUI；逐字歌词）：**
+1. 锁屏切歌：旧歌词消失、新歌词淡入，中间不闪出官方原始歌词。
+2. 快速连续切歌 3–5 次：最终停在最后一首的歌词，没有卡在空白或半透明。
+3. 切到歌词较晚才到的歌（如网络较慢时）：歌词到达后能淡入接管。
+4. 亮屏与 AOD 往返中切歌：回到亮屏后歌词正常显示，行高与位置正确（几何提交）。
+5. 切歌后等几秒不操作：歌词不会一直被遮住（超时释放）。
+
+**结果：** 用户安装候选 `309c2636…`、重启 SystemUI 后，设备冒烟 1–5 项通过（2026-11-15）。
+
+### 15.8.15 E-5b 实施记录：播放时钟与 reset guard 外移（2026-11-15，已提交，未推送）
+
+**分支：** Bridge `feat/e5b-playback-clock`（基于 `e29b83b`）。这是修订刀序的第三刀。
+
+**移动了什么：** 以下状态并入已有的 `SystemUiPlaybackController`，它成为**唯一写入者**：
+- 14 个字段：
+  - 播放时钟：是否在播、速度、上次计算位置及其时刻、上次状态；
+  - `playbackClockTrackKey`；
+  - 切歌 reset guard 的开始与截止时间；
+  - seedling 活动行提示（时间与观察时刻）；
+  - 4 个日志节流时间戳。
+- 原样移入 5 个方法：
+  - `clearSeedlingActiveLyricHint`、`extendLyricTrackPositionResetGuard`、`shouldIgnoreStalePlaybackPositionAfterTrackReset`；
+  - 两个日志方法 `maybeLogSeedlingPlaybackState`、`maybeLogIgnoredStalePlaybackPositionAfterTrackReset`。
+- 新增 9 个提交方法：
+  - `setPlaybackClockTrackKey`、`clearPlaybackClockTrackKey`、`resetPlaybackPosition`；
+  - `startTrackResetGuard`、`armTrackResetGuard`、`claimTrackResetLog`；
+  - `commitStalePlaybackState`、`commitPlaybackState`、`noteSeedlingActiveLine`。
+- Host 不变：仍是 E-5a 的 5 个方法，没有新增。
+
+**两阶段写入的落地方式（与第 15.8.12 节设计等价，形式更小）：**
+- 设计里写的是 `plan()` 返回一个计划对象、`commit(plan)` 写入。
+- 实施时发现不需要新类型：判定部分本来就只读字段、不写字段，原样留在入口类即可。
+  - 判定包括：过期位置判断、重播判断及其连带动作（清活动行、清渲染目标、开始 handoff）、平滑、活动位置、跳变判断。
+- 写入部分改为在原位置调用控制器的提交方法：
+  - 过期分支调用 `commitStalePlaybackState`；
+  - 主分支的 if 链加上随后的状态写入，调用 `commitPlaybackState`。
+- 执行顺序与原来逐句一致。
+- `estimatePlaybackPositionMillis` 按设计留在组合根：Provider 快照 → 时钟 → 模型提示行，时钟字段经前缀读取。
+
+**入口类的 5 处有意改写**（只换调用位置；常量、条件、日志文字不变）：
+
+| 方法 | 改写 |
+| --- | --- |
+| `acceptCurrentLyricProvider` | `playbackClockTrackKey = next` → `setPlaybackClockTrackKey(next)` |
+| `resetSystemUiPlaybackPositionForTrackChange` | 清时钟键 → `clearPlaybackClockTrackKey()`；位置复位两句 → `resetPlaybackPosition(now)`；guard 开始 → `startTrackResetGuard(now)`；guard 截止 → `armTrackResetGuard(now)`；日志节流 → `claimTrackResetLog(now)`。中间的活动行、Recycler 写入（属 E-7b、E-6c）位置不变 |
+| `rememberSystemUiPlaybackState`（5 参） | 过期分支 5 句 → `commitStalePlaybackState(state, speed, now)`；主分支 if 链与随后的 state 写入 → `commitPlaybackState(state, speed, computedPosition, nextPosition)` |
+| `rememberSeedlingActiveLyric` | 两句 → `noteSeedlingActiveLine(line.timeMillis, SystemClock.elapsedRealtime())` |
+| `rememberLyricsRecyclerTargetIndex` | 两句 → `noteSeedlingActiveLine(line.timeMillis, now)` |
+
+**其余访问：**
+- 时钟字段的约 40 处读取（渲染热路径、AOD、Recycler、日志）改为 `playbackController.` 前缀。
+- 移动脚本断言入口类不再对这些字段赋值，也不再出现这些字段的裸名。
+- 入口类放宽了 3 个常量和 2 个静态函数的 `private`：
+  - 常量 `LYRIC_VERBOSE_DIAGNOSTICS_ENABLED`、`SYSTEMUI_TRACK_RESET_POSITION_GUARD_MS`、`SYSTEMUI_TRACK_RESET_STALE_POSITION_MS`；
+  - 静态函数 `isPlaybackStateInMotion`、`isFiniteNonZero`。
+
+**未做（留给后续刀）：**
+- 设计中的 `onTrackReset` 事件化（时钟、活动行、Recycler 依次复位）随 E-7b、E-6c 做。现在复位方法仍在入口类，只是时钟部分改为调用控制器。
+- 时钟读取仍是字段直读。改为只读查询（`isPlaying()` 等）留到 E-5d。
+
+**证据：**
+- 方法体比对（`--strip playbackController. --strip this:: --strip playbackController::`）：
+  - 5 个移动后一致；
+  - 改动 5 个，正好是上表 5 个方法；
+  - 0 个删除；
+  - 新增 9 个提交方法。
+- 三份基线不变。
+- 入口类预算下调：11,911 → 11,797 行，字段 289 → 275，方法 456 → 451。
+- `verify-build-identity` 通过（372 个输入）。
+- 本地 1056 tests / 0 fail / 6 skip，Debug 与 R8 通过。
+
+**候选：** `artifacts/e5b-playback-clock-20261115/Bridge-E5b-clock-debug-r1.apk`（`128325b7…`）。
+
+**设备冒烟（重启 SystemUI；逐字歌词）：**
+1. 播放中逐字推进与原唱同步，没有整体提前或落后。
+2. 暂停时歌词停在当前字；继续后从原处接着走。
+3. 拖动进度条到中间或开头，歌词跳到对应行，之后继续同步。
+4. 快速连续切歌 3–5 次：每首都从头开始，不会带着上一首的进度（reset guard）。
+5. 同一首歌播完后单曲循环重播：歌词回到第一行，没有卡在最后一行。
+6. AOD 下低帧率显示的进度与亮屏一致，回到亮屏后不跳。
+
+**结果：** 用户安装候选 `128325b7…`、重启 SystemUI 后，设备冒烟 1–6 项通过（2026-11-15）。
+
+### 15.8.16 E-7b 实施记录：活动行与渲染目标外移（2026-11-15，已提交，未推送）
+
+**分支：** Bridge `feat/e7b-active-refresh`（基于 `150e27d`）。这是修订刀序的第四刀。
+
+**范围比设计小一半：**
+- 设计中的 `ActiveLyricRefreshScheduler` 同时拥有“活动行状态”和“刷新调度”。
+- 这刀只做前一半，新类按实际内容命名为 `ActiveLyricState`。
+- 刷新调度留在入口类，作为下一步：节奏（cadence）、posted 标志、刷新 runnable、截止时间、模式重绑 runnable 与 generation。
+  - 原因：调度方法（`scheduleActiveLyricRefresh` 四个重载、`runActiveLyricRefresh` 143 行）直接驱动渲染器与 Recycler。等 E-6c 把 Recycler 控制器拿出来后再移，Host 才不会变宽。
+
+**移动了什么：** `ActiveLyricState`（同包、final、包内可见，**不需要 Host**，构造参数只有 E-6a 的 `LyricViewRegistry`），是以下状态的**唯一写入者**：
+- 8 个字段：
+  - 活动行文本与时间；
+  - 活动渲染行 `activeRendererWordLine`；
+  - 活动渲染 TextView；
+  - 按 Recycler 的渲染目标表及其锁；
+  - 活动 TextView 注册表及其锁。
+- 原样移入 10 个方法：
+  - 记录、判断、快照活动 TextView：`rememberActiveTextViewReference`、`isRememberedActiveTextView`、`snapshotActiveTextViews`、`collectActiveTextViews`、`firstActiveLyricTextView`；
+  - 记录、忘记、快照、清空渲染目标：`rememberActiveRendererTextView`、`forgetActiveRendererTarget` 两个重载、`snapshotActiveRendererTargets`、`clearActiveRendererTargets`。
+- 新增 3 个写入方法：`setActiveLine(text, time)`、`clearActiveLine()`、`setActiveRendererWordLine(line)`。
+- 入口类放宽了 2 个静态函数的 `private`：`isEffectivelyVisible`、`isInLyricsRecyclerView`。
+
+**入口类的改写（原位替换，只有三种形式）：**
+- 7 处相邻的 `activeLyricLine = X.normalizedText; activeLyricLineTimeMs = X.timeMillis;` 改为 `setActiveLine(X.normalizedText, X.timeMillis)`；
+- 2 处 `activeLyricLine = ""; activeLyricLineTimeMs = -1L;` 改为 `clearActiveLine()`；
+- 8 处 `activeRendererWordLine = X;` 改为 `setActiveRendererWordLine(X)`。
+- 这些改写分布在 10 个方法里：
+  - `resetSystemUiPlaybackPositionForTrackChange`、`rememberSystemUiPlaybackState`、`observeLyricsPlaybackPositionJump`；
+  - `rememberLyricsRecyclerTargetIndex`、`primeLyricsRecyclerView`、`rememberActiveLyricTextView`；
+  - `resolveOfficialLyricDrawFrame`、`runActiveLyricRefresh`、`invalidateRenderableVisibleLyricTextViews`、`resetCommittedLyricRendererState`。
+- 其余访问全部是读取，加 `activeLyrics.` 前缀。
+
+**证据：**
+- 方法体比对（`--strip activeLyrics. --strip this:: --strip activeLyrics::`）：
+  - 10 个移动后一致；
+  - 10 个改动；
+  - 0 个删除；
+  - 新增 4 个（构造函数与 3 个写入方法）。
+- **另做了一次更强的核对：** 对 HEAD 上这 10 个方法体只套用上面三种替换后，与新方法体逐个比较，10 个全部相同。所以这些改动除这三种替换外没有其他差异。
+- 移动脚本还断言：
+  - 入口类不再对这些字段赋值，也不再对两个集合调用 add / remove / clear / put；
+  - 字段裸名不再出现。
+- 三份基线不变。
+- 入口类预算下调：11,797 → 11,629 行，字段 275 → 268，方法 451 → 441。
+- `verify-build-identity` 通过（373 个输入）。
+- 本地 1056 tests / 0 fail / 6 skip，Debug 与 R8 通过。
+
+**候选：** `artifacts/e7b-active-lyric-20261115/Bridge-E7b-active-debug-r1.apk`（`d2c1f728…`）。
+
+**设备冒烟（重启 SystemUI；逐字歌词）：**
+1. 当前行逐字高亮推进流畅，没有跳字或停顿。
+2. 换行时下一行接上，上一行恢复为非当前样式。
+3. 切歌后当前行从新歌第一行开始，不残留上一首的高亮。
+4. 拖动进度后当前行立即跟到新位置。
+5. 亮屏与 AOD 往返后，当前行高亮位置正确。
+
+**结果：** 用户安装候选 `d2c1f728…`、重启 SystemUI 后，设备冒烟 1–5 项通过（2026-11-15）。
+
+### 15.8.17 E-5c 实施记录：插件 generation 外移（2026-11-15，已提交，未推送）
+
+**分支：** Bridge `feat/e5c-plugin-generation`（基于 `871c8c1`）。这是修订刀序的第五刀。
+
+**移动了什么：** 新类 `PluginHookGenerationManager`（同包、final、包内可见，无 Host），是以下状态的唯一写入者：
+- generation 锁；
+- 已就绪的插件 ClassLoader；
+- 当前 generation 的 ClassLoader；
+- 本 generation 的 Hook handle 列表。
+
+另外原样移入 `rememberPluginHookHandle`，新增 `markReady`、`activate` 两个方法。
+
+**入口类的 2 处有意改写：**
+- `onPluginClassLoaderReady`：加锁判重并记录就绪 loader 的语句块，改为 `if (!pluginGeneration.markReady(pluginLoader)) return;`。
+- `activatePluginHookGeneration`：原锁块的处理改为 `pluginGeneration.activate(pluginLoader, () -> { …各 installer 标志复位… })`：
+  - 判重、复制并清空 handle、切换 loader，这部分移入 `activate`；
+  - 各 installer 的“已安装 / 已尝试”标志复位语句原样放进回调，在**同一把锁内、同一位置**执行；
+  - 返回 `null` 表示 loader 已是当前 generation，入口类照原样提前返回；
+  - 之后的兼容缓存清理与旧 handle 的 unhook 仍在入口类，顺序不变。
+
+**说明：**
+- generation 锁对象随字段移入新类。入口类在 adapter bind Hook 缓存（`tryInstallLyricAdapterBindHook`）处仍锁同一个对象（经前缀访问），锁的身份与范围都不变。
+- 那些复位标志仍属各自的 installer（Recycler、位置控制器、短窗诊断、KuWo 插件），随 E-6c 与 KuWo 插件兼容那一步迁走。
+- **KuWo 插件兼容这次没有迁：**`tryInstallKuWoPluginMediaModelHook` 还会写位置控制器的解析结果 `resolvedLyricPositionController`，要和位置控制器的 owner 一起定，列为下一步。
+- `PluginClassLoaderFactoryHookContractTest` 断言的去重检查移到了新类。按 E-0 的设计，只把 `BridgeSourceMap` 的 `PLUGIN_COMPAT` 改为“入口类 + 新类”，断言一字未改。
+
+**证据：**
+- 方法体比对（`--strip pluginGeneration. --strip this::`）：
+  - 1 个移动后一致；
+  - 2 个改动，正好是上述 2 处；
+  - 0 个删除；
+  - 新增 2 个。
+- 三份基线不变。
+- 入口类预算下调：11,629 → 11,595 行，字段 268 → 265，方法 441 → 440。
+- `verify-build-identity` 通过（374 个输入）。
+- 本地 1056 tests / 0 fail / 6 skip，Debug 与 R8 通过。
+
+**候选：** `artifacts/e5c-plugin-generation-20261115/Bridge-E5c-plugin-debug-r1.apk`（`e332b7a4…`）。
+
+**设备冒烟（重启 SystemUI 即为插件重载场景）：**
+1. 重启 SystemUI 后，锁屏歌词正常出现并逐字推进（插件 Hook 在新 generation 上安装）。
+2. 再重启一次 SystemUI：歌词依旧正常，没有重复动画或双重绘制（旧 generation 的 Hook 已卸载）。
+3. 酷我音乐播放：锁屏卡片封面与歌词入口正常（KuWo 插件 Hook 随新 generation 重装）。
+4. 进度对齐正常，拖动后歌词跳到对应行（位置控制器 Hook 重装）。
+
+**结果：**
+- 第一次冒烟时，第 2 项（连续第二次重启 SystemUI）触发了 LSPosed 安全模式。
+- 只读核对 LSPosed 日志，原因是 `LSPosedService-SafeMode` 的累计计数：
+  - 本次开机内此前已计 3 次（11-14 14:46、11-14 17:19、11-15 07:06）；
+  - 22:47:41 那次重启距上次 SystemUI 启动仅 28 s，是第 4 次，达到阈值。
+- 两次重启之间的那个 SystemUI 加载本模块正常（插件 factory、Recycler、adapter bind 的 Hook 都已安装，无报错）。Android 的退出记录两次都是重启按钮的 `SIGNALED 9`，不是崩溃。
+- 用户重启手机后补测，1–4 项通过（2026-11-15）。
+- 教训：冒烟清单里的连续重启，两次之间要间隔 ≥ 1 分钟；一次开机内尽量少在短时间内连续重启 SystemUI。
+
+### 15.8.18 E 系列整体进度（2026-11-15，E-5c 之后）
+
+**入口类 `LockscreenLyricsModule.java`：**
+
+| | E-0 基线 | 现在 | 完成定义（第 15.2 节） |
+| --- | ---: | ---: | ---: |
+| 行数 | 17,989 | 11,595（−35.5%） | ≤ 1,500 |
+| 顶层字段 | 373 | 265 | ≤ 30 |
+| 方法 | 565 | 440 | — |
+| 内嵌类型 | 13 | 1 | 0 个业务类 |
+
+**已完成并经设备冒烟：**
+- E-0、E-1、E-2a、E-2c、E-2d1、E-3、E-4a、E-4b、E-5a、E-5b、E-6a、E-6b、E-7a、E-7b；
+- 加上 E-5 至 E-7 边界设计；
+- E-5c 待冒烟。
+- 新增 12 个承担职责的类，共约 7,200 行；另有 E-2a 移出的 10 个小值类型。
+- Bridge 上全部提交都在本地，没有推送。
+
+**剩余（按第 15.8.12 节修订刀序，规模为本节脚本口径的估计）：**
+
+| 刀 | 内容 | 估计规模 | 风险 |
+| --- | --- | ---: | --- |
+| E-5c2 | KuWo 插件兼容（插件 media model Hook、封面修复、歌词支持位），与位置控制器解析结果的 owner 一并确定 | 约 350 行 | 中 |
+| E-6c | Recycler 控制器与其 Hook installer：Recycler 回调、索引与 follow、行样式、沉浸入口、adapter bind；之后再迁刷新调度（cadence、runnable、模式重绑），即 E-7b 的后一半 | 约 2,100 + 900 行，预计拆 3–4 步 | 高 |
+| E-5d | 模型真值 `LyricModelStore` + `LyricPublicationPipeline`（加载 Hook、清理重放、`canCommit` 复核） | 约 2,800 行，预计拆 3 步 | 高 |
+| E-7c | `RuntimeConfigSnapshot`：设置广播只发布快照 | 约 800 行 | 中 |
+| E-8 | 收尾：未归类的日志、反射工具随 owner 分散（约 2,500 行）；按 Hook 面 / App 面分包，守卫改为按包判定；性能项（P-8 DexKit 缓存等）；入口类收敛到完成定义 | 余量 | 中 |
+
+- 按当前每刀的粒度，预计还需要 **约 10–14 刀**，每刀都需要一次设备冒烟。
+- 离完成定义还要减约 10,100 行，已完成部分约占总量的 39%。
+- 剩下的都是耦合最重的部分（模型、Recycler、刷新调度），单刀的规模和风险都会比前面大。
+
+### 15.8.19 加速方案（2026-11-15，用户已采纳）
+
+**用户要求：**
+- 剩余 10–14 刀太多，反复设备测试负担重；
+- 入口类不必追求极简：作为核心类，结构清晰即可，多几行没关系。
+
+**1. 完成定义改为“结构清晰”，不再卡行数（替代第 15.2 节第 1 条）：**
+- 入口类的职责收敛为三件事：
+  - **组合根**：创建各 owner 并接线；
+  - **Hook 胶水**：安装 Hook，回调里读参数，然后交给 owner；
+  - **跨 owner 编排**：按原顺序调用各 owner。
+- 按这三类分区排列，每区有一行注释说明；不再要求 ≤ 1,500 行 / ≤ 30 字段。
+- 保留的硬性条件：
+  - 每个可变字段只有一个写入者（第 15.2 节第 3 条）；
+  - 入口类预算只降不升（E-0 守卫继续生效）；
+  - 12 个契约测试经 `BridgeSourceMap` 定位，断言不改。
+- 预计入口类收敛到约 5,500–7,000 行（估计）。具体以每刀后的预算文件为准。
+
+**2. 剩余工作合并为 3 刀，每刀一次设备冒烟（替代第 15.8.18 节的 10–14 刀）：**
+
+| 刀 | 合并内容 | 设备冒烟覆盖 |
+| --- | --- | --- |
+| **F-1 Recycler 与刷新** | E-6c（Recycler 控制器、其 Hook installer、行样式、沉浸入口、adapter bind）+ E-7b 后半（刷新调度：cadence、runnable、模式重绑） | 逐字推进、对齐与行高、亮屏 / AOD 往返、沉浸入口、刷新率档位 |
+| **F-2 模型与发布** | E-5d（`LyricModelStore` + `LyricPublicationPipeline`，`canCommit` 复核）+ E-5c2（KuWo 插件兼容，连同位置控制器解析结果的 owner） | 快速切歌、同曲 metadata 更新、暂停 / seek、清理配置重放、酷我 |
+| **F-3 配置与收尾** | E-7c（`RuntimeConfigSnapshot`）+ E-8 的必要部分：日志与反射工具随 owner 分散，入口类按上面三类分区排版 | 设置页全部开关、播放器翻译设置、调试页诊断 |
+
+- 推迟到发布后、或书面放弃的项目：
+  - 根包按 Hook 面 / App 面分包（D15）；
+  - P-3 去锁；
+  - 第 15.4 节的性能候选，P-8 DexKit 缓存单独评估。
+- 理由：这些不影响“结构清晰”，又各需一轮设备验证。
+
+**3. 怎样在少测的同时不降低把握：**
+- **一刀之内仍按子步骤分别提交。** 每个子步骤各有方法体比对，有结构改写时再加“只套用改写规则后逐方法相同”的核对（E-7b 的做法）。设备冒烟只在整刀结束时做一次。设备失败时，可以按子步骤的提交二分定位或回退。
+- **我先做 Hook 自检，你只看画面。**
+  - 每刀装包、重启后，经授权只读 LSPosed 日志，核对本模块在 SystemUI 中的 `HOOK_INSTALLED` 各项计数，以及无 WARN / ERROR 新增。
+  - 以本次开机首个 SystemUI 的计数为基线对比。
+  - 这样“Hook 是否装上”这类检查不再占用你的冒烟项。
+- **冒烟清单控制在 8 项以内**，只保留肉眼才能判断的项目；每刀只需要重启 SystemUI 一次，不要求连续重启。
+
+**4. 代价与风险：**
+- 每刀更大。设备失败时的定位成本更高，可用子步骤提交缓解。
+- F-1、F-2 都是高风险区域，合并后单刀可能有 2,000–3,000 行变动。
+- 完成定义放宽后，入口类仍会比最初计划大得多，但每个状态都有明确 owner。
+
+### 15.8.20 F-1 实施记录：Recycler 与刷新（2026-11-15，已提交，未推送，设备已通过）
+
+**分支：** Bridge `feat/f1-recycler-refresh`（基于 `5f761c0`）。按第 15.8.19 节，一刀分三个子步骤分别提交，设备冒烟只在整刀结束时做一次。
+
+**为什么 Recycler 逻辑本身留在入口类：**
+- 按依赖闭包实测，Recycler 方法组约 83 个方法、1,840 行，对入口类的调用需要 23 个 Host 方法。
+- 去掉 Hook 回调与 installer 后仍需 22 个。真正能自洽成组的子集只有约 370 行。
+- 这些逻辑每一步都要调用渲染器、模型、handoff、刷新、模式，本质是跨 owner 编排。
+- 按第 15.8.19 节的完成定义，它们属于入口类的“编排”职责，所以 F-1 只把**状态**交给唯一写入者，把**无状态工具**移出。
+
+**F-1a `d372d94`：静态工具外移。**
+- 47 个 static 方法（约 700 行）及其 9 个反射缓存，原样移入 `LyricsRecyclerViews`。
+- 涵盖：Recycler 识别、adapter 与子项位置的反射、当前行读取、几何采样、缩放中心、槽高、可见性判断、View 视觉效果。
+- 调用方经静态导入，文字不变。
+- 方法体：47 个移动后一致，0 改动。
+- `RECYCLER` 区域的两个契约测试经 `BridgeSourceMap` 跟随，断言不变。
+
+**F-1b `883791f`：Recycler 位置与动画状态。**
+- `LyricsRecyclerState` 是以下 15 个字段的唯一写入者：
+  - 当前索引、primed 行；
+  - adaptive 跟随与滞后窗口；
+  - settle 窗口；
+  - 淡入 generation 与截止；
+  - 强制对齐 generation；
+  - 行缩放动画抑制；
+  - 切歌行重绑窗口；
+  - 上次官方索引观察时刻。
+- 4 个纯状态方法原样移入。入口类 7 个方法中的内联赋值，改为原位、同序的 11 个转换方法。
+- 方法体：
+  - 4 个移动后一致，7 个改动；
+  - 对 HEAD 只套用改写表后，与新方法体逐个相同。
+
+**F-1c `e96909d`：刷新调度状态。**
+- `ActiveLyricRefreshSchedule` 是以下 8 个字段的唯一写入者：
+  - 刷新 posted 标志、帧锚点；
+  - 显示节奏标志与行、节奏频率与下一帧截止；
+  - 模式重绑 generation 与 runnable。
+- 刷新 runnable、刷新过程本身留在入口类。
+- `consumeActiveLyricRefreshFrame` 把配置上限传给 `consumeFrame`，后者方法体 = 原方法体去掉读取配置的那一行。
+- 方法体：
+  - 1 个移动后一致，6 个改动；
+  - 其中 5 个只套用改写表后与 HEAD 相同，`consumeFrame` 已单独核对。
+
+**仍在入口类的 Recycler 状态（入口类是它们的唯一写入者，符合完成定义）：**
+- 各 Hook installer 的“已安装 / 已尝试”标志；
+- adapter 注册表、兼容 binding 缓存；
+- 被抑制的 alpha 表、timed lyric guard；
+- 若干日志节流。
+
+**证据（整刀）：**
+- 每个子步骤单独构建通过。
+- 三份基线不变。
+- 入口类预算：11,595 → 10,727 行，字段 265 → 235，方法 440 → 388。
+- `verify-build-identity` 通过（377 个输入）。
+- 本地 1056 tests / 0 fail / 6 skip，Debug 与 R8 通过。
+
+**候选：** `artifacts/f1-recycler-refresh-20261115/Bridge-F1-recycler-debug-r1.apk`（`6e7eb339…`）。
+
+**设备验证分工（第 15.8.19 节）：**
+- agent 经授权装包，并在用户重启 SystemUI 一次后只读 LSPosed 日志。
+- 用本次开机已有的 SystemUI 启动记录作基线，核对本模块各 `HOOK_INSTALLED` 计数一致、无新增 WARN / ERROR。
+- 用户只看画面，冒烟清单见下。
+
+**设备冒烟（只重启 SystemUI 一次；逐字歌词）：**
+1. 锁屏歌词出现，当前行逐字推进流畅，行距与对齐正常。
+2. 等几行自动换行：Recycler 平滑跟到当前行，不跳不抖。
+3. 切歌：新歌从第一行开始淡入，没有残留旧行，也不闪官方原始歌词。
+4. 拖动进度到中间：歌词立即跳到对应行并居中。
+5. 亮屏与 AOD 来回切两三次：每次都恢复到正确行，AOD 低帧率显示正常。
+6. 打开沉浸式歌词再返回：锁屏歌词正常。
+7. 在 App 里改一次“最高刷新率”或换一个预设：锁屏立即生效，推进仍流畅。
+
+**结果（2026-11-15）：**
+- **agent 自检（只读 LSPosed 日志）：** 用户重启 SystemUI 一次后，新进程（23:34:48）中本模块的三类 `HOOK_INSTALLED` 消息与基线（同次开机 22:55 的 E-5c 进程）逐字相同：
+  - plugin factory：`constructorHooks=0`；
+  - LyricsRecyclerView 运行时方法：`pivot=1, rowStyle=1, immersiveEntry=1, dataset=0, surfaceDraw=1`；
+  - adapter bind：`methods=2`。
+- 基线进程中 Recycler 那一行出现 2 次，原因是那次开机中途插件换过一代；新进程未换代，出现 1 次，不算差异。
+- 两边 WARN 都只有已知的 KuWo artwork 一条，ERROR 为 0。
+- 上一个进程的退出记录是重启按钮的 `SIGNALED 9`，LSPosed SafeMode 没有新增计数。
+- **用户设备冒烟：** 1–7 项通过。
+
+### 15.8.21 F-2 实施记录：KuWo 兼容与元数据工具（2026-11-15，已提交，未推送，设备已通过）
+
+**分支：** Bridge `feat/f2-model-publication`（基于 `2aecbae`）。
+
+**范围调整（用户确认）：**
+- 原计划 F-2 = 模型真值 `LyricModelStore` + 发布管线 + KuWo 兼容。
+- 实测：模型真值字段（当前模型、Provider 绑定、SystemUI 元数据、清理快照）的写入点都已在入口类内，但约 50 行与兼容状态重置、渲染模型清空、签名字段交错。外移只会产生一行一个的 setter，不形成真正的 owner。
+- 用户选择：
+  - 模型真值留在入口类作为唯一写入者，在 F-3 排版时划为独立区段；
+  - 加载 Hook 属于 Hook 胶水，同样留在入口类；
+  - F-2 只做 KuWo 兼容外移，加上元数据静态工具外移。
+
+**F-2a `8821fda`：KuWo SystemUI 与插件兼容外移。**
+- 新类 `KuWoSystemUiCompat`，移入 20 个方法、约 660 行：
+  - artwork 快照、MediaData artwork 捕获、Seedling artwork 三个 Hook；
+  - 车机歌词 metadata 两个 Hook；
+  - KuWo artwork 查找；
+  - OPlus 插件 media model Hook，以及封面修复、歌词支持位。
+- 一并移入 `kuWoRuntime`，以及 media model Hook 所做的插件 DexKit 解析结果：media model 目标、旧版歌词位置控制器。
+- 插件换代时，这组字段的复位由 3 行内联赋值改为 `resetForPluginGeneration()`。
+- `Host` 正好 12 个方法：
+  - `hook()`；
+  - 4 个日志出口；
+  - `artworkProbe`；
+  - MediaDataManager 交接；
+  - 3 个 SystemUI 曲目元数据读取；
+  - metadata 刷新方法的写入；
+  - 车机歌词 installer 注册的两个通用 MediaData 回调。这两个回调属于入口类，经同名转发保持 installer 方法体不变。
+- 方法体：
+  - 改动 5 个：
+    - 插件换代复位 1 个；
+    - 经 Host 写 metadata 刷新方法 1 个；
+    - 经 Host 读曲目元数据 3 个；
+  - 其余移动后一致；
+  - `PLUGIN_COMPAT` 契约测试经 `BridgeSourceMap` 跟随。
+- 三份基线（含 Hook 安装顺序）不变。
+
+**F-2b `ff29a50`：元数据静态工具外移。**
+- 22 个无状态工具移入 `LyricMetadataSupport`：曲目键、模型签名、MediaMetadata 身份与封面复制、metadata 参数定位、宽松文本规整、包名判断、短行判断。
+- 方法体：22 个移动后一致，0 改动。
+
+**仍在入口类（F-3 处理）：**
+- 通用的按名反射工具（`invoke*ByName`、`read*Field`、`findMethod` 等，约 280 行）。第 15.2 节不建通用 `ReflectionUtils`，F-3 按使用方分散或书面保留。
+
+**证据（整刀）：**
+- 每个子步骤单独构建通过。
+- 入口类预算：10,727 → 9,804 行，字段 235 → 232，方法 388 → 346。
+- `verify-build-identity` 通过（379 个输入）。
+- 本地 1056 tests / 0 fail / 6 skip，Debug 与 R8 通过。
+
+**候选：** `artifacts/f2-kuwo-metadata-20261115/Bridge-F2-kuwo-debug-r1.apk`（`cae40f5d…`）。
+
+**设备验证分工：**
+- agent 经授权装包；用户重启 SystemUI 一次后，agent 只读 LSPosed 日志，与本次开机基线比对 `HOOK_INSTALLED` 与 WARN / ERROR。
+- 这次的基线应包含 KuWo 相关项，例如已知的“Skipped KuWo artwork snapshot hook”WARN。
+
+**设备冒烟（只重启 SystemUI 一次）：**
+1. 酷我音乐播放：锁屏卡片封面正常，不是空白或旧歌封面。
+2. 酷我播放时锁屏歌词入口出现，歌词正常显示与推进。
+3. 酷我切歌：封面与歌词都换到新歌。
+4. 换回常用播放器（如 Salt）：歌词、封面、翻译按钮正常。
+5. 常用播放器内同一首歌的元数据变化（如暂停后继续、拖动进度）：歌词不重置到第一行，不闪烁。
+
+**结果（2026-11-16）：**
+- **agent 自检（只读 LSPosed 日志）：** 用户重启 SystemUI 一次后，新进程（00:03:30）与基线（F-1 进程）比对，四条 `HOOK_INSTALLED` 逐字相同：
+  - plugin factory；
+  - LyricsRecyclerView 运行时方法；
+  - adapter bind：它在歌词首次显示时懒安装，00:05:07 出现，`methods=2`；
+  - 已知的 KuWo artwork WARN 由 `KuWoSystemUiCompat` 发出，文字不变。
+- ERROR / FATAL 为 0。上一个进程是重启按钮的 `SIGNALED 9`，SafeMode 没有新增计数。
+- **用户设备冒烟：** 1–5 项通过。
+
+### 15.8.22 F-3 实施记录：配置、反射工具与排版收尾（2026-11-16，已提交，未推送，设备已通过）
+
+**分支：** Bridge `feat/f3-config-layout`（基于 `729dee7`）。
+
+**F-3a 配置快照：不做，书面放弃。**
+- 实测设置状态的写入点：
+  - `lyricUiConfig` 只由三个设置处理方法写入：`handleLyricUiStyleSettingsChanged`、`handlePlayerTranslationSettingsChanged`、`loadLyricUiStyleSettings`；
+  - 4 个 `lyricUiXxxEnabled` 标志只由 `applyLyricUiStyleSettings` 写入；
+  - 清理配置、调试配置、各接收器的写入方也都各只有一两个。
+- 写入已经集中在入口类的“设置应用”区段，满足单一写入者。
+- 各 owner 读配置的方式本身没有问题：渲染器经 `setConfig` 接收配置，其余组件经 Host 读取。
+- 改成发布 `RuntimeConfigSnapshot` 属于行为重设计，没有对应的所有权收益，与 F-2 对模型真值的结论同理。
+
+**F-3b 通用反射工具：保留在入口类的“通用静态工具”区段。**
+- 剩余的按名反射工具（`invoke*ByName`、`read*Field`、`findMethod` 等，约 280 行）被多个 Hook 胶水使用。
+- 第 15.2 节不建通用 `ReflectionUtils`；按使用方拆开又会复制同一组工具。
+- 决定原样保留，以区段标题注明。
+
+**F-3c `d5459c9`：入口类按区段排版。**
+- 345 个方法按 14 个区段重新排列，每段一行标题注释：
+  1. 模块入口与组装；
+  2. Hook 安装；
+  3. 插件 ClassLoader 与 generation 回调；
+  4. 全局 View Hook 回调；
+  5. 模型真值、Provider 绑定、清理与发布；
+  6. 播放状态；
+  7. 歌词模式与 handoff；
+  8. Recycler 编排；
+  9. 活动行刷新与绘制；
+  10. 设置与翻译；
+  11. 封面；
+  12. App 侧请求；
+  13. 日志出口；
+  14. 通用静态工具。
+- 类注释写明入口类的职责：组合根、Hook 胶水、跨 owner 编排，以及模型真值与设置的唯一写入者。
+- **只移动方法，不动字段。** 脚本断言去掉全部方法块之后，新旧文件剩下的骨架逐字相同（字段、内嵌类型及其顺序），所以字段初始化顺序不变。
+- 区段标题会让行数增加。为了不突破“预算只降不升”，把 28 行的 `mapLogArea` 移入 `LyricLogDescriptions`（诊断归属，同 E-2c）。
+- 方法体：2,820 个不变，1 个移动后一致，0 改动。
+- 入口类预算：9,804 → 9,798 行，方法 346 → 345。
+- `verify-build-identity` 通过（379 个输入）。
+- 本地 1056 tests / 0 fail / 6 skip，Debug 与 R8 通过。
+
+**候选：** `artifacts/f3-layout-20261116/Bridge-F3-layout-debug-r1.apk`（`2a668d14…`）。
+
+**设备验证：**
+- 本刀没有逻辑改动，只需一次轻量冒烟：agent 经授权只读 LSPosed 日志，核对与 F-2 进程的 Hook 安装一致。
+- 用户在重启 SystemUI 一次后检查：
+  1. 锁屏逐字歌词正常推进；
+  2. 切一次歌正常；
+  3. 打开 App 的调试页，开始一次 60 秒诊断并生成摘要（日志出口已改到 `LyricLogDescriptions`）。
+
+**结果（2026-11-16）：**
+- agent 只读 LSPosed 日志：新进程（00:20:44）中本模块四条 `HOOK_INSTALLED` 与基线（F-2 进程）逐字相同；adapter bind 在歌词首次显示时懒安装，00:23:14 出现。
+- 仅有已知的 KuWo WARN，ERROR / FATAL 为 0。上一个进程是重启按钮的 `SIGNALED 9`，SafeMode 未新增计数。
+- 用户冒烟 1–3 项通过。
+
+### 15.8.23 E/F 系列收尾小结（2026-11-16）
+
+| | E-0 基线 | F-3 后 |
+| --- | ---: | ---: |
+| 入口类行数 | 17,989 | 9,798（−45.5%） |
+| 顶层字段 | 373 | 232 |
+| 方法 | 565 | 345 |
+| 内嵌类型 | 13 | 1（`LyricSurfaceReactivationTask`） |
+
+**入口类之外的 owner 与工具（均为同包类）：**
+- `OfficialLyricTextRenderer`；
+- `OplusMediaPolicyHooks`；
+- `ScreenTimeoutController`；
+- `TranslationActionViewTracker`、`TranslationActionController`；
+- `SystemUiPlaybackController`（绑定与时钟）；
+- `LyricViewRegistry`；
+- `LyricSurfaceModeController`、`LyricSurfaceHandoffController`；
+- `ActiveLyricState`、`ActiveLyricRefreshSchedule`；
+- `LyricsRecyclerState`；
+- `PluginHookGenerationManager`；
+- `KuWoSystemUiCompat`；
+- 无状态工具：`LyricsRecyclerViews`、`LyricMetadataSupport`、`LyricLogDescriptions`；
+- E-2a 的 10 个值类型。
+
+**完成定义（第 15.8.19 节）：**
+- 每个有状态 owner 都是其状态的唯一写入者；入口类保留的状态（模型真值、设置、Hook 安装标志、少量缓存与节流）也只由入口类写入。
+- 入口类按区段分为组合根、Hook 胶水、跨 owner 编排。
+- 12 个契约测试经 `BridgeSourceMap` 跟随，断言没有改动。
+
+**推迟或放弃（书面）：**
+- 根包按 Hook 面 / App 面分包（D15）；
+- P-3 去锁；
+- 第 15.4 节的性能候选（P-8 DexKit 缓存等）另行评估；
+- F-3a 配置快照、F-3b 反射工具拆分：理由见第 15.8.22 节。
+- 全部提交仅在本地，未推送。
+
+### 15.9 未覆盖
+
+- **Providers 仓库**的结构与性能没有做同等盘点。若要纳入“完整优化”，需要另做一次基线（13 个专用模块的 Hooker、`provider-core`、Universal），本节不对其作任何结论。
+- 第 15.1 节的数字来自文本扫描，不是编译器 AST；E-0 的预算守卫应以实际实现的计数方式为准重新取值。
+- 第 15.4 节没有任何新的设备数据；所有候选项的收益未知。
+- 各刀“预计减少”是按行号区间的估算，没有做逐方法的依赖闭包分析；E-5 至 E-7 之间的边界在实施前需要再细化一次。
+
+## 16. M6 实施记录
+
+### 16.1 范围调整（2026-11-16，用户决定）
+
+- **放弃 E 系列之后的性能复测**：第 12 节“结构治理”一行中“同场景 `PERF_SAMPLE` 与掉帧不劣于 E-0 基线”不再作为 5.0 门禁，记为“用户决定不测”，不记为通过。
+- **C-05/C-06 不使用其他真实设备**：用户手上只有 PJZ110。改用工作区 `PlayerSource/` 与 `logs/OP16/` 中其他设备的 SystemUI / SystemUIPlugin APK 做只读静态样本。结论只能是“静态契约匹配/不匹配”，不能写成“该型号设备验收通过”。
+
+### 16.2 C-04 局部降级与恢复（2026-11-16，已提交 `5229654`，用户设备冒烟通过）
+
+**分支：** Bridge `feat/c04-degradation`（基于 `9a46f63`）。
+
+**现状审查（改动前）：**
+
+| 功能 | 已有局部守卫 | 缺口 |
+| --- | --- | --- |
+| 自绘 | 某行在某个模型上失败一次后，该行改回官方绘制；换模型后重试 | 组件不兼容时每行、每首歌都会再抛一次异常并打完整错误日志，没有功能级上限 |
+| 字符上浮 | 失败后关闭到下一次缓存重置 | 每次缓存重置都会重新失败，没有功能级上限 |
+| 封面取色 | 取不到颜色时用手动色 | 取色过程若抛异常，会冒泡成整行自绘失败 |
+| 翻译按钮 | 合成动作构造失败返回空，保留官方槽位 | 每次媒体状态更新都会重新反射构造、重新失败 |
+| 动态封面 | 启动失败后关闭到下一次配置下发 | 已经绑定显式事件，本刀不改 |
+
+**改动：**
+- 新增 `FeatureDegradation`（入口类之外），按功能计失败次数：
+  - 同一 SystemUI 插件 ClassLoader 代内，自绘、上浮、取色累计 3 次失败，或翻译合成动作累计 2 次失败，就暂停该功能，走它自己的回退（官方歌词 / 普通绘制 / 手动色 / 官方槽位）。
+  - 功能之间互不影响；单次异常不会暂停任何功能。
+  - 绘制路径上只读一个 volatile 位掩码，不加锁。
+- **恢复只绑定显式事件，不按时间、不按帧：**
+  - 新的插件 ClassLoader 代生效时全部清零（`PluginHookGenerationManager.activate`）；
+  - 歌词设置真的改变时（渲染器 `setConfig` 判等之后，定时重载同值不算），暂停中的功能各再试一次，每代最多 2 次。
+  - SystemUI 进程重启自然清零。
+- 接入点：`OfficialLyricDrawCoordinator`（门禁 + 计数，原有按行黑名单保留）、`OfficialLyricTextRenderer` 三处上浮失败点、`DynamicArtworkRuntime.coverColor`（异常改为返回空并计数）、`TranslationToggleMediaActionBinder` 合成动作。翻译图标替换路径不改：它失败时已有回退语义，门禁会改变心形槽位行为。
+- 状态：`CompatibilityStatus` 新增原因 `FEATURE_DEGRADED`，状态页文案“多次出错，已暂停此项并改用安全回退；系统界面插件更新或更改歌词设置后会再试”，离线摘要器白名单同步。暂停与恢复各打一条 `FEATURE_DEGRADED` / `FEATURE_RECOVERED` WARN，只含功能名、次数和异常类名。
+- 入口类：0 行改动（预算 9,798 不变）。
+
+**C-04 其余两条的核对结论（未改代码）：**
+- 插件 ClassLoader、surface 交接、异步回调的所有权与 epoch：已由 E-5c（插件代）、E-7a（交接代号）、`LyricRenderTransactions`（绑定事务）和 `DynamicArtworkRuntime` 的 `pluginEpoch` 覆盖；本刀没有发现用固定延迟掩盖竞争的新点。
+- 不因首次透明 / 0×0 强制重排、不重复接管 AOD 私有状态：沿用 Bridge `AGENTS.md` 约束，本刀没有改动相关路径。
+
+**验证：**
+- 本地：1063 tests / 0 fail / 6 skip（新增 `FeatureDegradationTest` 7 项），Debug 与 R8 通过，`verify-build-identity` 通过（380 个输入），摘要器自测通过。
+- 守卫基线：`log-events.txt` 新增两个事件（有意改动）；`CharLiftRendererContractTest` 的源码截取窗口从 3,000 扩到 3,600 字符，断言未改。
+
+**候选：** `artifacts/c04-degradation-20261116/Bridge-C04-degradation-debug-r1.apk`（`8818cb68…`）。
+
+**设备验证：** 真实设备上无法在不注入故障的情况下触发降级，本刀只做无回归冒烟；降级与恢复本身只有本地单元证据。
+
+**设备结果（2026-11-16，PJZ110）：**
+- agent 经授权 adb 安装 r1，回读已装 APK 哈希一致（`8818cb68…`）。
+- 用户重启 SystemUI 后，agent 经授权只读 LSPosed 日志，新进程与旧进程对照：
+  - 插件 ClassLoader 工厂、LyricsRecyclerView 的 Hook 计数（current=0 pivot=1 rowStyle=1 immersiveEntry=1 dataset=0 surfaceDraw=1）一致；
+  - 唯一 WARN 相同（KuWo 封面快照 Hook 跳过）；没有 ERROR、`HOOK_FAILED` 或 `FEATURE_DEGRADED`。
+  - 惰性安装的 adapter-bind Hook 在读取时尚未出现（旧进程是启动约 2.5 分钟后才装上），记为 unknown；本刀没有改动该路径。
+- 用户确认冒烟 1–6 通过：逐字推进、切歌、字符上浮、封面取色、翻译按钮、状态页无“多次出错”原因。
+
+### 16.3 C-05/C-06 静态样本清单（2026-11-16）
+
+工作区内可用的 SystemUI / 插件样本（SHA-256 前 12 位；同版本号、不同内容的分开记录）：
+
+| 组件 | 版本 | 不同内容的样本 |
+| --- | --- | --- |
+| SystemUI | 16.99.12 | `6229e31f013e`、`a8cdcadafe9e`（UI7）、`907d315850ae`、`6616c58a1970` |
+| SystemUI | 17.99.02 | `da83ae63b6cf`（C17）、`9a6a60ea3af2`（C17.0.1.x）、`3dcdf2df8e05`（OP16 目录） |
+| SystemUIPlugin | 16.001.002 | `a63e68702113`（UI7）、`ad74975487c9`、`c68bf570b858`、`b4e5fba2e3ad`、`102574eda9b8` |
+| SystemUIPlugin | 17.000.002 | `2cdd17e165fc`（C17）、`ce7f0315112f`（C17.0.1.x）、`e05b8f14170e`（OP16 目录） |
+
+- APK 只留本地，不入库；仓库只提交结构摘要（类/方法/字段签名的存在性与哈希）。
+- 已有工具：`artifacts/c17-0-1-rea/` 的锚点与契约脚本（两份 C17 样本）。C-05 计划把它们泛化为：对每个样本按 Bridge 实际 Hook / 反射目标生成结构摘要 → 入库摘要 → JVM 测试逐样本断言“Bridge 的每个目标在该样本中可解析，或已有降级路径”。
+- C-06 用这张表代替型号矩阵：每个不同内容的组件指纹一列，结论写“静态匹配 / 不匹配 / 未知”。
+
+### 16.4 C-05a 静态兼容样本库（2026-11-16，本地，已提交，未推送）
+
+**分支：** Bridge `feat/c04-degradation`，紧接 C-04 的 `5229654` 单独提交。
+
+**做法：**
+- `scripts/compat/component_summary.py`：纯 Python 读 APK 内的 DEX 和二进制清单，只写出：
+  - 身份（包名、versionName/Code、APK SHA-256、标签）；
+  - Bridge 源码里点名的类、DexKit 锚点命中的类及其在 APK 内的父类链的**成员签名**（名称、访问标志、类型描述符，不含代码）；
+  - DexKit 两类原生查询的结果：哪些类同时使用一组锚点字符串（`usingEqStrings`），哪些方法调用了指定目标（歌词位置控制器）。
+- `anchor-spec.json` 列出这些查询；测试检查每个锚点字符串都还在 Bridge 源码里，且样本是用当前清单提取的。
+- `ComponentSampleContractTest`：用 ASM 按摘要在隔离 ClassLoader 里重建这些类（方法体一律抛异常），然后直接调用 Bridge 自己的解析代码：
+  - SystemUI：`SystemUiDexKitAdapter.resolveLegacy`，以及按 `resolveTargets` 顺序调用的各形状判定（DexKit 类搜索结果来自摘要）；插件 ClassLoader 工厂判定；`resolveActionExConstructor` 与 `MediaAction` 构造器；AOD 媒体白名单方法。
+  - 插件：`OplusPluginDexKitAdapter.legacy` 与 `bindResolvedClasses/bindArtwork`；`OfficialLyricsRecyclerCompatibility.resolve`；与 `tryInstallLyricsRecyclerViewHook` 同序的方法选择（`LyricsRecyclerViews`、行样式、沉浸入口策略）；歌词位置控制器。
+- 结果固定在 `compat/expected-matrix.txt`（同 E-0 基线的做法：变化即失败，需有意更新）。另有硬断言：每个样本的“歌词核心”必须可解析；样本缺失直接失败，不用 skipped。
+
+**样本：** 15 个不同内容的组件（第 16.3 节表），摘要共 1.1 MB，APK 本身不入库。
+
+**结果（静态，非设备验收）：**
+
+| | 16.99.12 ×4 | 17.99.02 ×3 | 插件 16.001.002 ×5 | 插件 17.000.002 ×3 |
+| --- | --- | --- | --- | --- |
+| 歌词核心 | 全部 OK | 全部 OK | 全部 OK | 全部 OK |
+| 媒体策略 / 模型 | DexKit 与按名两条路径都 OK | 同左 | 两条路径都 OK | DexKit 路径 OK；按名 `m6.*` 失败（预期） |
+| 插件 ClassLoader | 构造器 1 个 | 无构造器，走工厂 | — | — |
+| 翻译合成动作 | 7 参数 | C17.0.1 为 8 参数，其余 7 参数 | — | — |
+| 歌词列表字段布局 | — | — | 精确匹配 `u/v/C`、`u/v/B`、`t/u/A` 之一 | 无精确布局，运行时走 DexKit 字段解析（静态未覆盖） |
+| 列表 Hook | — | — | draw / setLyrics / 当前行 / 缩放中心均命中 | 无 setLyrics / 当前行，改由沉浸入口与行样式命中 |
+| 歌词位置控制器 | — | — | 1 个 | 无（预期，C17 没有旧定时控制器） |
+| 插件内封面绑定 | — | — | OK | 失败：StaticIcon 无 `Icon` 字段（预期，C17 封面由独立的 `ArtworkCompatibilityResolver` 负责） |
+
+这些结论与 C17 两次调查（`C17.0.1.x-BRIDGE-MISMATCH-SURVEY`）已知的差异一致：构造器 8 参数、工厂代替构造器、C17 无旧定时入口。
+
+**未覆盖（写明，不算通过）：**
+- `ArtworkCompatibilityResolver` 与 `OfficialLyricsRecyclerDexKitResolver`：依赖 DexKit 的字段读写与调用图语义，本刀不模拟；
+- 元数据变更入口的 DexKit 日志字符串查找（只跑了它的按名回退）；
+- 资源、Hook 实际安装顺序、活对象、绘制；
+- 开发设备 PJZ110 自身的 SystemUI / 插件指纹不在样本内（未导出），已知良好设备与样本的对应关系未知；
+- `system_server` 侧（`OplusMediaControlService`）不在范围。
+
+**验证：** 本地 1067 tests / 0 fail / 6 skip（新增 4 项），Debug 与 R8 通过，`verify-build-identity` 通过。新增测试依赖 `org.ow2.asm:asm:9.8`（Robolectric 已带的同一版本，仅测试用）。
+
+**C-05b（下一刀）：** 重复、乱序、迟到、失效回调的回放测试。按测试名粗查，现有“失效/迟到/AOD”类测试较多，“乱序”“歌词先到封面后到”“诊断开关不改变行为”几乎没有，需逐项核对后补齐。
+
+### 16.5 C-05b 回放覆盖核对与诊断开关不变量（2026-11-16，已提交，用户设备冒烟 1–2 通过）
+
+**分支：** Bridge `feat/c04-degradation`（基于 `b282e2b`）。
+
+**C-05 场景与现有回放测试的对照（逐类读测试名与断言，不是关键词计数）：**
+
+| 场景 | 现有覆盖 | 结论 |
+| --- | --- | --- |
+| 旧曲异步结果 | `SystemUiLyricPublicationGateTest`（旧解析不能在新加载后提交）；`LyricRenderTransactionsTest` 的 `staleDatasetCompletionCannotOverrideANewerOne`、`lateOldBindCannotBeRelabelledAsTheCurrentDataset`；封面 `ArtworkOwnershipPolicyTest`、`ArtworkRenderGuardTest`、`ArtworkSourceReplacementTest` | 已覆盖 |
+| 新旧数据集交接 | `LyricRenderTransactionsTest` 约 20 项（共享文本不能把旧行转给新模型、在途数据集不暴露半绑定行、差分行只在完整提交后迁移等） | 已覆盖 |
+| View detach / attach | `attachOrMatchingTextDoesNotEstablishOwnership`、`rowsInRecycledHiddenHoldersRemainDiscoverable…`；封面 `detachedOwnerAndMissingCurrentStampRejectLateCallbacks` | 已覆盖 |
+| 快速切歌 | 封面 `rapidAToBToCSupersedesPendingWitnessAndOldRead`、`rapidSkipCannotRevealIntermediatePendingCover`、`waitsForCardAndSeedlingTitlesToAgreeDuringFastTrackChanges`、`revokedFadeLeaseCannotReviveAfterRapidSongChanges` | 已覆盖 |
+| 歌词先到、封面后到 | `nativeDataCanArriveBeforeItsMatchingParsedModel`（反向顺序）；取色 `ArtworkPaletteAccessTest`、`ArtworkLyricColorTargetsTest`（回收行不收旧卡片更新） | 部分覆盖：取色按快照读取、不保留旧颜色已测；“封面晚到后已显示的歌词行重新取色”没有独立回放 |
+| 暂停后补资源 | `ArtworkSurfaceHandoverTest`（只有同宿主上已稳定的暂停可淡回静态）、`ArtworkRetryWakeupTest`、`ArtworkScreenAwakeTest` | 已覆盖封面；歌词侧暂停期间补模型依赖 `LyricRenderTransactions`，未单列 |
+| AOD 往返 | `aodAndBrightSurfacesCommitIndependently`、`AodModeObservationTest` | 状态机已覆盖；真实 AOD 画面属设备验收 |
+| 重复回调 | `repeatedIdenticalSetLyricsStillRequiresItsRealBindEpoch`、`ArtworkFrameDispatchTest`（多次通知只交付最新一帧）、`ArtworkDiagnosticGateTest` | 已覆盖 |
+| **诊断开关不改变行为** | **无** | **本刀补上** |
+
+**本刀新增：`DiagnosticsSwitchGuardTest`**
+- 扫描 Bridge 源码中所有诊断开关读取点（`is*DiagnosticsEnabled`、`StructuredBridgeLog.isAreaEnabled`、`ArtworkTrace.enabled`、`ShortDiagnosticSession.active`），按“文件#方法 + 谓词”固定在 `guard/diagnostic-switch-sites.txt`（43 处）。新增或移动读取点即失败，须复核它只控制日志或有界记录，再更新基线。
+- 43 处逐一复核：42 处只控制日志、诊断采样或短时诊断记录，1 处是下面的发现（已按用户决定移除）。
+- 运行时补一项：开启短时诊断与关闭时，同一组能力观测得到的状态快照完全相同。
+
+**发现与处理：** `DynamicArtworkRuntime.observing()` 原先在动态封面与封面取色**都关闭**时，只要 MEDIA 调试区域打开就返回 true：会开始观测 Seedling 来源、刷新宿主，并经 `watchFlow` 给插件的 StateFlow 方法安装 Hook。这与“调试开关不得改变 Hook”的约束不一致。
+- **用户决定去掉该分支**：`observing()` 只看 `displayEnabled || coverColorEnabled`。MEDIA 调试仍会给功能已启动的观测输出轨迹，但不再单独启动观测；产品关闭时不再提供绑定诊断。
+- 守卫的“行为例外”清单因此为空，基线 42 处，全部只控制日志、诊断采样或短时诊断记录。
+- `docs/DYNAMIC-ARTWORK-BINDING-SURVEY.zh-CN.md` 中“可用 MEDIA debug 只读绑定诊断”一句加了移除说明。
+
+**候选：** `artifacts/c05b-diagnostics-20261116/Bridge-C05b-diagnostics-debug-r1.apk`（待设备冒烟：开启动态封面 / 跟随封面配色时仍正常；两者都关、只开 MEDIA 调试时，日志中不再出现封面 flow Hook）。
+
+**验证：** 本地 1070 tests / 0 fail / 6 skip（新增 3 项），Debug 与 R8 通过，`verify-build-identity` 通过。
+
+**设备结果（2026-11-16，PJZ110）：**
+- agent 经授权 adb 安装 r1，回读哈希一致（`8572ee93…`）；用户重启 SystemUI 后 agent 经授权只读 LSPosed 日志：Hook 计数与上一进程一致，唯一 WARN 相同，无 ERROR / `HOOK_FAILED` / `FEATURE_*`。
+- 用户确认冒烟 1–2 通过（歌词与切歌；动态封面 / 跟随封面配色正常）。
+- 第 3 项（两功能关闭、只开 MEDIA 调试时不再启动封面观测）未做：日志中只有启动时 `master=false, areas=off`，没有新的调试配置下发，记为“未设备验证”，只有代码与本地测试证据。
+- adapter-bind Hook 的安装日志在 C-04 与本刀两个进程中都没出现：`HOOK_INSTALLED` 按“区域|事件”3 秒节流，启动 3 秒内连续安装时后一条被吞，只在下一条同类日志里以 `suppressed=` 计数出现（C-04 之前的进程正是 `suppressed=2`）。自绘依赖该 Hook 的绑定事件且冒烟通过，判断为日志节流而非未安装；后续可让 `HOOK_INSTALLED` 不参与节流（未改）。
+
+**仍未覆盖：** “封面晚到后已显示歌词行重新取色”的独立回放；歌词侧“暂停期间补模型”的单列回放。两者涉及 View 与主线程调度，纯 JVM 测试只能覆盖到现有状态机为止。
+
+### 16.6 C-06 ColorOS 型号验收矩阵：结论（2026-11-16）
+
+**证据等级：**
+- **D（设备验收）**：开发者设备上由用户确认的冒烟结果；
+- **S（静态兼容）**：C-05a 在样本上重建类并跑 Bridge 真实解析器的结果（`compat/expected-matrix.txt`）；
+- **U（未知）**：既无设备证据，也无静态覆盖。
+
+S 只说明 Hook / 反射目标存在且形状正确，不说明运行时对象、资源、Hook 安装顺序或画面正确，不能写成“该型号通过”。
+
+**矩阵（按组件内容指纹，不按型号；同版本号、不同内容分列）：**
+
+| 组件 | 版本 | 指纹 | 来源 | 歌词核心 | 主要差异 | 等级 |
+| --- | --- | --- | --- | --- | --- | --- |
+| SystemUI | 16.99.12 | `6229e31f013e` | 工作区 SystemUI 目录 | OK | RUS 旧布局；插件 ClassLoader 走构造器；翻译动作 7 参数 | S |
+| SystemUI | 16.99.12 | `a8cdcadafe9e` | realme UI7 | OK | 同上 | S |
+| SystemUI | 16.99.12 | `907d315850ae` | 工作区 SystemUI 目录 | OK | 同上 | S |
+| SystemUI | 16.99.12 | `6616c58a1970` | 工作区 SystemUI 目录（New） | OK | RUS 新布局，带歌词开关门禁 | S |
+| SystemUI | 17.99.02 | `da83ae63b6cf` | C17 参考 | OK | 走 ClassLoader 工厂；翻译动作 7 参数 | S |
+| SystemUI | 17.99.02 | `9a6a60ea3af2` | C17.0.1.x | OK | 翻译动作 8 参数（`iconForAod`） | S |
+| SystemUI | 17.99.02 | `3dcdf2df8e05` | `logs/OP16` 目录（来源设备未记录） | OK | 同 C17 参考 | S |
+| 插件 | 16.001.002 | `a63e68702113` | realme UI7 | OK | 字段布局 `u/v/B`；有位置控制器 | S |
+| 插件 | 16.001.002 | `ad74975487c9` / `c68bf570b858` / `b4e5fba2e3ad` | new / new10 / old | OK | 字段布局 `u/v/C`；另有行样式入口 | S |
+| 插件 | 16.001.002 | `102574eda9b8` | user | OK | 字段布局 `t/u/A` | S |
+| 插件 | 17.000.002 | `2cdd17e165fc` / `ce7f0315112f` / `e05b8f14170e` | C17 参考 / C17.0.1.x / OP16 目录 | OK | 无 setLyrics / 当前行入口，改由沉浸入口与行样式；字段布局与封面走运行时 DexKit | S |
+| SystemUI + 插件 | ColorOS 17.0.1.201(CN01) | 未导出 | **PJZ110（开发者设备）** | OK | Hook 计数与插件 17.000.002 三个样本一致 | **D** |
+
+**结论：**
+1. **样本内 15 个指纹全部静态兼容。** 覆盖 SystemUI 16.99.12 / 17.99.02 与插件 16.001.002 / 17.000.002 两个组件族，歌词核心（媒体策略、插件 ClassLoader、歌词模型、列表绘制入口）都能解析。同版本号的不同二进制确有差异（RUS 布局、翻译动作构造器、字段布局），都落在已有分支内。
+2. **只有一台设备验收：PJZ110 / ColorOS 17.0.1.201。** 它的 Hook 计数与插件 17.000.002 样本一致，但自身指纹没有导出，无法确定对应哪一列。
+3. **ColorOS 16 组件族在 5.0 周期内没有设备证据**，只有静态兼容。4.x 版本的历史设备证据不能替代 5.0 的验收。
+4. **C17 上有两处只能运行时确认：** 歌词列表字段布局（运行时 DexKit 字段解析）与封面解析（`ArtworkCompatibilityResolver`）。PJZ110 上两者均已在设备上工作（日志 `Resolved official lyric current row field via DexKit semantics`、`ARTWORK_C17_PROFILE resolved`），其他 C17 指纹为 U。
+5. **样本外的型号**按第 4 节 C-06 的原则处理：先只读识别，失败时走 C-04 的功能级降级，不承诺支持。
+
+**固定场景在 PJZ110 上的覆盖（M1 至 C-05b 各刀冒烟汇总）：**
+
+| 场景 | 状态 |
+| --- | --- |
+| 冷启动首曲（重启 SystemUI 后） | 每刀冒烟都有，通过 |
+| 锁屏进入、逐字推进 | 通过（C-04、C-05b） |
+| 连续切歌 | 每刀只切一次；“连续”未在 E/F 之后复测 |
+| 暂停 / 继续 | E/F 之后未单独复测 |
+| 译文显隐 | 通过（C-04 翻译按钮项） |
+| 逐行 / 逐字 | 逐字通过；逐行歌词源未在 E/F 之后复测 |
+| AOD 往返 | E/F 之后未复测 |
+| 解锁再锁屏 | E/F 之后未单独复测 |
+
+未复测的五项（连续切歌、暂停/继续、逐行、AOD 往返、解锁再锁屏）放进正式 RC 的设备清单，不在开发分支上补。
+
+**发布表述建议：**“5.0 在 ColorOS 17（PJZ110）上完成设备验收；SystemUI 16.99.12 / 17.99.02 与 SystemUIPlugin 16.001.002 / 17.000.002 的其他已知构建为静态兼容；其他型号未验证。”
+
+**补强方式（可选，需用户提供）：** 导出 PJZ110 当前的 SystemUI 与 SystemUIPlugin APK，加入样本后即可把 D 行对应到具体指纹；其他用户反馈附带的组件 APK 也可按同样流程加样本。
+
+### 16.7 Metrolist 退出 5.0 发布阵容（2026-11-16，用户决定，本地，已提交）
+
+**范围（用户选择“退出 5.0 阵容”）：**
+- Providers `feat/drop-metrolist`（基于 M4 的 `831ae3c`）：
+  - 从 `release/v5-provider-matrix.json` 删除 `player-metrolist`，矩阵剩 13 个 Provider；
+  - 从 `build.gradle.kts` 的 v5 模块列表和 `settings.gradle.kts` 删除该模块，不再构建；
+  - `player-metrolist/` 源码保留在仓库内，不删除；
+  - 中英文 README 的矩阵表、数量（14 → 13，专属 12 → 11）和翻译说明同步。
+- Bridge `feat/drop-metrolist`（基于 `23da034`）：
+  - 商店目录删除 Metrolist 卡片及其商店名称、图标资源；
+  - 清单 `<queries>` 删除 Metrolist Provider 的包名；
+  - **保留** `com.metrolist.music` 的 SystemUI 兼容（`PlayerSystemUiPolicy`）、翻译设置条目与宿主 `<queries>`：通用 Provider 仍可能为它发布歌词。
+- 不动：Providers 上另有一条未推送的 `fix/metrolist-14-support`（`3bf83f7`，适配 Metrolist 14.0.0），不是本会话创建，原样保留。
+
+**验证（本地）：** Bridge 1070 tests / 0 fail / 6 skip（`ProviderDirectoryContractTest` 用新矩阵通过；`PrototypeModelTest` 专属卡片数 12 → 11），Debug 与 R8 通过；Providers `testV5Matrix assembleV5MatrixDebug` 通过，目录脚本测试 18 项通过。
+
+**影响：** 批量发布的 Provider 从 13 个（LX 之外）变为 12 个。已装 4.x Metrolist Provider 的用户在商店里看不到它，模块本身不受 Bridge 影响。
+
+### 16.8 Provider 批量商店发布（2026-11-16，已发布）
+
+**发布内容（Providers `main` = `b44877a`）：**
+- PR #13（`637e47a`）：M4 作用域申请、Metrolist 退出矩阵、动态封面 Provider 改走商店、发布检查改为 13 个、13 个 Provider 升一个补丁版本并附中英文发布说明；
+- PR #14（`b44877a`）：修正 `ScopeRequestWiringTest` 仍断言 14 个 Provider 的问题，并把矩阵与各模块构建文件声明为测试输入。
+
+**已发布的 14 个 Release 与目录：**
+- Salt 1.1.3、Cone 1.1.3、KuWo 1.2.3、LX 1.2.3、Poweramp 1.2.2、KuGou 1.2.5、QQ 1.2.2、NetEase 1.2.3、Apple 1.2.2、Spotify 1.1.3、QiShui 1.1.3、Universal 1.1.4、Readify 1.0.3，以及动态封面 Provider 1.0.6（首次走商店）。
+- `store-catalog` 从 revision 1（`35a1909`）推进到 revision 15（`64d73bd`），每个 tag 一个 revision，均经用户在 GitHub 批准 `provider-catalog` 环境。
+
+**agent 独立核对（不只看 Actions 成功）：**
+- 下载 14 个 Release APK，用仓库的 `verifyEnvelope` / `validatePayload` 验证目录：签名有效（`cll-catalog-2026a`），revision 15，有效期至 2027-05-15；
+- 目录 14 项逐项与矩阵的包名、版本一致，下载地址指向对应 tag，字节数与 SHA-256 与下载的 APK 一致，发布说明与 `release/notes/` 原文一致；矩阵模块无遗漏；
+- 14 个 APK 用 `apksigner` 实测签名证书，全部等于 `catalog-trust.json` 的正式发布证书。
+
+**过程中的两个问题（已处理）：**
+1. 一次推送 14 个 tag 没有触发任何 workflow：GitHub 对一次推送超过 3 个 tag 不产生 push 事件。经用户同意删除远端 tag，按每批最多 3 个重推。
+2. 第一轮 14 个运行全部在 “Matrix tests” 失败（发布前，没有产生 Release，目录未动）：`ScopeRequestWiringTest` 仍断言 14 个 Provider。本地 `testV5Matrix` 之前通过只是因为 Gradle 复用了缓存结果（该测试读矩阵却未声明为输入）。修正后用 `--rerun-tasks` 跑全矩阵通过，PR #14 合并后经用户同意把 14 个 tag 移到 `b44877a` 重推，全部成功。
+- 教训：改矩阵后，Providers 的本地验证要带 `--rerun-tasks`，或确认读矩阵的测试都声明了输入。
+
+**未覆盖：** 新版本 Provider 在设备上的商店下载安装、启用状态显示与作用域申请尚未实测（之前只有 LX 1.2.2 与 Salt 的调试包证据）。

@@ -1,6 +1,7 @@
 package io.github.andrealtb.lockscreenlyrics;
 
 import android.content.Intent;
+import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.os.Handler;
@@ -16,6 +17,7 @@ import android.widget.Toast;
 import com.google.android.material.materialswitch.MaterialSwitch;
 
 import io.github.andrealtb.lockscreenlyrics.diagnostics.BridgeDebugConfig;
+import io.github.andrealtb.lockscreenlyrics.diagnostics.BuildIdentity;
 
 public final class BridgeDebugSettingsActivity extends SettingsBaseActivity {
     private static final long APPLY_TIMEOUT_MS = 2_500L;
@@ -31,6 +33,16 @@ public final class BridgeDebugSettingsActivity extends SettingsBaseActivity {
     private MaterialSwitch playerSpecial;
     private MaterialSwitch performance;
     private TextView statusView;
+    private TextView identityView;
+    private TextView runtimeIdentityView;
+    private java.util.concurrent.ExecutorService identityWorker;
+    private java.util.concurrent.Future<?> identityTask;
+    private String installedBuildId = BuildIdentity.UNKNOWN;
+    private Bundle runtimeStatus;
+    private final java.util.Map<String, String> environmentFacts = new java.util.LinkedHashMap<>();
+    private io.github.andrealtb.lockscreenlyrics.diagnostics.AppEnvironmentObserver environmentObserver;
+    private ShortDiagnosticsControls shortDiagnostics;
+    private Bundle shortDiagnosticsRestore;
     private boolean binding;
     private boolean moduleStatusQueryPending;
     private long pendingSettingsRevision = -1L;
@@ -42,10 +54,56 @@ public final class BridgeDebugSettingsActivity extends SettingsBaseActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         preferences = getSharedPreferences(BridgeDebugConfig.PREFS_NAME, MODE_PRIVATE);
+        shortDiagnosticsRestore = savedInstanceState;
+        shortDiagnostics = new ShortDiagnosticsControls(this, () -> new java.util.LinkedHashMap<>(environmentFacts));
         setTitle(R.string.debug_settings_title);
         setContentView(createContent());
         bind(BridgeDebugConfig.load(preferences));
         queryModuleStatus();
+        environmentObserver = new io.github.andrealtb.lockscreenlyrics.diagnostics.AppEnvironmentObserver(this, facts -> {
+            environmentFacts.putAll(facts);
+            identityView.setText(BuildIdentity.format(new BuildIdentity.Snapshot(environmentFacts)));
+        });
+        identityWorker = java.util.concurrent.Executors.newSingleThreadExecutor();
+        Context identityContext = getApplicationContext();
+        identityTask = identityWorker.submit(() -> {
+            BuildIdentity.Snapshot snapshot = BuildIdentity.capture(identityContext);
+            String text = BuildIdentity.format(snapshot);
+            runOnUiThread(() -> {
+                if (isDestroyed()) return;
+                environmentFacts.putAll(snapshot.facts);
+                identityView.setText(BuildIdentity.format(new BuildIdentity.Snapshot(environmentFacts)));
+                installedBuildId = snapshot.facts.getOrDefault("installed_build", BuildIdentity.UNKNOWN);
+                updateRuntimeIdentity();
+            });
+        });
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle out) {
+        if (shortDiagnostics != null) shortDiagnostics.save(out);
+        super.onSaveInstanceState(out);
+    }
+
+    @Override
+    protected void onActivityResult(int request, int result, Intent data) {
+        super.onActivityResult(request, result, data);
+        if (shortDiagnostics != null) shortDiagnostics.activityResult(request, result, data);
+    }
+
+    @Override
+    protected void onStart() { super.onStart(); if (environmentObserver != null) environmentObserver.start(); }
+
+    @Override
+    protected void onStop() { if (environmentObserver != null) environmentObserver.stop(); super.onStop(); }
+
+    @Override
+    protected void onDestroy() {
+        if (environmentObserver != null) environmentObserver.close();
+        if (shortDiagnostics != null) shortDiagnostics.close();
+        if (identityTask != null) identityTask.cancel(true);
+        if (identityWorker != null) identityWorker.shutdownNow();
+        super.onDestroy();
     }
 
     private android.view.View createContent() {
@@ -60,6 +118,7 @@ public final class BridgeDebugSettingsActivity extends SettingsBaseActivity {
         TextView description = text(getString(R.string.debug_settings_desc), 14, 0xFF5F6368);
         description.setPadding(dp(4), dp(4), dp(4), dp(14));
         content.addView(description, matchWrap());
+        content.addView(shortDiagnostics.create(shortDiagnosticsRestore), marginBottom(dp(12)));
 
         LinearLayout masterCard = card();
         master = toggle(getString(R.string.debug_master), false);
@@ -81,22 +140,38 @@ public final class BridgeDebugSettingsActivity extends SettingsBaseActivity {
         aod = areaToggle(R.string.debug_area_aod);
         playerSpecial = areaToggle(R.string.debug_area_player_special);
         performance = areaToggle(R.string.debug_area_performance);
-        areas.addView(bootstrap, matchWrap());
-        areas.addView(media, matchWrap());
-        areas.addView(lyric, matchWrap());
-        areas.addView(renderer, matchWrap());
-        areas.addView(aod, matchWrap());
-        areas.addView(playerSpecial, matchWrap());
-        areas.addView(performance, matchWrap());
+        MaterialSwitch[] areaRows = {bootstrap, media, lyric, renderer, aod, playerSpecial, performance};
+        for (int i = 0; i < areaRows.length; i++) {
+            if (i > 0) addCardDivider(areas);
+            areas.addView(areaRows[i], matchWrap());
+        }
         content.addView(areas, marginBottom(dp(12)));
 
         LinearLayout statusCard = paddedCard();
+        identityView = text("构建/环境快照：后台采集中…", 12, 0xFF5F6368);
+        identityView.setTextIsSelectable(true);
+        identityView.setPadding(0, 0, 0, dp(8));
+        statusCard.addView(identityView, matchWrap());
+        runtimeIdentityView = text(BuildIdentity.runtimeReport(null), 12, 0xFF5F6368);
+        runtimeIdentityView.setTextIsSelectable(true);
+        statusCard.addView(runtimeIdentityView, matchWrap());
         statusView = text(getString(R.string.debug_status_unknown), 13, 0xFF5F6368);
         statusCard.addView(statusView, matchWrap());
         TextView restartHint = text(getString(R.string.debug_restart_hint), 13, 0xFF5F6368);
         restartHint.setPadding(0, dp(8), 0, 0);
         statusCard.addView(restartHint, matchWrap());
         content.addView(statusCard, marginBottom(dp(12)));
+
+        // Debug builds only: provider preview and fixed-video test (moved from the old
+        // appearance page, plan §14.18).
+        if (BuildConfig.DEBUG) {
+            Button dynamicArtwork = button(getString(R.string.artwork_title));
+            dynamicArtwork.setContentDescription(getString(R.string.artwork_link_sub));
+            removeButtonShadow(dynamicArtwork);
+            dynamicArtwork.setOnClickListener(view -> startActivity(
+                    new Intent(this, DynamicArtworkSettingsActivity.class)));
+            content.addView(dynamicArtwork, marginBottom(dp(12)));
+        }
 
         Button save = button(getString(R.string.debug_save));
         styleGoldButton(save);
@@ -135,9 +210,9 @@ public final class BridgeDebugSettingsActivity extends SettingsBaseActivity {
     }
 
     private MaterialSwitch areaToggle(int labelRes) {
-        MaterialSwitch view = toggle(getString(labelRes), true);
-        view.setPadding(0, 0, 0, 0);
-        return view;
+        // Keep toggle()'s row padding: zero padding put the labels and switches on the card
+        // edges (PJZ110 r3 screenshot).
+        return toggle(getString(labelRes), true);
     }
 
     private void bind(BridgeDebugConfig config) {
@@ -233,6 +308,38 @@ public final class BridgeDebugSettingsActivity extends SettingsBaseActivity {
         }
     }
 
+    private void updateRuntimeIdentity() {
+        if (isDestroyed() || runtimeIdentityView == null) return;
+        try {
+            runtimeIdentityView.setText(BuildIdentity.runtimeReport(runtimeStatus, installedBuildId) + "\n"
+                    + io.github.andrealtb.lockscreenlyrics.diagnostics.CompatibilityStatus.formatStatus(runtimeStatus)
+                    + "\n" + loadedComponentReport(runtimeStatus));
+        } catch (RuntimeException incompatibleReply) {
+            runtimeIdentityView.setText("注入进程/能力状态：unknown（回包不兼容）");
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    private String loadedComponentReport(Bundle data) {
+        if (data == null) return "已观测加载器：unknown";
+        java.util.ArrayList<Bundle> rows = data.getParcelableArrayList(
+                io.github.andrealtb.lockscreenlyrics.diagnostics.LoadedComponentFingerprints.KEY);
+        if (rows == null) return "已观测加载器：unknown（旧回包）";
+        StringBuilder text = new StringBuilder("已观测加载器背后文件（不是指令内存认证）：");
+        for (Bundle row : rows) {
+            String kind = row.getString("kind", "unknown");
+            String hash = row.getString("contentSetSha256", "unknown");
+            String installed = environmentFacts.getOrDefault(kind, "unknown");
+            String compare = hash.equals("unknown") || !installed.contains("content_set_sha256=") ? "unknown"
+                    : installed.contains("content_set_sha256=" + hash) ? "SAME_CONTENT_SET" : "DIFFERENT_OR_DIFFERENT_CONTAINER_SET";
+            text.append('\n').append(kind).append(" epoch=").append(row.getLong("loaderEpoch", -1))
+                    .append(" state=").append(row.getString("state", "unknown"))
+                    .append(" sha256=").append(hash).append(" comparison=").append(compare)
+                    .append(" measuredAt=").append(row.getLong("fingerprintedAt", -1));
+        }
+        return text.toString();
+    }
+
     private void updateStatus() {
         if (statusView == null) {
             return;
@@ -295,7 +402,9 @@ public final class BridgeDebugSettingsActivity extends SettingsBaseActivity {
                 return;
             }
             moduleStatusQueryPending = false;
-            appliedRevision = resultData.getLong(BridgeDebugConfig.KEY_REVISION, 0L);
+            runtimeStatus = new Bundle(resultData);
+            updateRuntimeIdentity();
+            appliedRevision = resultData.getLong(BridgeDebugConfig.KEY_REVISION, -1L);
             appliedMaster = resultData.getBoolean(BridgeDebugConfig.KEY_MASTER, false);
             appliedAreas = resultData.getString("debug_areas", "unknown");
             updateStatus();

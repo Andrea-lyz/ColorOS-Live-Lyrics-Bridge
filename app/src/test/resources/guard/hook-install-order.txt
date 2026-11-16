@@ -1,0 +1,61 @@
+<field-initializer>
+  id -> <lambda>
+hookAodMediaSupportMethod
+  HOOK_ID_AOD_MEDIA_SUPPORT + "-" + methodName -> onAodMediaSupportLookup
+hookRecyclerAdapterNotifyMethod
+  HOOK_ID_RECYCLER_ADAPTER_NOTIFY_CHANGED + "-" + methodName + "-" + parameterTypes.length -> onRecyclerAdapterNotifyChanged
+installKuWoArtworkSnapshotHook
+  HOOK_ID_SYSTEMUI_ARTWORK_ICON -> onSystemUiKuWoArtworkLookup
+installKuWoCarLyricLoadMetadataHook
+  HOOK_ID_MEDIA_DATA_LOAD_METADATA -> onLegacyMediaDataLoad
+installKuWoCarLyricMetadataHook
+  HOOK_ID_MEDIA_DATA_METADATA_CHANGED -> onOplusMediaDataMetadataChanged
+installKuWoMediaDataArtworkCaptureHook
+  HOOK_ID_SYSTEMUI_ARTWORK_ICON + "-media-data" -> onKuWoMediaDataArtworkLoaded
+installKuWoSeedlingArtworkHook
+  HOOK_ID_SYSTEMUI_SEEDLING_ARTWORK -> onKuWoSeedlingArtworkChanged
+installOplusHistoryWhitelistHook
+  HOOK_ID_OPLUS_HISTORY_WHITELIST -> onOplusHistoryWhitelistLookup
+installOplusMediaBlacklistBypassHook
+  HOOK_ID_OPLUS_MEDIA_BLACKLIST -> onOplusMediaBlackListLookup
+installOplusMediaPolicyBypassHooks
+  HOOK_ID_RUS_GET_WHITE_LIST -> onOplusMediaRusGetWhiteList
+  HOOK_ID_RUS_GET_WHITE_LIST -> onOplusMediaRusGetWhiteList
+  HOOK_ID_GET_LYRIC_ENTRANCE -> onOplusMediaGetLyricEntrance
+  HOOK_ID_RESOLVE_LYRIC_SUPPORT -> onOplusMediaResolveLyricSupport
+  HOOK_ID_UPDATE_PKG_ACTIONS_RULE -> onOplusMediaUpdatePkgActionsRule
+installSystemUiArtworkDiagnosticsHook
+  HOOK_ID_SYSTEMUI_ARTWORK_LOADER_PROBE -> onSystemUiArtworkLoaderProbe
+installSystemUiTranslationToggleActionHook
+  HOOK_ID_TRANSLATION_TOGGLE_ACTION -> onOplusMediaCreateActionsFromState
+installSystemUiWordLyricHooks
+  HOOK_ID_SYSTEMUI_LOAD_LYRIC -> onSystemUiLoadLyricInBg
+  HOOK_ID_SEEDLING_MEDIA_BUNDLE -> onSeedlingMediaBundle
+  HOOK_ID_TEXTVIEW_ON_DRAW -> onTextViewOnDraw
+  HOOK_ID_TEXTVIEW_SET_TEXT -> onTextViewSetText
+  HOOK_ID_VIEW_ON_ATTACHED -> onViewAttachedToWindow
+  HOOK_ID_VIEW_ON_DETACHED -> onViewDetachedFromWindow
+  HOOK_ID_VIEW_SET_VISIBILITY -> onViewSetVisibility
+  HOOK_ID_VIEW_SET_CONTENT_DESCRIPTION -> onViewSetContentDescription
+  HOOK_ID_IMAGE_VIEW_SET_IMAGE_DRAWABLE -> onImageViewSetImage
+  HOOK_ID_IMAGE_VIEW_SET_IMAGE_BITMAP -> onImageViewSetImage
+tryInstallKuWoPluginMediaModelHook
+  HOOK_ID_PLUGIN_CLASS_LOADER_CONSTRUCTOR + "-kuwo-model-" + hooked + "-" + constructor.getParameterTypes().length -> onKuWoPluginMediaModelBuilt
+tryInstallLyricAdapterBindHook
+  HOOK_ID_LYRICS_RECYCLER + "-adapter-bind-" + count -> onLyricsAdapterBindViewHolder
+tryInstallLyricPositionControllerHook
+  HOOK_ID_LYRICS_RECYCLER + "-controller-position" -> onLyricControllerPositionUpdate
+tryInstallLyricsRecyclerViewHook
+  HOOK_ID_LYRICS_RECYCLER + "-surface-draw" -> onLyricsRecyclerDraw
+  HOOK_ID_LYRICS_RECYCLER + "-dataset-" + datasetHooks -> onLyricsRecyclerSetLyrics
+  HOOK_ID_LYRICS_RECYCLER + "-current-" + currentLyricHooks + "-" + method.getParameterTypes().length -> onLyricsRecyclerSetCurrentLyric
+  HOOK_ID_LYRICS_RECYCLER + "-pivot-" + scalePivotHooks -> onLyricsRecyclerPrepareScalePivot
+  HOOK_ID_LYRICS_RECYCLER + "-row-style-" + rowStyleHooks -> onLyricsRecyclerRowStyleApplied
+  HOOK_ID_LYRICS_RECYCLER + "-immersive-entry-" + immersiveEntryHooks -> onLyricsRecyclerImmersiveEntry
+tryInstallPluginClassLoaderConstructorHook
+  HOOK_ID_PLUGIN_CLASS_LOADER_CONSTRUCTOR + "-" + hooked + "-" + constructor.getParameterTypes().length -> onPluginClassLoaderConstructed
+tryInstallPluginClassLoaderFactoryHook
+  HOOK_ID_PLUGIN_CLASS_LOADER_FACTORY -> onPluginClassLoaderCreated
+tryInstallShortWindowDiagnostics
+  "short-window-probe-invoke-" + hooks -> onShortWindowProbeInvoke
+  "short-window-probe-model-" + constructor.getParameterCount() -> onShortWindowProbeModelBuilt

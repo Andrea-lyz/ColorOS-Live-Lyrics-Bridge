@@ -45,32 +45,9 @@ import java.util.Locale;
 abstract class SettingsBaseActivity extends AppCompatActivity {
     @Override
     protected void attachBaseContext(Context newBase) {
-        super.attachBaseContext(applySettingsLocale(newBase));
+        super.attachBaseContext(SettingsLocaleContext.wrap(newBase));
     }
 
-    /** Applies the persisted settings-page locale (default: Chinese) to this activity. */
-    private static Context applySettingsLocale(Context base) {
-        String tag = base.getSharedPreferences(LyricUiSettings.PREFERENCES_NAME, MODE_PRIVATE)
-                .getString(LyricUiSettings.PREF_SETTINGS_LOCALE, null);
-        if (tag == null || tag.isEmpty()) return base;
-        Locale locale = Locale.forLanguageTag(tag);
-        if (locale == null || locale.getLanguage().isEmpty()) return base;
-        Configuration configuration = new Configuration(base.getResources().getConfiguration());
-        configuration.setLocale(locale);
-        return base.createConfigurationContext(configuration);
-    }
-
-    /** Toggles the settings-page language between Chinese and English and rebuilds the page. */
-    protected final void toggleSettingsLocale() {
-        String current = getSharedPreferences(LyricUiSettings.PREFERENCES_NAME, MODE_PRIVATE)
-                .getString(LyricUiSettings.PREF_SETTINGS_LOCALE, null);
-        String next = current != null && current.startsWith("en") ? "zh-CN" : "en";
-        getSharedPreferences(LyricUiSettings.PREFERENCES_NAME, MODE_PRIVATE)
-                .edit()
-                .putString(LyricUiSettings.PREF_SETTINGS_LOCALE, next)
-                .apply();
-        recreate();
-    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {

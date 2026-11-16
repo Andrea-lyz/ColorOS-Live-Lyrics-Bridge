@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Background colors of the Provider launcher icons copied for the store list. -->
+<resources>
+    <color name="store_icon_salt_bg">#FFFFFF</color>
+    <color name="store_icon_kuwo_bg">#FFE533</color>
+    <color name="store_icon_lx_bg">#FFFFFF</color>
+    <color name="store_icon_kugou_bg">#2196F3</color>
+    <color name="store_icon_qq_bg">#E8F5E9</color>
+    <color name="store_icon_netease_bg">#EA3E3C</color>
+    <color name="store_icon_apple_bg">#F84860</color>
+    <color name="store_icon_spotify_bg">#212121</color>
+    <color name="store_icon_qishui_bg">#000000</color>
+    <color name="store_icon_cone_bg">#FFFFFF</color>
+</resources>

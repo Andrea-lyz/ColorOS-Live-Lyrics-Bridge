@@ -51,6 +51,17 @@ public final class SystemUiRuntimeBootstrap {
     }
 
     public void initialize(ClassLoader classLoader) {
+        // SystemUI cold-start cost of the hook install (plan §15.4 P-8). A no-op unless an atrace
+        // capture for com.android.systemui is running; the body below is unchanged.
+        boolean traced = io.github.andrealtb.lockscreenlyrics.BridgePerfTrace.begin("CLL:systemUiBootstrap");
+        try {
+            initializeHooks(classLoader);
+        } finally {
+            io.github.andrealtb.lockscreenlyrics.BridgePerfTrace.end(traced);
+        }
+    }
+
+    private void initializeHooks(ClassLoader classLoader) {
         host.installAodMediaSupportHooks(classLoader);
         SystemUiDexKitAdapter.Targets targets = host.resolveSystemUiTargets(classLoader);
         if (targets == null) {

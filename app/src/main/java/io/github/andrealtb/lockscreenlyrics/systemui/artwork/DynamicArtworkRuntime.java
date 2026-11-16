@@ -11,6 +11,7 @@ import android.graphics.drawable.TransitionDrawable;
 import android.view.ViewTreeObserver;
 
 import io.github.andrealtb.lockscreenlyrics.diagnostics.BridgeDebugArea;
+import io.github.andrealtb.lockscreenlyrics.diagnostics.CompatibilityStatus;
 import io.github.andrealtb.lockscreenlyrics.diagnostics.StructuredBridgeLog;
 
 import java.lang.ref.WeakReference;
@@ -75,6 +76,7 @@ public final class DynamicArtworkRuntime {
     private final AtomicBoolean displayPosted = new AtomicBoolean();
     private boolean systemInstalled;
     private volatile boolean coverColorEnabled;
+    private volatile boolean diagnosticDisplayRequested;
     private volatile boolean requestedCoverColorEnabled;
 
     public void setCoverColorEnabled(boolean enabled) {
@@ -92,6 +94,20 @@ public final class DynamicArtworkRuntime {
     /** Scoped to the lyric's actual section, with current binding and snapshot ownership. */
     public Integer coverColor(View lyric) {
         if (!coverColorEnabled || android.os.Looper.myLooper() != main.getLooper()) return null;
+        io.github.andrealtb.lockscreenlyrics.FeatureDegradation degradation =
+                io.github.andrealtb.lockscreenlyrics.FeatureDegradation.global();
+        CompatibilityStatus.Feature glow = CompatibilityStatus.Feature.COVER_GLOW;
+        // C-04: a palette failure must fall back to the manual color, never fail the lyric draw.
+        if (!degradation.allowed(glow)) return null;
+        try {
+            return coverColorFor(lyric);
+        } catch (RuntimeException error) {
+            degradation.failed(glow, error.getClass().getSimpleName());
+            return null;
+        }
+    }
+
+    private Integer coverColorFor(View lyric) {
         for (View node = lyric; node != null; node = node.getParent() instanceof View parent ? parent : null) {
             for (Host host : hosts) {
                 // The palette belongs to the current card model. Session readiness gates display
@@ -131,6 +147,9 @@ public final class DynamicArtworkRuntime {
     /** Starts or changes the playback for the effective config; presentation-only changes keep the decoder. */
     private void activate() {
         ArtworkPlaybackConfig next = testConfig != null ? testConfig : settings.playback();
+        diagnosticDisplayRequested = next.enabled();
+        io.github.andrealtb.lockscreenlyrics.diagnostics.CompatibilityStatus.global().requested(
+                io.github.andrealtb.lockscreenlyrics.diagnostics.CompatibilityStatus.Feature.DYNAMIC_ARTWORK, next.enabled());
         String source = testConfig != null ? "debug_test" : next.enabled() ? "settings" : "off";
         if (next.equals(active) && source.equals(activeSource)) return;
         if (playback != null && next.sameSession(active)) {
@@ -161,6 +180,8 @@ public final class DynamicArtworkRuntime {
             activeSource = "off";
             trace.state("ARTWORK_TEST_FALLBACK", () -> "reason=test_setup_failed errorType=" + ArtworkTrace.errorType(error));
         }
+        io.github.andrealtb.lockscreenlyrics.diagnostics.CompatibilityStatus.global().artworkLifecycle(
+                this, diagnosticDisplayRequested, diagnosticDisplayRequested && !displayEnabled);
         refreshHosts();
         if (observing()) refreshSource();
         else suspendObservations();
@@ -361,8 +382,11 @@ public final class DynamicArtworkRuntime {
     }
 
     private boolean observing() {
-        // With product enablement off, MEDIA debug permits read-only binding diagnostics only.
-        return displayEnabled || coverColorEnabled || StructuredBridgeLog.isAreaEnabled(BridgeDebugArea.MEDIA);
+        // Only the product features start observation. MEDIA debug used to start read-only binding
+        // diagnostics here too, which installed flow hooks while both features were off; the debug
+        // switch must not change hooks (C-05b, plan section 16.5). Debug traces still follow the
+        // observation the features start.
+        return displayEnabled || coverColorEnabled;
     }
 
     public synchronized void initializeSystemUi(ClassLoader loader) {
@@ -972,6 +996,9 @@ public final class DynamicArtworkRuntime {
                 if (latest == null || latest.input() != input || latest.surfaceEpoch() != surfaceVersion) return;
                 registry.observeHost(this, epoch, surfaceVersion, latest.card(), trace, binding -> {
                     displayBinding = binding;
+                    io.github.andrealtb.lockscreenlyrics.diagnostics.CompatibilityStatus.global().artworkBinding(
+                            this, diagnosticDisplayRequested, binding.ready(), displayEnabled,
+                            surface == ArtworkPlaybackPolicy.Surface.IMMERSIVE);
                     if (coverColorEnabled) invalidateCoverColorTargets();
                     updateDisplay();
                     probe.sample();

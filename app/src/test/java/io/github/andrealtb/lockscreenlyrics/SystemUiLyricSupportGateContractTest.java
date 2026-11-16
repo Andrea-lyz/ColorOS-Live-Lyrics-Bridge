@@ -1,5 +1,6 @@
 package io.github.andrealtb.lockscreenlyrics;
 
+import io.github.andrealtb.lockscreenlyrics.guard.BridgeSourceMap;
 import org.junit.Test;
 
 import java.io.File;
@@ -22,10 +23,13 @@ public final class SystemUiLyricSupportGateContractTest {
 
     @Test
     public void onlyModuleManagedPlayersGetTheGateLifted() throws Exception {
-        String module = readProjectFile(
-                "app/src/main/java/io/github/andrealtb/lockscreenlyrics/LockscreenLyricsModule.java");
-        int handler = module.indexOf("private Object onOplusMediaResolveLyricSupport(");
-        int next = module.indexOf("private Object onOplusMediaUpdatePkgActionsRule(", handler);
+        String module = BridgeSourceMap.read(BridgeSourceMap.Area.OPLUS_POLICY);
+        // E-2d1: the handler moved to OplusMediaPolicyHooks and lost `private` (the installer in the
+        // entry class references it); the located body and the assertions are unchanged.
+        int handler = module.indexOf("Object onOplusMediaResolveLyricSupport(");
+        // E-4b: the next handler (pkg-actions rule) moved to TranslationActionController and lost
+        // `private` too; it still follows this handler in the OPLUS_POLICY reading order.
+        int next = module.indexOf("Object onOplusMediaUpdatePkgActionsRule(", handler);
         assertTrue(handler > 0 && next > handler);
         String body = module.substring(handler, next);
 

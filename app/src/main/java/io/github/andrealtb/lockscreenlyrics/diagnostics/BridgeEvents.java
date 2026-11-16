@@ -19,6 +19,8 @@ public final class BridgeEvents {
     public static final String LYRIC_RENDER_FALLBACK = "LYRIC_RENDER_FALLBACK";
     public static final String LYRIC_CUSTOM_FRAME = "LYRIC_CUSTOM_FRAME";
     public static final String CHAR_LIFT_UNAVAILABLE = "CHAR_LIFT_UNAVAILABLE";
+    public static final String FEATURE_DEGRADED = "FEATURE_DEGRADED";
+    public static final String FEATURE_RECOVERED = "FEATURE_RECOVERED";
     public static final String AOD_TRANSITION = "AOD_TRANSITION";
     public static final String PERF_SAMPLE = "PERF_SAMPLE";
     public static final String RECYCLER_ATTACHED = "RECYCLER_ATTACHED";

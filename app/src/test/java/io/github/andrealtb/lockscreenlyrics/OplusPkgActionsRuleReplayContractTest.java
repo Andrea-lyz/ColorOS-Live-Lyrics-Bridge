@@ -1,5 +1,6 @@
 package io.github.andrealtb.lockscreenlyrics;
 
+import io.github.andrealtb.lockscreenlyrics.guard.BridgeSourceMap;
 import org.junit.Test;
 
 import java.io.File;
@@ -12,9 +13,8 @@ import static org.junit.Assert.assertTrue;
 public final class OplusPkgActionsRuleReplayContractTest {
     @Test
     public void bridgeReplaysNeverReplaceTheRawVendorSnapshot() throws Exception {
-        String module = readProjectFile(
-                "app/src/main/java/io/github/andrealtb/lockscreenlyrics/LockscreenLyricsModule.java");
-        int hook = module.indexOf("private Object onOplusMediaUpdatePkgActionsRule(");
+        String module = BridgeSourceMap.read(BridgeSourceMap.Area.OPLUS_POLICY);
+        int hook = module.indexOf("Object onOplusMediaUpdatePkgActionsRule(");
         int guard = module.indexOf("if (Boolean.TRUE.equals(replayingOplusPkgActionsRule.get())) {", hook);
         int snapshot = module.indexOf(
                 "rawOplusPkgActionsRuleArgs = TranslationActionRulePolicy.snapshotRawArgs(rawArgs);", hook);

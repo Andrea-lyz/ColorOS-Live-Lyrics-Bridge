@@ -1,5 +1,6 @@
 package io.github.andrealtb.lockscreenlyrics;
 
+import io.github.andrealtb.lockscreenlyrics.guard.BridgeSourceMap;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -23,7 +24,7 @@ public final class CharLiftRendererContractTest {
         String module = module();
         int gate = module.indexOf("private void beginCharLiftLine(");
         assertTrue("beginCharLiftLine is missing", gate >= 0);
-        String body = module.substring(gate, gate + 3_000);
+        String body = module.substring(gate, gate + 3_600);
         assertTrue("lift must bail out on AOD low frame rate", body.contains("aodLowFrameRateMode"));
         assertTrue("lift must bail out without the toggle", body.contains("!charLiftEnabled"));
         assertTrue(
@@ -93,7 +94,7 @@ public final class CharLiftRendererContractTest {
         String module = module();
         int gate = module.indexOf("private void beginCharLiftLine(");
         assertTrue("beginCharLiftLine is missing", gate >= 0);
-        String body = module.substring(gate, gate + 3_000);
+        String body = module.substring(gate, gate + 3_600);
         assertTrue("future inactive rows must be prepared before the active handoff",
                 body.contains("CharLiftGeometry.shouldPrepareLine("));
         assertTrue("the intro must remain prepared until the first word starts",
@@ -161,8 +162,7 @@ public final class CharLiftRendererContractTest {
     }
 
     private static String module() throws Exception {
-        return readProjectFile(
-                "app/src/main/java/io/github/andrealtb/lockscreenlyrics/LockscreenLyricsModule.java");
+        return BridgeSourceMap.read(BridgeSourceMap.Area.RENDERER);
     }
 
     private static String readProjectFile(String relativePath) throws Exception {

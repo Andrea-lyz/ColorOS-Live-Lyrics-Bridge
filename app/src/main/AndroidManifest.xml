@@ -5,12 +5,62 @@
 
     <uses-permission android:name="io.github.andrealtb.lockscreenlyrics.permission.CHANGE_LYRIC_UI_SETTINGS" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Provider store catalog and APK downloads (5.0 plan §6.2). Used only by the ordinary
+         App process; Hook code in system/SystemUI never opens connections (architecture guard). -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Store installs go through a PackageInstaller session the user confirms (plan §6.4). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Optional update reminder (plan §6.5): asked only when the user turns it on; the
+         persisted daily job needs boot completion to survive a reboot. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <queries>
         <package android:name="com.android.systemui" />
+        <package android:name="com.oplus.systemui.plugins" />
         <intent>
             <action android:name="io.github.andrealtb.artwork.action.BIND_PROVIDER" />
         </intent>
+    </queries>
+
+    <!-- Management UI store (5.0 plan §6.4): directed visibility for the official Provider
+         set and their supported players, mirrored from v5-provider-matrix.json. Read-only
+         installed-state lookup and opening each plugin's own page; no QUERY_ALL_PACKAGES. -->
+    <queries>
+        <!-- Standalone LSPosed manager apps, opened on a module page without root (plan §14.10). -->
+        <package android:name="org.matrix.vector.manager" />
+        <package android:name="org.lsposed.manager" />
+        <package android:name="io.github.andrealtb.coloroslyrics.provider.salt" />
+        <package android:name="io.github.andrealtb.coloroslyrics.provider.cone" />
+        <package android:name="io.github.andrealtb.coloroslyrics.provider.kuwo" />
+        <package android:name="io.github.andrealtb.coloroslyrics.provider.lx" />
+        <package android:name="io.github.andrealtb.coloroslyrics.provider.poweramp" />
+        <package android:name="io.github.andrealtb.coloroslyrics.provider.kugou" />
+        <package android:name="io.github.andrealtb.coloroslyrics.provider.qq" />
+        <package android:name="io.github.andrealtb.coloroslyrics.provider.netease" />
+        <package android:name="io.github.andrealtb.coloroslyrics.provider.apple" />
+        <package android:name="io.github.andrealtb.coloroslyrics.provider.spotify" />
+        <package android:name="io.github.andrealtb.coloroslyrics.provider.qishui" />
+        <package android:name="io.github.andrealtb.coloroslyrics.provider.readify" />
+        <package android:name="io.github.andrealtb.coloroslyrics.provider.universal" />
+        <package android:name="io.github.andrealtb.artwork.am" />
+        <package android:name="com.salt.music" />
+        <package android:name="ink.trantor.coneplayer" />
+        <package android:name="ink.trantor.coneplayer.gp" />
+        <package android:name="cn.kuwo.player" />
+        <package android:name="cn.toside.music.mobile" />
+        <package android:name="com.lxwalnut.music.mobile" />
+        <package android:name="com.maxmpz.audioplayer" />
+        <package android:name="com.metrolist.music" />
+        <package android:name="com.kugou.android" />
+        <package android:name="com.kugou.android.lite" />
+        <package android:name="com.tencent.qqmusic" />
+        <package android:name="com.netease.cloudmusic" />
+        <package android:name="com.hihonor.cloudmusic" />
+        <package android:name="com.apple.android.music" />
+        <package android:name="com.spotify.music" />
+        <package android:name="com.luna.music" />
+        <package android:name="com.readin.app" />
     </queries>
 
     <application
@@ -33,19 +83,14 @@
             android:exported="true"
             android:importantForAutofill="no"
             android:label="@string/lyric_ui_settings_title"
-            android:windowSoftInputMode="adjustResize">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="de.robv.android.xposed.category.MODULE_SETTINGS" />
-            </intent-filter>
-        </activity>
+            android:windowSoftInputMode="adjustResize" />
         <activity
             android:name=".BridgeConfigBackupSettingsActivity"
             android:exported="false"
             android:importantForAutofill="no"
             android:label="@string/config_backup_title"
             android:theme="@style/Theme.LockscreenLyrics"
-            android:parentActivityName=".LyricUiSettingsActivity" />
+            android:parentActivityName=".management.ManagementPreviewActivity" />
         <activity
             android:name=".LyricVisualLayersSettingsActivity"
             android:exported="false"
@@ -59,36 +104,59 @@
             android:importantForAutofill="no"
             android:label="@string/player_translation_settings_title"
             android:theme="@style/Theme.LockscreenLyrics"
-            android:parentActivityName=".LyricUiSettingsActivity" />
+            android:parentActivityName=".management.ManagementPreviewActivity" />
         <activity
             android:name=".LyricOpeningCleanupSettingsActivity"
             android:exported="false"
             android:importantForAutofill="no"
             android:label="@string/opening_cleanup_settings_title"
             android:theme="@style/Theme.LockscreenLyrics"
-            android:parentActivityName=".LyricUiSettingsActivity"
+            android:parentActivityName=".management.ManagementPreviewActivity"
             android:windowSoftInputMode="adjustResize" />
+        <!-- Management Home (plan D3): LSPosed's module settings open here. -->
+        <activity
+            android:name=".management.ManagementPreviewActivity"
+            android:exported="true"
+            android:label="@string/launcher_label"
+            android:theme="@style/Theme.LockscreenLyrics">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="de.robv.android.xposed.category.MODULE_SETTINGS" />
+            </intent-filter>
+        </activity>
+        <!-- Launcher icon (D3, 2026-11-15). The Home card disables this alias to hide the icon. -->
+        <activity-alias
+            android:name=".management.LauncherEntry"
+            android:enabled="true"
+            android:exported="true"
+            android:label="@string/launcher_label"
+            android:targetActivity=".management.ManagementPreviewActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
         <activity
             android:name=".BridgeDebugSettingsActivity"
             android:exported="false"
             android:importantForAutofill="no"
             android:label="@string/debug_settings_title"
             android:theme="@style/Theme.LockscreenLyrics"
-            android:parentActivityName=".LyricUiSettingsActivity" />
+            android:parentActivityName=".management.ManagementPreviewActivity" />
         <activity
             android:name=".ArtworkSettingsActivity"
             android:exported="false"
             android:importantForAutofill="no"
             android:label="@string/artwork_settings_title"
             android:theme="@style/Theme.LockscreenLyrics"
-            android:parentActivityName=".LyricUiSettingsActivity" />
+            android:parentActivityName=".management.ManagementPreviewActivity" />
         <activity
             android:name=".DynamicArtworkSettingsActivity"
             android:exported="false"
             android:importantForAutofill="no"
             android:label="@string/artwork_title"
             android:theme="@style/Theme.LockscreenLyrics"
-            android:parentActivityName=".LyricUiSettingsActivity" />
+            android:parentActivityName=".management.ManagementPreviewActivity" />
         <receiver
             android:name=".UniversalPlayerBindingsReceiver"
             android:exported="true">
@@ -96,5 +164,12 @@
                 <action android:name="io.github.andrealtb.universallyrics.action.PLAYER_BINDINGS_CHANGED" />
             </intent-filter>
         </receiver>
+        <receiver
+            android:name=".management.install.InstallStatusReceiver"
+            android:exported="false" />
+        <service
+            android:name=".management.reminder.UpdateCheckJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
     </application>
 </manifest>

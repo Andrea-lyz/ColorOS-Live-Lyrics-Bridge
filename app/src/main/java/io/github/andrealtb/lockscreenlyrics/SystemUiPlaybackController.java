@@ -1,0 +1,443 @@
+package io.github.andrealtb.lockscreenlyrics;
+
+import static io.github.andrealtb.lockscreenlyrics.LockscreenLyricsModule.*;
+
+import android.annotation.SuppressLint;
+import android.content.Context;
+import android.media.session.MediaController;
+import android.media.session.MediaSessionManager;
+import android.media.session.PlaybackState;
+import android.os.Handler;
+import android.os.SystemClock;
+import android.text.TextUtils;
+
+import io.github.andrealtb.lockscreenlyrics.diagnostics.BridgeDebugArea;
+import io.github.andrealtb.lockscreenlyrics.diagnostics.BridgeEvents;
+import io.github.andrealtb.lockscreenlyrics.diagnostics.SensitiveFieldRedactor;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * SystemUI MediaController binding (E-5a, plan §15.3): active-session discovery for the current
+ * player, the single bound playback callback with its epoch and session-token checks, and the
+ * binding lock. Moved verbatim from {@code LockscreenLyricsModule}; no method body changed.
+ *
+ * <p>E-5b (plan §15.8.12): this class is also the only writer of the playback clock, the
+ * track-reset guard and the seedling active-line hint. The entry class still decides what a
+ * PlaybackState means (stale / restart / smoothing / jump) and runs the side effects; it then
+ * commits the clock here in the order it used to assign the fields inline.
+ */
+final class SystemUiPlaybackController {
+    /** What the controller hands to, or asks of, the rest of the SystemUI runtime. */
+    interface Host {
+        void onBoundPlaybackStateChanged(PlaybackControllerBinding source, PlaybackState state);
+
+        void rememberSystemUiPlaybackState(PlaybackState playbackState);
+
+        void rememberMediaControllerPlaybackState(String packageName, Object controllerObject);
+
+        void info(BridgeDebugArea area, String event, String message);
+
+        void error(String message, Throwable throwable);
+    }
+
+    private final Host host;
+    private final Handler mainHandler;
+    final Object systemUiPlaybackControllerLock = new Object();
+    PlaybackControllerBinding systemUiPlaybackControllerBinding;
+    private long nextSystemUiPlaybackControllerEpoch;
+    private volatile long lastPlaybackControllerDiscoveryElapsedMs = -1L;
+    private volatile String lastPlaybackControllerDiscoveryPackage = "";
+    volatile long lastComputedPositionMs = -1L;
+    volatile long lastComputedPositionElapsedMs = -1L;
+    volatile long lastSeedlingActiveLineTimeMs = -1L;
+    volatile long lastSeedlingActiveLineObservedAtMs = -1L;
+    private volatile long lastSeedlingPlaybackStateLogAt;
+    private volatile long lastLyricTrackPositionResetLogAt;
+    volatile long lyricTrackPositionResetGuardUntilElapsedMs;
+    private volatile long lastStalePlaybackPositionIgnoredLogAt;
+    volatile String playbackClockTrackKey = "";
+    volatile boolean lastPlaybackIsPlaying = true;
+    volatile float lastPlaybackSpeed = 1f;
+    volatile int lastSystemUiPlaybackState = -1;
+    private volatile int lastLoggedSystemUiPlaybackState = -100;
+    private volatile long lyricTrackPositionResetGuardStartedAtElapsedMs = -1L;
+
+    SystemUiPlaybackController(Host host, Handler mainHandler) {
+        this.host = host;
+        this.mainHandler = mainHandler;
+    }
+
+    private void onBoundPlaybackStateChanged(PlaybackControllerBinding source, PlaybackState state) {
+        host.onBoundPlaybackStateChanged(source, state);
+    }
+
+    private void rememberSystemUiPlaybackState(PlaybackState playbackState) {
+        host.rememberSystemUiPlaybackState(playbackState);
+    }
+
+    private void rememberMediaControllerPlaybackState(String packageName, Object controllerObject) {
+        host.rememberMediaControllerPlaybackState(packageName, controllerObject);
+    }
+
+    private void info(BridgeDebugArea area, String event, String message) {
+        host.info(area, event, message);
+    }
+
+    private void error(String message, Throwable throwable) {
+        host.error(message, throwable);
+    }
+
+    final class PlaybackControllerBinding {
+        final MediaController controller;
+        final Object token;
+        final String packageName;
+        final long epoch;
+        final MediaController.Callback callback;
+
+        PlaybackControllerBinding(
+                MediaController controller,
+                Object token,
+                String packageName,
+                long epoch) {
+            this.controller = controller;
+            this.token = token;
+            this.packageName = packageName;
+            this.epoch = epoch;
+            this.callback = new MediaController.Callback() {
+                @Override
+                public void onPlaybackStateChanged(PlaybackState state) {
+                    onBoundPlaybackStateChanged(
+                            PlaybackControllerBinding.this,
+                            state);
+                }
+
+                @Override
+                public void onSessionDestroyed() {
+                    onBoundPlaybackSessionDestroyed(PlaybackControllerBinding.this);
+                }
+            };
+        }
+
+        boolean matches(MediaController candidate, Object candidateToken, String candidatePackage) {
+            return packageName.equals(candidatePackage)
+                    && (controller == candidate || sameSessionToken(token, candidateToken));
+        }
+    }
+
+    private void onBoundPlaybackSessionDestroyed(PlaybackControllerBinding source) {
+        synchronized (systemUiPlaybackControllerLock) {
+            if (systemUiPlaybackControllerBinding == source) {
+                systemUiPlaybackControllerBinding = null;
+            }
+        }
+    }
+
+    boolean isCurrentPlaybackControllerBinding(PlaybackControllerBinding source) {
+        synchronized (systemUiPlaybackControllerLock) {
+            return source != null
+                    && systemUiPlaybackControllerBinding == source
+                    && LockscreenIntegrationPolicy.isCurrentPlaybackControllerEvent(
+                    source.epoch,
+                    nextSystemUiPlaybackControllerEpoch,
+                    source.packageName,
+                    systemUiPlaybackControllerBinding == null
+                            ? ""
+                            : systemUiPlaybackControllerBinding.packageName,
+                    systemUiPlaybackControllerBinding != null
+                            && sameSessionToken(
+                            source.token,
+                            systemUiPlaybackControllerBinding.token));
+        }
+    }
+
+    private static boolean sameSessionToken(Object left, Object right) {
+        return left == right || (left != null && left.equals(right));
+    }
+
+    void scheduleSystemUiPlaybackControllerDiscovery(String packageName) {
+        if (TextUtils.isEmpty(packageName)) {
+            return;
+        }
+        PlaybackControllerBinding existing;
+        synchronized (systemUiPlaybackControllerLock) {
+            existing = systemUiPlaybackControllerBinding;
+        }
+        if (existing != null && packageName.equals(existing.packageName)) {
+            rememberSystemUiPlaybackState(existing.controller.getPlaybackState());
+            return;
+        }
+        long now = SystemClock.elapsedRealtime();
+        if (packageName.equals(lastPlaybackControllerDiscoveryPackage)
+                && lastPlaybackControllerDiscoveryElapsedMs >= 0L
+                && now - lastPlaybackControllerDiscoveryElapsedMs < 750L) {
+            return;
+        }
+        lastPlaybackControllerDiscoveryPackage = packageName;
+        lastPlaybackControllerDiscoveryElapsedMs = now;
+        mainHandler.post(() -> discoverSystemUiPlaybackController(packageName));
+    }
+
+    @SuppressLint("MissingPermission")
+    private void discoverSystemUiPlaybackController(String packageName) {
+        try {
+            PlaybackControllerBinding existing;
+            synchronized (systemUiPlaybackControllerLock) {
+                existing = systemUiPlaybackControllerBinding;
+            }
+            if (existing != null && packageName.equals(existing.packageName)) {
+                rememberSystemUiPlaybackState(existing.controller.getPlaybackState());
+                return;
+            }
+            Context context = currentApplicationContext();
+            if (context == null) {
+                return;
+            }
+            MediaSessionManager manager = (MediaSessionManager) context.getSystemService(
+                    Context.MEDIA_SESSION_SERVICE);
+            if (manager == null) {
+                return;
+            }
+            List<MediaController> controllers = manager.getActiveSessions(null);
+            ArrayList<String> packages = new ArrayList<>(controllers.size());
+            for (MediaController controller : controllers) {
+                packages.add(controller == null ? "" : controller.getPackageName());
+            }
+            int selectedIndex = LockscreenIntegrationPolicy.uniquePackageMatchIndex(
+                    packages,
+                    packageName);
+            if (selectedIndex < 0 || selectedIndex >= controllers.size()) {
+                info(BridgeDebugArea.MEDIA, BridgeEvents.DETAIL,
+                        "Skipped playback controller discovery for package="
+                                + packageName
+                                + ", candidates=" + packages.size());
+                return;
+            }
+            rememberMediaControllerPlaybackState(packageName, controllers.get(selectedIndex));
+        } catch (Throwable t) {
+            error("Failed to discover active MediaController for " + packageName, t);
+        }
+    }
+
+    void ensureSystemUiPlaybackControllerCallback(
+            String packageName,
+            MediaController controller) {
+        if (TextUtils.isEmpty(packageName) || controller == null) {
+            return;
+        }
+        Object token;
+        try {
+            token = controller.getSessionToken();
+        } catch (Throwable t) {
+            error("Failed to read MediaController session token", t);
+            return;
+        }
+        PlaybackControllerBinding previous;
+        PlaybackControllerBinding candidate;
+        synchronized (systemUiPlaybackControllerLock) {
+            previous = systemUiPlaybackControllerBinding;
+            if (previous != null && previous.matches(controller, token, packageName)) {
+                return;
+            }
+            candidate = new PlaybackControllerBinding(
+                    controller,
+                    token,
+                    packageName,
+                    ++nextSystemUiPlaybackControllerEpoch);
+            systemUiPlaybackControllerBinding = candidate;
+        }
+
+        if (previous != null) {
+            try {
+                previous.controller.unregisterCallback(previous.callback);
+            } catch (Throwable ignored) {
+                // A released/remote session may already have removed the callback.
+            }
+        }
+        try {
+            controller.registerCallback(candidate.callback, mainHandler);
+        } catch (Throwable t) {
+            synchronized (systemUiPlaybackControllerLock) {
+                if (systemUiPlaybackControllerBinding == candidate) {
+                    systemUiPlaybackControllerBinding = null;
+                }
+            }
+            error("Failed to register MediaController playback callback", t);
+            return;
+        }
+        if (!isCurrentPlaybackControllerBinding(candidate)) {
+            try {
+                controller.unregisterCallback(candidate.callback);
+            } catch (Throwable ignored) {
+                // A newer binding already owns playback events.
+            }
+            return;
+        }
+        info(BridgeDebugArea.MEDIA, BridgeEvents.SESSION_REDUCED,
+                "Registered MediaController playback callback for package=" + packageName
+                        + ", epoch=" + candidate.epoch
+                        + ", token=" + SensitiveFieldRedactor.trackHash(String.valueOf(token)));
+    }
+
+    void clearSystemUiPlaybackControllerBinding() {
+        PlaybackControllerBinding previous;
+        synchronized (systemUiPlaybackControllerLock) {
+            previous = systemUiPlaybackControllerBinding;
+            if (previous == null) {
+                return;
+            }
+            systemUiPlaybackControllerBinding = null;
+            nextSystemUiPlaybackControllerEpoch++;
+        }
+        try {
+            previous.controller.unregisterCallback(previous.callback);
+        } catch (Throwable ignored) {
+            // Released sessions may already have removed the callback.
+        }
+    }
+
+    // ---- E-5b: playback clock, track-reset guard and seedling hint (single writer) ----
+
+    void setPlaybackClockTrackKey(String trackKey) {
+        playbackClockTrackKey = trackKey;
+    }
+
+    void clearPlaybackClockTrackKey() {
+        playbackClockTrackKey = "";
+    }
+
+    /** Track reset: the visual clock restarts at 0, running only if playback was running. */
+    void resetPlaybackPosition(long now) {
+        lastComputedPositionMs = 0L;
+        lastComputedPositionElapsedMs = lastPlaybackIsPlaying
+                ? now
+                : -1L;
+    }
+
+    void startTrackResetGuard(long now) {
+        lyricTrackPositionResetGuardStartedAtElapsedMs = now;
+    }
+
+    void armTrackResetGuard(long now) {
+        lyricTrackPositionResetGuardUntilElapsedMs =
+                now + SYSTEMUI_TRACK_RESET_POSITION_GUARD_MS;
+    }
+
+    /** Throttles the track-reset log to one line per 1.5 s; true when this call may log. */
+    boolean claimTrackResetLog(long now) {
+        if (now - lastLyricTrackPositionResetLogAt >= 1_500L) {
+            lastLyricTrackPositionResetLogAt = now;
+            return true;
+        }
+        return false;
+    }
+
+    /** A stale position after a track reset: keep play state and speed, pin the clock to 0. */
+    void commitStalePlaybackState(int state, float speed, long now) {
+        lastPlaybackIsPlaying = isPlaybackStateInMotion(state) && isFiniteNonZero(speed);
+        lastPlaybackSpeed = isFiniteNonZero(speed) ? speed : 0f;
+        lastComputedPositionMs = 0L;
+        lastComputedPositionElapsedMs = now;
+        lastSystemUiPlaybackState = state;
+    }
+
+    /** Commits an accepted PlaybackState (positions already smoothed by the caller). */
+    void commitPlaybackState(int state, float speed, long computedPosition, long nextPosition) {
+        if (isPlaybackStateInMotion(state) && isFiniteNonZero(speed) && computedPosition >= 0) {
+            lastPlaybackIsPlaying = true;
+            lastPlaybackSpeed = speed;
+            lastComputedPositionMs = computedPosition;
+            lastComputedPositionElapsedMs = SystemClock.elapsedRealtime();
+        } else if (state >= 0) {
+            lastPlaybackIsPlaying = false;
+            lastPlaybackSpeed = speed;
+            lastComputedPositionMs = nextPosition;
+            lastComputedPositionElapsedMs = -1L;
+        } else if (computedPosition >= 0) {
+            lastComputedPositionMs = computedPosition;
+            lastComputedPositionElapsedMs = SystemClock.elapsedRealtime();
+        }
+        lastSystemUiPlaybackState = state;
+    }
+
+    void noteSeedlingActiveLine(long lineTimeMs, long observedAtMs) {
+        lastSeedlingActiveLineTimeMs = lineTimeMs;
+        lastSeedlingActiveLineObservedAtMs = observedAtMs;
+    }
+
+    void extendLyricTrackPositionResetGuard() {
+        long now = SystemClock.elapsedRealtime();
+        if (lyricTrackPositionResetGuardStartedAtElapsedMs < 0L
+                || now > lyricTrackPositionResetGuardUntilElapsedMs) {
+            lyricTrackPositionResetGuardStartedAtElapsedMs = now;
+        }
+        lyricTrackPositionResetGuardUntilElapsedMs = Math.max(
+                lyricTrackPositionResetGuardUntilElapsedMs,
+                now + SYSTEMUI_TRACK_RESET_POSITION_GUARD_MS);
+    }
+
+    boolean shouldIgnoreStalePlaybackPositionAfterTrackReset(
+            int state,
+            long previousPosition,
+            long storedPosition,
+            long computedPosition,
+            long lastPositionUpdateTime,
+            long now) {
+        if (!isPlaybackStateInMotion(state)
+                || now > lyricTrackPositionResetGuardUntilElapsedMs
+                || previousPosition < 0
+                || previousPosition > 1_000L) {
+            return false;
+        }
+        if (LockscreenIntegrationPolicy.isFreshPlaybackPositionAfterTrackReset(
+                lastPositionUpdateTime,
+                lyricTrackPositionResetGuardStartedAtElapsedMs)) {
+            return false;
+        }
+        long candidatePosition = Math.max(storedPosition, computedPosition);
+        return candidatePosition >= SYSTEMUI_TRACK_RESET_STALE_POSITION_MS;
+    }
+
+    void clearSeedlingActiveLyricHint() {
+        lastSeedlingActiveLineTimeMs = -1L;
+        lastSeedlingActiveLineObservedAtMs = -1L;
+    }
+
+    void maybeLogSeedlingPlaybackState(int state, long storedPosition, long computedPosition, float speed) {
+        if (!isLyricVerboseDiagnosticsEnabled()) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (!LYRIC_VERBOSE_DIAGNOSTICS_ENABLED
+                && state == lastLoggedSystemUiPlaybackState
+                && now - lastSeedlingPlaybackStateLogAt < 5_000L) {
+            return;
+        }
+        lastLoggedSystemUiPlaybackState = state;
+        lastSeedlingPlaybackStateLogAt = now;
+        info(BridgeDebugArea.MEDIA, BridgeEvents.SESSION_REDUCED, "Seedling playback state=" + state
+                + ", playing=" + lastPlaybackIsPlaying
+                + ", storedPosition=" + storedPosition
+                + ", computedPosition=" + computedPosition
+                + ", speed=" + speed);
+    }
+
+    void maybeLogIgnoredStalePlaybackPositionAfterTrackReset(
+            long storedPosition,
+            long computedPosition,
+            long previousPosition) {
+        if (!isLyricLayoutDiagnosticsEnabled()) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (!LYRIC_VERBOSE_DIAGNOSTICS_ENABLED && now - lastStalePlaybackPositionIgnoredLogAt < 1_500L) {
+            return;
+        }
+        lastStalePlaybackPositionIgnoredLogAt = now;
+        info(BridgeDebugArea.MEDIA, BridgeEvents.SESSION_REDUCED, "Ignored stale SystemUI playback position after track reset, previousPosition="
+                + previousPosition
+                + ", storedPosition=" + storedPosition
+                + ", computedPosition=" + computedPosition);
+    }
+}

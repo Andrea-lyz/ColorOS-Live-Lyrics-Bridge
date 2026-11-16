@@ -31,3 +31,6 @@ replay_pid*.log
 # OS files
 .DS_Store
 Thumbs.db
+
+# Python bytecode from running local scripts/tests
+__pycache__/

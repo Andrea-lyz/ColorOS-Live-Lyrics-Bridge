@@ -1,5 +1,6 @@
 package io.github.andrealtb.lockscreenlyrics;
 
+import io.github.andrealtb.lockscreenlyrics.guard.BridgeSourceMap;
 import org.junit.Test;
 
 import java.io.File;
@@ -22,9 +23,8 @@ public final class TranslationActionRedirectContractTest {
 
     @Test
     public void reboundSlotGetsItsRedirectedVisibilityBack() throws Exception {
-        String module = readProjectFile(
-                "app/src/main/java/io/github/andrealtb/lockscreenlyrics/LockscreenLyricsModule.java");
-        int forget = module.indexOf("private void forgetTranslationActionViewIfRebound(View view) {");
+        String module = BridgeSourceMap.read(BridgeSourceMap.Area.TRANSLATION_ACTION);
+        int forget = module.indexOf("void forgetTranslationActionViewIfRebound(View view) {");
         int restore = module.indexOf("restoreRedirectedTranslationActionVisibility(view);", forget);
         int forgotten = module.indexOf("forgetTranslationActionView(view);", forget);
 
