@@ -35,7 +35,6 @@
         <package android:name="io.github.andrealtb.coloroslyrics.provider.kuwo" />
         <package android:name="io.github.andrealtb.coloroslyrics.provider.lx" />
         <package android:name="io.github.andrealtb.coloroslyrics.provider.poweramp" />
-        <package android:name="io.github.andrealtb.coloroslyrics.provider.metrolist" />
         <package android:name="io.github.andrealtb.coloroslyrics.provider.kugou" />
         <package android:name="io.github.andrealtb.coloroslyrics.provider.qq" />
         <package android:name="io.github.andrealtb.coloroslyrics.provider.netease" />

@@ -3040,3 +3040,21 @@ S 只说明 Hook / 反射目标存在且形状正确，不说明运行时对象�
 **发布表述建议：**“5.0 在 ColorOS 17（PJZ110）上完成设备验收；SystemUI 16.99.12 / 17.99.02 与 SystemUIPlugin 16.001.002 / 17.000.002 的其他已知构建为静态兼容；其他型号未验证。”
 
 **补强方式（可选，需用户提供）：** 导出 PJZ110 当前的 SystemUI 与 SystemUIPlugin APK，加入样本后即可把 D 行对应到具体指纹；其他用户反馈附带的组件 APK 也可按同样流程加样本。
+
+### 16.7 Metrolist 退出 5.0 发布阵容（2026-11-16，用户决定，本地，已提交）
+
+**范围（用户选择“退出 5.0 阵容”）：**
+- Providers `feat/drop-metrolist`（基于 M4 的 `831ae3c`）：
+  - 从 `release/v5-provider-matrix.json` 删除 `player-metrolist`，矩阵剩 13 个 Provider；
+  - 从 `build.gradle.kts` 的 v5 模块列表和 `settings.gradle.kts` 删除该模块，不再构建；
+  - `player-metrolist/` 源码保留在仓库内，不删除；
+  - 中英文 README 的矩阵表、数量（14 → 13，专属 12 → 11）和翻译说明同步。
+- Bridge `feat/drop-metrolist`（基于 `23da034`）：
+  - 商店目录删除 Metrolist 卡片及其商店名称、图标资源；
+  - 清单 `<queries>` 删除 Metrolist Provider 的包名；
+  - **保留** `com.metrolist.music` 的 SystemUI 兼容（`PlayerSystemUiPolicy`）、翻译设置条目与宿主 `<queries>`：通用 Provider 仍可能为它发布歌词。
+- 不动：Providers 上另有一条未推送的 `fix/metrolist-14-support`（`3bf83f7`，适配 Metrolist 14.0.0），不是本会话创建，原样保留。
+
+**验证（本地）：** Bridge 1070 tests / 0 fail / 6 skip（`ProviderDirectoryContractTest` 用新矩阵通过；`PrototypeModelTest` 专属卡片数 12 → 11），Debug 与 R8 通过；Providers `testV5Matrix assembleV5MatrixDebug` 通过，目录脚本测试 18 项通过。
+
+**影响：** 批量发布的 Provider 从 13 个（LX 之外）变为 12 个。已装 4.x Metrolist Provider 的用户在商店里看不到它，模块本身不受 Bridge 影响。

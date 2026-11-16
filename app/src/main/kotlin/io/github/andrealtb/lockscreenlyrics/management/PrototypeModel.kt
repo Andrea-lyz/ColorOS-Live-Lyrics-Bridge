@@ -215,7 +215,6 @@ internal object ProviderDirectory {
         dedicated("kuwo-music", "KuWo", R.string.store_name_kuwo, R.drawable.store_icon_kuwo, "kuwo", "cn.kuwo.player"),
         dedicated("player-lx", "LX", R.string.store_name_lx, R.drawable.store_icon_lx, "lx", "cn.toside.music.mobile", "com.lxwalnut.music.mobile"),
         dedicated("player-poweramp", "Poweramp", R.string.store_name_poweramp, R.drawable.store_icon_poweramp, "poweramp", "com.maxmpz.audioplayer"),
-        dedicated("player-metrolist", "Metrolist", R.string.store_name_metrolist, R.drawable.store_icon_metrolist, "metrolist", "com.metrolist.music"),
         dedicated("player-kugou", "KuGou", R.string.store_name_kugou, R.drawable.store_icon_kugou, "kugou", "com.kugou.android", "com.kugou.android.lite"),
         dedicated("player-qq", "QQ", R.string.store_name_qq, R.drawable.store_icon_qq, "qq", "com.tencent.qqmusic"),
         dedicated("player-netease", "NetEase", R.string.store_name_netease, R.drawable.store_icon_netease, "netease", "com.netease.cloudmusic", "com.hihonor.cloudmusic"),

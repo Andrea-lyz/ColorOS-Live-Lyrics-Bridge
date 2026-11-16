@@ -373,7 +373,6 @@
     <string name="store_name_kuwo">酷我音乐 Provider</string>
     <string name="store_name_lx">洛雪音乐 Provider</string>
     <string name="store_name_poweramp" translatable="false">Poweramp Provider</string>
-    <string name="store_name_metrolist" translatable="false">Metrolist Provider</string>
     <string name="store_name_kugou">酷狗音乐 Provider</string>
     <string name="store_name_qq">QQ音乐 Provider</string>
     <string name="store_name_netease">网易云音乐 Provider</string>

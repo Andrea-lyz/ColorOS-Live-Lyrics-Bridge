@@ -64,7 +64,7 @@ class PrototypeModelTest {
     @Test fun readifyOpensItsInfoPageBecauseItHasNoDebugSwitch() {
         val readify = ProviderDirectory.entries.single { it.module == "player-readify" }
         assertEquals(ProviderEntry.INFO_PAGE, readify.entry)
-        assertEquals(12, ProviderDirectory.entries.count { it.entry == ProviderEntry.DEBUG_PAGE })
+        assertEquals(11, ProviderDirectory.entries.count { it.entry == ProviderEntry.DEBUG_PAGE })
     }
 
     private val installed = "Bridge:app:debug:abc:clean:111:resolver-1"
