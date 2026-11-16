@@ -109,12 +109,13 @@ and no additional Provider APK is required.
 
 ## Installation
 
-1. Install the required 4.2 Provider APK. For Universal Player, choose target players in its app; for a dedicated Provider, select only its matching music app in LSPosed.
-2. If you want Bridge enhancements, install `ColorOS-Live-Lyrics-Bridge-<version>.apk` and keep its scope limited to `system` and `com.android.systemui`.
-3. Restart the player and SystemUI. Reboot after the first installation or any scope change.
-4. Do not let an old Lyricon Provider and a 4.1 Provider hook the same player.
+1. Install `ColorOS-Live-Lyrics-Bridge-<version>.apk`, enable it in LSPosed and keep its scope limited to `system` and `com.android.systemui`.
+2. Open the Bridge (launcher icon or LSPosed module settings) and install the dedicated Provider for your player, or the Universal Player Provider, from the **Store**.
+3. Enable that Provider in LSPosed. A dedicated Provider can request its scope from its store card; select only its matching music app. For Universal Player, choose target players in its app.
+4. Restart the player and SystemUI. Reboot after the first installation or any scope change.
+5. Do not let an old Lyricon Provider and a Provider from this project hook the same player.
 
-The Provider ZIP in a release is only an APK download bundle, not a Recovery-flashable package.
+Since 5.0 the Bridge Release contains only the Bridge APK. Providers are released from the Providers repository at their own versions and distributed through the Bridge store's signed catalog.
 
 For a 3.8.x upgrade, old/new application IDs, exact Provider scopes, unsupported players, backup,
 and downgrade boundaries, read [Migrating from 3.8.x to 4.0](docs/4.0/MIGRATION-3.8-TO-4.0.md).
@@ -124,7 +125,7 @@ display/product issues there rather than in the Bridge or 4.1 Provider repositor
 
 ## Appearance and behavior
 
-Open **ColorOS Live Lyrics Bridge → Settings** from the module page in LSPosed.
+Open the Bridge (launcher icon or LSPosed module settings) and go to lyric appearance settings from the **Appearance** tab.
 
 Choose a preset first, then fine-tune it if needed. Changes update only the preview until you tap **Apply and save**. The settings page also includes:
 
