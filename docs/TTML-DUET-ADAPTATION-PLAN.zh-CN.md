@@ -2,7 +2,7 @@
 
 - 日期：2026-11-17
 - 基线：Bridge `v5.0.0`（versionCode 150，`main` @ `1e0d703`）；Providers 矩阵 `suiteVersion 4.5.4`
-- 状态：**P0 取证完成；P1 的 Bridge 侧与 P2 分侧渲染已实现（本地单测与 debug 构建通过，见附录 B、C）；P1 的 Provider 侧、P3 未实现，**P2 尚无任何设备验证**。P1 的传输语义相对 §4.1 / §5.2 有调整，以附录 B.1 为准。§2 的“现状”为静态确认；lyrics-core 的 TTML 行为见附录 A，由 `LyricsCoreTtmlCharacterizationTest` 固化。尚无设备验证。
+- 状态：**P0 取证完成；P1 的 Bridge 侧与 P2 分侧渲染已实现（本地单测与 debug 构建通过，见附录 B、C）；光锥 Provider 已接入；P2 已经用户设备确认（附录 E）；P3 背景人声未实现。P1 的传输语义相对 §4.1 / §5.2 有调整，以附录 B.1 为准。§2 的“现状”为静态确认；lyrics-core 的 TTML 行为见附录 A，由 `LyricsCoreTtmlCharacterizationTest` 固化。尚无设备验证。
 - **附录 A 的结论优先于正文**：正文 §4、§5.3、§7 中与附录 A.2 冲突的假设，以 A.2 的修正为准。
 - 目标版本：5.0.0 之后的下一个功能版本（版本号以发布契约为准，本文不预设）。
 
@@ -353,3 +353,16 @@ effectiveAlignment(userAlignment, duetMode, modelHasDuet, lineSide) -> START | C
 - **改动**：TTML 文档用 `parser-ttml` 解析出 `lyric` / `rawLyric`；规范化后的原文作为 `ttml` 字段附带。`provider-core` 新增 `TtmlPayloadNormalizer`（去 XML 声明与排版缩进；含 `lyricOffset` 或超过 200 000 字符时不附带），`ColorOSLyricJsonEncoder` / `NativeLyricInfoPublisher` 增加可选 `ttml` 入参，体积闸门超限时自动去掉 `ttml` 重试。LRC 歌曲的发布路径不变。
 - **两端对接验证**（本地）：用 AMLL 样本经光锥 Provider 的编码路径生成 `lyricInfo`（34 398 字符），再交给 Bridge 测试：50 行全部匹配，主唱侧 40 行、对唱侧 10 行，背景人声 1 处，翻译 46 条（Provider 未提供翻译通道，由 Bridge 从 `ttml` 补位）。
 - **未覆盖**：内嵌标签（`ConeTrackMetadataExtractor`）路径仍只认 LRC；Provider 的 TTML 解析不输出翻译通道；附录 B.3 提到的“裸文本背景人声”未在规范化器里补 span。
+
+## 附录 E：设备验收与动效调整（2026-11-17）
+
+设备：ColorOS 17，SystemUIPlugin 17.000.002，光锥音乐 GP 版 + 光锥 Provider 测试包 + Bridge 测试包（均为本地调试签名）。样本为附录 B.3 的 AMLL 对唱 TTML。
+
+- **用户已设备确认**：歌词、翻译、v1 / v2 左右分侧正常（日志 `annotated=50, duet=true`）。
+- **对唱交接“先下沉”**：已修复并经用户确认。原因是时间重叠的下一行在上一行仍为当前行时被判为“已唱”，提前回到基线；现在排在当前行之后的行一律保持预沉（`CharLiftGeometry.shouldPrepareLine` 新增 `upcomingRow`）。
+- **换行动效**：用户最终确认满意的版本为提交 `18d065f`。
+  - 行模糊随换行渐变，成为当前行的那一行在前 45% 内完全清晰。
+  - 系统换行时长 300 → 460 ms。
+  - 系统缩放 / 颜色曲线 (0.3, 0, 0.1, 1) 与滚动减速曲线替换为 (0.4, 0, 0.5, 1)；离开焦点、正在缩小的行改用更晚起步的 (0.6, 0, 0.45, 1)，避免两行同时反向变化。
+  - 替换点：ColorOS 17 为适配器 payload 绑定后的 ViewHolder 动画集，ColorOS 16 为返回 `ValueAnimator` 的两个辅助方法，滚动为 `LinearSmoothScroller#onTargetFound`。均可单独失效回退系统曲线。ColorOS 16 路径只有静态证据，未做设备验证。
+- **验收日志中的旁注**：通用 Provider 对 `ink.trantor.coneplayer.gp` 报了 `SET_METADATA_FILTERED`，说明该设备上通用 Provider 与光锥 Provider 同时作用于光锥。本次功能不受影响，但与“同一播放器只开一个 Provider”的发布提醒相关。
