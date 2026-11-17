@@ -220,7 +220,10 @@ final class LyricsRecyclerViews {
         // safe: they can only operate on the lyric row, and restoring the configured pivot after
         // they return is idempotent even for style/binding helpers.
         return OfficialLyricScalePivotMethodPolicy.textViewArgumentIndex(method)
-                != OfficialLyricScalePivotMethodPolicy.NOT_A_PIVOT_METHOD;
+                != OfficialLyricScalePivotMethodPolicy.NOT_A_PIVOT_METHOD
+                // The animator factories share the hook: the handler leaves their pivot alone
+                // (they are not void) and only softens the animator they return.
+                || OfficialLyricScalePivotMethodPolicy.isLineChangeAnimatorFactory(method);
     }
 
     static Class<?> findRecyclerAdapterBaseClass(Object adapter) {

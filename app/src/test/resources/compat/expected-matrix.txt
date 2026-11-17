@@ -7,7 +7,7 @@ plugin 16.001.002 102574eda9b8 (16-user)
   media-model.legacy = OK artwork=OK
   lyrics-recycler = present
   lyrics-recycler.layout = OK t/u/A
-  lyrics-recycler.hooks = draw=1 setLyrics=1 current=1 pivot=1 rowStyle=0 immersiveEntry=0
+  lyrics-recycler.hooks = draw=1 setLyrics=1 current=1 pivot=3 rowStyle=0 immersiveEntry=0
   lyric-position-controller = OK
 
 plugin 16.001.002 a63e68702113 (realme-ui7)
@@ -16,7 +16,7 @@ plugin 16.001.002 a63e68702113 (realme-ui7)
   media-model.legacy = OK artwork=OK
   lyrics-recycler = present
   lyrics-recycler.layout = OK u/v/B
-  lyrics-recycler.hooks = draw=1 setLyrics=1 current=1 pivot=1 rowStyle=0 immersiveEntry=0
+  lyrics-recycler.hooks = draw=1 setLyrics=1 current=1 pivot=3 rowStyle=0 immersiveEntry=0
   lyric-position-controller = OK
 
 plugin 16.001.002 ad74975487c9 (16-new)
@@ -25,7 +25,7 @@ plugin 16.001.002 ad74975487c9 (16-new)
   media-model.legacy = OK artwork=OK
   lyrics-recycler = present
   lyrics-recycler.layout = OK u/v/C
-  lyrics-recycler.hooks = draw=1 setLyrics=1 current=1 pivot=1 rowStyle=1 immersiveEntry=0
+  lyrics-recycler.hooks = draw=1 setLyrics=1 current=1 pivot=3 rowStyle=1 immersiveEntry=0
   lyric-position-controller = OK
 
 plugin 16.001.002 b4e5fba2e3ad (16-old)
@@ -34,7 +34,7 @@ plugin 16.001.002 b4e5fba2e3ad (16-old)
   media-model.legacy = OK artwork=OK
   lyrics-recycler = present
   lyrics-recycler.layout = OK u/v/C
-  lyrics-recycler.hooks = draw=1 setLyrics=1 current=1 pivot=1 rowStyle=1 immersiveEntry=0
+  lyrics-recycler.hooks = draw=1 setLyrics=1 current=1 pivot=3 rowStyle=1 immersiveEntry=0
   lyric-position-controller = OK
 
 plugin 16.001.002 c68bf570b858 (16-new10)
@@ -43,7 +43,7 @@ plugin 16.001.002 c68bf570b858 (16-new10)
   media-model.legacy = OK artwork=OK
   lyrics-recycler = present
   lyrics-recycler.layout = OK u/v/C
-  lyrics-recycler.hooks = draw=1 setLyrics=1 current=1 pivot=1 rowStyle=1 immersiveEntry=0
+  lyrics-recycler.hooks = draw=1 setLyrics=1 current=1 pivot=3 rowStyle=1 immersiveEntry=0
   lyric-position-controller = OK
 
 plugin 17.000.002 2cdd17e165fc (c17-ref)
