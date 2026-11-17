@@ -41,10 +41,17 @@ public final class WordLyricRenderConstants {
      * the two stay in step. Its own default is 300 ms, which reads as abrupt at large font
      * sizes; this is a device-tuned comfort value, not a platform constant.
      */
-    public static final long OFFICIAL_LYRIC_LINE_CHANGE_MS = 450L;
+    public static final long OFFICIAL_LYRIC_LINE_CHANGE_MS = 380L;
 
-    /** Opacity / blur transition of a row; kept slightly longer than the vendor line change. */
-    public static final long OFFICIAL_LYRIC_ROW_SCALE_ANIMATION_MS = 500L;
+    /** Opacity / blur transition of a row; runs on the same clock as the vendor line change. */
+    public static final long OFFICIAL_LYRIC_ROW_SCALE_ANIMATION_MS = OFFICIAL_LYRIC_LINE_CHANGE_MS;
+
+    /**
+     * Share of the line change in which the row becoming active reaches full sharpness. The
+     * row being read must be a stable, sharp target well before it stops growing; a row that
+     * stays soft while it zooms keeps the eye refocusing.
+     */
+    public static final float OFFICIAL_LYRIC_ROW_SHARPEN_FRACTION = 0.45f;
 
     /**
      * How far unsung characters rest below the baseline, as a fraction of the

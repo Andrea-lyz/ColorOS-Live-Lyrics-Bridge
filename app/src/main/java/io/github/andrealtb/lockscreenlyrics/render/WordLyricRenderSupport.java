@@ -15,6 +15,28 @@ import java.util.regex.Pattern;
  * callers in the surrounding bridge app can still reach them.
  */
 public final class WordLyricRenderSupport {
+    /**
+     * Blur radius of a row part-way through a line change. Sharpening is front-loaded and done
+     * within {@code sharpenFraction} of the change; blurring eases in so the row leaving focus
+     * stays readable while it is still large and only softens as it shrinks away.
+     */
+    public static float rowBlurRadiusAt(
+            float startRadius,
+            float targetRadius,
+            float progress,
+            float sharpenFraction) {
+        float linear = Math.max(0f, Math.min(1f, progress));
+        float eased;
+        if (targetRadius < startRadius) {
+            float local = sharpenFraction <= 0f ? 1f : Math.min(1f, linear / sharpenFraction);
+            float remaining = 1f - local;
+            eased = 1f - remaining * remaining * remaining;
+        } else {
+            eased = linear * linear;
+        }
+        return startRadius + (targetRadius - startRadius) * eased;
+    }
+
 
     private WordLyricRenderSupport() {
     }

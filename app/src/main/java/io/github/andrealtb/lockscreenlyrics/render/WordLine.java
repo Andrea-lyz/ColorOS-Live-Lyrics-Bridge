@@ -66,6 +66,7 @@ public final class WordLine {
     public float rowVisualFadeStart = 1f;
     public float rowVisualFadeTarget = 1f;
     public float rowVisualBlurRadiusTarget = 0f;
+    public float rowVisualBlurRadiusStart = 0f;
     public long rowVisualScaleStartedAtMs = -1L;
     public int rowVisualScaleActiveIndex = Integer.MIN_VALUE;
 

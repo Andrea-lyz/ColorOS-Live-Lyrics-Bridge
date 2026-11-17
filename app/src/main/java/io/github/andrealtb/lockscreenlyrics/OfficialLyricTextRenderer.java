@@ -723,6 +723,9 @@ final class OfficialLyricTextRenderer {
         float currentFade = line.rowVisualScaleInitialized
                 ? currentOfficialRowFade(line, now)
                 : targetFade;
+        float currentBlurRadius = line.rowVisualScaleInitialized
+                ? currentOfficialRowBlurRadius(line, now)
+                : targetBlurRadius;
         int scaleActiveIndex = frame.scaleActiveIndex;
         boolean targetChanged = !line.rowVisualScaleInitialized
                 || Math.abs(line.rowVisualScaleTarget - targetScale) > 0.001f
@@ -741,11 +744,14 @@ final class OfficialLyricTextRenderer {
                     && uiConfig.motionMode == LyricUiConfig.MOTION_STANDARD
                     && frame.rowScaleAnimationAllowed
                     && (continuousAdvance || firstLyricStartAdvance)
-                    && hasOfficialRowVisualDelta(
+                    && (hasOfficialRowVisualDelta(
                     currentScale,
                     targetScale,
                     currentFade,
-                    targetFade);
+                    targetFade)
+                    // The vendor scales the row over the same window. A blur that snaps while
+                    // the row is still zooming is the abrupt part of a line change.
+                    || Math.abs(currentBlurRadius - targetBlurRadius) > 0.05f);
             maybeLogOfficialRowScale(
                     line,
                     frame,
@@ -759,11 +765,12 @@ final class OfficialLyricTextRenderer {
             line.rowVisualScaleTarget = targetScale;
             line.rowVisualFadeStart = animate ? currentFade : targetFade;
             line.rowVisualFadeTarget = targetFade;
+            line.rowVisualBlurRadiusStart = animate ? currentBlurRadius : targetBlurRadius;
             line.rowVisualBlurRadiusTarget = targetBlurRadius;
             line.rowVisualScaleStartedAtMs = animate ? now : -1L;
             line.rowVisualScaleActiveIndex = scaleActiveIndex;
             rowVisualFade = animate ? currentFade : targetFade;
-            rowVisualBlurRadius = targetBlurRadius;
+            rowVisualBlurRadius = animate ? currentBlurRadius : targetBlurRadius;
             rowVisualAnimationRunning = animate;
             return animate ? currentScale : targetScale;
         }
@@ -771,7 +778,7 @@ final class OfficialLyricTextRenderer {
             rowVisualAnimationRunning = true;
         }
         rowVisualFade = currentFade;
-        rowVisualBlurRadius = targetBlurRadius;
+        rowVisualBlurRadius = currentBlurRadius;
         return currentScale;
     }
 
@@ -854,9 +861,23 @@ final class OfficialLyricTextRenderer {
                 + (line.rowVisualFadeTarget - line.rowVisualFadeStart) * eased;
     }
 
+    private static float currentOfficialRowBlurRadius(WordLine line, long now) {
+        if (line == null || line.rowVisualScaleStartedAtMs < 0L) {
+            return line == null ? 0f : line.rowVisualBlurRadiusTarget;
+        }
+        float rawProgress = (now - line.rowVisualScaleStartedAtMs)
+                / (float) WordLyricRenderConstants.OFFICIAL_LYRIC_ROW_SCALE_ANIMATION_MS;
+        return WordLyricRenderSupport.rowBlurRadiusAt(
+                line.rowVisualBlurRadiusStart,
+                line.rowVisualBlurRadiusTarget,
+                rawProgress,
+                WordLyricRenderConstants.OFFICIAL_LYRIC_ROW_SHARPEN_FRACTION);
+    }
+
     private static void finishOfficialRowVisualAnimation(WordLine line) {
         line.rowVisualScaleStart = line.rowVisualScaleTarget;
         line.rowVisualFadeStart = line.rowVisualFadeTarget;
+        line.rowVisualBlurRadiusStart = line.rowVisualBlurRadiusTarget;
         line.rowVisualScaleStartedAtMs = -1L;
     }
 
