@@ -23,13 +23,26 @@ public final class WordLyricRenderConstants {
      * (0.3, 0, 0.1, 1) it spreads the travel across the duration and lands gradually instead
      * of covering most of it early and braking. Device-tuned comfort value.
      */
-    public static final float LINE_CHANGE_EASE_X1 = 0.3f;
+    public static final float LINE_CHANGE_EASE_X1 = 0.4f;
 
     public static final float LINE_CHANGE_EASE_Y1 = 0f;
 
-    public static final float LINE_CHANGE_EASE_X2 = 0.35f;
+    public static final float LINE_CHANGE_EASE_X2 = 0.5f;
 
     public static final float LINE_CHANGE_EASE_Y2 = 1f;
+
+    /**
+     * Easing of the row leaving focus (shrinking back to the inactive scale). It starts later
+     * and peaks later than the row growing into focus, so the two rows never change size at
+     * full speed in opposite directions at the same moment.
+     */
+    public static final float LINE_CHANGE_OUTGOING_EASE_X1 = 0.6f;
+
+    public static final float LINE_CHANGE_OUTGOING_EASE_Y1 = 0f;
+
+    public static final float LINE_CHANGE_OUTGOING_EASE_X2 = 0.45f;
+
+    public static final float LINE_CHANGE_OUTGOING_EASE_Y2 = 1f;
 
     public static final float OFFICIAL_LYRIC_ROW_EASE_X1 = LINE_CHANGE_EASE_X1;
 
@@ -55,7 +68,7 @@ public final class WordLyricRenderConstants {
      * the two stay in step. Its own default is 300 ms, which reads as abrupt at large font
      * sizes; this is a device-tuned comfort value, not a platform constant.
      */
-    public static final long OFFICIAL_LYRIC_LINE_CHANGE_MS = 420L;
+    public static final long OFFICIAL_LYRIC_LINE_CHANGE_MS = 460L;
 
     /** Opacity / blur transition of a row; runs on the same clock as the vendor line change. */
     public static final long OFFICIAL_LYRIC_ROW_SCALE_ANIMATION_MS = OFFICIAL_LYRIC_LINE_CHANGE_MS;

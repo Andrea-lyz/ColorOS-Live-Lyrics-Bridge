@@ -5880,7 +5880,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private Object onLyricsRecyclerPrepareScalePivot(XposedInterface.Chain chain) throws Throwable {
-        Object result = LineChangeEasing.softenAnimator(chain.proceed());
+        Object result = LineChangeEasing.softenAnimator(chain.proceed(), chain.getArg(0));
         int textViewIndex = chain.getExecutable() instanceof Method
                 ? OfficialLyricScalePivotMethodPolicy.textViewArgumentIndex(
                         (Method) chain.getExecutable())

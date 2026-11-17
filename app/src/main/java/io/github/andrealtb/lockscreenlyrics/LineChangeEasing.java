@@ -37,6 +37,11 @@ final class LineChangeEasing {
             WordLyricRenderConstants.LINE_CHANGE_EASE_Y1,
             WordLyricRenderConstants.LINE_CHANGE_EASE_X2,
             WordLyricRenderConstants.LINE_CHANGE_EASE_Y2);
+    static final TimeInterpolator SOFT_OUTGOING = new PathInterpolator(
+            WordLyricRenderConstants.LINE_CHANGE_OUTGOING_EASE_X1,
+            WordLyricRenderConstants.LINE_CHANGE_OUTGOING_EASE_Y1,
+            WordLyricRenderConstants.LINE_CHANGE_OUTGOING_EASE_X2,
+            WordLyricRenderConstants.LINE_CHANGE_OUTGOING_EASE_Y2);
 
     private static final String LINEAR_SMOOTH_SCROLLER =
             "androidx.recyclerview.widget.LinearSmoothScroller";
@@ -46,6 +51,7 @@ final class LineChangeEasing {
     private static final Map<Class<?>, Field[]> HOLDER_ANIMATOR_FIELDS = new ConcurrentHashMap<>();
     private static final Map<Class<?>, Boolean> LYRIC_SCROLLERS = new ConcurrentHashMap<>();
     private static volatile Field scrollInterpolatorField;
+    private static volatile Field holderItemViewField;
     private static volatile Class<?> lyricsRecyclerClass;
 
     private LineChangeEasing() {
@@ -138,12 +144,27 @@ final class LineChangeEasing {
         return matches;
     }
 
-    /** ColorOS 16: a recycler helper just built one line-change animator. */
-    static Object softenAnimator(Object hookResult) {
+    /**
+     * ColorOS 16: a recycler helper just built one line-change animator for {@code row}, its
+     * first argument. The helper does not touch the row's scale, so the row is still at its
+     * starting size.
+     */
+    static Object softenAnimator(Object hookResult, Object row) {
         if (hookResult instanceof ValueAnimator) {
-            setInterpolator((ValueAnimator) hookResult);
+            setInterpolator((ValueAnimator) hookResult, curveFor(row));
         }
         return hookResult;
+    }
+
+    /**
+     * The vendor animates a row from its current scale, so a row still at full size is the
+     * one leaving focus. Its colour animator follows the same curve so the row changes as one.
+     */
+    static TimeInterpolator curveFor(Object row) {
+        return row instanceof android.view.View
+                && ((android.view.View) row).getScaleX() >= 0.999f
+                ? SOFT_OUTGOING
+                : SOFT;
     }
 
     /**
@@ -155,13 +176,14 @@ final class LineChangeEasing {
         if (holder == null) {
             return hookResult;
         }
+        TimeInterpolator curve = curveFor(itemViewOf(holder));
         for (Field field : holderAnimatorFields(holder.getClass())) {
             try {
                 Object value = field.get(holder);
                 if (value instanceof AnimatorSet) {
                     for (Animator child : ((AnimatorSet) value).getChildAnimations()) {
                         if (child instanceof ValueAnimator) {
-                            setInterpolator((ValueAnimator) child);
+                            setInterpolator((ValueAnimator) child, curve);
                         }
                     }
                 }
@@ -194,10 +216,35 @@ final class LineChangeEasing {
         return resolved;
     }
 
-    private static void setInterpolator(ValueAnimator animator) {
+    private static Object itemViewOf(Object holder) {
         try {
-            if (animator.getInterpolator() != SOFT) {
-                animator.setInterpolator(SOFT);
+            Field field = holderItemViewField;
+            if (field == null || !field.getDeclaringClass().isInstance(holder)) {
+                field = null;
+                for (Class<?> type = holder.getClass(); type != null && field == null;
+                        type = type.getSuperclass()) {
+                    try {
+                        field = type.getDeclaredField("itemView");
+                    } catch (NoSuchFieldException ignored) {
+                        // Declared by RecyclerView.ViewHolder, not the vendor subclass.
+                    }
+                }
+                if (field == null) {
+                    return null;
+                }
+                field.setAccessible(true);
+                holderItemViewField = field;
+            }
+            return field.get(holder);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static void setInterpolator(ValueAnimator animator, TimeInterpolator curve) {
+        try {
+            if (animator.getInterpolator() != curve) {
+                animator.setInterpolator(curve);
             }
         } catch (Throwable ignored) {
             // The vendor easing remains.
