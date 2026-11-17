@@ -117,7 +117,22 @@ public final class CharLiftGeometry {
             boolean drawProgress,
             long position,
             long progressStartMillis) {
-        return activeLine ? drawProgress : position < progressStartMillis;
+        return shouldPrepareLine(activeLine, drawProgress, position, progressStartMillis, false);
+    }
+
+    /**
+     * {@code upcomingRow} marks a row that sits after the active row. Lines can overlap in time,
+     * most visibly when duet singers trade lines: the next row's start then passes while the
+     * previous row is still the active one. Judged by time alone that row would count as sung,
+     * rise to the baseline, and sink again the moment it becomes active.
+     */
+    public static boolean shouldPrepareLine(
+            boolean activeLine,
+            boolean drawProgress,
+            long position,
+            long progressStartMillis,
+            boolean upcomingRow) {
+        return activeLine ? drawProgress : upcomingRow || position < progressStartMillis;
     }
 
     /**

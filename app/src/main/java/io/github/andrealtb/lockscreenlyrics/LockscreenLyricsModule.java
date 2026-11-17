@@ -7323,7 +7323,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         float requestedScale = LockscreenIntegrationPolicy.officialInactiveRowScale(
                 runtimeLyricUiConfig.scaleEnabled,
                 runtimeLyricUiConfig.inactiveScalePercent);
-        Float previousScaleValue = binding.readInactiveScale(recyclerView);
+        Float previousScaleValue = readInactiveScaleWithLineChangeDuration(binding, recyclerView);
         if (previousScaleValue == null || Float.isNaN(previousScaleValue)) {
             info(BridgeDebugArea.MEDIA, BridgeEvents.DETAIL, "Official lyric inactive scale field unavailable; keeping plugin scale");
             return;

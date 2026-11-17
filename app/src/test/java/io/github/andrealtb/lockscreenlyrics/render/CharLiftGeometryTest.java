@@ -230,6 +230,17 @@ public final class CharLiftGeometryTest {
     }
 
     @Test
+    public void rowAfterTheActiveOneStaysPreparedOnceItsOwnStartHasPassed() {
+        // Overlapping lines: the next row has started while the previous one is still active.
+        assertTrue(CharLiftGeometry.shouldPrepareLine(false, false, 1_240L, 1_000L, true));
+        // A row before the active one is sung and keeps the ordinary baseline.
+        assertFalse(CharLiftGeometry.shouldPrepareLine(false, false, 1_240L, 1_000L, false));
+        // Row order never overrides the active row's own progress gate.
+        assertFalse(CharLiftGeometry.shouldPrepareLine(true, false, 1_240L, 1_000L, true));
+        assertTrue(CharLiftGeometry.shouldPrepareLine(true, true, 1_240L, 1_000L, false));
+    }
+
+    @Test
     public void delayedFirstWordIsPreparedBeforeTheRowIsProgressActive() {
         long firstWord = 4_000L;
         assertTrue(CharLiftGeometry.shouldPrepareLine(false, false, 0L, firstWord));

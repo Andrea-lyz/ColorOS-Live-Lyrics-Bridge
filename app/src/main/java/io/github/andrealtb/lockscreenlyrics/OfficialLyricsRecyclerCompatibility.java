@@ -116,7 +116,6 @@ final class OfficialLyricsRecyclerCompatibility {
 
     static final class Binding {
         private final Field lineSpacing;
-        @SuppressWarnings("unused")
         private final Field animationDuration;
         private final Field inactiveScale;
         final String layoutName;
@@ -145,6 +144,24 @@ final class OfficialLyricsRecyclerCompatibility {
                 // setInt is intentional: unlike Field#set it can never widen this value into a
                 // long animation-duration field if a future obfuscation layout changes again.
                 lineSpacing.setInt(recycler, value);
+                return true;
+            } catch (Throwable ignored) {
+                return false;
+            }
+        }
+
+        Long readAnimationDuration(Object recycler) {
+            try {
+                return animationDuration.getLong(recycler);
+            } catch (Throwable ignored) {
+                return null;
+            }
+        }
+
+        boolean writeAnimationDuration(Object recycler, long value) {
+            try {
+                // setLong cannot be applied to the int spacing or float scale field by mistake.
+                animationDuration.setLong(recycler, value);
                 return true;
             } catch (Throwable ignored) {
                 return false;

@@ -402,6 +402,7 @@ final class OfficialLyricTextRenderer {
     }
 
     void applySlotHeight(TextView textView, WordLine line, boolean forceOfficialSlotHeight) {
+        syncLineAlignment(textView, line);
         int height = resolveSlotHeight(
                 textView,
                 line,
@@ -426,13 +427,9 @@ final class OfficialLyricTextRenderer {
             lastLine = line;
             lineChangeElapsedMs = SystemClock.elapsedRealtime();
         }
-        lineAlignment = LyricUiLayoutPolicy.effectiveAlignment(
-                uiConfig.alignment, uiConfig.duetSplitEnabled, line.side);
-        LyricsRecyclerViews.updateLineAlignmentOverride(
-                textView,
-                lineAlignment == uiConfig.alignment
-                        ? LyricsRecyclerViews.NO_ALIGNMENT_OVERRIDE
-                        : lineAlignment);
+        lineAlignment = syncLineAlignment(textView, line);
+        int activeRowIndex = Math.max(frame.activeIndex, frame.scaleActiveIndex);
+        rowUpcoming = !frame.active && activeRowIndex >= 0 && frame.lineIndex > activeRowIndex;
 
         String text = line.text;
         int leftPadding = textView.getPaddingLeft();
@@ -1972,7 +1969,7 @@ final class OfficialLyricTextRenderer {
                 || line.words.isEmpty()
                 || !CharLiftGeometry.shouldPrepareLine(
                 activeLine, drawProgress, position,
-                Math.max(line.timeMillis, line.words.get(0).timeMillis))
+                Math.max(line.timeMillis, line.words.get(0).timeMillis), rowUpcoming)
                 || TextUtils.isEmpty(text)
                 // The cross-fade overlay repaints the whole row undisplaced,
                 // so sinking underneath it would only ghost.
@@ -3562,6 +3559,24 @@ final class OfficialLyricTextRenderer {
 
     /** Alignment of the row being drawn: the configured one unless its duet side moves it. */
     private int lineAlignment;
+    /** Whether the row being drawn sits after the active row and so has not been sung yet. */
+    private boolean rowUpcoming;
+
+    /**
+     * Resolves the row's alignment and keeps its scale pivot on the matching edge. Called when
+     * a row is bound as well as when it is drawn, so a recycled view never plays its first
+     * scale animation around the previous line's edge.
+     */
+    private int syncLineAlignment(TextView textView, WordLine line) {
+        int alignment = LyricUiLayoutPolicy.effectiveAlignment(
+                uiConfig.alignment, uiConfig.duetSplitEnabled, line == null ? null : line.side);
+        LyricsRecyclerViews.updateLineAlignmentOverride(
+                textView,
+                alignment == uiConfig.alignment
+                        ? LyricsRecyclerViews.NO_ALIGNMENT_OVERRIDE
+                        : alignment);
+        return alignment;
+    }
 
     private float resolveTextX(TextView textView, float measuredWidth, float availableWidth) {
         float left = textView.getPaddingLeft();

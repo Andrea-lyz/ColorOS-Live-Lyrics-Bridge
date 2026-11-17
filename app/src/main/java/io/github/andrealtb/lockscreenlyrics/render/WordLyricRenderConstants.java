@@ -35,7 +35,16 @@ public final class WordLyricRenderConstants {
 
     public static final float OFFICIAL_LYRIC_ACTIVE_ROW_SCALE = 1.0f;
 
-    public static final long OFFICIAL_LYRIC_ROW_SCALE_ANIMATION_MS = 340L;
+    /**
+     * Duration written to the vendor LyricsRecyclerView for a line change. The vendor reads it
+     * on every change and uses it for both the scroll and the row scale / colour animators, so
+     * the two stay in step. Its own default is 300 ms, which reads as abrupt at large font
+     * sizes; this is a device-tuned comfort value, not a platform constant.
+     */
+    public static final long OFFICIAL_LYRIC_LINE_CHANGE_MS = 450L;
+
+    /** Opacity / blur transition of a row; kept slightly longer than the vendor line change. */
+    public static final long OFFICIAL_LYRIC_ROW_SCALE_ANIMATION_MS = 500L;
 
     /**
      * How far unsung characters rest below the baseline, as a fraction of the

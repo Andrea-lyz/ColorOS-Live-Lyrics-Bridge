@@ -480,6 +480,21 @@ final class LyricsRecyclerViews {
         return override != null ? override : runtimeLyricUiConfig.alignment;
     }
 
+    /**
+     * Lengthens the vendor line-change duration, then returns the recycler's inactive row scale
+     * for the scale-ownership pass that runs next on the same vendor transition state. A value
+     * that is unreadable, not positive or already longer is left alone.
+     */
+    static Float readInactiveScaleWithLineChangeDuration(
+            OfficialLyricsRecyclerCompatibility.Binding binding, Object recyclerView) {
+        Long current = binding.readAnimationDuration(recyclerView);
+        long requested = WordLyricRenderConstants.OFFICIAL_LYRIC_LINE_CHANGE_MS;
+        if (current != null && current > 0L && current < requested) {
+            binding.writeAnimationDuration(recyclerView, requested);
+        }
+        return binding.readInactiveScale(recyclerView);
+    }
+
     static void applyOfficialLyricScalePivot(TextView textView) {
         if (textView == null) {
             return;
