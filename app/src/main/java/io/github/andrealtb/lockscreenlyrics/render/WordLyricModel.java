@@ -31,6 +31,10 @@ public final class WordLyricModel {
     WordLine officialIndexCacheFirst;
     WordLine officialIndexCacheLast;
     public String parserName = "lyrics-core";
+    /** True when the TTML overlay assigned both duet sides to lines of this model. */
+    public boolean hasDuet;
+    /** Lines matched by the TTML overlay; zero when the payload carried no usable TTML. */
+    public int ttmlAnnotatedLines;
 
     public void clearOfficialDisplayAliases() { officialDisplayAliases.clear(); }
 

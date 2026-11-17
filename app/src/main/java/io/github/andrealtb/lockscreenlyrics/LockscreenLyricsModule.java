@@ -3285,7 +3285,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                         rawTimed,
                         displayLyric,
                         displayTimed,
-                        translationLyric);
+                        translationLyric, payload.ttml);
             } finally {
                 performanceSampler.end(
                         BridgePerformanceSampler.Metric.MODEL_PARSE,

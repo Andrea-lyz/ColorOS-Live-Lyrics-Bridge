@@ -426,6 +426,13 @@ final class OfficialLyricTextRenderer {
             lastLine = line;
             lineChangeElapsedMs = SystemClock.elapsedRealtime();
         }
+        lineAlignment = LyricUiLayoutPolicy.effectiveAlignment(
+                uiConfig.alignment, uiConfig.duetSplitEnabled, line.side);
+        LyricsRecyclerViews.updateLineAlignmentOverride(
+                textView,
+                lineAlignment == uiConfig.alignment
+                        ? LyricsRecyclerViews.NO_ALIGNMENT_OVERRIDE
+                        : lineAlignment);
 
         String text = line.text;
         int leftPadding = textView.getPaddingLeft();
@@ -3553,6 +3560,9 @@ final class OfficialLyricTextRenderer {
         translationFeatherPaint.setTextSize(size * translationRatio);
     }
 
+    /** Alignment of the row being drawn: the configured one unless its duet side moves it. */
+    private int lineAlignment;
+
     private float resolveTextX(TextView textView, float measuredWidth, float availableWidth) {
         float left = textView.getPaddingLeft();
         if (measuredWidth > availableWidth) {
@@ -3574,10 +3584,10 @@ final class OfficialLyricTextRenderer {
                     : left;
         }
         boolean rtl = textView.getLayoutDirection() == View.LAYOUT_DIRECTION_RTL;
-        if (uiConfig.alignment == LyricUiConfig.ALIGN_CENTER) {
+        if (lineAlignment == LyricUiConfig.ALIGN_CENTER) {
             return left + (availableWidth - measuredWidth) / 2f;
         }
-        if (uiConfig.alignment == LyricUiConfig.ALIGN_END) {
+        if (lineAlignment == LyricUiConfig.ALIGN_END) {
             return rtl ? left : left + availableWidth - measuredWidth;
         }
         return rtl ? left + availableWidth - measuredWidth : left;
@@ -3592,7 +3602,7 @@ final class OfficialLyricTextRenderer {
             float measuredWidth,
             float availableWidth) {
         float mathematicalX = resolveTextX(textView, measuredWidth, availableWidth);
-        if (uiConfig.alignment != LyricUiConfig.ALIGN_CENTER
+        if (lineAlignment != LyricUiConfig.ALIGN_CENTER
                 || measuredWidth > availableWidth
                 || paint == null
                 || TextUtils.isEmpty(text)) {

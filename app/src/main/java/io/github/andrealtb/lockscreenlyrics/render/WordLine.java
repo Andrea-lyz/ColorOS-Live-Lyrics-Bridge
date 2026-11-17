@@ -29,6 +29,11 @@ public final class WordLine {
     public final ArrayList<WordRange> words;
     public final LyricTimingMode timingMode;
 
+    /** Duet side from the TTML overlay; see {@link LyricSide}. */
+    public LyricSide side = LyricSide.UNSPECIFIED;
+    /** Background vocals attached to this line by the TTML overlay, or null. */
+    public ArrayList<WordLine> accompaniment;
+
     public String displayText = "";
     public String translation = "";
     private String normalizedDisplaySource = "";

@@ -162,6 +162,7 @@
     <string name="weight_medium">中等</string>
     <string name="weight_bold">粗体</string>
     <string name="setting_alignment">对齐</string>
+    <string name="setting_duet_split">对唱歌词分侧显示</string>
     <string name="align_start">左对齐</string>
     <string name="align_center">居中</string>
     <string name="align_end">右对齐</string>

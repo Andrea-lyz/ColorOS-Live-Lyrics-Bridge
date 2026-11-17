@@ -162,6 +162,7 @@
     <string name="weight_medium">Medium</string>
     <string name="weight_bold">Bold</string>
     <string name="setting_alignment">Alignment</string>
+    <string name="setting_duet_split">Show duet lyrics on opposite sides</string>
     <string name="align_start">Left</string>
     <string name="align_center">Center</string>
     <string name="align_end">Right</string>

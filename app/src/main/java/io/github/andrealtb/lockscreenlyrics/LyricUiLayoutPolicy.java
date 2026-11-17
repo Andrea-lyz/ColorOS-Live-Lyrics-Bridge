@@ -1,5 +1,7 @@
 package io.github.andrealtb.lockscreenlyrics;
 
+import io.github.andrealtb.lockscreenlyrics.render.LyricSide;
+
 final class LyricUiLayoutPolicy {
     private LyricUiLayoutPolicy() {}
 
@@ -81,6 +83,24 @@ final class LyricUiLayoutPolicy {
         return Math.max(
                 Math.max(0, minimumHeight),
                 contentHeight + Math.max(0, verticalPadding) + Math.max(0, bottomSafety));
+    }
+
+    /**
+     * Resolves the alignment of one row. Rows only carry a side in tracks where both duet sides
+     * occur, so every other row keeps the configured alignment. The lead side keeps the
+     * configured edge and the other side mirrors it; a centered layout has no edge to keep, so
+     * the lead side starts and the other side ends.
+     */
+    static int effectiveAlignment(
+            int configuredAlignment,
+            boolean duetSplitEnabled,
+            LyricSide side) {
+        if (!duetSplitEnabled || side == null || side == LyricSide.UNSPECIFIED) {
+            return configuredAlignment;
+        }
+        boolean leadAtEnd = configuredAlignment == LyricUiConfig.ALIGN_END;
+        boolean lead = side == LyricSide.PRIMARY;
+        return lead == leadAtEnd ? LyricUiConfig.ALIGN_END : LyricUiConfig.ALIGN_START;
     }
 
     static float horizontalScalePivot(

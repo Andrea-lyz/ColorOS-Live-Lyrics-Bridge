@@ -336,7 +336,9 @@ final class LyricMetadataSupport {
                 + '|'
                 + contentSignature(rawLyric)
                 + '|'
-                + contentSignature(translationLyric);
+                + contentSignature(translationLyric)
+                // Appended only when present so signatures of payloads without TTML are unchanged.
+                + (payload.ttml.isEmpty() ? "" : '|' + contentSignature(payload.ttml));
     }
 
     static String contentSignature(String value) {
