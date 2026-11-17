@@ -241,6 +241,43 @@ public final class TtmlLyricOverlayTest {
                 model.translationCount() > 0);
     }
 
+    /**
+     * Consumes the exact lyricInfo JSON a Provider publishes for a real document (written by the
+     * Providers test suite). Set {@code CLL_LYRICINFO_JSON} to that file.
+     */
+    @Test
+    public void providerPublishedLyricInfoAnnotatesEveryLine() throws Exception {
+        String path = System.getenv("CLL_LYRICINFO_JSON");
+        assumeTrue("CLL_LYRICINFO_JSON was not supplied", path != null && !path.isEmpty());
+        String json = new String(Files.readAllBytes(Paths.get(path)), StandardCharsets.UTF_8);
+
+        LyricInfoContract.Payload payload = LyricInfoContract.parse(json);
+
+        assertNotNull(payload);
+        assertFalse(payload.ttml.isEmpty());
+        WordLyricModel model = new NativeLyricModelAssembler(SILENT).assemble(
+                payload.rawLyric, true, payload.lyric, true,
+                payload.translationLyric, payload.ttml).model;
+        int primary = 0;
+        int secondary = 0;
+        int accompaniment = 0;
+        for (WordLine line : model.lines) {
+            if (line.side == LyricSide.PRIMARY) primary++;
+            if (line.side == LyricSide.SECONDARY) secondary++;
+            if (line.accompaniment != null) accompaniment += line.accompaniment.size();
+        }
+        System.out.println("provider-lyricinfo chars=" + json.length()
+                + " modelLines=" + model.lines.size()
+                + " annotated=" + model.ttmlAnnotatedLines
+                + " duet=" + model.hasDuet
+                + " primary=" + primary
+                + " secondary=" + secondary
+                + " accompaniment=" + accompaniment
+                + " translations=" + model.translationCount());
+        assertEquals(model.lines.size(), model.ttmlAnnotatedLines);
+        assertEquals(TtmlLyricOverlay.of(payload.ttml).hasDuet, model.hasDuet);
+    }
+
     private static WordLyricModel assemble(String raw, String display, String ttml) {
         return new NativeLyricModelAssembler(SILENT).assemble(
                 raw,
