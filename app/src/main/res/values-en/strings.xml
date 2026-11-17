@@ -558,4 +558,10 @@
     <string name="home_launcher_body">When off, Bridge has no launcher icon; you can still open it from module settings in LSPosed. Some launchers take a moment to update.</string>
     <string name="home_launcher_shown">Launcher icon shown</string>
     <string name="home_launcher_hidden">Launcher icon hidden</string>
+    <string name="home_donate_title">Support the author</string>
+    <string name="home_donate_body">If Bridge helps you, you can buy the author a coffee</string>
+    <string name="donate_dialog_title">Thank you for your support</string>
+    <string name="donate_dialog_body">Scan with WeChat or Alipay</string>
+    <string name="donate_qr_description">Donation QR code</string>
+    <string name="donate_close">Close</string>
 </resources>

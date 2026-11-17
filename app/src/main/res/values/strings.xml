@@ -565,4 +565,10 @@
     <string name="home_launcher_body">关闭后桌面不再显示 Bridge 图标，仍可从 LSPosed 的模块设置进入。部分桌面需要片刻才会刷新。</string>
     <string name="home_launcher_shown">已在桌面显示图标</string>
     <string name="home_launcher_hidden">已隐藏桌面图标</string>
+    <string name="home_donate_title">支持作者</string>
+    <string name="home_donate_body">觉得好用的话，可以请作者喝杯咖啡</string>
+    <string name="donate_dialog_title">感谢支持</string>
+    <string name="donate_dialog_body">使用微信或支付宝扫码</string>
+    <string name="donate_qr_description">捐赠收款码</string>
+    <string name="donate_close">关闭</string>
 </resources>
