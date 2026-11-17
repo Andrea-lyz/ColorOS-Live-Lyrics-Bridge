@@ -343,3 +343,13 @@ effectiveAlignment(userAlignment, duetMode, modelHasDuet, lineSide) -> START | C
 - 字符上浮、辉光、被动行横移都以绘制 x 为基准，代码上自动跟随，但没有逐项目视确认。
 - 对唱曲目中个别没匹配到 TTML 的行，在“居中”设置下会保持居中，夹在左右分侧的行之间。
 - C-04 功能级降级点仍未接入。
+
+## 附录 D：首个 Provider 接入——光锥音乐（2026-11-17）
+
+首个接入的来源由“通用 Provider”改为光锥音乐（用户决定：Salt 不支持 TTML，光锥支持 TTML 与对唱）。Providers 仓库分支 `feat/cone-ttml`。
+
+- **取证**（光锥 v1.2.0 反编译，`mf/u2.java` 的 `w(String lrc)` 与 `da/y.java`、`da/b.java`）：光锥通过包内广播 `CURRENT_LYRIC_CHANGED` 的 `extra_lyric_text` 发出歌词**原文**；其自身的解析入口对同一个字符串判断是否为 TTML 再分流。据此推断 TTML 歌曲的广播内容是整份 XML。这是静态推断，**需要设备验证**。
+- **此前的问题**：光锥 Provider 只接受带 LRC 时间标签的文本，TTML 文档被过滤掉，所以 TTML 歌曲完全没有歌词。
+- **改动**：TTML 文档用 `parser-ttml` 解析出 `lyric` / `rawLyric`；规范化后的原文作为 `ttml` 字段附带。`provider-core` 新增 `TtmlPayloadNormalizer`（去 XML 声明与排版缩进；含 `lyricOffset` 或超过 200 000 字符时不附带），`ColorOSLyricJsonEncoder` / `NativeLyricInfoPublisher` 增加可选 `ttml` 入参，体积闸门超限时自动去掉 `ttml` 重试。LRC 歌曲的发布路径不变。
+- **两端对接验证**（本地）：用 AMLL 样本经光锥 Provider 的编码路径生成 `lyricInfo`（34 398 字符），再交给 Bridge 测试：50 行全部匹配，主唱侧 40 行、对唱侧 10 行，背景人声 1 处，翻译 46 条（Provider 未提供翻译通道，由 Bridge 从 `ttml` 补位）。
+- **未覆盖**：内嵌标签（`ConeTrackMetadataExtractor`）路径仍只认 LRC；Provider 的 TTML 解析不输出翻译通道；附录 B.3 提到的“裸文本背景人声”未在规范化器里补 span。
