@@ -84,6 +84,7 @@ Bridge 只有在 `lyric` 或 `rawLyric` 含合法时间标签时才接收 payloa
 |---|---|---|
 | `rawLyric` | 增强 LRC | 供逐字卡拉 OK 渲染使用。 |
 | `translationLyric` | 逐行 LRC | 规范翻译 lane。 |
+| `ttml` | TTML 文档 | 可选的对唱与和声标注（Bridge 5.1.0 起），见 §4.4。 |
 | `provider` | 字符串 | 诊断所有者，通常写宿主包名。 |
 | `source` | 字符串 | 诊断来源/运行 profile。 |
 | `trackKey` | 字符串 | 拒绝同一会话中过期 payload 的稳定身份键。 |
@@ -135,6 +136,24 @@ Bridge 只有在 `lyric` 或 `rawLyric` 含合法时间标签时才接收 payloa
 
 每条翻译只对齐并消费一次。罗马音、音译、注音和 pronunciation HTML 都不是翻译，
 不得写入此 lane。没有真实翻译时省略字段，不要复制主歌词冒充翻译。
+
+### 4.4 可选 TTML lane（Bridge 5.1.0 起）
+
+歌词来源本身是 TTML（Apple Music 风格、AMLL）时，Provider 可以把原文作为 `ttml` 与 LRC lane 一起
+发布。Bridge 只用它来标注自己的模型：
+
+- 每行的演唱者分侧（`ttm:agent`），用于对唱布局；以及和声行（`x-bg`）；
+- 文本与时间仍以 `lyric`、`rawLyric`、`translationLyric` 为准。TTML 行按开始时间（120 ms 以内）和
+  文本匹配到模型行；若文本不同，20 ms 内只有一个候选行时也会匹配；
+- 只有 payload 没有带时间的 `rawLyric` 或没有翻译时，Bridge 才从 TTML 推导对应 lane。
+
+写入方规则：
+
+1. 只发送真正的 TTML（`<tt>` 带 TTML 命名空间），并与 LRC lane 是同一份歌词；去掉标签之间的缩进空白。
+2. 不要发送带全局 `lyricOffset` 的文档：Bridge 不应用该偏移，时间会与 LRC lane 对不上。
+3. 控制大小。超过 512K 字符的文档 Bridge 会忽略；metadata parcel 与封面共用额度，参考 Provider 把它
+   限制在 120K–200K 字符，payload 过大时去掉该 lane 而不是歌词。
+4. 旧版 Bridge 与官方渲染器会忽略该字段。
 
 ## 5. 曲目身份与 generation
 
