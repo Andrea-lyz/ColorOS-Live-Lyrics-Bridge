@@ -88,6 +88,7 @@ envelope marker.
 |---|---|---|
 | `rawLyric` | enhanced LRC | Word-level timing for karaoke rendering. |
 | `translationLyric` | line-timed LRC | Canonical translation lane. |
+| `ttml` | TTML document | Optional duet and background-vocal annotations (Bridge 5.1.0+); see §4.4. |
 | `provider` | string | Diagnostic owner; normally the host package. |
 | `source` | string | Diagnostic source/profile. |
 | `trackKey` | string | Stable identity key used to reject stale same-session payloads. |
@@ -141,6 +142,28 @@ Translation lines use the main line's absolute start time:
 Align each translation to one primary line and consume it once. Pronunciation, romaji,
 transliteration, and phonetic HTML are not translations and must not enter this lane. When no real
 translation exists, omit the field instead of duplicating the primary lyric.
+
+### 4.4 Optional TTML lane (Bridge 5.1.0+)
+
+When the source itself is TTML (Apple Music style, AMLL), a Provider may attach the document as
+`ttml` next to the LRC lanes. Bridge uses it only to annotate its model:
+
+- each line's singer side (`ttm:agent`) for duet layout, and background-vocal lines (`x-bg`);
+- `lyric`, `rawLyric` and `translationLyric` stay the authority for text and timing. A TTML line is
+  matched to a model line by start time (within 120 ms) and text; if text differs, a unique match within 20 ms is accepted;
+- only when the payload has no timed `rawLyric` or no translation does Bridge derive that lane from
+  the TTML.
+
+Rules for writers:
+
+1. Send the document only when it is real TTML (TTML namespace on `<tt>`) and keep it the same
+   lyric as the LRC lanes. Remove indentation whitespace between tags.
+2. Do not send a document with a global `lyricOffset`; Bridge ignores the offset, so its times
+   would not match the LRC lanes.
+3. Keep it small. Bridge ignores documents over 512K characters, and the metadata parcel is shared
+   with the artwork; the reference Providers cap it at 120K–200K characters and drop the lane, not
+   the lyric, when the payload is too large.
+4. Old Bridge versions and the official renderer ignore the field.
 
 ## 5. Track identity and generation
 
