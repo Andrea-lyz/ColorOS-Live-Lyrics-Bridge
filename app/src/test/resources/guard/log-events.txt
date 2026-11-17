@@ -41,7 +41,7 @@ BridgeEvents.AOD_TRANSITION x5
 BridgeEvents.ARTWORK_PROBE x1
 BridgeEvents.CHAR_LIFT_UNAVAILABLE x3
 BridgeEvents.DEBUG_CONFIG_APPLIED x2
-BridgeEvents.DETAIL x56
+BridgeEvents.DETAIL x57
 BridgeEvents.FAILURE x1
 BridgeEvents.FEATURE_DEGRADED x1
 BridgeEvents.FEATURE_RECOVERED x2

@@ -53,6 +53,7 @@ public final class LyricUiConfigContractTest {
             "translationFontRatioPercent",
             "fontWeight",
             "alignment",
+            "duetSplitEnabled",
             "lineSpacingTenthsDp",
             "wrappedLineSpacingTenthsDp");
     @Test
@@ -94,6 +95,7 @@ public final class LyricUiConfigContractTest {
                 .translationFontRatioPercent(70)
                 .fontWeight(LyricUiConfig.WEIGHT_MEDIUM)
                 .alignment(LyricUiConfig.ALIGN_CENTER)
+                .duetSplitEnabled(false)
                 .lineSpacingTenthsDp(35)
                 .wrappedLineSpacingTenthsDp(25)
                 .build();

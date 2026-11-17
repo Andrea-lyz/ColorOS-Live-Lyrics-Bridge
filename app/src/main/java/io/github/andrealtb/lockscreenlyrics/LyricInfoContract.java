@@ -22,6 +22,8 @@ public final class LyricInfoContract {
     public static final String JSON_SOURCE = "source";
     public static final String JSON_TRACK_KEY = "trackKey";
     public static final String JSON_SESSION_GENERATION = "sessionGeneration";
+    /** Optional TTML document carrying duet sides and background vocals; see TtmlLyricOverlay. */
+    public static final String JSON_TTML = "ttml";
     private static final String[] TRANSLATION_KEYS = {
             JSON_TRANSLATION_LYRIC,
             "translatedLyric",
@@ -44,6 +46,8 @@ public final class LyricInfoContract {
      * when {@code lyric} is empty but {@code rawLyric} contains timed tags, {@code rawLyric}
      * is used as the display fallback so word-only payloads still enter the pipeline.
      * {@code rawLyric} is preserved verbatim for the module's word-level renderer.
+     * An optional {@code ttml} document annotates lines with duet sides; it also supplies the
+     * word-timed and translation lanes when the payload does not carry them itself.
      */
     public static Payload parse(String value) {
         if (value == null || value.trim().isEmpty()) {
@@ -55,10 +59,25 @@ public final class LyricInfoContract {
             String rawLyric = object.optString(JSON_RAW_LYRIC, "");
             boolean lyricTimed = containsTimedLrc(lyric);
             boolean rawLyricTimed = containsTimedLrc(rawLyric);
+            // Sentence-window rows are event slots, not a time axis the document could match.
+            String ttml = SentenceWindowContract.position(object, lyric) >= 0L
+                    ? ""
+                    : object.optString(JSON_TTML, "");
+            TtmlLyricOverlay overlay = TtmlLyricOverlay.of(ttml);
+            if (overlay.isEmpty()) {
+                ttml = "";
+            } else if (!rawLyricTimed) {
+                rawLyric = overlay.enhancedLrc();
+                rawLyricTimed = containsTimedLrc(rawLyric);
+            }
             if (!lyricTimed && !rawLyricTimed) {
                 return null;
             }
             String resolvedLyric = lyricTimed ? lyric : rawLyric;
+            String translationLyric = findTranslationLyric(object);
+            if (translationLyric.isEmpty() && !overlay.isEmpty()) {
+                translationLyric = overlay.translationLrc();
+            }
             return new Payload(
                     object.optString(JSON_SONG_NAME, ""),
                     object.optString(JSON_ARTIST, ""),
@@ -66,12 +85,13 @@ public final class LyricInfoContract {
                     object.optString(JSON_SONG_ID, ""),
                     resolvedLyric,
                     rawLyric,
-                    findTranslationLyric(object),
+                    translationLyric,
                     object.optString(JSON_PROVIDER, ""),
                     object.optString(JSON_TRACK_KEY, ""),
                     object.optLong(JSON_SESSION_GENERATION, 0L),
                     object.optString(JSON_SOURCE, ""),
-                    SentenceWindowContract.position(object, resolvedLyric)
+                    SentenceWindowContract.position(object, resolvedLyric),
+                    ttml
             );
         } catch (Throwable ignored) {
             return null;
@@ -148,6 +168,8 @@ public final class LyricInfoContract {
         public final long sessionGeneration;
         public final String source;
         public final long snapshotPositionMillis;
+        /** The usable TTML document, or empty when absent, oversized or unparsable. */
+        public final String ttml;
 
         Payload(
                 String songName,
@@ -168,6 +190,14 @@ public final class LyricInfoContract {
         Payload(String songName, String artist, String album, String songId, String lyric,
                 String rawLyric, String translationLyric, String provider, String trackKey,
                 long sessionGeneration, String source, long snapshotPositionMillis) {
+            this(songName, artist, album, songId, lyric, rawLyric, translationLyric,
+                    provider, trackKey, sessionGeneration, source, snapshotPositionMillis, "");
+        }
+
+        Payload(String songName, String artist, String album, String songId, String lyric,
+                String rawLyric, String translationLyric, String provider, String trackKey,
+                long sessionGeneration, String source, long snapshotPositionMillis, String ttml) {
+            this.ttml = ttml == null ? "" : ttml;
             this.snapshotPositionMillis = snapshotPositionMillis;
             this.songName = songName;
             this.artist = artist;

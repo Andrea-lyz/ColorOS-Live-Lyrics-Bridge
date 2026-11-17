@@ -29,6 +29,11 @@ public final class WordLine {
     public final ArrayList<WordRange> words;
     public final LyricTimingMode timingMode;
 
+    /** Duet side from the TTML overlay; see {@link LyricSide}. */
+    public LyricSide side = LyricSide.UNSPECIFIED;
+    /** Background vocals attached to this line by the TTML overlay, or null. */
+    public ArrayList<WordLine> accompaniment;
+
     public String displayText = "";
     public String translation = "";
     private String normalizedDisplaySource = "";
@@ -61,6 +66,7 @@ public final class WordLine {
     public float rowVisualFadeStart = 1f;
     public float rowVisualFadeTarget = 1f;
     public float rowVisualBlurRadiusTarget = 0f;
+    public float rowVisualBlurRadiusStart = 0f;
     public long rowVisualScaleStartedAtMs = -1L;
     public int rowVisualScaleActiveIndex = Integer.MIN_VALUE;
 

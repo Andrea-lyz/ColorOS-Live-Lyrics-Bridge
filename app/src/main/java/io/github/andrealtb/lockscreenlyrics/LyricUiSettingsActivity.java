@@ -127,6 +127,7 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
     private SegmentedControl motionMode;
     private MaterialSwitch passiveVerticalPan;
     private MaterialSwitch translationMarquee;
+    private MaterialSwitch duetSplit;
     private MaterialButton refreshRate;
     private int refreshRateSelection;
     private int[] refreshRateValues;
@@ -490,6 +491,9 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
         typography.addView(labeledSegmented(
                 getString(R.string.setting_alignment),
                 alignment));
+        addCardDivider(typography);
+        duetSplit = toggle(getString(R.string.setting_duet_split), true);
+        typography.addView(duetSplit);
         addCardDivider(typography);
         lineSpacing = materialSeek(-10, 40);
         typography.addView(labeledMaterialHalfDpSeek(
@@ -1409,7 +1413,7 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
             changed.onClick(view);
         });
         for (MaterialSwitch toggle : new MaterialSwitch[]{
-                passiveVerticalPan, translationMarquee}) {
+                passiveVerticalPan, translationMarquee, duetSplit}) {
             toggle.setOnClickListener(changed);
         }
         lineTimedProgress.setOnClickListener(view -> {
@@ -1725,6 +1729,7 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
                 .motionMode(checkedIndex(motionMode))
                 .passiveVerticalPanEnabled(passiveVerticalPan.isChecked())
                 .translationMarqueeEnabled(translationMarquee.isChecked())
+                .duetSplitEnabled(duetSplit.isChecked())
                 .maxRefreshRateHz(refresh)
                 .defaultTranslationEnabled(draft.defaultTranslationEnabled)
                 .lineTimedProgressEnabled(lineTimedProgress.isChecked())
@@ -1765,6 +1770,7 @@ public final class LyricUiSettingsActivity extends SettingsBaseActivity {
         checkIndex(alignment, config.alignment);
         passiveVerticalPan.setChecked(config.passiveVerticalPanEnabled);
         translationMarquee.setChecked(config.translationMarqueeEnabled);
+        duetSplit.setChecked(config.duetSplitEnabled);
         refreshRateSelection = indexOfRefresh(config.maxRefreshRateHz);
         if (refreshRate != null) {
             refreshRate.setText(refreshRateLabels()[refreshRateSelection]);

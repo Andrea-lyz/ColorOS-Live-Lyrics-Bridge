@@ -24,6 +24,8 @@ installOplusMediaPolicyBypassHooks
   HOOK_ID_GET_LYRIC_ENTRANCE -> onOplusMediaGetLyricEntrance
   HOOK_ID_RESOLVE_LYRIC_SUPPORT -> onOplusMediaResolveLyricSupport
   HOOK_ID_UPDATE_PKG_ACTIONS_RULE -> onOplusMediaUpdatePkgActionsRule
+installScrollHook
+  "oplus-word-lyrics-recycler-scroll-easing" -> <lambda>
 installSystemUiArtworkDiagnosticsHook
   HOOK_ID_SYSTEMUI_ARTWORK_LOADER_PROBE -> onSystemUiArtworkLoaderProbe
 installSystemUiTranslationToggleActionHook

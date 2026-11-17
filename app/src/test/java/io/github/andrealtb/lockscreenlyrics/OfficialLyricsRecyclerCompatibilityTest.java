@@ -66,6 +66,31 @@ public class OfficialLyricsRecyclerCompatibilityTest {
     }
 
     @Test
+    public void lineChangeDurationIsLengthenedOnceAndNeverShortened() {
+        Ui7Layout recycler = new Ui7Layout();
+        OfficialLyricsRecyclerCompatibility.Binding binding =
+                OfficialLyricsRecyclerCompatibility.resolve(recycler.getClass());
+        long requested = io.github.andrealtb.lockscreenlyrics.render
+                .WordLyricRenderConstants.OFFICIAL_LYRIC_LINE_CHANGE_MS;
+
+        assertEquals(Float.valueOf(0.73f),
+                LyricsRecyclerViews.readInactiveScaleWithLineChangeDuration(binding, recycler));
+        assertEquals(requested, recycler.v);
+        // Only the duration field moved.
+        assertEquals(20, recycler.u);
+        assertEquals(500, recycler.t);
+        assertEquals(0.73f, recycler.B, 0.0001f);
+
+        recycler.v = requested + 200L;
+        LyricsRecyclerViews.readInactiveScaleWithLineChangeDuration(binding, recycler);
+        assertEquals(requested + 200L, recycler.v);
+
+        recycler.v = 0L;
+        LyricsRecyclerViews.readInactiveScaleWithLineChangeDuration(binding, recycler);
+        assertEquals(0L, recycler.v);
+    }
+
+    @Test
     public void ui7BindingRejectsStaticSpacingOrWrongScaleType() {
         assertNull(OfficialLyricsRecyclerCompatibility.resolve(StaticUi7Layout.class));
         assertNull(OfficialLyricsRecyclerCompatibility.resolve(WrongUi7ScaleLayout.class));

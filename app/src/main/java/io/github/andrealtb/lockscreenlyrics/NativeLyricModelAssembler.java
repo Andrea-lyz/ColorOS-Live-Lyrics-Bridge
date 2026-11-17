@@ -11,7 +11,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import io.github.andrealtb.lockscreenlyrics.diagnostics.BridgeDebugArea;
+import io.github.andrealtb.lockscreenlyrics.diagnostics.BridgeEvents;
+import io.github.andrealtb.lockscreenlyrics.diagnostics.StructuredBridgeLog;
 import io.github.andrealtb.lockscreenlyrics.render.InlineTimedLyricLine;
+import io.github.andrealtb.lockscreenlyrics.render.LyricSide;
 import io.github.andrealtb.lockscreenlyrics.render.LyricTimingMode;
 import io.github.andrealtb.lockscreenlyrics.render.NormalizedWordLineText;
 import io.github.andrealtb.lockscreenlyrics.render.OfficialLyricDataset;
@@ -87,6 +91,17 @@ final class NativeLyricModelAssembler {
             String displayLyric,
             boolean displayHasTimedLrc,
             String translationLyric) {
+        return assemble(
+                rawLyric, rawHasTimedLrc, displayLyric, displayHasTimedLrc, translationLyric, "");
+    }
+
+    AssemblyResult assemble(
+            String rawLyric,
+            boolean rawHasTimedLrc,
+            String displayLyric,
+            boolean displayHasTimedLrc,
+            String translationLyric,
+            String ttml) {
         // Native metadata can arrive before the Provider's raw extension, or carry a new
         // identity that correctly prevents reusing the previous model. Render this packet's
         // timed display source instead; plain LRC stays LINE_TIMED in the existing parser.
@@ -124,6 +139,14 @@ final class NativeLyricModelAssembler {
         }
         model.officialDataset = displayDatasetFor(displayLyric);
         int propagatedTranslations = model.propagateNearbyTranslations(6);
+        applyTtmlOverlay(model, TtmlLyricOverlay.of(ttml));
+        if (!isEmpty(ttml)) {
+            StructuredBridgeLog.info(BridgeDebugArea.LYRIC, BridgeEvents.DETAIL,
+                    "Applied TTML overlay during model assembly, chars=" + ttml.length()
+                            + ", lines=" + model.lines.size()
+                            + ", annotated=" + model.ttmlAnnotatedLines
+                            + ", duet=" + model.hasDuet);
+        }
         LyricModelTraceSupport.traceWordLyricModel(traceSink, model, "final-systemui", "systemui");
         return new AssemblyResult(
                 model,
@@ -530,6 +553,98 @@ final class NativeLyricModelAssembler {
         TimedLyricGroup(long timeMillis) {
             this.timeMillis = timeMillis;
         }
+    }
+
+    // ------------------------------------------------------------------
+    // TTML overlay (duet side and background vocals)
+    // ------------------------------------------------------------------
+
+    /** Tolerance for a model line whose text differs from the only overlay line at that time. */
+    static final long TTML_TEXTLESS_MATCH_WINDOW_MS = 20L;
+
+    /**
+     * Annotates already assembled lines from the TTML document. Lines are matched by start time
+     * and text, so rows removed by opening cleanup simply find no model line and rows the
+     * document does not describe keep their defaults. Timing, text and translations are never
+     * taken from here.
+     */
+    static void applyTtmlOverlay(WordLyricModel model, TtmlLyricOverlay overlay) {
+        model.hasDuet = false;
+        model.ttmlAnnotatedLines = 0;
+        if (model.lines.isEmpty() || overlay == null || overlay.isEmpty()) {
+            return;
+        }
+        boolean[] used = new boolean[overlay.lines.size()];
+        boolean primary = false;
+        boolean secondary = false;
+        for (WordLine line : model.lines) {
+            int match = findTtmlOverlayLine(overlay, used, line);
+            if (match < 0) {
+                continue;
+            }
+            used[match] = true;
+            LyricsCoreAdapter.ParsedLine source = overlay.lines.get(match);
+            model.ttmlAnnotatedLines++;
+            if (overlay.hasDuet) {
+                if (source.side == LyricsCoreAdapter.SIDE_START) {
+                    line.side = LyricSide.PRIMARY;
+                    primary = true;
+                } else if (source.side == LyricsCoreAdapter.SIDE_END) {
+                    line.side = LyricSide.SECONDARY;
+                    secondary = true;
+                }
+            }
+            if (!source.accompaniment.isEmpty()) {
+                ArrayList<WordLine> accompaniment = new ArrayList<>();
+                for (LyricsCoreAdapter.ParsedLine parsed : source.accompaniment) {
+                    WordLine converted = toWordLine(parsed);
+                    if (converted != null) {
+                        accompaniment.add(converted);
+                    }
+                }
+                line.accompaniment = accompaniment.isEmpty() ? null : accompaniment;
+            }
+        }
+        // One side can vanish entirely when cleanup or a partial match drops its lines.
+        model.hasDuet = primary && secondary;
+        if (!model.hasDuet) {
+            for (WordLine line : model.lines) {
+                line.side = LyricSide.UNSPECIFIED;
+            }
+        }
+    }
+
+    private static int findTtmlOverlayLine(
+            TtmlLyricOverlay overlay,
+            boolean[] used,
+            WordLine line) {
+        int textMatch = -1;
+        long textMatchDistance = Long.MAX_VALUE;
+        int nearest = -1;
+        int nearCount = 0;
+        for (int i = 0; i < overlay.lines.size(); i++) {
+            LyricsCoreAdapter.ParsedLine candidate = overlay.lines.get(i);
+            long distance = Math.abs(candidate.startMillis - line.timeMillis);
+            if (used[i] || distance > SUPPLEMENTAL_MATCH_WINDOW_MS) {
+                continue;
+            }
+            String candidateKey = WordLyricRenderSupport.lyricMatchKeyFromNormalized(
+                    WordLyricRenderSupport.normalizeLine(candidate.text));
+            if (!isEmpty(candidateKey)
+                    && candidateKey.equals(line.textMatchKey)
+                    && distance < textMatchDistance) {
+                textMatch = i;
+                textMatchDistance = distance;
+            }
+            if (distance <= TTML_TEXTLESS_MATCH_WINDOW_MS) {
+                nearest = i;
+                nearCount++;
+            }
+        }
+        if (textMatch >= 0) {
+            return textMatch;
+        }
+        return nearCount == 1 ? nearest : -1;
     }
 
     // ------------------------------------------------------------------

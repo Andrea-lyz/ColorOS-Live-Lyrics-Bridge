@@ -46,6 +46,7 @@ final class LyricUiConfigCodec {
     static final String TRANSLATION_FONT_RATIO = "translation_font_ratio_percent";
     static final String FONT_WEIGHT = "font_weight";
     static final String ALIGNMENT = "alignment";
+    static final String DUET_SPLIT_ENABLED = "duet_split_enabled";
     static final String LINE_SPACING = "line_spacing_tenths_dp";
     static final String WRAPPED_LINE_SPACING = "wrapped_line_spacing_tenths_dp";
     // Schema 1 only. Kept so migration can explicitly discard the former metadata DSL.
@@ -97,6 +98,7 @@ final class LyricUiConfigCodec {
         values.put(TRANSLATION_FONT_RATIO, config.translationFontRatioPercent);
         values.put(FONT_WEIGHT, config.fontWeight);
         values.put(ALIGNMENT, config.alignment);
+        values.put(DUET_SPLIT_ENABLED, config.duetSplitEnabled);
         values.put(LINE_SPACING, config.lineSpacingTenthsDp);
         values.put(WRAPPED_LINE_SPACING, config.wrappedLineSpacingTenthsDp);
         return values;
@@ -155,6 +157,7 @@ final class LyricUiConfigCodec {
         if (values.containsKey(TRANSLATION_FONT_RATIO)) builder.translationFontRatioPercent(integer(values.get(TRANSLATION_FONT_RATIO), base.translationFontRatioPercent));
         if (values.containsKey(FONT_WEIGHT)) builder.fontWeight(integer(values.get(FONT_WEIGHT), base.fontWeight));
         if (values.containsKey(ALIGNMENT)) builder.alignment(integer(values.get(ALIGNMENT), base.alignment));
+        if (values.containsKey(DUET_SPLIT_ENABLED)) builder.duetSplitEnabled(bool(values.get(DUET_SPLIT_ENABLED), base.duetSplitEnabled));
         if (values.containsKey(LINE_SPACING)) builder.lineSpacingTenthsDp(integer(values.get(LINE_SPACING), base.lineSpacingTenthsDp));
         if (values.containsKey(WRAPPED_LINE_SPACING)) builder.wrappedLineSpacingTenthsDp(integer(values.get(WRAPPED_LINE_SPACING), base.wrappedLineSpacingTenthsDp));
         LyricUiConfig decoded = builder.build();

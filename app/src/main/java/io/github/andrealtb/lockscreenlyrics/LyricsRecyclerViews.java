@@ -75,6 +75,7 @@ import java.lang.reflect.Method;
 import java.lang.ref.WeakReference;
 import java.util.AbstractList;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -219,7 +220,10 @@ final class LyricsRecyclerViews {
         // safe: they can only operate on the lyric row, and restoring the configured pivot after
         // they return is idempotent even for style/binding helpers.
         return OfficialLyricScalePivotMethodPolicy.textViewArgumentIndex(method)
-                != OfficialLyricScalePivotMethodPolicy.NOT_A_PIVOT_METHOD;
+                != OfficialLyricScalePivotMethodPolicy.NOT_A_PIVOT_METHOD
+                // The animator factories share the hook: the handler leaves their pivot alone
+                // (they are not void) and only softens the animator they return.
+                || OfficialLyricScalePivotMethodPolicy.isLineChangeAnimatorFactory(method);
     }
 
     static Class<?> findRecyclerAdapterBaseClass(Object adapter) {
@@ -452,10 +456,53 @@ final class LyricsRecyclerViews {
         return null;
     }
 
+    /**
+     * Rows whose duet side moved them off the configured alignment. Only the renderer knows
+     * which line a row currently shows, so it reports the result here and the scale pivot
+     * follows the edge the text is actually drawn against.
+     */
+    private static final Map<TextView, Integer> LINE_ALIGNMENT_OVERRIDES =
+            Collections.synchronizedMap(new WeakHashMap<>());
+    static final int NO_ALIGNMENT_OVERRIDE = -1;
+
+    static void updateLineAlignmentOverride(TextView textView, int alignment) {
+        if (textView == null
+                || (alignment == NO_ALIGNMENT_OVERRIDE && LINE_ALIGNMENT_OVERRIDES.isEmpty())) {
+            return;
+        }
+        Integer previous = alignment == NO_ALIGNMENT_OVERRIDE
+                ? LINE_ALIGNMENT_OVERRIDES.remove(textView)
+                : LINE_ALIGNMENT_OVERRIDES.put(textView, alignment);
+        if ((previous == null ? NO_ALIGNMENT_OVERRIDE : previous) != alignment) {
+            applyOfficialLyricScalePivot(textView);
+        }
+    }
+
+    private static int alignmentOf(TextView textView) {
+        Integer override = LINE_ALIGNMENT_OVERRIDES.get(textView);
+        return override != null ? override : runtimeLyricUiConfig.alignment;
+    }
+
+    /**
+     * Lengthens the vendor line-change duration, then returns the recycler's inactive row scale
+     * for the scale-ownership pass that runs next on the same vendor transition state. A value
+     * that is unreadable, not positive or already longer is left alone.
+     */
+    static Float readInactiveScaleWithLineChangeDuration(
+            OfficialLyricsRecyclerCompatibility.Binding binding, Object recyclerView) {
+        Long current = binding.readAnimationDuration(recyclerView);
+        long requested = WordLyricRenderConstants.OFFICIAL_LYRIC_LINE_CHANGE_MS;
+        if (current != null && current > 0L && current < requested) {
+            binding.writeAnimationDuration(recyclerView, requested);
+        }
+        return binding.readInactiveScale(recyclerView);
+    }
+
     static void applyOfficialLyricScalePivot(TextView textView) {
         if (textView == null) {
             return;
         }
+        int alignment = alignmentOf(textView);
         int resolvedWidth = LyricUiLayoutPolicy.resolvedViewDimension(
                 textView.getWidth(),
                 textView.getMeasuredWidth());
@@ -471,12 +518,12 @@ final class LyricsRecyclerViews {
                 0f,
                 resolvedWidth - textView.getPaddingLeft() - textView.getPaddingRight());
         float pivotX = LyricUiLayoutPolicy.horizontalScalePivot(
-                runtimeLyricUiConfig.alignment,
+                alignment,
                 textView.getLayoutDirection() == View.LAYOUT_DIRECTION_RTL,
                 textView.getPaddingLeft(),
                 contentWidth);
         textView.setPivotX(pivotX);
-        if (runtimeLyricUiConfig.alignment != LyricUiConfig.ALIGN_CENTER) {
+        if (alignment != LyricUiConfig.ALIGN_CENTER) {
             textView.setPivotY(0f);
             return;
         }

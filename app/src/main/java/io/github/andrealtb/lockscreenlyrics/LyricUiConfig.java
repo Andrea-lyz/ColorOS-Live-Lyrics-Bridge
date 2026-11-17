@@ -55,6 +55,7 @@ final class LyricUiConfig {
     final int translationFontRatioPercent;
     final int fontWeight;
     final int alignment;
+    final boolean duetSplitEnabled;
     final int lineSpacingTenthsDp;
     final int wrappedLineSpacingTenthsDp;
 
@@ -108,6 +109,7 @@ final class LyricUiConfig {
         translationFontRatioPercent = clamp(builder.translationFontRatioPercent, 55, 75);
         fontWeight = clamp(builder.fontWeight, WEIGHT_SYSTEM, WEIGHT_BOLD);
         alignment = clamp(builder.alignment, ALIGN_START, ALIGN_END);
+        duetSplitEnabled = builder.duetSplitEnabled;
         lineSpacingTenthsDp = roundStep(clamp(builder.lineSpacingTenthsDp, -50, 200), 5);
         wrappedLineSpacingTenthsDp = roundStep(
                 clamp(builder.wrappedLineSpacingTenthsDp, -10, 80),
@@ -213,6 +215,7 @@ final class LyricUiConfig {
                 && translationFontRatioPercent == other.translationFontRatioPercent
                 && fontWeight == other.fontWeight
                 && alignment == other.alignment
+                && duetSplitEnabled == other.duetSplitEnabled
                 && lineSpacingTenthsDp == other.lineSpacingTenthsDp
                 && wrappedLineSpacingTenthsDp == other.wrappedLineSpacingTenthsDp
                 && primaryColor.equals(other.primaryColor)
@@ -236,7 +239,7 @@ final class LyricUiConfig {
                 translationProgressEnabled, charLiftEnabled, charLiftStrengthPercent,
                 screenTimeoutEnabled, screenTimeoutSeconds,
                 mainFontTenthsSp, translationFontRatioPercent, fontWeight, alignment,
-                lineSpacingTenthsDp, wrappedLineSpacingTenthsDp);
+                duetSplitEnabled, lineSpacingTenthsDp, wrappedLineSpacingTenthsDp);
     }
 
     static final class Builder {
@@ -276,6 +279,7 @@ final class LyricUiConfig {
         private int translationFontRatioPercent = 66;
         private int fontWeight = WEIGHT_SYSTEM;
         private int alignment = ALIGN_START;
+        private boolean duetSplitEnabled = true;
         private int lineSpacingTenthsDp;
         private int wrappedLineSpacingTenthsDp;
 
@@ -320,6 +324,7 @@ final class LyricUiConfig {
             translationFontRatioPercent = source.translationFontRatioPercent;
             fontWeight = source.fontWeight;
             alignment = source.alignment;
+            duetSplitEnabled = source.duetSplitEnabled;
             lineSpacingTenthsDp = source.lineSpacingTenthsDp;
             wrappedLineSpacingTenthsDp = source.wrappedLineSpacingTenthsDp;
         }
@@ -381,6 +386,7 @@ final class LyricUiConfig {
         Builder translationFontRatioPercent(int v) { translationFontRatioPercent = v; return this; }
         Builder fontWeight(int v) { fontWeight = v; return this; }
         Builder alignment(int v) { alignment = v; return this; }
+        Builder duetSplitEnabled(boolean v) { duetSplitEnabled = v; return this; }
         Builder lineSpacingTenthsDp(int v) { lineSpacingTenthsDp = v; return this; }
         Builder wrappedLineSpacingTenthsDp(int v) {
             wrappedLineSpacingTenthsDp = v;

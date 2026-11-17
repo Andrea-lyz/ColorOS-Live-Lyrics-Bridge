@@ -2,10 +2,12 @@ package io.github.andrealtb.lockscreenlyrics;
 
 import com.mocharealm.accompanist.lyrics.core.model.ISyncedLine;
 import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics;
+import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeAlignment;
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine;
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeSyllable;
 import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine;
 import com.mocharealm.accompanist.lyrics.core.parser.AutoParser;
+import com.mocharealm.accompanist.lyrics.core.parser.TTMLParser;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -24,6 +26,10 @@ import java.util.regex.Pattern;
  */
 final class LyricsCoreAdapter {
     private static final AutoParser AUTO_PARSER = new AutoParser();
+    private static final TTMLParser TTML_PARSER = new TTMLParser();
+    static final int SIDE_UNSPECIFIED = 0;
+    static final int SIDE_START = 1;
+    static final int SIDE_END = 2;
     /**
      * Matches `[mm:ss.xxx]` / `<mm:ss.xxx>` LRC tags. The closing bracket is
      * optional because KUGOU/LX edge formats sometimes emit `<00:01.123` or
@@ -98,6 +104,34 @@ final class LyricsCoreAdapter {
         return lines.isEmpty()
                 ? ParsedLyrics.EMPTY
                 : new ParsedLyrics(lines);
+    }
+
+    /**
+     * Parses a TTML document without the LRC-specific normalization and fallbacks of
+     * {@link #parse}. Unlike that method the result keeps each line's duet side and its
+     * background vocals. Never throws: an unparsable document yields {@link ParsedLyrics#EMPTY}.
+     */
+    static ParsedLyrics parseTtml(String content) {
+        if (content == null || content.trim().isEmpty()) {
+            return ParsedLyrics.EMPTY;
+        }
+        try {
+            ArrayList<ParsedLine> lines = new ArrayList<>();
+            synchronized (TTML_PARSER) {
+                if (!TTML_PARSER.canParse(content)) {
+                    return ParsedLyrics.EMPTY;
+                }
+                for (ISyncedLine sourceLine : TTML_PARSER.parse(content).getLines()) {
+                    ParsedLine line = toParsedLine(sourceLine);
+                    if (line != null && !line.text.trim().isEmpty()) {
+                        lines.add(line);
+                    }
+                }
+            }
+            return lines.isEmpty() ? ParsedLyrics.EMPTY : new ParsedLyrics(lines);
+        } catch (Throwable ignored) {
+            return ParsedLyrics.EMPTY;
+        }
     }
 
     /**
@@ -561,12 +595,28 @@ final class LyricsCoreAdapter {
             }
             String cleanText = text.toString();
             String translation = cleanLyricText(karaokeLine.getTranslation());
+            ArrayList<ParsedLine> accompaniment = new ArrayList<>();
+            if (karaokeLine instanceof KaraokeLine.MainKaraokeLine) {
+                // lyrics-core reports "no background vocals" as null rather than an empty list.
+                List<KaraokeLine.AccompanimentKaraokeLine> source =
+                        ((KaraokeLine.MainKaraokeLine) karaokeLine).getAccompanimentLines();
+                if (source != null) {
+                    for (KaraokeLine.AccompanimentKaraokeLine accompanimentLine : source) {
+                        ParsedLine parsed = toParsedLine(accompanimentLine);
+                        if (parsed != null && !parsed.text.trim().isEmpty()) {
+                            accompaniment.add(parsed);
+                        }
+                    }
+                }
+            }
             return new ParsedLine(
                     sourceLine.getStart(),
                     sourceLine.getEnd(),
                     cleanText,
                     translation,
-                    syllables);
+                    syllables,
+                    sideOf(karaokeLine.getAlignment()),
+                    accompaniment);
         }
 
         if (sourceLine instanceof SyncedLine) {
@@ -585,6 +635,13 @@ final class LyricsCoreAdapter {
                             text.length())));
         }
         return null;
+    }
+
+    private static int sideOf(KaraokeAlignment alignment) {
+        if (alignment == KaraokeAlignment.Start) {
+            return SIDE_START;
+        }
+        return alignment == KaraokeAlignment.End ? SIDE_END : SIDE_UNSPECIFIED;
     }
 
     private static String nullToEmpty(String value) {
@@ -611,6 +668,9 @@ final class LyricsCoreAdapter {
         final String text;
         final String translation;
         final List<ParsedSyllable> syllables;
+        /** One of the {@code SIDE_*} constants; only TTML karaoke lines carry a side. */
+        final int side;
+        final List<ParsedLine> accompaniment;
 
         ParsedLine(
                 long startMillis,
@@ -618,6 +678,20 @@ final class LyricsCoreAdapter {
                 String text,
                 String translation,
                 List<ParsedSyllable> syllables) {
+            this(startMillis, endMillis, text, translation, syllables,
+                    SIDE_UNSPECIFIED, Collections.emptyList());
+        }
+
+        ParsedLine(
+                long startMillis,
+                long endMillis,
+                String text,
+                String translation,
+                List<ParsedSyllable> syllables,
+                int side,
+                List<ParsedLine> accompaniment) {
+            this.side = side;
+            this.accompaniment = Collections.unmodifiableList(new ArrayList<>(accompaniment));
             this.startMillis = startMillis;
             this.endMillis = endMillis;
             this.text = text;

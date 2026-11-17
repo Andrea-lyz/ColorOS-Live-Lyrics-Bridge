@@ -17,13 +17,40 @@ public final class WordLyricRenderConstants {
 
     public static final boolean OFFICIAL_SLOT_ALIAS_REUSE_ENABLED = true;
 
-    public static final float OFFICIAL_LYRIC_ROW_EASE_X1 = 0.28f;
+    /**
+     * Easing of a lyric line change, shared by the vendor scroll and scale / colour animators
+     * (see LineChangeEasing) and the Bridge row opacity transition. Compared with the vendor
+     * (0.3, 0, 0.1, 1) it spreads the travel across the duration and lands gradually instead
+     * of covering most of it early and braking. Device-tuned comfort value.
+     */
+    public static final float LINE_CHANGE_EASE_X1 = 0.4f;
 
-    public static final float OFFICIAL_LYRIC_ROW_EASE_Y1 = 0f;
+    public static final float LINE_CHANGE_EASE_Y1 = 0f;
 
-    public static final float OFFICIAL_LYRIC_ROW_EASE_X2 = 0.46f;
+    public static final float LINE_CHANGE_EASE_X2 = 0.5f;
 
-    public static final float OFFICIAL_LYRIC_ROW_EASE_Y2 = 1f;
+    public static final float LINE_CHANGE_EASE_Y2 = 1f;
+
+    /**
+     * Easing of the row leaving focus (shrinking back to the inactive scale). It starts later
+     * and peaks later than the row growing into focus, so the two rows never change size at
+     * full speed in opposite directions at the same moment.
+     */
+    public static final float LINE_CHANGE_OUTGOING_EASE_X1 = 0.6f;
+
+    public static final float LINE_CHANGE_OUTGOING_EASE_Y1 = 0f;
+
+    public static final float LINE_CHANGE_OUTGOING_EASE_X2 = 0.45f;
+
+    public static final float LINE_CHANGE_OUTGOING_EASE_Y2 = 1f;
+
+    public static final float OFFICIAL_LYRIC_ROW_EASE_X1 = LINE_CHANGE_EASE_X1;
+
+    public static final float OFFICIAL_LYRIC_ROW_EASE_Y1 = LINE_CHANGE_EASE_Y1;
+
+    public static final float OFFICIAL_LYRIC_ROW_EASE_X2 = LINE_CHANGE_EASE_X2;
+
+    public static final float OFFICIAL_LYRIC_ROW_EASE_Y2 = LINE_CHANGE_EASE_Y2;
 
     public static final float LYRIC_SLOT_HEIGHT_DP = 80f;
 
@@ -35,7 +62,23 @@ public final class WordLyricRenderConstants {
 
     public static final float OFFICIAL_LYRIC_ACTIVE_ROW_SCALE = 1.0f;
 
-    public static final long OFFICIAL_LYRIC_ROW_SCALE_ANIMATION_MS = 340L;
+    /**
+     * Duration written to the vendor LyricsRecyclerView for a line change. The vendor reads it
+     * on every change and uses it for both the scroll and the row scale / colour animators, so
+     * the two stay in step. Its own default is 300 ms, which reads as abrupt at large font
+     * sizes; this is a device-tuned comfort value, not a platform constant.
+     */
+    public static final long OFFICIAL_LYRIC_LINE_CHANGE_MS = 460L;
+
+    /** Opacity / blur transition of a row; runs on the same clock as the vendor line change. */
+    public static final long OFFICIAL_LYRIC_ROW_SCALE_ANIMATION_MS = OFFICIAL_LYRIC_LINE_CHANGE_MS;
+
+    /**
+     * Share of the line change in which the row becoming active reaches full sharpness. The
+     * row being read must be a stable, sharp target well before it stops growing; a row that
+     * stays soft while it zooms keeps the eye refocusing.
+     */
+    public static final float OFFICIAL_LYRIC_ROW_SHARPEN_FRACTION = 0.45f;
 
     /**
      * How far unsung characters rest below the baseline, as a fraction of the

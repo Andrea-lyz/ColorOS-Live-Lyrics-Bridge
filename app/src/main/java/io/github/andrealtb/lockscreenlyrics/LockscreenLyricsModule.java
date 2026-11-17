@@ -1752,8 +1752,8 @@ public final class LockscreenLyricsModule extends XposedModule {
                 current = current.getSuperclass();
             }
             lyricDatasetHookAvailable = drawHooks > 0;
-            if (currentLyricHooks > 0
-                    || scalePivotHooks > 0
+            pluginGeneration.rememberPluginHookHandle(pluginLoader, LineChangeEasing.installScrollHook(this, lyricsRecyclerViewClass));
+            if (currentLyricHooks > 0 || scalePivotHooks > 0
                     || rowStyleHooks > 0
                     || immersiveEntryHooks > 0 || datasetHooks > 0 || drawHooks > 0) {
                 infoAlways(BridgeDebugArea.BOOTSTRAP, BridgeEvents.HOOK_INSTALLED, "Hooked LyricsRecyclerView runtime methods, currentMethods="
@@ -3285,7 +3285,7 @@ public final class LockscreenLyricsModule extends XposedModule {
                         rawTimed,
                         displayLyric,
                         displayTimed,
-                        translationLyric);
+                        translationLyric, payload.ttml);
             } finally {
                 performanceSampler.end(
                         BridgePerformanceSampler.Metric.MODEL_PARSE,
@@ -5131,7 +5131,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         }
         LyricRenderTransactions.RowBinding binding = lyricRenderTransactions.beginRowBind(
                 adapter, ((Number) chain.getArg(1)).intValue());
-        Object result = chain.proceed();
+        Object result = LineChangeEasing.softenHolderAnimators(chain.proceed(), chain.getArg(0));
         if (binding == null) return result;
         Object holder = chain.getArg(0);
         for (Class<?> type = holder.getClass(); type != null; type = type.getSuperclass()) {
@@ -5880,7 +5880,7 @@ public final class LockscreenLyricsModule extends XposedModule {
     }
 
     private Object onLyricsRecyclerPrepareScalePivot(XposedInterface.Chain chain) throws Throwable {
-        Object result = chain.proceed();
+        Object result = LineChangeEasing.softenAnimator(chain.proceed(), chain.getArg(0));
         int textViewIndex = chain.getExecutable() instanceof Method
                 ? OfficialLyricScalePivotMethodPolicy.textViewArgumentIndex(
                         (Method) chain.getExecutable())
@@ -7323,7 +7323,7 @@ public final class LockscreenLyricsModule extends XposedModule {
         float requestedScale = LockscreenIntegrationPolicy.officialInactiveRowScale(
                 runtimeLyricUiConfig.scaleEnabled,
                 runtimeLyricUiConfig.inactiveScalePercent);
-        Float previousScaleValue = binding.readInactiveScale(recyclerView);
+        Float previousScaleValue = readInactiveScaleWithLineChangeDuration(binding, recyclerView);
         if (previousScaleValue == null || Float.isNaN(previousScaleValue)) {
             info(BridgeDebugArea.MEDIA, BridgeEvents.DETAIL, "Official lyric inactive scale field unavailable; keeping plugin scale");
             return;

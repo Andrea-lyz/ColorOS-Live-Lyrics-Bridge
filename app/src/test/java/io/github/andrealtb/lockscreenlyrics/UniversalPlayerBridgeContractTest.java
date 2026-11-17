@@ -59,7 +59,7 @@ public final class UniversalPlayerBridgeContractTest {
 
     @Test
     public void runtimeExtrasJoinHistoryWithoutMutatingStaticWhitelist() {
-        assertEquals(22, PlayerSystemUiPolicy.oplusHistoryPackages().length);
+        assertEquals(23, PlayerSystemUiPolicy.oplusHistoryPackages().length);
         assertFalse(PlayerSystemUiPolicy.isHistoryPackage("remix.myplayer"));
         UniversalPlayerBridgeContract.applyRuntimeBindings(
                 true,
@@ -68,6 +68,6 @@ public final class UniversalPlayerBridgeContractTest {
         assertTrue(PlayerSystemUiPolicy.isHistoryPackage("remix.myplayer"));
         assertTrue(PlayerSystemUiPolicy.isHistoryPackage(PlayerSystemUiPolicy.SALT));
         assertFalse(PlayerSystemUiPolicy.isHistoryPackage("com.tencent.qqmusicpad"));
-        assertEquals(22, PlayerSystemUiPolicy.oplusHistoryPackages().length);
+        assertEquals(23, PlayerSystemUiPolicy.oplusHistoryPackages().length);
     }
 }
