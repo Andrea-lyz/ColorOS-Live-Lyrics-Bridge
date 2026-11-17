@@ -47,6 +47,7 @@
         <package android:name="com.salt.music" />
         <package android:name="ink.trantor.coneplayer" />
         <package android:name="ink.trantor.coneplayer.gp" />
+        <package android:name="ink.trantor.coneplayer.go" />
         <package android:name="cn.kuwo.player" />
         <package android:name="cn.toside.music.mobile" />
         <package android:name="com.lxwalnut.music.mobile" />

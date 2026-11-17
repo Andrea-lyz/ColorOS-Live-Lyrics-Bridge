@@ -32,6 +32,8 @@ public final class PlayerTranslationSettingsTest {
         assertTrue(PlayerTranslationSettings.isSupportedPlayerPackage("ink.trantor.coneplayer"));
         assertTrue(PlayerTranslationSettings.isSupportedPlayerPackage(
                 "ink.trantor.coneplayer.gp"));
+        assertTrue(PlayerTranslationSettings.isSupportedPlayerPackage(
+                "ink.trantor.coneplayer.go"));
         assertTrue(PlayerTranslationSettings.isSupportedPlayerPackage("com.tencent.qqmusic"));
         assertFalse(PlayerTranslationSettings.isSupportedPlayerPackage("com.tencent.qqmusicpad"));
         assertTrue(PlayerTranslationSettings.isSupportedPlayerPackage("com.netease.cloudmusic"));

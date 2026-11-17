@@ -34,6 +34,9 @@ public class PlayerTranslationTogglePolicyTest {
                 PlayerSystemUiPolicy.CONE_GP,
                 Collections.emptySet()));
         assertTrue(PlayerTranslationTogglePolicy.canOverrideFavoriteActionWithTranslation(
+                PlayerSystemUiPolicy.CONE_GO,
+                Collections.emptySet()));
+        assertTrue(PlayerTranslationTogglePolicy.canOverrideFavoriteActionWithTranslation(
                 PlayerSystemUiPolicy.LX_MUSIC,
                 Collections.emptySet()));
         assertTrue(PlayerTranslationTogglePolicy.canOverrideFavoriteActionWithTranslation(
@@ -100,6 +103,8 @@ public class PlayerTranslationTogglePolicyTest {
                 PlayerSystemUiPolicy.CONE));
         assertFalse(PlayerTranslationTogglePolicy.shouldBindOplusHeartAlongsidePublicTranslationAction(
                 PlayerSystemUiPolicy.CONE_GP));
+        assertFalse(PlayerTranslationTogglePolicy.shouldBindOplusHeartAlongsidePublicTranslationAction(
+                PlayerSystemUiPolicy.CONE_GO));
         assertFalse(PlayerTranslationTogglePolicy.shouldBindOplusHeartAlongsidePublicTranslationAction(
                 PlayerSystemUiPolicy.LX_MUSIC));
         assertFalse(PlayerTranslationTogglePolicy.shouldBindOplusHeartAlongsidePublicTranslationAction(

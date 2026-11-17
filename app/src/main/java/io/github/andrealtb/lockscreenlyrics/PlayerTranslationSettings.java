@@ -24,7 +24,7 @@ final class PlayerTranslationSettings {
     private static final List<Entry> ENTRIES = Collections.unmodifiableList(Arrays.asList(
             new Entry(R.string.player_salt, true, "com.salt.music"),
             new Entry(R.string.player_cone, true,
-                    "ink.trantor.coneplayer", "ink.trantor.coneplayer.gp"),
+                    "ink.trantor.coneplayer", "ink.trantor.coneplayer.gp", "ink.trantor.coneplayer.go"),
             new Entry(R.string.player_qq, true, "com.tencent.qqmusic"),
             new Entry(R.string.player_netease, true,
                     "com.netease.cloudmusic", "com.hihonor.cloudmusic"),

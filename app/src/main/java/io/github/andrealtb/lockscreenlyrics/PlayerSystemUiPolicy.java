@@ -24,6 +24,8 @@ final class PlayerSystemUiPolicy {
     static final String SALT = "com.salt.music";
     static final String CONE = "ink.trantor.coneplayer";
     static final String CONE_GP = "ink.trantor.coneplayer.gp";
+    // 光锥 GO v1.3.0(0ea0fd837): same publisher and card actions as the formal build.
+    static final String CONE_GO = "ink.trantor.coneplayer.go";
     static final String HALCYON = "com.ella.music";
     static final String FLAMINGO = "yos.music.player";
     static final String QZ_MUSIC = "love.qz.music";
@@ -50,6 +52,7 @@ final class PlayerSystemUiPolicy {
             SALT,
             CONE,
             CONE_GP,
+            CONE_GO,
             HALCYON,
             FLAMINGO,
             QZ_MUSIC,
@@ -89,6 +92,7 @@ final class PlayerSystemUiPolicy {
                 || SALT.equals(packageName)
                 || CONE.equals(packageName)
                 || CONE_GP.equals(packageName)
+                || CONE_GO.equals(packageName)
                 || LX_MUSIC.equals(packageName)
                 || LX_WALNUT.equals(packageName)
                 || POWERAMP.equals(packageName)

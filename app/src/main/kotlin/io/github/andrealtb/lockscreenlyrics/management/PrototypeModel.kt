@@ -211,7 +211,7 @@ internal object ProviderDirectory {
 
     val entries: List<DirectoryEntry> = listOf(
         dedicated("player-salt", "Salt", R.string.store_name_salt, R.drawable.store_icon_salt, "salt", "com.salt.music"),
-        dedicated("player-cone", "Cone", R.string.store_name_cone, R.drawable.store_icon_cone, "cone", "ink.trantor.coneplayer", "ink.trantor.coneplayer.gp"),
+        dedicated("player-cone", "Cone", R.string.store_name_cone, R.drawable.store_icon_cone, "cone", "ink.trantor.coneplayer", "ink.trantor.coneplayer.gp", "ink.trantor.coneplayer.go"),
         dedicated("kuwo-music", "KuWo", R.string.store_name_kuwo, R.drawable.store_icon_kuwo, "kuwo", "cn.kuwo.player"),
         dedicated("player-lx", "LX", R.string.store_name_lx, R.drawable.store_icon_lx, "lx", "cn.toside.music.mobile", "com.lxwalnut.music.mobile"),
         dedicated("player-poweramp", "Poweramp", R.string.store_name_poweramp, R.drawable.store_icon_poweramp, "poweramp", "com.maxmpz.audioplayer"),
