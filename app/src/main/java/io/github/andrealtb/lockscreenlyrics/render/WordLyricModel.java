@@ -115,7 +115,8 @@ public final class WordLyricModel {
         WordLine officialLine = WordLyricRenderConstants.OFFICIAL_SLOT_ALIAS_REUSE_ENABLED
                 ? rawOfficialLineAt(index)
                 : null;
-        if (WordLyricRenderSupport.matchesWordLineRenderableText(officialLine, normalizedText)) {
+        if (WordLyricRenderSupport.matchesWordLineRenderableText(officialLine, normalizedText)
+                || (officialLine != null && matchesOfficialDisplayAlias(index, normalizedText))) {
             return officialLine;
         }
         if (WordLyricRenderSupport.matchesWordLineRenderableText(indexedLine, normalizedText)) {

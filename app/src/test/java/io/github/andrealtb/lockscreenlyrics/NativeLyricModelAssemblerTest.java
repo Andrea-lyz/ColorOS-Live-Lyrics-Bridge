@@ -401,4 +401,32 @@ public final class NativeLyricModelAssemblerTest {
         assertEquals(daily, result.model.lineAtBoundRow(2, nativeRows.textAt(2),
                 nativeRows.timeMillisAt(2)));
     }
+
+    @Test
+    public void censoredWordTimedRowBindsToTimeAlignedOfficialDisplayVariant() {
+        // NetEase YRC censors the word while the display LRC keeps it, and the two
+        // sources disagree on the row start by a few hundred milliseconds.
+        String raw = "[00:51.770]<00:51.770>His <00:52.300>happiness<00:59.000>\n"
+                + "[01:00.440]<01:00.440>And <01:01.000>mindless <01:01.500>*** "
+                + "<01:02.000>is <01:02.500>how <01:03.000>he <01:03.500>feels<01:07.000>\n"
+                + "[01:07.850]<01:07.850>When <01:08.300>it's <01:08.800>time<01:11.000>\n";
+        String display = "[00:51.660]His happiness\n"
+                + "[01:00.210]And mindless sex is how he feels\n"
+                + "[01:07.820]When it's time\n";
+
+        NativeLyricModelAssembler.AssemblyResult result = assembler().assemble(
+                raw, true, display, true, "");
+        WordLyricModel model = result.model;
+
+        assertEquals(3, model.lines.size());
+        assertEquals(3, model.officialLines.size());
+        WordLine censored = model.lines.get(1);
+        assertEquals(censored, model.officialLines.get(1));
+        String nativeText = io.github.andrealtb.lockscreenlyrics.render.WordLyricRenderSupport
+                .normalizeLine("And mindless sex is how he feels");
+        assertTrue(model.matchesOfficialDisplayAlias(1, nativeText));
+        assertEquals(censored, model.lineAtAdapterIndexMatchingText(1, nativeText));
+        assertEquals(censored, model.lineAtBoundRow(1, nativeText, 60_210L));
+        assertEquals(model.lines.get(2), model.officialLines.get(2));
+    }
 }

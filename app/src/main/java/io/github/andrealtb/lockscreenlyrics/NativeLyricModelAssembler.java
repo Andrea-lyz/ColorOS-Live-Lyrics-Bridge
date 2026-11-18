@@ -43,6 +43,8 @@ import io.github.andrealtb.lockscreenlyrics.render.WordRange;
  */
 final class NativeLyricModelAssembler {
     static final long SUPPLEMENTAL_MATCH_WINDOW_MS = 120L;
+    /** Same window {@link WordLyricModel#findOfficialAliasLine} uses for its nearest-row fallback. */
+    static final long OFFICIAL_VARIANT_MATCH_WINDOW_MS = 650L;
 
     private final LyricParseTraceSink traceSink;
     private String lastDisplaySource;
@@ -304,7 +306,9 @@ final class NativeLyricModelAssembler {
         ArrayList<String> splitLines = sharedSplitLines != null
                 ? sharedSplitLines
                 : splitRawLyricLines(officialLyric);
-        for (TimedLyricGroup group : parseTimedTextGroups(splitLines)) {
+        ArrayList<TimedLyricGroup> groups = parseTimedTextGroups(splitLines);
+        java.util.HashSet<String> officialTexts = officialNormalizedTexts(groups);
+        for (TimedLyricGroup group : groups) {
             if (group == null) {
                 continue;
             }
@@ -356,11 +360,23 @@ final class NativeLyricModelAssembler {
                     displayMatchesMainText,
                     usableTranslationAlias);
             boolean alreadyMapped = containsOfficialLineIdentity(model, wordLine);
+            boolean textVariantSlot = !displayMatchesMainText
+                    && !usableTranslationAlias
+                    && !openingTitleSlotReuse
+                    && !alreadyMapped
+                    && isTimeAlignedTextVariant(
+                    model,
+                    groups,
+                    group,
+                    displayText,
+                    wordLine,
+                    officialTexts);
             boolean reuseSlot = WordLyricRenderConstants.OFFICIAL_SLOT_ALIAS_REUSE_ENABLED
                     && (openingTitleSlotReuse
+                    || textVariantSlot
                     || (displayMatchesMainText && !alreadyMapped));
             model.officialLines.add(reuseSlot ? wordLine : null);
-            if (reuseSlot && openingTitleSlotReuse) {
+            if (reuseSlot && (openingTitleSlotReuse || textVariantSlot)) {
                 model.addOfficialDisplayAlias(officialIndex, normalizedDisplayText);
             }
             traceOfficialAliasMapping(
@@ -419,6 +435,64 @@ final class NativeLyricModelAssembler {
                 && LockscreenIntegrationPolicy.isLikelyTitleArtistCredit(
                 displayText,
                 officialTimeMillis);
+    }
+
+    /**
+     * The official display row and the word-timed row are the same lyric line spelled
+     * differently (for example NetEase censoring a word as {@code ***} in YRC while the
+     * display LRC keeps it, or punctuation/width variants), and their timestamps come
+     * from different sources. Binding must therefore be positional: a row binds to the
+     * model line it is mutually nearest to in time, and text only disambiguates. Without
+     * this the official slot stays empty and the row is drawn blank forever.
+     */
+    private static boolean isTimeAlignedTextVariant(
+            WordLyricModel model,
+            ArrayList<TimedLyricGroup> groups,
+            TimedLyricGroup group,
+            String displayText,
+            WordLine wordLine,
+            java.util.Set<String> officialTexts) {
+        if (model == null || group == null || wordLine == null
+                || isEmpty(wordLine.normalizedText)
+                // The model line is displayed verbatim elsewhere; this row is not its variant.
+                || officialTexts.contains(wordLine.normalizedText)
+                || LyricMetadataFilter.isNonLyricInfoLine(displayText, group.timeMillis)
+                || LockscreenIntegrationPolicy.isLikelyTitleArtistCredit(
+                displayText,
+                group.timeMillis)) {
+            return false;
+        }
+        if (model.findNearestLineByTime(group.timeMillis, OFFICIAL_VARIANT_MATCH_WINDOW_MS)
+                != wordLine) {
+            return false;
+        }
+        long distance = Math.abs(group.timeMillis - wordLine.timeMillis);
+        for (TimedLyricGroup other : groups) {
+            if (other == null || other == group || other.texts.isEmpty()) {
+                continue;
+            }
+            if (Math.abs(other.timeMillis - wordLine.timeMillis) <= distance) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static java.util.HashSet<String> officialNormalizedTexts(
+            ArrayList<TimedLyricGroup> groups) {
+        java.util.HashSet<String> texts = new java.util.HashSet<>();
+        for (TimedLyricGroup group : groups) {
+            if (group == null) {
+                continue;
+            }
+            for (String text : group.texts) {
+                String normalized = WordLyricRenderSupport.normalizeLine(cleanPlainLyricText(text));
+                if (!isEmpty(normalized)) {
+                    texts.add(normalized);
+                }
+            }
+        }
+        return texts;
     }
 
     private static boolean containsOfficialLineIdentity(
