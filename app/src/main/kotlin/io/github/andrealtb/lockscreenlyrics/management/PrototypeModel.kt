@@ -61,6 +61,8 @@ internal enum class StoreAction {
     OPEN_LSPOSED,
     /** Ask the installed Provider to request its own LSPosed scope (plan §14.13). */
     REQUEST_SCOPE,
+    /** Hand the verified download to another app when the system installer does not appear. */
+    SHARE_APK,
 }
 
 internal data class StoreItem(

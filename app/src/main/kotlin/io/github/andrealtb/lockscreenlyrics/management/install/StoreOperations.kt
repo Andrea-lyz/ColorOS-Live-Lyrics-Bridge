@@ -45,6 +45,14 @@ internal object StoreOperations {
     private val _confirmation = MutableStateFlow<Intent?>(null)
     val confirmation: StateFlow<Intent?> = _confirmation.asStateFlow()
 
+    /**
+     * Identity-verified downloads still in the private cache, by provider. The store offers to
+     * hand them to another app (system installer, file manager) when the PackageInstaller
+     * confirmation never appears on some ROMs. Only verified files are ever listed here.
+     */
+    private val _shareable = MutableStateFlow<Map<String, File>>(emptyMap())
+    val shareable: StateFlow<Map<String, File>> = _shareable.asStateFlow()
+
     /** Kept so the user can reopen the confirmation after backing out of it. */
     private var lastConfirmation: Intent? = null
     @Volatile private var cancelDownload = false
@@ -62,6 +70,8 @@ internal object StoreOperations {
             if (busy) return false
             cancelDownload = false
             awaitingPermission = null
+            // A new download may clean the cache, so no earlier file stays offered.
+            _shareable.value = emptyMap()
             set(entry.providerId, Operation.Downloading(0, entry.artifact.bytes))
         }
         scope.launch { guarded(entry.providerId) { downloadAndInstall(app, entry, trustedHosts) } }
@@ -115,7 +125,14 @@ internal object StoreOperations {
         val app = context.applicationContext
         scope.launch {
             val record = records(app).read() ?: return@launch
-            if (_operations.value[record.providerId]?.active == true) return@launch
+            val current = _operations.value[record.providerId]
+            if (current?.active == true) {
+                // The user may have installed the shared package with another app meanwhile.
+                if (current == Operation.WaitingForUser || current == Operation.Installing) {
+                    guarded(record.providerId) { finishIfInstalledElsewhere(app, record) }
+                }
+                return@launch
+            }
             guarded(record.providerId) { reconcileOrphan(app, record) }
         }
     }
@@ -136,6 +153,18 @@ internal object StoreOperations {
             }
             ReconcileVerdict.LOST -> finish(app, record, Operation.Failed(OperationFailure.INTERRUPTED))
         }
+    }
+
+    /** Ends a still-open session once PackageManager already shows the expected package. */
+    private fun finishIfInstalledElsewhere(app: Context, record: InstallRecord) {
+        val entry = installing?.takeIf { it.providerId == record.providerId } ?: entryFor(app, record.providerId)
+        val installed = InstalledPackages.readPlugin(app.packageManager, record.applicationId)
+        if (reconcile(record, entry, installed, sessionExists = true) != ReconcileVerdict.INSTALLED) return
+        try {
+            app.packageManager.packageInstaller.abandonSession(record.sessionId)
+        } catch (_: SecurityException) {
+        }
+        finish(app, record, verifyInstalled(entry!!, installed))
     }
 
     /** From [InstallStatusReceiver]; statuses for sessions we no longer track are ignored. */
@@ -187,6 +216,7 @@ internal object StoreOperations {
             set(entry.providerId, Operation.Failed(identity))
             return
         }
+        _shareable.value = mapOf(entry.providerId to file)
         synchronized(lock) {
             if (!canInstall(app)) {
                 awaitingPermission = entry to file
@@ -243,6 +273,7 @@ internal object StoreOperations {
             installing = null
             lastConfirmation = null
             _confirmation.value = null
+            if (result is Operation.Succeeded) _shareable.value = emptyMap()
             set(record.providerId, result)
         }
         // Keep a verified file after a cancel so a retry does not download again.

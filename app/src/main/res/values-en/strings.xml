@@ -341,6 +341,10 @@
     <plurals name="mgmt_catalog_unrecognized"><item quantity="one">%1$d more plugin in the catalog needs a newer Bridge</item><item quantity="other">%1$d more plugins in the catalog need a newer Bridge</item></plurals>
     <string name="mgmt_action_cancel">Cancel</string>
     <string name="mgmt_action_confirm_install">Open install prompt</string>
+    <string name="mgmt_action_share_apk">Install with another app</string>
+    <string name="mgmt_share_apk_hint">Installer did not appear? Hand the verified package to the system installer, a file manager or another app to install it.</string>
+    <string name="mgmt_share_apk_chooser">Install with</string>
+    <string name="mgmt_share_apk_missing">The downloaded package is no longer cached. Download it again.</string>
     <string name="mgmt_action_allow_installs">Allow installs</string>
     <string name="mgmt_snackbar_not_installable">The current catalog cannot install this plugin</string>
     <string name="mgmt_snackbar_busy">Another plugin is downloading or installing; wait for it to finish</string>
