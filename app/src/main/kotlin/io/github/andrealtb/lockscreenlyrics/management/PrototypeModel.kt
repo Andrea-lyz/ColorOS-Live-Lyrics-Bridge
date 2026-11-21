@@ -164,9 +164,11 @@ private fun isKnownBuildId(id: String?) = !id.isNullOrBlank() && id != "unknown"
 internal fun StoreItem.primaryAction(): StoreAction = when (installState) {
     InstallState.NOT_INSTALLED -> if (availability == Availability.AVAILABLE) StoreAction.DOWNLOAD else StoreAction.NONE
     InstallState.UPDATE_AVAILABLE -> if (availability == Availability.AVAILABLE) StoreAction.UPDATE else openAction()
-    // A different signer cannot be updated in place; never offer a one-tap data wipe. The
-    // plugin's own page still opens (e.g. a locally built debug Provider).
-    InstallState.SIGNATURE_MISMATCH, InstallState.LOCAL_NEWER, InstallState.INSTALLED -> openAction()
+    // A different signer usually cannot be updated in place, but a device that relaxes signature
+    // checks can; PackageInstaller decides and a refusal is reported as CONFLICT. Still never a
+    // one-tap uninstall or data wipe, and the plugin's own page stays next to it.
+    InstallState.SIGNATURE_MISMATCH -> if (availability == Availability.AVAILABLE) StoreAction.UPDATE else openAction()
+    InstallState.LOCAL_NEWER, InstallState.INSTALLED -> openAction()
 }
 
 /** Opening an installed plugin's own page; also offered next to an update. */

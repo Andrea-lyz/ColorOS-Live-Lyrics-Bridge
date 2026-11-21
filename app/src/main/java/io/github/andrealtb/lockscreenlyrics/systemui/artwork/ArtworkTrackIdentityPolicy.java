@@ -96,6 +96,7 @@ public final class ArtworkTrackIdentityPolicy {
     }
 
     public Update observe(ArtworkCardIdentity card, Metadata metadata, long now) {
+        if (metadataDrift(card, metadata)) return new Update(generation, revision, true, false);
         if (card == null || metadata == null || !card.complete()
                 || !card.title().equals(metadata.title()) || !card.artist().equals(metadata.artist())) {
             return invalidate();
@@ -134,6 +135,24 @@ public final class ArtworkTrackIdentityPolicy {
         return new Update(generation, revision, true, changed);
     }
 
+    /**
+     * The accepted song is still on the card while the controller's text drifts for the same stable ID and
+     * duration. Device log (NetEase, C17): metadata updates every few seconds carried other title/artist
+     * text for the playing song (sourceDuration == metadataDuration, media ID unchanged) and each one
+     * stopped a playing motion cover until the host view was recreated. Nothing is updated from the
+     * drifted text: the accepted identity, generation and revision stay as they are.
+     *
+     * A card that moved first (a real track change before the controller follows) still invalidates.
+     */
+    private boolean metadataDrift(ArtworkCardIdentity card, Metadata metadata) {
+        return ready && accepted != null && card != null && metadata != null && card.complete()
+                && !accepted.mediaId().isEmpty() && accepted.mediaId().equals(metadata.mediaId())
+                && card.title().equals(accepted.title()) && card.artist().equals(accepted.artist())
+                && (!metadata.title().equals(accepted.title()) || !metadata.artist().equals(accepted.artist()))
+                && accepted.durationMs() > 0 && metadata.durationMs() > 0
+                && Math.abs(accepted.durationMs() - metadata.durationMs()) <= 3000;
+    }
+
     public Update invalidate() {
         candidate = null;
         freshCandidate = null;
@@ -153,6 +172,7 @@ public final class ArtworkTrackIdentityPolicy {
     public String diagnosticReason(ArtworkCardIdentity card, Metadata metadata, long now) {
         if (card == null || !card.complete()) return "card_incomplete";
         if (metadata == null) return "metadata_missing";
+        if (metadataDrift(card, metadata)) return "metadata_text_drift_retained";
         if (!card.title().equals(metadata.title())) return "card_title_mismatch";
         if (!card.artist().equals(metadata.artist())) return "card_artist_mismatch";
         if (metadata.mediaId().isEmpty()) {

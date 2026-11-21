@@ -289,7 +289,7 @@
     <string name="mgmt_kind_dedicated">专用</string>
     <string name="mgmt_kind_universal">通用</string>
     <string name="mgmt_kind_artwork">动态封面</string>
-    <string name="mgmt_state_signature">签名与商店版本不同，无法直接覆盖安装</string>
+    <string name="mgmt_state_signature">签名与商店版本不同，可能无法覆盖安装</string>
     <string name="mgmt_state_independent">在它自己的应用里设置</string>
     <string name="mgmt_action_download">下载</string>
     <string name="mgmt_action_update">更新</string>

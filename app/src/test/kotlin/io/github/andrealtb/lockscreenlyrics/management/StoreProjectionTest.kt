@@ -72,12 +72,16 @@ class StoreProjectionTest {
         assertEquals("1.1.8", update.item("player-salt").catalogVersion)
     }
 
-    @Test fun foreignOrUnreadableSignersBlockUpdatesEvenWhenOlder() {
+    @Test fun foreignOrUnreadableSignersAreNotCountedAsUpdatesButMayStillInstall() {
         val c = catalog(entry(versionCode = 8))
         for (signers in listOf(setOf(foreign), setOf(official, foreign), emptySet())) {
-            val item = project(c, mapOf(salt to InstalledPackage("1", 1, signers))).item("player-salt")
+            val projection = project(c, mapOf(salt to InstalledPackage("1", 1, signers)))
+            val item = projection.item("player-salt")
             assertEquals(InstallState.SIGNATURE_MISMATCH, item.installState)
-            assertEquals(StoreAction.OPEN_DEBUG, item.primaryAction())
+            assertEquals(0, projection.updatesAvailable)
+            // PackageInstaller decides; devices that relax signature checks can install over it.
+            assertEquals(StoreAction.UPDATE, item.primaryAction())
+            assertEquals(StoreAction.OPEN_DEBUG, item.openAction())
             assertEquals(StoreNote.SIGNATURE_MISMATCH, item.note())
         }
     }

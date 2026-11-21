@@ -15,4 +15,11 @@ public class ArtworkLiveQueryTest {
     @Test(expected = IllegalArgumentException.class) public void incompleteIdentityRemainsStatic() {
         ArtworkLiveQuery.from(new ArtworkTrackIdentityPolicy.Metadata("id", "Song", "", "", 0), 288, 288);
     }
+    @Test(expected = IllegalArgumentException.class) public void missingDurationWithoutAlbumRemainsStatic() {
+        ArtworkLiveQuery.from(new ArtworkTrackIdentityPolicy.Metadata("id", "Song", "Artist", "", 0), 288, 288);
+    }
+    @Test public void missingDurationStillReachesAlbumBindings() {
+        var query = ArtworkLiveQuery.from(new ArtworkTrackIdentityPolicy.Metadata("id", "Song", "Artist", "Album", 0), 288, 288);
+        assertEquals("Album", query.album); assertEquals(0, query.durationMs);
+    }
 }

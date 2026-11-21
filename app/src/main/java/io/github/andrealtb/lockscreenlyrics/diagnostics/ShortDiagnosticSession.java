@@ -68,6 +68,9 @@ public final class ShortDiagnosticSession {
         if (events.size() == 128) { events.removeFirst(); truncated++; }
         events.addLast(event);
     }
+    /** The artwork runtime registers itself; the entry class does not grow for it. */
+    private volatile java.util.function.Consumer<Bundle> artworkStatus;
+    public void artworkStatus(java.util.function.Consumer<Bundle> source) { artworkStatus = source; }
     public synchronized int retainedEvents() { return events.size(); }
     public synchronized int droppedEvents() { return truncated; }
     public synchronized String sessionId() { return id; }
@@ -95,6 +98,13 @@ public final class ShortDiagnosticSession {
             config.put("debugRevision", runtime.getLong(BridgeDebugConfig.KEY_REVISION, -1L));
             config.put("debugEnabled", runtime.getBoolean(BridgeDebugConfig.KEY_MASTER, false));
             root.put("effectiveConfig", config);
+            java.util.function.Consumer<Bundle> artworkSource = artworkStatus;
+            if (artworkSource != null) artworkSource.accept(runtime);
+            JSONObject artwork = new JSONObject();
+            artwork.put("state", runtime.getString("cll_artwork_state", "unknown"));
+            artwork.put("stateAgeMs", runtime.getLong("cll_artwork_state_age_ms", -1L));
+            artwork.put("source", runtime.getString("cll_artwork_source", "unknown"));
+            root.put("artwork", artwork);
             root.put("capabilities", capabilities(runtime));
             root.put("loadedComponents", loaded(runtime));
             JSONArray recorded = new JSONArray();

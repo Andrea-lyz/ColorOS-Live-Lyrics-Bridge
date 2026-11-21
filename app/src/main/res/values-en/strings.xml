@@ -289,7 +289,7 @@
     <string name="mgmt_kind_dedicated">Dedicated</string>
     <string name="mgmt_kind_universal">Universal</string>
     <string name="mgmt_kind_artwork">Artwork</string>
-    <string name="mgmt_state_signature">Signed differently from the store version; cannot update in place</string>
+    <string name="mgmt_state_signature">Signed differently from the store version; installing over it may fail</string>
     <string name="mgmt_state_independent">Set up in its own app</string>
     <string name="mgmt_action_download">Download</string>
     <string name="mgmt_action_update">Update</string>
