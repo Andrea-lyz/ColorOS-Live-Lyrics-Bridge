@@ -341,6 +341,10 @@
     <plurals name="mgmt_catalog_unrecognized"><item quantity="other">目录中另有 %1$d 个插件，需要更新 Bridge 后才能显示</item></plurals>
     <string name="mgmt_action_cancel">取消</string>
     <string name="mgmt_action_confirm_install">打开安装确认</string>
+    <string name="mgmt_action_share_apk">用其他应用安装</string>
+    <string name="mgmt_share_apk_hint">安装界面没有弹出？可以把已校验的安装包交给系统安装器、文件管理器等其他应用安装。</string>
+    <string name="mgmt_share_apk_chooser">选择安装方式</string>
+    <string name="mgmt_share_apk_missing">安装包已不在缓存中，请重新下载。</string>
     <string name="mgmt_action_allow_installs">去允许安装</string>
     <string name="mgmt_snackbar_not_installable">当前目录不能安装这个插件</string>
     <string name="mgmt_snackbar_busy">另一个插件正在下载或安装，请等它完成</string>

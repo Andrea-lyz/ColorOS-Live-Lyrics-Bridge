@@ -17,6 +17,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.materialIcon
+import androidx.compose.material.icons.materialPath
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
@@ -37,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
@@ -88,6 +91,8 @@ internal fun StoreContent(
     catalog: CatalogView,
     onRefreshCatalog: () -> Unit,
     operations: Map<String, Operation>,
+    /** Provider ids with a verified download another app can install. */
+    shareable: Set<String> = emptySet(),
     reminders: RemindersView,
     onRemindersChange: (Boolean) -> Unit,
     filter: StoreFilter,
@@ -126,7 +131,8 @@ internal fun StoreContent(
         }
         val busy = operations.values.any { it.active }
         items(visible, key = { it.id }) { item ->
-            StoreCard(item = item, operation = operations[item.id], busy = busy, onAction = { onAction(item, it) })
+            StoreCard(item = item, operation = operations[item.id], busy = busy, canShareApk = item.id in shareable,
+                onAction = { onAction(item, it) })
         }
     }
 }
@@ -160,7 +166,13 @@ private fun ProviderIcon(@DrawableRes iconRes: Int) {
 }
 
 @Composable
-private fun StoreCard(item: StoreItem, operation: Operation?, busy: Boolean, onAction: (StoreAction) -> Unit) {
+private fun StoreCard(
+    item: StoreItem,
+    operation: Operation?,
+    busy: Boolean,
+    canShareApk: Boolean,
+    onAction: (StoreAction) -> Unit,
+) {
     StatusCard {
         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s), verticalAlignment = Alignment.CenterVertically) {
             ProviderIcon(item.iconRes)
@@ -191,12 +203,13 @@ private fun StoreCard(item: StoreItem, operation: Operation?, busy: Boolean, onA
             }
         }
         if (operation != null) OperationStatus(item, operation, onAction)
+        if (canShareApk && operation != null && operation !is Operation.Succeeded) ShareApkFallback(onAction)
         // While any operation runs, no second download/update starts (one installer at a time).
         if (operation?.active == true) return@StatusCard
         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
             when (val action = item.primaryAction()) {
                 StoreAction.NONE, StoreAction.CANCEL, StoreAction.CONFIRM_INSTALL, StoreAction.ALLOW_INSTALLS,
-                StoreAction.OPEN_LSPOSED, StoreAction.REQUEST_SCOPE -> Unit
+                StoreAction.OPEN_LSPOSED, StoreAction.REQUEST_SCOPE, StoreAction.SHARE_APK -> Unit
                 StoreAction.DOWNLOAD ->
                     BrandButton(onClick = { onAction(action) }, enabled = !busy) { Text(stringResource(action.labelRes())) }
                 StoreAction.UPDATE -> {
@@ -381,6 +394,37 @@ internal fun StoreAction.labelRes(): Int = when (this) {
     StoreAction.ALLOW_INSTALLS -> R.string.mgmt_action_allow_installs
     StoreAction.OPEN_LSPOSED -> R.string.mgmt_action_lsposed_enable
     StoreAction.REQUEST_SCOPE -> R.string.mgmt_action_request_scope
+    StoreAction.SHARE_APK -> R.string.mgmt_action_share_apk
+}
+
+/**
+ * Compatibility path for ROMs where the PackageInstaller confirmation never shows: hands the
+ * verified download to another app through the system "open with" panel.
+ */
+@Composable
+private fun ShareApkFallback(onAction: (StoreAction) -> Unit) {
+    Text(stringResource(R.string.mgmt_share_apk_hint), style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant)
+    OutlinedButton(onClick = { onAction(StoreAction.SHARE_APK) }) {
+        Icon(ForwardIcon, contentDescription = null, modifier = Modifier.size(18.dp))
+        Text(stringResource(R.string.mgmt_action_share_apk), modifier = Modifier.padding(start = Spacing.s))
+    }
+}
+
+/** The curved "forward" arrow (mirrored Material reply); icons-core has no forward glyph. */
+private val ForwardIcon: ImageVector by lazy {
+    materialIcon(name = "Filled.ForwardShare", autoMirror = true) {
+        materialPath {
+            moveTo(14f, 9f)
+            verticalLineTo(5f)
+            lineToRelative(7f, 7f)
+            lineToRelative(-7f, 7f)
+            verticalLineToRelative(-4.1f)
+            curveToRelative(-5f, 0f, -8.5f, 1.6f, -11f, 5.1f)
+            curveToRelative(1f, -5f, 4f, -10f, 11f, -11f)
+            close()
+        }
+    }
 }
 
 internal fun OperationFailure.messageRes(): Int = when (this) {
