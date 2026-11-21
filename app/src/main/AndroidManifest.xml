@@ -79,6 +79,17 @@
             android:authorities="io.github.andrealtb.lockscreenlyrics.contentcleanup"
             android:exported="false"
             android:grantUriPermissions="true" />
+        <!-- Store fallback: hands a verified download to another installer when the
+             PackageInstaller confirmation does not appear. Read-only, per-share grants. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.storefiles"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/store_file_paths" />
+        </provider>
         <activity
             android:name=".LyricUiSettingsActivity"
             android:exported="true"

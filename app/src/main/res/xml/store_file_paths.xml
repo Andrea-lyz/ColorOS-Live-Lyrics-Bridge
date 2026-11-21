@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only the store's verified download cache (StoreOperations.cacheDir) is shareable. -->
+<paths>
+    <cache-path name="provider_store" path="provider-store/" />
+</paths>

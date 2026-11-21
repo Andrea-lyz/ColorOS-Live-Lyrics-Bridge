@@ -6,6 +6,7 @@ import io.github.andrealtb.lockscreenlyrics.management.status.StatusContent
 import io.github.andrealtb.lockscreenlyrics.management.status.StatusDetails
 import io.github.andrealtb.lockscreenlyrics.management.status.featureStatuses
 import android.content.ActivityNotFoundException
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -79,6 +80,7 @@ import android.Manifest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.mutableIntStateOf
 import android.net.Uri
+import androidx.core.content.FileProvider
 import android.provider.Settings
 import androidx.compose.runtime.collectAsState
 import androidx.lifecycle.Lifecycle
@@ -197,6 +199,7 @@ class ManagementPreviewActivity : AppCompatActivity() {
                 val enabled = enablement
                 val view = catalog
                 val operations by StoreOperations.operations.collectAsState()
+                val shareable by StoreOperations.shareable.collectAsState()
                 val query = statusQuery
                 ManagementPrototype(
                     status = homeStatus(ModuleStatusQuery.installedBuildId(), statusQuery),
@@ -219,6 +222,7 @@ class ManagementPreviewActivity : AppCompatActivity() {
                     onRefreshCatalog = { refreshCatalog(automatic = false) },
                     onStoreOpened = { refreshCatalog(automatic = true) },
                     operations = operations,
+                    shareable = shareable.keys,
                     reminders = reminders,
                     onRemindersChange = ::onRemindersChange,
                     root = root,
@@ -440,6 +444,7 @@ class ManagementPreviewActivity : AppCompatActivity() {
                 return null
             }
             StoreAction.REQUEST_SCOPE -> return requestScope(item)
+            StoreAction.SHARE_APK -> return shareApk(item)
             StoreAction.NONE -> return null
         } ?: return getString(R.string.mgmt_snackbar_cannot_open, item.displayName(resources))
         return try {
@@ -521,6 +526,31 @@ class ManagementPreviewActivity : AppCompatActivity() {
         reminders = RemindersView(enabled, UpdateReminders.notificationsAllowed(this))
     }
 
+    /**
+     * Compatibility fallback: opens the system "open with" panel for the verified download, so
+     * the system installer or another app can install it when the session prompt never shows.
+     * Only a read grant on that one cache file is given; the receiving app still asks the user.
+     */
+    private fun shareApk(item: StoreItem): String? {
+        val file = StoreOperations.shareable.value[item.id]?.takeIf { it.isFile }
+            ?: return getString(R.string.mgmt_share_apk_missing)
+        return try {
+            val uri = FileProvider.getUriForFile(this, "$packageName.storefiles", file)
+            val view = Intent(Intent.ACTION_VIEW)
+                .setDataAndType(uri, "application/vnd.android.package-archive")
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            view.clipData = ClipData.newRawUri(file.name, uri)
+            startActivity(Intent.createChooser(view, getString(R.string.mgmt_share_apk_chooser)))
+            null
+        } catch (_: IllegalArgumentException) {
+            getString(R.string.mgmt_share_apk_missing)
+        } catch (_: ActivityNotFoundException) {
+            getString(R.string.mgmt_snackbar_cannot_open, item.displayName(resources))
+        } catch (_: SecurityException) {
+            getString(R.string.mgmt_snackbar_cannot_open, item.displayName(resources))
+        }
+    }
+
     /** Starts download → verify → install for the item's entry in the current, fresh catalog. */
     private fun startInstall(item: StoreItem): String? {
         val current = catalog.state as? CatalogState.Current
@@ -591,6 +621,7 @@ internal fun ManagementPrototype(
     onRefreshCatalog: () -> Unit,
     onStoreOpened: () -> Unit,
     operations: Map<String, Operation>,
+    shareable: Set<String>,
     reminders: RemindersView,
     onRemindersChange: (Boolean) -> Unit,
     root: RootView,
@@ -702,6 +733,7 @@ internal fun ManagementPrototype(
                         catalog = catalog,
                         onRefreshCatalog = onRefreshCatalog,
                         operations = operations,
+                        shareable = shareable,
                         reminders = reminders,
                         onRemindersChange = onRemindersChange,
                         filter = filter,
