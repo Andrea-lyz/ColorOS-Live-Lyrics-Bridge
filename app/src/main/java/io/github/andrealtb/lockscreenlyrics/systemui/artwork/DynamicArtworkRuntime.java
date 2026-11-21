@@ -134,6 +134,7 @@ public final class DynamicArtworkRuntime {
         this.settingsPermission = settingsPermission;
         registry = new ArtworkSessionRegistry(main, context);
         main.post(() -> registry.setSourceReader(this::readCurrentSource));
+        io.github.andrealtb.lockscreenlyrics.diagnostics.ShortDiagnosticSession.global().artworkStatus(this::putDiagnosticStatus);
     }
 
     /** Debug fixture test: overrides the saved settings until it is switched off. */
@@ -265,6 +266,17 @@ public final class DynamicArtworkRuntime {
         result.putLong(ArtworkDisplaySettings.STATUS_AGE_MS, playback == null ? -1 : playback.statusAgeMs());
         receiver.send(0, result);
     }
+
+    /** Diagnostics export: the same reason-code outcome the settings page shows, never song text. */
+    public void putDiagnosticStatus(android.os.Bundle out) {
+        if (android.os.Looper.myLooper() != main.getLooper()) return;
+        out.putString(DIAGNOSTIC_STATE, playback == null ? "off" : playback.status());
+        out.putLong(DIAGNOSTIC_STATE_AGE_MS, playback == null ? -1 : playback.statusAgeMs());
+        out.putString(DIAGNOSTIC_SOURCE, activeSource);
+    }
+    public static final String DIAGNOSTIC_STATE = "cll_artwork_state";
+    public static final String DIAGNOSTIC_STATE_AGE_MS = "cll_artwork_state_age_ms";
+    public static final String DIAGNOSTIC_SOURCE = "cll_artwork_source";
 
     private void installTransitionObservation() throws Exception {
         ArtworkDrawableTransition reader = new ArtworkDrawableTransition();

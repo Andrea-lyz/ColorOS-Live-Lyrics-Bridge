@@ -31,11 +31,21 @@ class PrototypeModelTest {
         assertEquals(StoreAction.OPEN_DEBUG, update.openAction())
     }
 
-    @Test fun signatureMismatchAndLocalNewerOnlyOpenThePluginsOwnPage() {
+    @Test fun localNewerOnlyOpensThePluginsOwnPage() {
         for (kind in ProviderKind.entries) {
-            for (state in listOf(InstallState.SIGNATURE_MISMATCH, InstallState.LOCAL_NEWER)) {
-                val it = item(kind, state)
-                assertEquals(it.openAction(), it.primaryAction())
+            val it = item(kind, InstallState.LOCAL_NEWER)
+            assertEquals(it.openAction(), it.primaryAction())
+        }
+    }
+
+    @Test fun signatureMismatchStillOffersTheStoreInstallNextToTheOwnPage() {
+        // The installer decides: devices that relax signature checks can install over a foreign signer.
+        for (kind in ProviderKind.entries) {
+            val it = item(kind, InstallState.SIGNATURE_MISMATCH)
+            assertEquals(StoreAction.UPDATE, it.primaryAction())
+            for (availability in Availability.entries.filter { a -> a != Availability.AVAILABLE }) {
+                val unavailable = item(kind, InstallState.SIGNATURE_MISMATCH, availability = availability)
+                assertEquals(unavailable.openAction(), unavailable.primaryAction())
             }
         }
     }

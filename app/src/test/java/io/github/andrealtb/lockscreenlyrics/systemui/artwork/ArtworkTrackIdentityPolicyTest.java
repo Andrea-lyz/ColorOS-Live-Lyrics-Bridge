@@ -63,6 +63,35 @@ public class ArtworkTrackIdentityPolicyTest {
         assertEquals("", policy.accepted().album());
     }
 
+    @Test public void controllerTextDriftForTheSameIdKeepsTheAcceptedSongWhileTheCardIsUnchanged() {
+        // Device log: NetEase metadata for the playing song carried other title/artist text every few
+        // seconds (same media ID and duration) and each update stopped the playing motion cover.
+        var initial = policy.observe(card("Song"), meta("id", "Song", "Album", 198266), 0);
+        var drifted = new ArtworkTrackIdentityPolicy.Metadata("id", "Lyric line", "Someone", "Album", 198266);
+        assertEquals("metadata_text_drift_retained", policy.diagnosticReason(card("Song"), drifted, 1));
+        var kept = policy.observe(card("Song"), drifted, 1);
+        assertTrue(kept.ready());
+        assertFalse(kept.changed());
+        assertEquals(initial.generation(), kept.generation());
+        assertEquals(initial.revision(), kept.revision());
+        assertEquals("the query keeps the verified text", "Song", policy.accepted().title());
+        assertEquals("Artist", policy.accepted().artist());
+        var back = policy.observe(card("Song"), meta("id", "Song", "Album", 198266), 2);
+        assertTrue(back.ready());
+        assertFalse(back.changed());
+    }
+
+    @Test public void driftIsNotRetainedForAnotherIdDurationOrBeforeAcceptance() {
+        var fresh = new ArtworkTrackIdentityPolicy();
+        assertFalse("nothing accepted yet", fresh.observe(card("Song"), meta("id", "Other", "Album", 1000), 0).ready());
+        policy.observe(card("Song"), meta("id", "Song", "Album", 100_000), 0);
+        assertFalse("a far duration is another recording",
+                policy.observe(card("Song"), meta("id", "Other", "Album", 140_000), 1).ready());
+        policy.observe(card("Song"), meta("id", "Song", "Album", 100_000), 2);
+        assertFalse("a new media ID is a track change",
+                policy.observe(card("Song"), meta("id-2", "Other", "Album", 100_000), 3).ready());
+    }
+
     @Test public void stableIdTitleProjectionDoesNotCreateANewSong() {
         policy.observe(card("Song"), meta("id", "Song", "Album", 1000), 0);
         var projection = policy.observe(card("Lyric line"), meta("id", "Lyric line", "Album", 1000), 1000);

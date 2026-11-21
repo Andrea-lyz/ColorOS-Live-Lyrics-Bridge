@@ -58,6 +58,7 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
     private boolean closed;
     private long retryAt = Long.MAX_VALUE;
     private long retryDelay = Long.MAX_VALUE;
+    private final ArtworkFailureRetry failureRetry = new ArtworkFailureRetry();
     private final ArtworkRetryWakeup wakeup;
     private final ArtworkScreenAwake keepAwake;
     private final Runnable refreshDisplay;
@@ -309,14 +310,21 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
         networkRecoveryPending = false;
         long requestEpoch = ++clientEpoch;
         Candidate request = selected;
+        ArtworkQuery query;
         try {
-            mountCandidate(request, requestEpoch);
             // The fixed fixture deliberately receives no real song or media/session identity.
-            ArtworkQuery query = config.localFixture() ? new ArtworkQuery("Local artwork mounting test", "", "", 0, "",
+            query = config.localFixture() ? new ArtworkQuery("Local artwork mounting test", "", "", 0, "",
                     Math.min(selected.image().getWidth(), ArtworkContract.MAX_RESOLUTION),
                     Math.min(selected.image().getHeight(), ArtworkContract.MAX_RESOLUTION),
                     ArtworkContract.MAX_RESOLUTION, ArtworkContract.MAX_RESOLUTION, ArtworkContract.MAX_FILE_BYTES)
                     : ArtworkLiveQuery.from(selected.binding().metadata(), selected.image().getWidth(), selected.image().getHeight());
+        } catch (IllegalArgumentException incomplete) {
+            // Previously reported as mount_unsupported: the host was fine, the song identity was not.
+            failure("live_identity_incomplete");
+            return;
+        }
+        try {
+            mountCandidate(request, requestEpoch);
             int requestedPx = Math.max(query.displayWidthPx, query.displayHeightPx);
             resolvingResource = true;
             resolvingCandidate = request;
@@ -454,7 +462,7 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
                     + " state=" + reason + " clientEpoch=" + epoch);
             if (reason.equals("stale_render") && surfaceHoldSince >= 0) { attempted = null; attemptedImage = null; }
             if (!reason.equals("preparing") && !reason.equals("waiting_first_frame") && !reason.equals("playing")) failure(reason);
-            if (reason.equals("playing")) outcome("played");
+            if (reason.equals("playing")) { outcome("played"); failureRetry.played(); }
             keepAwake.update();
         }, mount.fitXY());
         renderer.setFrameRateLimit(frameRateLimit);
@@ -468,9 +476,31 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
                 refreshDisplay.run();
             });
         }
-        if (request.surface() == ArtworkPlaybackPolicy.Surface.IMMERSIVE) return new ArtworkImmersiveMount(request.image());
-        if (Build.VERSION.SDK_INT < 33) throw new ArtworkImmersiveMount.Unsupported("card_shader_platform");
-        return new ArtworkCardMount(request.image(), request.cardEffects());
+        ArtworkVideoMount created;
+        if (request.surface() == ArtworkPlaybackPolicy.Surface.IMMERSIVE) created = new ArtworkImmersiveMount(request.image());
+        else if (Build.VERSION.SDK_INT < 33) throw new ArtworkImmersiveMount.Unsupported("card_shader_platform");
+        else created = new ArtworkCardMount(request.image(), request.cardEffects());
+        watchDetach(created, request.image());
+        return created;
+    }
+
+    /**
+     * Same rule as the C17 mount: a host detach destroys the TextureView surface and the renderer stops
+     * without reporting, which left the attempted stamp blocking the next request for that song. Our own
+     * close/replace also detaches the layer; the posted check skips any mount that is no longer current.
+     */
+    private void watchDetach(ArtworkVideoMount created, ImageView image) {
+        created.texture().addOnAttachStateChangeListener(new android.view.View.OnAttachStateChangeListener() {
+            @Override public void onViewAttachedToWindow(android.view.View view) {}
+            @Override public void onViewDetachedFromWindow(android.view.View view) {
+                main.post(() -> {
+                    if (closed || mount != created) return;
+                    trace.state("ARTWORK_MOUNT_DETACHED", () -> "surface=" + (renderCandidate == null ? "unknown" : renderCandidate.surface()));
+                    invalidate(image);
+                    refreshDisplay.run();
+                });
+            }
+        });
     }
 
     private ArtworkRenderGuard displayGuard(Candidate target) {
@@ -673,7 +703,11 @@ public final class ArtworkImmersivePlayback implements AutoCloseable {
     private void failure(String reason) {
         // Superseded requests and renders are ordinary churn, not an outcome worth reporting.
         if (!reason.equals("stale_render") && !reason.equals("asset_gate_changed")) outcome(reason);
-        if (!config.localFixture() && (reason.equals("request_timeout") || reason.equals("bind_failed") || reason.equals("connection_lost"))) retryDelay = 30_000;
+        Candidate failedCandidate = current != null ? current : resolvingCandidate;
+        if (!config.localFixture() && failedCandidate != null) {
+            long delay = failureRetry.next(reason, failedCandidate.binding().stamp());
+            if (delay != ArtworkFailureRetry.NONE) retryDelay = delay;
+        }
         retryAt = retryDelay == Long.MAX_VALUE ? Long.MAX_VALUE : android.os.SystemClock.elapsedRealtime() + retryDelay;
         trace.state("ARTWORK_TEST_FALLBACK", () -> "reason=" + reason);
         Candidate failed = current != null ? current : resolvingCandidate;

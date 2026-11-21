@@ -7,7 +7,10 @@ import io.github.andrealtb.artwork.contract.ArtworkQuery;
 public final class ArtworkLiveQuery {
     private ArtworkLiveQuery() {}
     public static ArtworkQuery from(ArtworkTrackIdentityPolicy.Metadata metadata, int width, int height) {
-        if (metadata == null || metadata.title().isEmpty() || metadata.artist().isEmpty() || metadata.durationMs() <= 0) {
+        // A user's album binding (imported video or chosen album) needs only the album name; the provider
+        // itself rejects an automatic catalog match without a duration, so only that lookup is lost.
+        if (metadata == null || metadata.title().isEmpty() || metadata.artist().isEmpty()
+                || metadata.durationMs() <= 0 && metadata.album().isEmpty()) {
             throw new IllegalArgumentException("live_identity_incomplete");
         }
         // Catalog URLs are not inferred from arbitrary player media IDs or artwork URLs.
