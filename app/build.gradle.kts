@@ -126,7 +126,7 @@ dependencies {
     implementation("com.google.android.material:material:1.11.0")
     implementation("com.mocharealm.accompanist:lyrics-core-jvm:0.4.7")
     implementation("org.jetbrains.kotlin:kotlin-stdlib:2.3.0")
-    implementation("org.luckypray:dexkit:2.2.0")
+    implementation("org.luckypray:dexkit:2.3.0")
     implementation(platform("androidx.compose:compose-bom:2025.12.01"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
